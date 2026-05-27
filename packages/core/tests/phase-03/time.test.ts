@@ -16,6 +16,10 @@
 //   addBlocks(date: Date, n: number): Date
 //     Add n × 30 minutes as DURATION arithmetic (ARCH §1.6).
 //     A block crossing a DST transition is still exactly 30 min of UTC elapsed.
+//     `n` must be a non-negative integer; negative `n` is undefined behavior
+//     (no behavioral-spec operation requires backward block arithmetic —
+//     block dropping is a DB status transition, not a time calculation;
+//     escalation offsets use standard timestamp interval arithmetic).
 //
 //   weekStart(date: Date): Date
 //     The Monday 00:00 in America/New_York of the calendar week containing `date`.
@@ -71,6 +75,14 @@ describe('blockBoundary — snap to most recent 30-min boundary', () => {
     const result = blockBoundary(new Date('2026-02-03T00:15:00-05:00'));
     expect(result.toISOString()).toBe(new Date('2026-02-03T00:00:00-05:00').toISOString());
   });
+
+  it('snaps 00:00 → 00:00 (idempotent at midnight — must not snap back to 23:30 of the prior day)', () => {
+    // 00:00 is itself a valid 30-min block boundary and belongs to the
+    // new date (BEH §1.4 rollover). A careless implementation might
+    // snap it back to 23:30 of the previous day.
+    const midnight = new Date('2026-02-03T00:00:00-05:00');
+    expect(blockBoundary(midnight).getTime()).toBe(midnight.getTime());
+  });
 });
 
 // ----- addBlocks ---------------------------------------------------
@@ -92,12 +104,6 @@ describe('addBlocks — duration arithmetic, not wall-clock (ARCH §1.6)', () =>
   it('adds 0 blocks = identity', () => {
     const d = new Date('2026-02-03T17:00:00-05:00');
     expect(addBlocks(d, 0).getTime()).toBe(d.getTime());
-  });
-
-  it('negative blocks subtract duration', () => {
-    const after = new Date('2026-02-03T17:30:00-05:00');
-    const result = addBlocks(after, -1);
-    expect(result.toISOString()).toBe(new Date('2026-02-03T17:00:00-05:00').toISOString());
   });
 
   it('DST spring-forward: a block crossing 02:00 EST → 03:00 EDT is still 30 min UTC elapsed', () => {

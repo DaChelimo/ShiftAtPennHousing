@@ -93,3 +93,23 @@ the JetBrains GitHub template (see Conventions above).
   Edge Function level. The DB trigger is authoritative; the EF layer is UX guard.
 - [Phase 02] eligibility functions live in packages/core/src/eligibility/index.ts
   and are used by phases 05, 06, 07. They take UserEligibilityProfile, not DB rows.
+- [Phase 03] DST-correct block generation: iterate by adding `interval '30 minutes'`
+  to a NY-anchored timestamptz, NOT by enumerating wall-clock minutes and converting.
+  Wall-clock iteration silently drops blocks on DST days (spring-forward gap collapses
+  to a UNIQUE collision; fall-back ambiguous times resolve to one offset). The correct
+  pattern: `(target_date::timestamp + make_interval(mins => start_minute)) AT TIME ZONE
+'America/New_York'` for the band start, then `band_start_at + n * interval '30 minutes'`
+  for each block. See supabase/migrations/20260527000004\_\*.sql.
+- [Phase 03] `shift_end_bound = '00:00'` in `operating_profiles` represents 24:00 of
+  the input date (midnight end-of-day), NOT 00:00 of the same day. The generator must
+  cast as `input_date + INTERVAL '24 hours'` before iterating; a naive literal reading
+  yields zero blocks.
+- [Phase 03] The block generator reads bands from `staffing_patterns` and does NOT
+  cross-check them against `operating_profiles.shift_start_bound` / `shift_end_bound`.
+  Misconfigured staffing rows would generate out-of-band blocks. Profile-bound
+  enforcement is admin-tooling concern, not generator concern.
+- [Phase 03] `shift_block_assignments` RLS requires THREE select policies that OR
+  together: own-assignment (`user_id = auth.uid()`), home-house, and house-admin.
+  The own-assignment clause is load-bearing for personal-calendar visibility of
+  float-out and cross-house-pickup rows (BEH §11.2) — those rows attach to
+  non-home-house blocks and would otherwise be invisible to the worker.

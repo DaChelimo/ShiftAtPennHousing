@@ -1,8 +1,8 @@
 # Phase 03 — Test Plan: Block Model and Calendar Generation
 
-This plan enumerates every test written for phase-03, the spec section
-each test covers, and ambiguities flagged for resolution before or
-during implementation.
+This plan enumerates every test for phase-03, the spec section each
+test covers, and the resolutions for ambiguities that were surfaced
+before implementation.
 
 Sources of truth:
 
@@ -15,8 +15,8 @@ Sources of truth:
 
 Test files:
 
-- `supabase/tests/phase-03-blocks-schema.sql` — pgTAP, 78 assertions
-- `supabase/tests/phase-03-calendar-generation.sql` — pgTAP, 44 assertions
+- `supabase/tests/phase-03-blocks-schema.sql` — pgTAP, 83 assertions
+- `supabase/tests/phase-03-calendar-generation.sql` — pgTAP, 59 assertions
 - `packages/core/tests/phase-03/time.test.ts` — Vitest pure-logic suite
 
 ---
@@ -41,13 +41,21 @@ their types (uuid, text, **timestamptz**, integer), primary key on
 `block_end_at` is intentionally absent — ARCH §3.2: "block_end_at is
 implicit: block_start_at + 30 minutes."
 
-### §4. `shift_block_assignments` shape (25)
+### §4. `shift_block_assignments` shape (27)
 
 All 9 columns from ARCH §3.2: `assignment_id`, `block_id`, `user_id`,
 `status`, `vacancy_origin`, `is_float`, `is_cross_house_pickup`,
 `source_house_id`, `parent_float_id`. Types pinned. `user_id`,
 `source_house_id`, `parent_float_id` are nullable; the boolean flags
 and `vacancy_origin` are NOT NULL.
+
+A CHECK constraint enforces the ARCH §3.2 rule that `source_house_id`
+is populated whenever a worker is at a non-home desk: `(is_float OR
+is_cross_house_pickup) → source_house_id IS NOT NULL`. Two tests cover
+this constraint:
+
+- Insert with `is_float = true`, `source_house_id = NULL` is rejected.
+- Insert with `is_float = true`, `source_house_id = 'harnwell'` is accepted.
 
 ### §5. Foreign keys (4)
 
@@ -62,10 +70,19 @@ table is created there). The column exists now and is nullable; the
 FK constraint is added in the phase-06 migration. The PHASE_PLAN already
 notes the equivalent pattern for `users.user_id → auth.users`.
 
-### §6. RLS enabled (4)
+### §6. RLS enabled (5)
 
-Both tables have RLS on, with a `service-role bypass` policy. User-scoped
-policies arrive in later phases per AGENTS.md.
+`shift_blocks` and `shift_block_assignments` both have RLS on with a
+`service-role bypass` policy. `shift_block_assignments` additionally
+carries a `"users can select own assignments"` policy (USING `user_id =
+auth.uid()`) so workers can read their own float-out and
+cross-house-pickup rows on their personal calendar per BEH §11.2 — the
+home-house policy does not cover assignments attached to non-home-house
+blocks. Tests assert the existence of all three policies.
+
+Beyond the own-assignment policy, the additional user-scoped policies
+covering authenticated SELECT on home-house blocks and on house-admin
+visibility arrive in later phases per AGENTS.md.
 
 ### §7. `block_start_at` is on a 30-min boundary (5)
 
@@ -111,7 +128,7 @@ the (true, true) combination.
 they describe a non-home-desk assignment; a freshly-generated vacant
 row should not carry either flag).
 
-### §13. `block_step_status` side table (10)
+### §13. `block_step_status` side table (12)
 
 ARCH §4.1: the orchestrator's per-block step-firing tracker. Phase-03
 creates the schema; phase-07 wires up the orchestrator that writes to
@@ -121,10 +138,11 @@ it. Coverage:
   `fired_at`, `updated_at`), composite PK on (`block_id`, `step_name`).
 - `block_id` FK to `shift_blocks`.
 - `fired_at` and `updated_at` are timestamptz.
-
-The `status` enum here is intentionally NOT exhaustively tested at
-this layer — the values (`fired`, `completed_via_force_trigger`,
-`rolled_back`) are an orchestrator-domain concern verified in phase-07.
+- `status` column uses the named enum type `block_step_status_enum`
+  (created in this phase with values `fired`,
+  `completed_via_force_trigger`, `rolled_back`). The enum existence and
+  type name are tested here; the value-semantics tests are deferred to
+  phase-07.
 
 ### §14. No plain `timestamp` columns (1)
 
@@ -136,7 +154,6 @@ time zone` columns may exist across the three new tables.
 ## pgTAP — `phase-03-calendar-generation.sql`
 
 The tests describe the observable behavior of `generate_blocks_for_date(date)`.
-See **Ambiguities** below for the open question on its signature.
 
 ### §0. Fixtures
 
@@ -155,7 +172,22 @@ exercises. The phase-01 seed does NOT pre-populate calendar dates
 
 ### §1. Function signature (1)
 
-`generate_blocks_for_date(date) → void` exists.
+`generate_blocks_for_date(date) → (blocks_inserted int, assignments_inserted int)` exists.
+
+The function returns the count of rows inserted in each table for the
+given date. On a date with no operating_calendar row (summer), it
+returns `(0, 0)`. On a second call for the same date (idempotency),
+it also returns `(0, 0)` because the ON CONFLICT DO NOTHING path
+inserts nothing new.
+
+**Implementation contract:** `shift_end_bound = '00:00'` in
+`operating_profiles` represents 24:00 of the input date (midnight
+end-of-day), not 00:00 of the same day. The generator must cast this
+value as `input_date + INTERVAL '24 hours'` (or equivalent) before
+comparing against block start times. Reading it naively as midnight
+of the input date would yield zero blocks because 08:00 > 00:00. The
+§2 block-count test (32 blocks) and the §5 last-block test (23:30)
+will both fail immediately if this contract is violated.
 
 ### §2. Regular weekday counts (7)
 
@@ -192,10 +224,15 @@ BEH §1.4: a block at 23:30 of date N belongs to date N. A block at
 - The 23:30 block exists with `block_start_at = N + 23:30 local`.
 - Generating date N produces zero `block_start_at = (N+1) + 00:00`.
 
-### §7. Weekend baseline (1)
+### §7. Weekend baseline (4)
 
-Regular Saturday: all 13 houses × 32 blocks (same headcount as weekday
-per ARCH §3.3).
+Regular Saturday (2026-02-07):
+
+- Total across all 13 houses: 13 × 32 = 416 blocks.
+- Harnwell: 64 assignments (32 × 2). Weekend seed row has headcount 2,
+  identical to weekday.
+- Quad: 96 assignments (32 × 3).
+- Single-staff (house-03): 32 assignments (32 × 1).
 
 ### §8. Winter break (5)
 
@@ -204,10 +241,13 @@ per ARCH §3.3).
 - Quad: zero blocks (closed).
 - All 12 non-Harnwell houses combined: zero blocks.
 
-### §9. Summer (no calendar row) (2)
+### §9. Summer (no calendar row) (3)
 
-Calling `generate_blocks_for_date('2026-07-15')` does not error and
-produces zero blocks.
+Calling `generate_blocks_for_date('2026-07-15')`:
+
+- Does not error.
+- Produces zero `shift_blocks` rows for the date.
+- Returns `(blocks_inserted := 0, assignments_inserted := 0)`.
 
 ### §10. House-with-no-staffing-pattern (1)
 
@@ -230,14 +270,49 @@ does not straddle the 02:00 transition, but the invariants must hold:
 2025-11-02 (Sunday, regular_school_year). Same three invariants — count,
 no duplicates, adjacent-pair interval — apply.
 
-### §13. Idempotency (4)
+### §12b. DST regression — bands that straddle the transition window (9)
+
+§11 and §12 only exercise the seeded 08:00 profile, which never touches
+the 02:00 transition. A naive wall-clock-minute iteration that converts
+each minute to UTC via `timezone('America/New_York', naive_ts)` would
+silently drop blocks on DST days (PG rolls non-existent spring-forward
+times forward and picks one offset for ambiguous fall-back times, then
+`ON CONFLICT DO NOTHING` swallows the collisions). The seeded tests
+can't catch that bug because their bands start after the transition.
+
+§12b injects a synthetic `dst-test-house` with a `00:00–24:00` weekend
+staffing pattern and re-runs generation for both DST dates. The
+duration-from-anchor implementation must yield:
+
+- Spring-forward (2026-03-08): **46 blocks** for the synthetic house
+  (the non-existent 02:00 and 02:30 wall-clocks are absent — NY day is
+  23 wall-clock hours).
+- Spring-forward: the gap-bracketing blocks `01:30 EST` (UTC 06:30) and
+  `03:00 EDT` (UTC 07:00) both exist; UTC steps cleanly across the gap.
+- Fall-back (2025-11-02): **50 blocks** for the synthetic house (the
+  duplicated 01:00–02:00 hour produces extra blocks — NY day is 25
+  wall-clock hours).
+- Fall-back: wall-clock `01:00 NY` appears at two distinct UTC instants
+  (`01:00 EDT` = UTC 05:00 and `01:00 EST` = UTC 06:00).
+- Fall-back: wall-clock `01:30 NY` appears at two distinct UTC instants.
+- Every block on each DST date lands on a 30-min NY wall-clock boundary.
+- Every adjacent block pair is exactly 30 min apart in UTC.
+
+The fixture inserts are inside the test's BEGIN/ROLLBACK, so the
+synthetic house and pattern do not leak across test runs.
+
+### §13. Idempotency (6)
 
 Re-running `generate_blocks_for_date('2026-02-02')`:
 
 - Does not error.
+- Returns `(blocks_inserted := 0, assignments_inserted := 0)` — the
+  ON CONFLICT DO NOTHING path inserts nothing on the second call.
 - `shift_blocks` count is unchanged.
 - `shift_block_assignments` count is unchanged.
 - No (`house_id`, `block_start_at`) duplicate appears anywhere.
+- The two count assertions above are checked after the second call
+  by comparing against the values measured after the first call.
 
 ### §14. FK integrity post-generation (1)
 
@@ -264,7 +339,7 @@ table. That side table is owned by phase-07.
 Five pure functions in `packages/core/src/time/index.ts` (to be
 implemented):
 
-### `blockBoundary(date)` (6)
+### `blockBoundary(date)` (7)
 
 Snap to most recent 30-min boundary in America/New_York wall time.
 
@@ -274,15 +349,20 @@ Snap to most recent 30-min boundary in America/New_York wall time.
 - 17:00 → 17:00 (idempotent at hour)
 - 17:30:45 → 17:30 (seconds dropped)
 - 00:15 → 00:00 (no day rollover)
+- 00:00 → 00:00 (idempotent at midnight — must not snap back to 23:30
+  of the previous day, since 00:00 is itself a valid block boundary
+  belonging to the new date per BEH §1.4)
 
-### `addBlocks(date, n)` (7)
+### `addBlocks(date, n)` (6)
 
-Duration arithmetic — NOT wall-clock (ARCH §1.6).
+Duration arithmetic — NOT wall-clock (ARCH §1.6). `n` must be a
+non-negative integer; negative `n` is undefined behavior (no behavioral
+spec operation requires backward block arithmetic — block dropping is
+a DB status transition, not a time calculation).
 
 - +1 = 30 min UTC elapsed.
 - +2 = 60 min.
 - 0 = identity.
-- −1 subtracts 30 min.
 - DST spring-forward: +1 across 02:00 EST→03:00 EDT is still 30 min UTC.
 - DST fall-back: +1 across 02:00 EDT→01:00 EST is still 30 min UTC.
 - +32 = 16 h (full Harnwell shift span).
@@ -336,18 +416,24 @@ exist in phase-03:
 
 ---
 
-## Ambiguities — to resolve before implementation
+## Ambiguities — resolved
 
-| #   | Surface                                                       | Question                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| --- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `generate_blocks_for_date` return type                        | The function is declared `void` in the test plan, but the implementation may prefer to return the inserted row counts (a record like `(blocks_inserted int, assignments_inserted int)`) for observability. **Default: void.** If the implementer chooses to return counts, the function-signature test in §1 must be updated to match.                                                                                                                |
-| 2   | `generate_blocks_for_date` argument timezone                  | The single `date` argument is unambiguous (a calendar date), but the function must internally cast to America/New_York to derive `block_start_at` timestamps. Tests pin this behaviorally (block_start_at on 30-min boundaries in America/New_York), but the function may also accept an optional `timezone text DEFAULT 'America/New_York'` for future flexibility. **Default: single arg.**                                                         |
-| 3   | Multi-band staffing patterns                                  | ARCH §2.3 supports multiple `{block_start, block_end, headcount}` ranges per house-day for future profiles. Current seeds use a single flat band per house-day. Tests cover the single-band case only; multi-band coverage is **deferred** until a profile actually uses it (no current consumer).                                                                                                                                                    |
-| 4   | Behavior when staffing pattern has variable headcount mid-day | If a future band were `[{"08:00","12:00",1}, {"12:00","24:00",2}]`, blocks at 12:00 would have `required_headcount=2`. We do not test this transition since no such pattern is seeded — **deferred** (see #3).                                                                                                                                                                                                                                        |
-| 5   | Function idempotency on partial state                         | If a prior run inserted 30 of 32 Harnwell blocks for a date (e.g. transaction rolled back mid-loop), should the next run skip the existing 30 and complete the remaining 2, or should it reject the partial state? The schema's UNIQUE(`house_id`, `block_start_at`) constraint forces the implementer toward `ON CONFLICT DO NOTHING`; the test assumes that semantics. **Default: ON CONFLICT DO NOTHING.**                                         |
-| 6   | DST spring-forward blocks inside the 02:00 gap                | The prompt asserts a block at "nominal 02:00" is still generated even though that wall-clock time does not exist in standard time. Current shift bounds (08:00–24:00) make this moot — no block straddles the gap. If a future profile opens the window earlier, the behavior the prompt describes ("generate based on schedule, not local clock gaps") becomes test-relevant. We do not exercise it now; **deferred** until the schedule permits it. |
-| 7   | DST fall-back duplicate wall-clock blocks                     | Likewise, two sets of 01:00–02:00 blocks would only exist if the shift window opened pre-02:00. With 08:00 as the earliest start, the duplicate-wall-clock scenario does not arise. The duplication test we DO run (§12 "no duplicate `(house_id, block_start_at)`") is a general invariant, not a DST-specific one — but it's the right one to assert for the spec's "one authoritative set in UTC" rule.                                            |
-| 8   | What writes to `block_step_status`?                           | The orchestrator (phase-07) writes step rows when chain steps fire. Phase-03 tests assert the table is **empty after generation** — i.e. the generator does not pre-populate it. If a future design moves the cleanup pass into the generator, this test must change. **Default: generator does not touch block_step_status.**                                                                                                                        |
+| #   | Surface                                                       | Resolution                                                                                                                                                                                                                                                                                                        |
+| --- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `generate_blocks_for_date` return type                        | **Returns `(blocks_inserted int, assignments_inserted int)`**. §1 signature test, §9 summer test, and §13 idempotency test updated to assert return values.                                                                                                                                                       |
+| 2   | `generate_blocks_for_date` argument timezone                  | **Single `date` arg only.** No optional timezone parameter; the function always anchors to `America/New_York` internally. Tests pin behavior (block boundaries in America/New_York); the anchor zone is not a runtime input.                                                                                      |
+| 3   | Multi-band staffing patterns                                  | **Deferred.** ARCH §2.3 supports multiple `{block_start, block_end, headcount}` ranges per house-day. Current seeds use a single flat band; multi-band coverage is deferred until a profile actually uses it.                                                                                                     |
+| 4   | Behavior when staffing pattern has variable headcount mid-day | **Deferred** (see #3). No such pattern is seeded in phase-03.                                                                                                                                                                                                                                                     |
+| 5   | Function idempotency on partial state                         | **ON CONFLICT DO NOTHING.** The UNIQUE(`house_id`, `block_start_at`) constraint drives this; the second call inserts 0 rows and returns `(0, 0)`.                                                                                                                                                                 |
+| 6   | DST spring-forward blocks inside the 02:00 gap                | **Deferred.** Shift bounds 08:00–24:00 do not straddle the 02:00 transition. If a future profile opens the window earlier, the "generate based on schedule, not local clock gaps" rule becomes test-relevant.                                                                                                     |
+| 7   | DST fall-back duplicate wall-clock blocks                     | **Not applicable at current bounds.** The §12 "no duplicate `(house_id, block_start_at)`" invariant is the correct general assertion. The DST-specific duplicate scenario only arises if the shift window opened pre-02:00.                                                                                       |
+| 8   | What writes to `block_step_status`?                           | **Generator does not touch `block_step_status`**; the orchestrator (phase-07) owns writes to it. §17 asserts the table is empty after generation.                                                                                                                                                                 |
+| 9   | `source_house_id` DB constraint                               | **Add CHECK constraint + schema test in §4.** Two new tests: `is_float=true` with `source_house_id=NULL` is rejected; `is_float=true` with a valid `source_house_id` is accepted. Constraint: `(is_float OR is_cross_house_pickup) → source_house_id IS NOT NULL`. Schema assertion count updated from 25 to 27.  |
+| 10  | `block_step_status.status` column type                        | **Named enum `block_step_status_enum`** created in phase-03 with values `fired`, `completed_via_force_trigger`, `rolled_back`. Phase-03 §13 tests the type exists and that the `status` column uses it (`has_type` + `col_type_is`). Value-semantics tests deferred to phase-07. §13 count updated from 10 to 12. |
+| 11  | `addBlocks` negative `n`                                      | **Removed.** No behavioral spec operation requires backward block arithmetic. Block dropping is a DB status transition; escalation offsets use standard timestamp interval arithmetic. Negative `n` is undefined behavior. The `−1` test case is removed; `addBlocks` count updated from 7 to 6.                  |
+| 12  | `shift_end_bound = '00:00'` interpretation                    | **Contract note added to §1.** The generator must interpret `shift_end_bound='00:00'` as 24:00 of the input date (`input_date + INTERVAL '24 hours'`). A naive literal reading produces zero blocks. §2 and §5 tests catch the symptom; the §1 note makes the assumption explicit for implementers.               |
+| 13  | Weekend §7 assignment counts                                  | **Added to §7.** Three new assertions: Harnwell 64, Quad 96, house-03 32. The weekend seed rows are identical in headcount to weekday; asserting assignment counts here confirms the `day_type='weekend'` lookup path is exercised end-to-end. §7 count updated from 1 to 4.                                      |
+| 14  | `blockBoundary(00:00)` idempotency                            | **Added test case.** `00:00 → 00:00`. A careless implementation might snap midnight back to 23:30 of the previous day. Since 00:00 is a valid block boundary belonging to the new date (BEH §1.4), idempotency must hold. `blockBoundary` count updated from 6 to 7.                                              |
 
 ---
 

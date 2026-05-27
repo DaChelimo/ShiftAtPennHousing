@@ -3,11 +3,20 @@
 -- Run with: supabase test db
 --
 -- These tests describe the observable behavior of the
---   generate_blocks_for_date(target_date date) → void
+--   generate_blocks_for_date(target_date date)
+--     RETURNS (blocks_inserted int, assignments_inserted int)
 -- function. The function reads operating_calendar + operating_profiles +
 -- staffing_patterns and produces the corresponding shift_blocks and
--- shift_block_assignments rows. It is idempotent: a second call for
--- the same date must produce no duplicates and must not change counts.
+-- shift_block_assignments rows. It returns the count of rows newly
+-- inserted in each table. It is idempotent: a second call for the same
+-- date returns (0, 0) and does not change row counts.
+--
+-- Implementation contract: shift_end_bound = '00:00' in
+-- operating_profiles represents 24:00 of the input date (midnight
+-- end-of-day), NOT 00:00 of the same day. The generator must cast
+-- this as input_date + INTERVAL '24 hours' before iterating block
+-- starts. A naive literal reading yields zero blocks (08:00 > 00:00)
+-- and §2 / §5 will fail immediately.
 --
 -- The America/New_York time zone is the operational anchor for all
 -- wall-clock reasoning. The tests cast literal "YYYY-MM-DD HH:MM
@@ -16,7 +25,7 @@
 
 BEGIN;
 
-SELECT plan(44);
+SELECT plan(59);
 
 -- ============================================================
 -- 0. Operating calendar fixtures
@@ -267,7 +276,10 @@ SELECT is(
 
 -- ============================================================
 -- 7. Weekend behavior on regular_school_year (2026-02-07)
--- Same headcount per ARCH §3.3 (regular weekend = regular weekday).
+-- The seeded weekend rows carry the same headcount as the weekday
+-- rows for regular_school_year, so per-house assignment counts match
+-- the weekday baseline. The four assertions exercise the
+-- day_type='weekend' lookup path end-to-end.
 -- ============================================================
 
 SELECT generate_blocks_for_date('2026-02-07');
@@ -278,6 +290,36 @@ SELECT is(
       AND block_start_at <  '2026-02-08 00:00 America/New_York'::timestamptz),
   13 * 32,
   'regular weekend (2026-02-07): all 13 houses produce 32 blocks each'
+);
+
+SELECT is(
+  (SELECT count(*)::int FROM public.shift_block_assignments a
+    JOIN public.shift_blocks b USING (block_id)
+   WHERE b.house_id = 'harnwell'
+     AND b.block_start_at >= '2026-02-07 00:00 America/New_York'::timestamptz
+     AND b.block_start_at <  '2026-02-08 00:00 America/New_York'::timestamptz),
+  64,
+  'regular weekend: Harnwell has 64 assignment rows (32 × 2 headcount)'
+);
+
+SELECT is(
+  (SELECT count(*)::int FROM public.shift_block_assignments a
+    JOIN public.shift_blocks b USING (block_id)
+   WHERE b.house_id = 'quad'
+     AND b.block_start_at >= '2026-02-07 00:00 America/New_York'::timestamptz
+     AND b.block_start_at <  '2026-02-08 00:00 America/New_York'::timestamptz),
+  96,
+  'regular weekend: Quad has 96 assignment rows (32 × 3 headcount)'
+);
+
+SELECT is(
+  (SELECT count(*)::int FROM public.shift_block_assignments a
+    JOIN public.shift_blocks b USING (block_id)
+   WHERE b.house_id = 'house-03'
+     AND b.block_start_at >= '2026-02-07 00:00 America/New_York'::timestamptz
+     AND b.block_start_at <  '2026-02-08 00:00 America/New_York'::timestamptz),
+  32,
+  'regular weekend: single-staff house-03 has 32 assignment rows (32 × 1)'
 );
 
 -- ============================================================
@@ -350,6 +392,13 @@ SELECT is(
       AND block_start_at <  '2026-07-16 00:00 America/New_York'::timestamptz),
   0,
   'summer: zero blocks generated for a date with no operating_calendar row'
+);
+
+SELECT is(
+  (SELECT (blocks_inserted, assignments_inserted)::text
+     FROM generate_blocks_for_date('2026-07-15')),
+  '(0,0)',
+  'summer: function returns (blocks_inserted := 0, assignments_inserted := 0)'
 );
 
 -- ============================================================
@@ -489,14 +538,176 @@ SELECT is(
 );
 
 -- ============================================================
--- 13. Idempotency — calling the function twice produces no change
+-- 12b. DST regression — bands that straddle the transition window
+--
+-- The §11/§12 tests above use the seeded 08:00 profile, which never
+-- touches 02:00 NY and therefore can't catch the bug where wall-clock
+-- iteration collapses the spring-forward gap (silent missing blocks)
+-- or drops the fall-back repeat (silent missing blocks). This block
+-- injects a one-off 00:00–24:00 staffing pattern for a synthetic test
+-- house on both DST dates and verifies the count semantics that
+-- duration-from-anchor arithmetic must yield:
+--
+--   - spring-forward (2026-03-08): NY day is 23 wall-clock hours,
+--     so a 00:00–24:00 band yields 46 blocks (not 48).
+--   - fall-back     (2025-11-02): NY day is 25 wall-clock hours,
+--     so a 00:00–24:00 band yields 50 blocks (not 48), and the
+--     wall-clock hour 01:00 appears at TWO distinct UTC instants
+--     (01:00 EDT = UTC 05:00, 01:00 EST = UTC 06:00).
 -- ============================================================
 
--- Snapshot total counts for 2026-02-02 before re-running.
+-- Synthetic house + pattern. Use a dedicated house id so we don't
+-- collide with the seeded fixtures elsewhere in the file.
+INSERT INTO public.houses (id, name) VALUES ('dst-test-house', 'DST Test House')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.staffing_patterns (profile_name, house_id, day_type, block_headcounts) VALUES
+  ('regular_school_year', 'dst-test-house', 'weekend',
+   '[{"block_start":"00:00","block_end":"00:00","headcount":1}]')
+ON CONFLICT (profile_name, house_id, day_type) DO NOTHING;
+
+-- Re-run for both DST dates to pick up the new pattern.
+SELECT generate_blocks_for_date('2026-03-08');
+SELECT generate_blocks_for_date('2025-11-02');
+
+-- Spring-forward: 46 blocks (48 minus the non-existent 02:00 and 02:30).
+-- This count IS the gap-absence proof: a buggy wall-clock iteration would
+-- emit 48 candidates that collide on UTC and silently lose blocks via
+-- ON CONFLICT; a correct UTC-duration iteration emits exactly 46.
+SELECT is(
+  (SELECT count(*)::int FROM public.shift_blocks
+    WHERE house_id = 'dst-test-house'
+      AND block_start_at >= '2026-03-08 00:00 America/New_York'::timestamptz
+      AND block_start_at <  '2026-03-09 00:00 America/New_York'::timestamptz),
+  46,
+  'DST spring-forward 00:00–24:00 band: 46 blocks (gap hour absent, no silent skip)'
+);
+
+-- Spring-forward: the block immediately after 01:30 EST is 03:00 EDT
+-- (the UTC step jumps the gap cleanly). Verify both anchor blocks exist
+-- and the wall-clock 02:xx hour is fully absent (vacuously true under
+-- correct semantics, but worth pinning).
+SELECT is(
+  (SELECT count(*)::int FROM public.shift_blocks
+    WHERE house_id = 'dst-test-house'
+      AND block_start_at IN (
+        '2026-03-08 06:30:00+00'::timestamptz,  -- 01:30 EST (last pre-gap)
+        '2026-03-08 07:00:00+00'::timestamptz   -- 03:00 EDT (first post-gap)
+      )),
+  2,
+  'DST spring-forward: the gap-bracketing blocks (01:30 EST and 03:00 EDT) both exist'
+);
+
+-- Fall-back: 50 blocks (48 plus the duplicated 01:00 and 01:30).
+SELECT is(
+  (SELECT count(*)::int FROM public.shift_blocks
+    WHERE house_id = 'dst-test-house'
+      AND block_start_at >= '2025-11-02 00:00 America/New_York'::timestamptz
+      AND block_start_at <  '2025-11-03 00:00 America/New_York'::timestamptz),
+  50,
+  'DST fall-back 00:00–24:00 band: 50 blocks (01:00 and 01:30 wall-clock each appear twice)'
+);
+
+-- Fall-back: the 01:00 wall-clock appears at two distinct UTC instants.
+SELECT is(
+  (SELECT count(*)::int FROM public.shift_blocks
+    WHERE house_id = 'dst-test-house'
+      AND block_start_at IN (
+        '2025-11-02 05:00:00+00'::timestamptz,  -- 01:00 EDT
+        '2025-11-02 06:00:00+00'::timestamptz   -- 01:00 EST
+      )),
+  2,
+  'DST fall-back: 01:00 NY appears as TWO distinct blocks (01:00 EDT and 01:00 EST)'
+);
+
+-- Fall-back: the 01:30 wall-clock appears at two distinct UTC instants.
+SELECT is(
+  (SELECT count(*)::int FROM public.shift_blocks
+    WHERE house_id = 'dst-test-house'
+      AND block_start_at IN (
+        '2025-11-02 05:30:00+00'::timestamptz,  -- 01:30 EDT
+        '2025-11-02 06:30:00+00'::timestamptz   -- 01:30 EST
+      )),
+  2,
+  'DST fall-back: 01:30 NY appears as TWO distinct blocks (01:30 EDT and 01:30 EST)'
+);
+
+-- Every block on each DST date for the synthetic house still lands on
+-- a 30-min wall-clock boundary in NY (the CHECK constraint enforces
+-- this, but assert it as a behavioral invariant too).
+SELECT is(
+  (SELECT count(*)::int FROM public.shift_blocks
+    WHERE house_id = 'dst-test-house'
+      AND block_start_at >= '2026-03-08 00:00 America/New_York'::timestamptz
+      AND block_start_at <  '2026-03-09 00:00 America/New_York'::timestamptz
+      AND NOT (
+        EXTRACT(MINUTE FROM block_start_at AT TIME ZONE 'America/New_York') IN (0, 30)
+        AND EXTRACT(SECOND FROM block_start_at AT TIME ZONE 'America/New_York') = 0
+      )),
+  0,
+  'DST spring-forward: every generated block is on a 30-min NY wall-clock boundary'
+);
+
+SELECT is(
+  (SELECT count(*)::int FROM public.shift_blocks
+    WHERE house_id = 'dst-test-house'
+      AND block_start_at >= '2025-11-02 00:00 America/New_York'::timestamptz
+      AND block_start_at <  '2025-11-03 00:00 America/New_York'::timestamptz
+      AND NOT (
+        EXTRACT(MINUTE FROM block_start_at AT TIME ZONE 'America/New_York') IN (0, 30)
+        AND EXTRACT(SECOND FROM block_start_at AT TIME ZONE 'America/New_York') = 0
+      )),
+  0,
+  'DST fall-back: every generated block is on a 30-min NY wall-clock boundary'
+);
+
+-- Adjacent blocks remain 30 min apart in UTC on both DST dates (no
+-- accidental 0-second collision, no accidental 1-hour gap).
+SELECT is(
+  (WITH ordered AS (
+     SELECT block_start_at,
+            lead(block_start_at) OVER (ORDER BY block_start_at) AS next_start
+       FROM public.shift_blocks
+      WHERE house_id = 'dst-test-house'
+        AND block_start_at >= '2026-03-08 00:00 America/New_York'::timestamptz
+        AND block_start_at <  '2026-03-09 00:00 America/New_York'::timestamptz
+   )
+   SELECT count(*)::int FROM ordered
+    WHERE next_start IS NOT NULL
+      AND (next_start - block_start_at) <> interval '30 minutes'),
+  0,
+  'DST spring-forward 00:00–24:00 band: every adjacent block pair is exactly 30 min apart in UTC'
+);
+
+SELECT is(
+  (WITH ordered AS (
+     SELECT block_start_at,
+            lead(block_start_at) OVER (ORDER BY block_start_at) AS next_start
+       FROM public.shift_blocks
+      WHERE house_id = 'dst-test-house'
+        AND block_start_at >= '2025-11-02 00:00 America/New_York'::timestamptz
+        AND block_start_at <  '2025-11-03 00:00 America/New_York'::timestamptz
+   )
+   SELECT count(*)::int FROM ordered
+    WHERE next_start IS NOT NULL
+      AND (next_start - block_start_at) <> interval '30 minutes'),
+  0,
+  'DST fall-back 00:00–24:00 band: every adjacent block pair is exactly 30 min apart in UTC'
+);
+
+-- ============================================================
+-- 13. Idempotency — calling the function twice produces no change
+-- The second call must return (0, 0) and leave row counts unchanged.
+-- ============================================================
+
+-- Snapshot total counts for 2026-02-02 before re-running, and call
+-- the function a second time, capturing its return value.
 DO $$
 DECLARE
-  v_blocks_before      int;
-  v_assignments_before int;
+  v_blocks_before        int;
+  v_assignments_before   int;
+  v_blocks_inserted_2nd  int;
+  v_assignments_inserted_2nd int;
 BEGIN
   SELECT count(*) INTO v_blocks_before
     FROM public.shift_blocks
@@ -507,14 +718,36 @@ BEGIN
     JOIN public.shift_blocks b USING (block_id)
    WHERE b.block_start_at >= '2026-02-02 00:00 America/New_York'::timestamptz
      AND b.block_start_at <  '2026-02-03 00:00 America/New_York'::timestamptz;
-  PERFORM set_config('test.phase03.blocks_before',      v_blocks_before::text,      true);
-  PERFORM set_config('test.phase03.assignments_before', v_assignments_before::text, true);
+
+  -- Second call — capture its returned counts for assertion below.
+  SELECT blocks_inserted, assignments_inserted
+    INTO v_blocks_inserted_2nd, v_assignments_inserted_2nd
+    FROM generate_blocks_for_date('2026-02-02');
+
+  PERFORM set_config('test.phase03.blocks_before',          v_blocks_before::text,            true);
+  PERFORM set_config('test.phase03.assignments_before',     v_assignments_before::text,       true);
+  PERFORM set_config('test.phase03.blocks_inserted_2nd',    v_blocks_inserted_2nd::text,      true);
+  PERFORM set_config('test.phase03.assignments_inserted_2nd', v_assignments_inserted_2nd::text, true);
 END $$;
 
--- Re-run the generator on the same date.
+-- Re-running the generator on the same date does not error.
+-- (The DO block above already invoked it; this lives_ok verifies a
+-- subsequent third call is also safe.)
 SELECT lives_ok(
   $$ SELECT generate_blocks_for_date('2026-02-02') $$,
   'idempotency: re-running generate_blocks_for_date on the same date does not error'
+);
+
+SELECT is(
+  current_setting('test.phase03.blocks_inserted_2nd')::int,
+  0,
+  'idempotency: second call returns blocks_inserted = 0'
+);
+
+SELECT is(
+  current_setting('test.phase03.assignments_inserted_2nd')::int,
+  0,
+  'idempotency: second call returns assignments_inserted = 0'
 );
 
 SELECT is(

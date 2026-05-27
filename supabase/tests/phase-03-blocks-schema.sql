@@ -9,7 +9,7 @@
 
 BEGIN;
 
-SELECT plan(78);
+SELECT plan(83);
 
 -- ============================================================
 -- 1. Tables exist
@@ -135,6 +135,47 @@ SELECT ok(
   'parent_float_id is nullable (set only when is_float)'
 );
 
+-- source_house_id CHECK constraint (ARCH §3.2): populated whenever the
+-- worker is at a non-home desk, i.e. (is_float OR is_cross_house_pickup)
+-- ⇒ source_house_id IS NOT NULL. The constraint is exercised here with
+-- a minimal block fixture; the two assignment inserts run against it.
+
+DO $$
+DECLARE
+  v_block_id uuid := gen_random_uuid();
+BEGIN
+  INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
+  VALUES (v_block_id, 'harnwell',
+          '2026-02-06 10:00:00 America/New_York'::timestamptz, 2);
+  PERFORM set_config('test.phase03.src_block_id', v_block_id::text, true);
+END $$;
+
+SELECT throws_ok(
+  format(
+    $sql$ INSERT INTO public.shift_block_assignments
+            (assignment_id, block_id, user_id, status, vacancy_origin,
+             is_float, is_cross_house_pickup, source_house_id)
+          VALUES (gen_random_uuid(), %L, NULL, 'pending_float_in', 'none',
+                  true, false, NULL) $sql$,
+    current_setting('test.phase03.src_block_id')
+  ),
+  NULL,
+  NULL,
+  'is_float = true with source_house_id NULL is rejected (CHECK constraint)'
+);
+
+SELECT lives_ok(
+  format(
+    $sql$ INSERT INTO public.shift_block_assignments
+            (assignment_id, block_id, user_id, status, vacancy_origin,
+             is_float, is_cross_house_pickup, source_house_id)
+          VALUES (gen_random_uuid(), %L, NULL, 'pending_float_in', 'none',
+                  true, false, 'harnwell') $sql$,
+    current_setting('test.phase03.src_block_id')
+  ),
+  'is_float = true with valid source_house_id is accepted'
+);
+
 -- ============================================================
 -- 5. Foreign keys
 -- ============================================================
@@ -183,6 +224,18 @@ SELECT ok(
              AND tablename  = 'shift_block_assignments'
              AND policyname = 'service-role bypass'),
   'service-role bypass policy on shift_block_assignments'
+);
+
+-- BEH §11.2: workers must see their own float-out and cross-house-pickup
+-- assignments on their personal calendar even though those rows attach
+-- to non-home-house blocks. The home-house policy alone does not cover
+-- this, so a separate "users can select own assignments" policy is required.
+SELECT ok(
+  EXISTS (SELECT 1 FROM pg_policies
+           WHERE schemaname = 'public'
+             AND tablename  = 'shift_block_assignments'
+             AND policyname = 'users can select own assignments'),
+  'users can select own assignments policy on shift_block_assignments (BEH §11.2)'
 );
 
 -- ============================================================
@@ -416,6 +469,11 @@ SELECT col_default_is('public', 'shift_block_assignments', 'is_cross_house_picku
 -- 13. block_step_status side table (ARCH §4.1)
 -- A phase-03 deliverable per the orchestrator's step-firing tracker.
 -- Schema needs to exist now so phase-07 has something to write to.
+--
+-- The status column uses a named enum block_step_status_enum with
+-- values (fired, completed_via_force_trigger, rolled_back). The type
+-- exists in phase-03; the value-semantics (when each value is written)
+-- are an orchestrator concern verified in phase-07.
 -- ============================================================
 
 SELECT has_table('public', 'block_step_status',
@@ -436,6 +494,12 @@ SELECT col_type_is('public', 'block_step_status', 'fired_at',
 SELECT col_type_is('public', 'block_step_status', 'updated_at',
                    'timestamp with time zone',
                    'updated_at is timestamptz');
+
+SELECT has_type('public', 'block_step_status_enum',
+                'block_step_status_enum type exists');
+SELECT col_type_is('public', 'block_step_status', 'status',
+                   'block_step_status_enum',
+                   'status column uses block_step_status_enum');
 
 -- Composite PK over (block_id, step_name)
 SELECT ok(

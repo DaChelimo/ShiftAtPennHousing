@@ -103,6 +103,14 @@ CREATE POLICY "service-role bypass" ON shift_block_assignments
   USING (true)
   WITH CHECK (true);
 
+-- Workers must see their own assignments anywhere — float-out and
+-- cross-house pickup rows attach to non-home-house blocks but belong
+-- to the worker's personal calendar (BEH §11.2).
+CREATE POLICY "users can select own assignments" ON shift_block_assignments
+  FOR SELECT
+  TO authenticated
+  USING (user_id = auth.uid());
+
 CREATE POLICY "authenticated users can select accessible assignments" ON shift_block_assignments
   FOR SELECT
   TO authenticated
@@ -156,7 +164,7 @@ BEGIN
        END
      )::day_type_enum
   ),
-  ranges AS (
+  band_minutes AS (
     SELECT
       selected_patterns.house_id,
       band.headcount,
@@ -190,29 +198,42 @@ BEGIN
       AS band(block_start text, block_end text, headcount integer)
     WHERE band.headcount > 0
   ),
+  -- Anchor each band's start and end as timestamptz by interpreting the
+  -- wall-clock minute offset in America/New_York, then iterate the band as
+  -- 30-minute UTC durations. This is DST-correct for any band, including
+  -- ones that straddle the spring-forward gap (02:00-03:00 NY: those
+  -- wall-clocks simply do not exist, and the UTC step skips them) or the
+  -- fall-back repeat (01:00-02:00 NY happens twice: those are two distinct
+  -- UTC instants and produce two distinct blocks).
+  band_ranges AS (
+    SELECT
+      house_id,
+      headcount,
+      (target_date::timestamp + make_interval(mins => start_minute))
+        AT TIME ZONE 'America/New_York' AS band_start_at,
+      (target_date::timestamp + make_interval(mins => end_minute))
+        AT TIME ZONE 'America/New_York' AS band_end_at
+    FROM band_minutes
+  ),
   expanded AS (
     SELECT
-      ranges.house_id,
-      ranges.headcount,
-      minute_offset
-    FROM ranges
+      band_ranges.house_id,
+      band_ranges.headcount,
+      band_ranges.band_start_at + (n * interval '30 minutes') AS block_start_at
+    FROM band_ranges
     CROSS JOIN LATERAL generate_series(
-      ranges.start_minute,
-      ranges.end_minute - 30,
-      30
-    ) AS minute_offset
-    WHERE ranges.end_minute > ranges.start_minute
+      0,
+      (extract(epoch FROM (band_ranges.band_end_at - band_ranges.band_start_at))::bigint / 1800)::integer - 1
+    ) AS n
+    WHERE band_ranges.band_end_at > band_ranges.band_start_at
   ),
   candidate_blocks AS (
     SELECT
       expanded.house_id,
-      timezone(
-        'America/New_York',
-        target_date::timestamp + make_interval(mins => expanded.minute_offset)
-      ) AS block_start_at,
+      expanded.block_start_at,
       max(expanded.headcount) AS required_headcount
     FROM expanded
-    GROUP BY expanded.house_id, block_start_at
+    GROUP BY expanded.house_id, expanded.block_start_at
   ),
   inserted_blocks AS (
     INSERT INTO shift_blocks (house_id, block_start_at, required_headcount)
@@ -261,6 +282,7 @@ $$;
 -- DROP FUNCTION IF EXISTS generate_blocks_for_date(date);
 -- DROP POLICY IF EXISTS "service-role bypass" ON block_step_status;
 -- DROP POLICY IF EXISTS "authenticated users can select accessible assignments" ON shift_block_assignments;
+-- DROP POLICY IF EXISTS "users can select own assignments" ON shift_block_assignments;
 -- DROP POLICY IF EXISTS "service-role bypass" ON shift_block_assignments;
 -- DROP POLICY IF EXISTS "authenticated users can select shift blocks" ON shift_blocks;
 -- DROP POLICY IF EXISTS "service-role bypass" ON shift_blocks;

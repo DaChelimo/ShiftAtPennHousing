@@ -4,3 +4,4 @@
 export const CORE_VERSION = '0.0.0';
 
 export * from './eligibility/index.js';
+export * from './time/index.js';

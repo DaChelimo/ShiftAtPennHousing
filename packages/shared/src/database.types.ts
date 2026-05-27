@@ -73,6 +73,38 @@ export type Database = {
           },
         ];
       };
+      block_step_status: {
+        Row: {
+          block_id: string;
+          fired_at: string;
+          status: Database['public']['Enums']['block_step_status_enum'];
+          step_name: string;
+          updated_at: string;
+        };
+        Insert: {
+          block_id: string;
+          fired_at?: string;
+          status: Database['public']['Enums']['block_step_status_enum'];
+          step_name: string;
+          updated_at?: string;
+        };
+        Update: {
+          block_id?: string;
+          fired_at?: string;
+          status?: Database['public']['Enums']['block_step_status_enum'];
+          step_name?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'block_step_status_block_id_fkey';
+            columns: ['block_id'];
+            isOneToOne: false;
+            referencedRelation: 'shift_blocks';
+            referencedColumns: ['block_id'];
+          },
+        ];
+      };
       break_periods: {
         Row: {
           break_id: string;
@@ -329,6 +361,93 @@ export type Database = {
           },
         ];
       };
+      shift_block_assignments: {
+        Row: {
+          assignment_id: string;
+          block_id: string;
+          is_cross_house_pickup: boolean;
+          is_float: boolean;
+          parent_float_id: string | null;
+          source_house_id: string | null;
+          status: Database['public']['Enums']['shift_status_enum'];
+          user_id: string | null;
+          vacancy_origin: Database['public']['Enums']['vacancy_origin_enum'];
+        };
+        Insert: {
+          assignment_id?: string;
+          block_id: string;
+          is_cross_house_pickup?: boolean;
+          is_float?: boolean;
+          parent_float_id?: string | null;
+          source_house_id?: string | null;
+          status: Database['public']['Enums']['shift_status_enum'];
+          user_id?: string | null;
+          vacancy_origin?: Database['public']['Enums']['vacancy_origin_enum'];
+        };
+        Update: {
+          assignment_id?: string;
+          block_id?: string;
+          is_cross_house_pickup?: boolean;
+          is_float?: boolean;
+          parent_float_id?: string | null;
+          source_house_id?: string | null;
+          status?: Database['public']['Enums']['shift_status_enum'];
+          user_id?: string | null;
+          vacancy_origin?: Database['public']['Enums']['vacancy_origin_enum'];
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'shift_block_assignments_block_id_fkey';
+            columns: ['block_id'];
+            isOneToOne: false;
+            referencedRelation: 'shift_blocks';
+            referencedColumns: ['block_id'];
+          },
+          {
+            foreignKeyName: 'shift_block_assignments_source_house_id_fkey';
+            columns: ['source_house_id'];
+            isOneToOne: false;
+            referencedRelation: 'houses';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'shift_block_assignments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+        ];
+      };
+      shift_blocks: {
+        Row: {
+          block_id: string;
+          block_start_at: string;
+          house_id: string;
+          required_headcount: number;
+        };
+        Insert: {
+          block_id?: string;
+          block_start_at: string;
+          house_id: string;
+          required_headcount: number;
+        };
+        Update: {
+          block_id?: string;
+          block_start_at?: string;
+          house_id?: string;
+          required_headcount?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'shift_blocks_house_id_fkey';
+            columns: ['house_id'];
+            isOneToOne: false;
+            referencedRelation: 'houses';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       staffing_patterns: {
         Row: {
           block_headcounts: Json;
@@ -500,6 +619,20 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      generate_blocks_for_date: {
+        Args: { target_date: string };
+        Returns: {
+          assignments_inserted: number;
+          blocks_inserted: number;
+        }[];
+      };
+      generate_blocks_for_range: {
+        Args: { end_date: string; start_date: string };
+        Returns: {
+          assignments_inserted: number;
+          blocks_inserted: number;
+        }[];
+      };
       name_array_contained_by_text_array: {
         Args: { left_names: unknown[]; right_text: string[] };
         Returns: boolean;
@@ -514,6 +647,7 @@ export type Database = {
       };
     };
     Enums: {
+      block_step_status_enum: 'fired' | 'completed_via_force_trigger' | 'rolled_back';
       break_type_enum:
         | 'thanksgiving'
         | 'fall_break'
@@ -525,7 +659,23 @@ export type Database = {
       day_type_enum: 'weekday' | 'weekend';
       hm_leave_status_enum: 'active' | 'cancelled_early';
       scheduling_mode_enum: 'sm_built' | 'claim_based';
+      shift_status_enum:
+        | 'scheduled'
+        | 'claimed'
+        | 'floated_in'
+        | 'floated_out'
+        | 'pending_float_in'
+        | 'pending_float_out'
+        | 'allied'
+        | 'vacant';
       user_role_enum: 'sw' | 'sm' | 'hm' | 'bm';
+      vacancy_origin_enum:
+        | 'none'
+        | 'temporary_drop'
+        | 'permanent_drop'
+        | 'never_assigned'
+        | 'expired_claim'
+        | 'displaced_decliner';
       value_type_enum: 'integer' | 'interval' | 'time_of_day' | 'enum';
     };
     CompositeTypes: {
@@ -655,6 +805,7 @@ export const Constants = {
   },
   public: {
     Enums: {
+      block_step_status_enum: ['fired', 'completed_via_force_trigger', 'rolled_back'],
       break_type_enum: [
         'thanksgiving',
         'fall_break',
@@ -667,7 +818,25 @@ export const Constants = {
       day_type_enum: ['weekday', 'weekend'],
       hm_leave_status_enum: ['active', 'cancelled_early'],
       scheduling_mode_enum: ['sm_built', 'claim_based'],
+      shift_status_enum: [
+        'scheduled',
+        'claimed',
+        'floated_in',
+        'floated_out',
+        'pending_float_in',
+        'pending_float_out',
+        'allied',
+        'vacant',
+      ],
       user_role_enum: ['sw', 'sm', 'hm', 'bm'],
+      vacancy_origin_enum: [
+        'none',
+        'temporary_drop',
+        'permanent_drop',
+        'never_assigned',
+        'expired_claim',
+        'displaced_decliner',
+      ],
       value_type_enum: ['integer', 'interval', 'time_of_day', 'enum'],
     },
   },

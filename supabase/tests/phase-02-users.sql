@@ -9,7 +9,7 @@
 
 BEGIN;
 
-SELECT plan(60);
+SELECT plan(67);
 
 -- ============================================================
 -- Setup: seed an auth.users row and a couple houses for FK targets.
@@ -212,32 +212,6 @@ SELECT lives_ok(
 );
 
 -- ============================================================
--- 7b. BM is exclusive of worker roles at the schema level (ARCHITECTURE §3.1)
--- "a user with bm is excluded from preference submission, schedule-builder
--- rosters, claim eligibility, and float lookup" — enforced by preventing
--- the combination entirely rather than filtering at query time.
--- ============================================================
-
--- bm cannot be added to a user who already holds sw
-SELECT throws_ok(
-  $$ INSERT INTO public.user_roles (user_id, role, scope_house_id)
-     VALUES ('22222222-2222-2222-2222-222222222222', 'sw', NULL) $$,
-  NULL,
-  NULL,
-  'inserting sw role for a user who already holds bm is rejected'
-);
-
--- sw cannot be converted into bm (no user with sw already set, use Dan BM directly)
--- Dan (bm, quad) — try to also give him a sw role
-SELECT throws_ok(
-  $$ INSERT INTO public.user_roles (user_id, role, scope_house_id)
-     VALUES ('44444444-4444-4444-4444-444444444444', 'sm', 'quad') $$,
-  NULL,
-  NULL,
-  'inserting sm role for a user who already holds bm is rejected'
-);
-
--- ============================================================
 -- 8. Broadcast subscription guard (ARCHITECTURE §3.1)
 -- A user holding hm or bm role cannot have broadcast_subscribed=true.
 -- ============================================================
@@ -290,6 +264,55 @@ SELECT is(
 -- See §9 for the promotion-hook tests that pin the spec-mandated behavior.
 
 -- ============================================================
+-- 8b. BM is exclusive of worker roles sw/sm (ARCHITECTURE §3.1, decision 6B)
+-- The schema rejects the combination in BOTH directions:
+--   - inserting bm for a user who holds sw or sm
+--   - inserting sw or sm for a user who holds bm
+-- BM may still coexist with hm (ARCH §3.1: "they may still hold the bm role
+-- alongside hm or other admin roles"). HM does NOT trigger this exclusion;
+-- hm + sw is a legitimate combination (an HM who also works shifts).
+-- ============================================================
+
+-- Direction 1: worker → BM user (Dan holds bm/quad).
+SELECT throws_ok(
+  $$ INSERT INTO public.user_roles (user_id, role, scope_house_id)
+     VALUES ('44444444-4444-4444-4444-444444444444', 'sw', NULL) $$,
+  NULL,
+  NULL,
+  'inserting sw role for a user who already holds bm is rejected'
+);
+
+SELECT throws_ok(
+  $$ INSERT INTO public.user_roles (user_id, role, scope_house_id)
+     VALUES ('44444444-4444-4444-4444-444444444444', 'sm', 'quad') $$,
+  NULL,
+  NULL,
+  'inserting sm role for a user who already holds bm is rejected'
+);
+
+-- Direction 2: BM → worker user (Alice holds sw + sm/harnwell).
+SELECT throws_ok(
+  $$ INSERT INTO public.user_roles (user_id, role, scope_house_id)
+     VALUES ('11111111-1111-1111-1111-111111111111', 'bm', 'harnwell') $$,
+  NULL,
+  NULL,
+  'inserting bm role for a user who already holds sw/sm is rejected'
+);
+
+-- Sanity: HM does NOT trigger the exclusion. Bob holds hm/harnwell;
+-- adding sw to him must succeed (HMs may work shifts per BEH §2.3).
+SELECT lives_ok(
+  $$ INSERT INTO public.user_roles (user_id, role, scope_house_id)
+     VALUES ('22222222-2222-2222-2222-222222222222', 'sw', NULL) $$,
+  'inserting sw role for an HM user succeeds (hm does not block worker roles)'
+);
+
+-- Clean up the sanity insert so it doesn't pollute later counts.
+DELETE FROM public.user_roles
+WHERE user_id = '22222222-2222-2222-2222-222222222222'
+  AND role = 'sw';
+
+-- ============================================================
 -- 9. Role promotion hook (ARCHITECTURE §3.1 — "Role promotion hook")
 -- INSERT of hm/bm into user_roles atomically sets broadcast_subscribed=false.
 -- Carol is an SM with broadcast_subscribed=true.
@@ -320,16 +343,32 @@ SELECT is(
   'promotion hook: hm role insert atomically set broadcast_subscribed=false'
 );
 
--- Same behavior for bm promotion.
+-- BM promotion. Because §8b enforces BM/worker-role exclusion symmetrically,
+-- a caller cannot promote an SM directly to BM — the sm row must be dropped
+-- first. We verify both halves: direct promotion is rejected, two-step
+-- promotion succeeds and triggers the broadcast cleanup hook.
 INSERT INTO public.users (user_id, name, email, home_house_id, broadcast_subscribed)
 VALUES ('55555555-5555-5555-5555-555555555555', 'Erin SM', 'erin-sm@test.local', 'quad', true);
 INSERT INTO public.user_roles (user_id, role, scope_house_id)
 VALUES ('55555555-5555-5555-5555-555555555555', 'sm', 'quad');
 
+SELECT throws_ok(
+  $$ INSERT INTO public.user_roles (user_id, role, scope_house_id)
+     VALUES ('55555555-5555-5555-5555-555555555555', 'bm', 'quad') $$,
+  NULL,
+  NULL,
+  'direct bm promotion of an sm user is rejected (§8b symmetric exclusion)'
+);
+
+-- Two-step: drop worker role, then insert bm.
+DELETE FROM public.user_roles
+WHERE user_id = '55555555-5555-5555-5555-555555555555'
+  AND role = 'sm';
+
 SELECT lives_ok(
   $$ INSERT INTO public.user_roles (user_id, role, scope_house_id)
      VALUES ('55555555-5555-5555-5555-555555555555', 'bm', 'quad') $$,
-  'promotion: inserting bm role for a subscribed SM succeeds'
+  'two-step bm promotion (after sm removed) succeeds'
 );
 SELECT is(
   (SELECT broadcast_subscribed FROM public.users WHERE user_id = '55555555-5555-5555-5555-555555555555'),
@@ -450,6 +489,51 @@ SELECT throws_ok(
   NULL,
   'broadcast_subscribed guard still rejects HM even when toggled with reactivation'
 );
+
+-- ============================================================
+-- 14. home_house_id immutability (ARCHITECTURE §3.1)
+-- The schema enforces "immutable except by admin override" via a trigger
+-- gated on auth.role() = 'service_role'. Non-admin UPDATEs must be rejected.
+-- ============================================================
+
+-- Reactivate Bob so we can UPDATE him cleanly (he was deactivated nowhere yet,
+-- but make the precondition explicit and reset his JWT claim to empty).
+SELECT set_config('request.jwt.claims', '', true);
+
+-- Direction 1: non-admin context (no JWT, auth.role() = NULL) cannot change
+-- home_house_id.
+SELECT throws_ok(
+  $$ UPDATE public.users SET home_house_id = 'quad'
+     WHERE user_id = '22222222-2222-2222-2222-222222222222' $$,
+  NULL,
+  NULL,
+  'home_house_id UPDATE is rejected when auth.role() is not service_role'
+);
+
+-- Touching other columns without changing home_house_id is unaffected.
+SELECT lives_ok(
+  $$ UPDATE public.users SET phone = '215-555-0100'
+     WHERE user_id = '22222222-2222-2222-2222-222222222222' $$,
+  'UPDATEs that do not change home_house_id are unaffected by the trigger'
+);
+
+-- Direction 2: with a service_role JWT claim, the admin override is allowed.
+SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+SELECT lives_ok(
+  $$ UPDATE public.users SET home_house_id = 'quad'
+     WHERE user_id = '22222222-2222-2222-2222-222222222222' $$,
+  'home_house_id UPDATE succeeds under service_role admin override'
+);
+
+SELECT is(
+  (SELECT home_house_id FROM public.users WHERE user_id = '22222222-2222-2222-2222-222222222222'),
+  'quad',
+  'home_house_id admin override persists the new value'
+);
+
+-- Reset JWT claim so any later assertions run in the default context.
+SELECT set_config('request.jwt.claims', '', true);
 
 SELECT finish();
 ROLLBACK;

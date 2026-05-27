@@ -8,7 +8,7 @@ Sources of truth: `BEHAVIORAL_SPECIFICATION.md` §2, `ARCHITECTURE.md` §3.1.
 
 Test files:
 
-- `supabase/tests/phase-02-users.sql` — pgTAP, 60 assertions
+- `supabase/tests/phase-02-users.sql` — pgTAP, 67 assertions
 - `packages/core/tests/phase-02/role-eligibility.test.ts` — Vitest pure-logic suite
 
 ---
@@ -69,12 +69,25 @@ A single user can hold `sw` + `sm` at the same house — BEH §2.7.
 - Same for a BM → rejected.
 - Pure SW/SM may set `broadcast_subscribed=true` and the change persists.
 
-### §9. Role promotion hook (6)
+### §8b. BM/worker-role symmetric exclusion (4)
+
+Decision 6B (symmetric). The schema rejects the BM/sw or BM/sm combination
+in **both** directions. HM does not trigger this exclusion (BEH §2.3:
+HMs may work shifts).
+
+- Inserting `sw` for a BM user → rejected.
+- Inserting `sm` for a BM user → rejected.
+- Inserting `bm` for a user holding `sw`/`sm` → rejected.
+- Sanity: inserting `sw` for an HM user succeeds (hm + sw is legitimate).
+
+### §9. Role promotion hook (7)
 
 - Pre-promotion: SM with `broadcast_subscribed=true` is a valid state.
 - INSERT of `hm` role for that SM succeeds and atomically flips
   `broadcast_subscribed` to false (ARCH §3.1 "Role promotion hook").
-- Same for `bm` promotion.
+- For `bm` promotion: because §8b rejects direct sm→bm in one INSERT,
+  the caller must DELETE the sm row first. The two-step promotion
+  succeeds and the broadcast-cleanup hook still fires.
 - System-wide invariant: zero rows with HM/BM role and broadcast=true.
 
 ### §10. `is_active` default + firing (2)
@@ -100,6 +113,17 @@ Shift-assignment FK preservation lands in phase-03.
 A single UPDATE that tries to flip `broadcast_subscribed=true` _and_
 `is_active=true` for an HM is still rejected — the guard is not
 defeatable by combining writes.
+
+### §14. `home_house_id` immutability (4)
+
+ARCH §3.1: "immutable except by admin override." Enforced by a trigger
+that compares `auth.role()` against `service_role`.
+
+- UPDATE `home_house_id` without a service-role JWT → rejected.
+- UPDATE of other columns (e.g. `phone`) is unaffected.
+- UPDATE `home_house_id` with `request.jwt.claims = {"role":"service_role"}`
+  → succeeds.
+- The new `home_house_id` value persists after the admin-override UPDATE.
 
 ---
 
@@ -171,16 +195,16 @@ exist in phase-02. They will be covered in the indicated phase:
 All ambiguities have been resolved by the project owner. Tests have been
 updated to match. No open items remain.
 
-| #   | Decision                                                                                                                                           |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | **A** — unique key is `(user_id, role, scope_house_id)`. A person can be HM at two houses.                                                         |
-| 2   | N/A — tests assert behavior only; mechanism is the implementer's choice.                                                                           |
-| 3   | **A** — broadcast-subscribed guard is enforced at DB layer (trigger). pgTAP tests throw on violation.                                              |
-| 4   | **A** — `hm_leave.replacement_user_id` → inactive user is rejected at DB layer (trigger). pgTAP test throws.                                       |
-| 5   | **A** — no-roles user is ineligible in all four predicates.                                                                                        |
-| 6   | **B** — schema **rejects** inserting a worker role (`sw`/`sm`) for a user who holds `bm`, and vice versa. Two `throws_ok` pgTAP tests added (§7b). |
-| 7   | **B** — HMs are **excluded** from the swap counterparty pool. `isEligibleForSwapCounterparty(hm) → false`. SW+HM case also added.                  |
-| 8   | **A** — SM-only (no explicit SW row) is treated as a worker by predicate logic. Test is load-bearing.                                              |
+| #   | Decision                                                                                                                                                                                                                                           |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **A** — unique key is `(user_id, role, scope_house_id)`. A person can be HM at two houses.                                                                                                                                                         |
+| 2   | N/A — tests assert behavior only; mechanism is the implementer's choice.                                                                                                                                                                           |
+| 3   | **A** — broadcast-subscribed guard is enforced at DB layer (trigger). pgTAP tests throw on violation.                                                                                                                                              |
+| 4   | **A** — `hm_leave.replacement_user_id` → inactive user is rejected at DB layer (trigger). pgTAP test throws.                                                                                                                                       |
+| 5   | **A** — no-roles user is ineligible in all four predicates.                                                                                                                                                                                        |
+| 6   | **B** (symmetric) — schema **rejects** the BM/worker-role combination in both directions. BM promotion of an SM/SW is a two-step transaction (delete worker row, then INSERT bm); the promotion hook still fires on the bm INSERT. See §8b and §9. |
+| 7   | **B** — HMs are **excluded** from the swap counterparty pool. `isEligibleForSwapCounterparty(hm) → false`. SW+HM case also added.                                                                                                                  |
+| 8   | **A** — SM-only (no explicit SW row) is treated as a worker by predicate logic. Test is load-bearing.                                                                                                                                              |
 
 ---
 

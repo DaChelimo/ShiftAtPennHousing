@@ -133,8 +133,9 @@ BEGIN
     old_scope_house_id := OLD.scope_house_id;
   END IF;
 
-  IF NEW.role = 'bm' THEN
-    DELETE FROM user_roles
+  IF NEW.role = 'bm' AND EXISTS (
+    SELECT 1
+    FROM user_roles
     WHERE user_id = NEW.user_id
       AND role IN ('sw', 'sm')
       AND NOT (
@@ -142,7 +143,10 @@ BEGIN
         user_id = old_user_id AND
         role = old_role AND
         scope_house_id IS NOT DISTINCT FROM old_scope_house_id
-      );
+      )
+  ) THEN
+    RAISE EXCEPTION 'BM role is exclusive with worker roles sw and sm'
+      USING ERRCODE = 'check_violation';
   END IF;
 
   IF NEW.role IN ('sw', 'sm') AND EXISTS (

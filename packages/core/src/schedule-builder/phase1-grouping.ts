@@ -4,6 +4,11 @@ export type WorkerPreferences = Map<string, PreferenceStatus>;
 
 export type SpanGrouping = 'preferred' | 'available' | 'blocked';
 
+// Caller contract: only invoke for workers who have submitted (any row in
+// preferences OR period_targets for the period). Per BSpec §4.2,
+// fully-unsubmitted workers are confined to the Phase-2 full roster and
+// must not be evaluated here. A `none` status inside the span is the
+// "missing block within an otherwise-submitted set" case from §4.3.
 export function getWorkerSpanGrouping(
   workerPrefs: WorkerPreferences,
   spanBlockIds: string[],

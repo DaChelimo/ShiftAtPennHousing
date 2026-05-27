@@ -32,6 +32,15 @@ function compareByName(left: GroupedWorker, right: GroupedWorker): number {
   });
 }
 
+// Pure transform: every worker passed in lands in exactly one group.
+// Callers MUST pre-filter the worker list to those who have submitted
+// (any row in preferences OR period_targets for this period). Per BSpec
+// §4.2, fully-unsubmitted workers ("none / unspecified") are visible only
+// in the Phase-2 full roster, never in the Phase-1 side card. Within
+// this function, a worker with no preference row for a block in the span
+// is treated as `missing` (BSpec §4.3, last paragraph of Phase 1) — which
+// applies only to partial submissions; the fully-unsubmitted filter is a
+// caller-layer concern.
 export function groupWorkersForSpan(
   workers: Worker[],
   span: SpanBlock[],

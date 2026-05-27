@@ -689,6 +689,12 @@ BEGIN
       AND now() < sp.preference_deadline - (threshold_values.threshold_days || ' days')::interval
         + interval '1 hour'
   ),
+  -- A worker has "submitted" per BSpec §4.2 if they have ANY row in either
+  -- preferences or period_targets for the period. The submit_preferences RPC
+  -- creates a period_targets row in every flow (including "no hours" opt-out
+  -- and target-hours-only with no block markings), so period_targets existence
+  -- is the spec-aligned proxy for "went through the submission flow."
+  -- Reminders fire only for workers with neither row.
   candidate_workers AS (
     SELECT DISTINCT
       active_thresholds.period_id,
@@ -702,15 +708,17 @@ BEGIN
     JOIN user_roles
       ON user_roles.user_id = users.user_id
      AND user_roles.role IN ('sw', 'sm', 'hm')
-    LEFT JOIN period_targets
-      ON period_targets.period_id = active_thresholds.period_id
-     AND period_targets.user_id = users.user_id
-    WHERE COALESCE(period_targets.opted_out, false) = false
-      AND NOT EXISTS (
+    WHERE NOT EXISTS (
         SELECT 1
         FROM preferences
         WHERE preferences.period_id = active_thresholds.period_id
           AND preferences.user_id = users.user_id
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM period_targets
+        WHERE period_targets.period_id = active_thresholds.period_id
+          AND period_targets.user_id = users.user_id
       )
   ),
   recorded_sends AS (

@@ -43,7 +43,10 @@ weekly_open_shifts_feed(p_house_id text, p_as_of timestamptz)
 is_assignment_claimable(p_assignment_id uuid, p_as_of timestamptz)
   RETURNS boolean
 
-permanent_openings_feed(p_house_id text)
+permanent_openings_feed(
+  p_house_id text,
+  p_as_of    timestamptz DEFAULT now()
+)
   RETURNS TABLE (house_id text, day_of_week int,
                  block_start_time time, occurrence_count bigint)
 ```
@@ -62,7 +65,9 @@ permanent_drop occurrences on the same weekday/time-of-day.
 
 - `weekly_open_shifts_feed(text, timestamptz)` exists.
 - `is_assignment_claimable(uuid, timestamptz)` exists.
-- `permanent_openings_feed(text)` exists.
+- `permanent_openings_feed(text, timestamptz)` exists. The second arg
+  has DEFAULT now() so production callers may pass one argument; the
+  test calls it both ways.
 
 ### §2. Weekly feed: 30-day horizon (4)
 
@@ -164,10 +169,14 @@ claim_open_shift(
   p_assignment_id uuid,
   p_user_id       uuid,
   p_as_of         timestamptz
-) RETURNS uuid
+) RETURNS uuid           -- decision: returns the claimed assignment_id
+LANGUAGE plpgsql         -- error path uses RAISE EXCEPTION (decision below)
 ```
 
-Failure modes raise exceptions with these messages:
+Failure modes MUST raise Postgres exceptions whose **message text** is
+exactly the token listed (no period, no extra prose). Clients
+pattern-match on `err.message`. Custom SQLSTATE codes are NOT used —
+the message string is the contract.
 
 | Error                    | Trigger                                                          |
 | ------------------------ | ---------------------------------------------------------------- |
@@ -384,25 +393,24 @@ Total: 20 test cases distributed across 7 `describe` blocks. Several
 
 ---
 
-## Ambiguities — resolved
+## Decisions (formerly ambiguities — all resolved)
 
-| #   | Surface                                                     | Resolution                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| --- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Race condition resolution mechanism                         | The `claim_open_shift` function MUST atomically UPDATE the row WHERE `status='vacant'` AND `assignment_id=p_assignment_id` and RAISE `shift_unavailable` if zero rows were affected. The specific mechanism (UPDATE…RETURNING vs SELECT FOR UPDATE + UPDATE) is implementer's choice; the behavioral assertion in §6 (second claimer fails, first wins, no row overwrite) passes either way.                                                                                                                                                              |
-| 2   | T-2h boundary semantics                                     | **Strictly before T-2h succeeds; at or after fails.** This matches BEH §5.4 verbatim ("only claims completed strictly before T-2 hours succeed; if a claim is in progress at exactly T-2 hours, it fails"). The `is_assignment_claimable` function returns true iff `block_start_at > p_as_of + interval '2 hours'`; the `claim_open_shift` function uses the same predicate. Tests pin both directions: 1 s before → success; exactly at → failure.                                                                                                      |
-| 3   | T-2h cutoff applies to BOTH in-house and cross-house claims | BEH §5.3: "The T-2h unpickable cutoff applies uniformly to in-house and cross-house claims." Tests exercise the cutoff via Harnwell in-house claim in §5; cross-house exposure is via the matrix tests in §3 (cross-house succeeds when > T-2h). No separate "cross-house at T-2h" test exists — the cutoff predicate is purely time-based and house-independent.                                                                                                                                                                                         |
-| 4   | Soft cap at DB layer — block or pass?                       | **Pass.** BEH §5.3 ("permitted with a warning") explicitly allows the claim. The DB function only enforces the hard cap. The warning is the application layer's responsibility (read worker's current hours → compute decomposition → compare against profile-derived cap → show warning popup before issuing the RPC). Test §11 pins this.                                                                                                                                                                                                               |
-| 5   | Permanent openings feed grouping key                        | **Group by (house_id, day-of-week, block-start-time-of-day in NY).** BEH §5.1: "shows recurring slots... grouped by (house, day-of-week, time band)." Time-of-day is the resolved time band for the recurring slot — same wall-clock start across weeks. The function returns `occurrence_count` to surface multiplicity; the actual recurring-slot definition (e.g., 19:00–24:00 contiguous run) is reconstructed by the consumer from contiguous block_start_time values, not by the feed function itself (deferred to UI).                             |
-| 6   | Permanent openings feed visibility scope                    | The function is keyed by `p_house_id`; cross-house visibility (Tab 3) is the consumer's responsibility — they invoke the function once per eligible non-home house and union the results. This matches the BEH §5.6 layout (Tab 3 groups results by house). No single function returns "all houses I'm eligible for" because that requires the worker's identity, which belongs in a higher layer.                                                                                                                                                        |
-| 7   | Held-until-horizon for drops > 30 days                      | The vacant row exists in `shift_block_assignments` immediately at drop time; the `weekly_open_shifts_feed` function filters by `block_start_at <= p_as_of + interval '30 days'`. The row surfaces in the feed once `p_as_of` advances enough. No separate "pending" table — held state is implicit in the filter predicate. Test §9 exercises this by advancing `p_as_of`.                                                                                                                                                                                |
-| 8   | Hours-cap reconciliation when the cap is lowered mid-week   | Phase-05 enforces the cap currently in effect at claim time (read from `weekly_cap_overrides` → fallback to `operating_profiles.default_hours_cap`). BEH §9.3: existing assignments are not retroactively unassigned, but new claims are validated against the new cap. The cap-modification RPC is not in phase-05 (phase-12); test §12 pins that already-claimed rows survive a hypothetical reduction by exercising `proposedClaimBlocks=0` returning ok even when `currentWeeklyHours > cap`.                                                         |
-| 9   | Hours decomposition categories on `shift_block_assignments` | Three boolean flags `is_float` and `is_cross_house_pickup` decompose the assignment's mechanism: `is_float=true AND is_cross_house_pickup=false` → float-out; `is_float=false AND is_cross_house_pickup=true` → cross-house pickup; both false → at-home. The exclusion constraint (`float_pickup_exclusive`) is enforced by the existing phase-03 CHECK constraint. The `computeWeeklyHours` core function reads these flags directly.                                                                                                                   |
-| 10  | What counts as "weekly hours" — every status, or only some? | **Every assignment row in the calendar week where the worker is the `user_id`, EXCEPT `vacant` and `allied` rows** (which have `user_id IS NULL`). The `claim_open_shift` cap query joins `shift_block_assignments` ∩ `shift_blocks` on `block_start_at` within the calendar week, filtering `user_id = p_user_id AND status IN ('scheduled', 'claimed', 'floated_in', 'pending_float_in')`. Float-OUT rows (`status='floated_out'`) are EXCLUDED from the home-house hours count to avoid double-counting against the matching `floated_in` destination. |
+Every item below was previously open. Each is now pinned. The
+implementation MUST follow these resolutions; the tests are written
+to enforce them.
 
-The tests are written to accept multiple reasonable resolutions
-within the ambiguity surface; the **Implementation notes for the
-next agent** section below pins the exact resolution Codex MUST
-adopt where ambiguities #1, #5, #10 overlap.
+| #   | Surface                                                | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| --- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Race resolution mechanism                              | MUST use `UPDATE … WHERE assignment_id = p_assignment_id AND status = 'vacant' RETURNING …` followed by raising `shift_unavailable` when zero rows are affected. The single UPDATE is the atomic claim step; per-row locking via `SELECT FOR UPDATE` is rejected as redundant — Postgres already serializes conflicting UPDATEs on the same row. Implementation note #1 reproduces the SQL.                                                                                                                       |
+| 2   | T-2h boundary semantics                                | `is_assignment_claimable` returns `true` iff `block_start_at > p_as_of + interval '2 hours'`. Strict inequality. At exactly T-2h → false. `claim_open_shift` uses the same predicate. Matches BEH §5.4 verbatim.                                                                                                                                                                                                                                                                                                  |
+| 3   | T-2h applies uniformly across in-house and cross-house | The cutoff predicate is house-independent. No separate test path; the same `is_assignment_claimable` call decides for any claim, regardless of whether the worker is at home or claiming cross-house. BEH §5.3 explicit.                                                                                                                                                                                                                                                                                          |
+| 4   | Soft cap at DB layer                                   | DB MUST pass soft-cap claims through. The DB function consults `operating_profiles.default_cap_enforcement` (with `weekly_cap_overrides` taking precedence) and raises `hard_cap_exceeded` only when enforcement = `'hard'` AND the projected total exceeds the cap. Soft-cap warnings are an application-layer concern: clients compute the worker's current weekly hours BEFORE invoking the RPC and show the warning popup themselves. BEH §5.3 explicit.                                                      |
+| 5   | Permanent openings feed grouping key                   | Group by `(house_id, EXTRACT(dow FROM block_start_at AT TIME ZONE 'America/New_York'), (block_start_at AT TIME ZONE 'America/New_York')::time)`. Wall-clock time-of-day in NY is the recurring-slot key. The function returns one row per slot with `occurrence_count = COUNT(*)` over currently-vacant + permanent_drop matches at the house. Contiguous-run reconstruction (e.g., 19:00–24:00 as a single visual card) is the consumer's responsibility, not the feed function's.                               |
+| 6   | Permanent openings feed scope                          | Function MUST be keyed by `p_house_id` (single house). Tab 3 cross-house composition is the caller's responsibility: invoke the function once per eligible non-home house from `listEligibleCrossHouseDestinations`, union the results client-side. Rejecting a multi-house variant keeps the function pure and the eligibility logic in one place (`crossHousePickup.ts`).                                                                                                                                       |
+| 7   | Held-until-horizon for drops > 30 days                 | No separate "pending" or "held" table. The vacant row exists in `shift_block_assignments` immediately at drop time; the feed's `block_start_at <= p_as_of + interval '30 days'` filter is the only mechanism. As `p_as_of` advances, far-future rows surface naturally.                                                                                                                                                                                                                                           |
+| 8   | Cap reconciliation when cap is lowered mid-week        | Phase-05 enforces only the cap currently in effect at claim time. Existing assignments are never retroactively unassigned (BEH §9.3 explicit). The cap-modification RPC itself is phase-12; phase-05 is the consumer. `checkClaimAgainstCap` with `proposedClaimBlocks = 0` returns `ok` even when `currentWeeklyHours > hoursCap` so the data-drift case (cap lowered after existing assignments were made) does not corrupt downstream consumers.                                                               |
+| 9   | Hours decomposition flags                              | Two booleans on `shift_block_assignments` discriminate the three categories: `(is_float=true, is_cross_house_pickup=false)` → float-out; `(false, true)` → cross-house pickup; `(false, false)` → at-home. The combination `(true, true)` is forbidden by the existing `float_pickup_exclusive` CHECK constraint. `computeWeeklyHours` reads these flags directly with no joins.                                                                                                                                  |
+| 10  | What counts as "weekly hours" in the cap check         | The cap query MUST filter `user_id = p_user_id AND status IN ('scheduled', 'claimed', 'floated_in', 'pending_float_in')`. `floated_out` and `pending_float_out` rows are EXCLUDED — counting them would double-count against the matching destination `floated_in` row (which is what physically reflects the worker's time). `vacant` and `allied` rows have `user_id IS NULL` and are excluded automatically. The block-time filter is `block_start_at >= week_start AND block_start_at < week_start + 7 days`. |
 
 ---
 
@@ -477,7 +485,10 @@ still works because the resolved time-of-day is the wall-clock start,
 which is invariant across DST per ARCH §1.6.
 
 ```sql
-CREATE FUNCTION permanent_openings_feed(p_house_id text)
+CREATE FUNCTION permanent_openings_feed(
+  p_house_id text,
+  p_as_of    timestamptz DEFAULT now()
+)
 RETURNS TABLE (
   house_id          text,
   day_of_week       int,
@@ -492,18 +503,19 @@ LANGUAGE sql STABLE AS $$
     count(*)::bigint
   FROM shift_block_assignments a
   JOIN shift_blocks b USING (block_id)
-  WHERE b.house_id     = p_house_id
-    AND a.status       = 'vacant'
+  WHERE b.house_id       = p_house_id
+    AND a.status         = 'vacant'
     AND a.vacancy_origin = 'permanent_drop'
-    AND b.block_start_at >= now()  -- forward-looking
+    AND b.block_start_at >= p_as_of  -- forward-looking
   GROUP BY 1, 2, 3;
 $$;
 ```
 
-The `now()` lower bound is acceptable here because the feed is
-"current state" — past occurrences are no longer actionable. If a
-downstream consumer needs an `as_of` parameter (for testing or
-backfill), the function can be extended.
+`p_as_of` has DEFAULT `now()` so production callers pass one
+argument and the function is forward-looking from real wall clock.
+Tests pass an explicit anchor (`now() + interval '30 days'`,
+hour-aligned in NY) so the result is deterministic across machine
+clocks.
 
 ### 4. Vitest module paths
 
@@ -570,6 +582,40 @@ When `claim_open_shift` detects a cross-house claim
 This matches the existing phase-03 CHECK constraint
 `source_house_required_when_non_home`. The in-house case leaves
 `source_house_id` NULL and both flags false.
+
+### 7. `claim_open_shift` error signaling — `RAISE EXCEPTION` with message text
+
+Each failure mode raises a Postgres exception whose **message text**
+is exactly the listed token:
+
+```sql
+RAISE EXCEPTION 'shift_unavailable';
+RAISE EXCEPTION 'past_t2h_cutoff';
+RAISE EXCEPTION 'cross_house_ineligible';
+RAISE EXCEPTION 'time_conflict';
+RAISE EXCEPTION 'hard_cap_exceeded';
+RAISE EXCEPTION 'user_inactive';
+```
+
+No period at the end. No prose elaboration. Supabase clients receive
+the message via `err.message` and pattern-match directly. Custom
+SQLSTATE codes are NOT used; the message string is the contract.
+The test file uses `throws_ok(..., NULL, '<token>', ...)` which
+matches on message text only and ignores SQLSTATE.
+
+### 8. `claim_open_shift` return type — `RETURNS uuid`
+
+On success the function returns the `assignment_id` it just updated.
+Callers already passed this id in, so the return is purely
+confirmatory — it lets a UI layer chain `.then()` knowing the row
+was the intended one. The full row is NOT returned; callers that
+need the post-update row state issue a follow-up SELECT (typically
+already done by the calendar render).
+
+This is consistent with the symmetric design choice for
+`publish_schedule(uuid)` (phase-04, returns void) — both functions
+write the canonical state to `shift_block_assignments` and let the
+calendar render be the read path.
 
 ---
 

@@ -21,13 +21,16 @@
 --   — true iff the assignment is vacant AND block_start_at > p_as_of + 2h
 --     (strictly — at-or-after T-2h is unclaimable per BEH §5.4).
 --
---   public.permanent_openings_feed(p_house_id text)
+--   public.permanent_openings_feed(p_house_id text,
+--                                   p_as_of timestamptz DEFAULT now())
 --     RETURNS TABLE (house_id text, day_of_week int, block_start_time time,
 --                    occurrence_count bigint)
 --   — recurring slot view: rows with status='vacant' AND
---     vacancy_origin='permanent_drop' at the house, grouped by
---     (house_id, day_of_week, block_start_time_of_day_in_NY). One row per
---     distinct (day-of-week, block-start-time) tuple.
+--     vacancy_origin='permanent_drop' at the house whose block_start_at
+--     is >= p_as_of, grouped by (house_id, day_of_week,
+--     block_start_time_of_day_in_NY). One row per distinct (day-of-week,
+--     block-start-time) tuple. p_as_of has DEFAULT now() so production
+--     callers can omit it; tests pass an explicit anchor for determinism.
 --
 -- TDD-first: functions do not yet exist. These tests pin observable behavior.
 
@@ -143,8 +146,9 @@ SELECT has_function(
 );
 
 SELECT has_function(
-  'public', 'permanent_openings_feed', ARRAY['text'],
-  'permanent_openings_feed(text) function exists'
+  'public', 'permanent_openings_feed', ARRAY['text', 'timestamptz'],
+  'permanent_openings_feed(text, timestamptz) function exists '
+  || '(second arg has DEFAULT now(); existing call sites use 1-arg form)'
 );
 
 -- ============================================================

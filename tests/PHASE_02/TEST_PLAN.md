@@ -8,7 +8,7 @@ Sources of truth: `BEHAVIORAL_SPECIFICATION.md` §2, `ARCHITECTURE.md` §3.1.
 
 Test files:
 
-- `supabase/tests/phase-02-users.sql` — pgTAP, 58 assertions
+- `supabase/tests/phase-02-users.sql` — pgTAP, 60 assertions
 - `packages/core/tests/phase-02/role-eligibility.test.ts` — Vitest pure-logic suite
 
 ---
@@ -136,9 +136,9 @@ SW✓, SM✓, HM✗, BM✗, SW+HM✗, SW+SM+HM✗, SW+SM+BM✗.
 SW✓, SM✓, **HM✓** (BEH §2.3 — HMs may claim), SW+HM✓, BM✗, SW+BM✗,
 HM+BM✗.
 
-### `isEligibleForSwapCounterparty` (5)
+### `isEligibleForSwapCounterparty` (6)
 
-SW✓, SM✓, HM✓, BM✗, SW+BM✗.
+SW✓, SM✓, HM✗ (excluded — same pattern as float), SW+HM✗, BM✗, SW+BM✗.
 
 ### Union semantics (2)
 
@@ -166,60 +166,21 @@ exist in phase-02. They will be covered in the indicated phase:
 
 ---
 
-## Ambiguities to resolve
+## Ambiguities — resolved
 
-Each item below is marked `// AMBIGUOUS` in the corresponding test file.
-Implementer should re-check against the spec and adjust the test (and
-this list) if the chosen interpretation differs.
+All ambiguities have been resolved by the project owner. Tests have been
+updated to match. No open items remain.
 
-1. **`user_roles` unique-key columns** (pgTAP §3). Spec does not pin
-   which columns form the unique key. The test asserts the most
-   defensible interpretation: `(user_id, role, scope_house_id)`. If the
-   implementation uses `(user_id, role)` instead (forbidding the same
-   role at multiple house scopes), the test must change. BEHAVIORAL §2.7
-   is silent on this.
-
-2. **`scope_house_id` enforcement mechanism** (pgTAP §6). The test
-   asserts behavior — insert without scope for `sm/hm/bm` is rejected.
-   It does not pin whether the enforcement is a `CHECK`, a partial
-   unique index, or a trigger. Any of those satisfies the spec.
-
-3. **Broadcast-subscribed guard mechanism** (pgTAP §8, §9, §13).
-   ARCHITECTURE §3.1 specifies the _behavior_ (HM/BM cannot have
-   `broadcast_subscribed=true`) and the _role-promotion hook_ (insert of
-   hm/bm flips broadcast to false). It does not specify whether the
-   write-time guard is a trigger, a `CHECK` over a denormalized column,
-   or application-layer only. Since AGENTS.md mandates DB-layer
-   integrity for hard invariants, the tests assert DB-layer behavior.
-
-4. **`hm_leave.replacement_user_id → inactive user`** (pgTAP §11). Spec
-   §2.6 implies you cannot designate a fired person but does not
-   explicitly mandate DB-layer enforcement. The prompt's edge-case list
-   pins this as a hard rule, so the test asserts DB-layer rejection.
-
-5. **Float-lookup predicate for a user with no roles** (Vitest). Spec
-   does not say "no roles → ineligible" explicitly, but every worker
-   pipeline structurally requires a worker role. Test asserts ineligible.
-
-6. **BM + SW role combination** (Vitest claim-pool, swap). ARCH §3.1
-   says BM is "exclusive of worker roles for scheduling purposes." It is
-   unclear whether the schema permits the combination at all (i.e., is
-   `INSERT (bm, x)` allowed for a user who already has `sw`?). The pure
-   predicates assume the combination can be constructed in memory and
-   behave correctly; if the schema bars it, the pgTAP suite would need
-   a test for that as well — currently NOT asserted.
-
-7. **HM as swap counterparty** (Vitest swap). BEHAVIORAL §8 does not
-   enumerate HMs as swap counterparties but does not exclude them. Since
-   HMs hold shift assignments (§2.3), the test assumes they may swap.
-   If implementation finds an excluded clause, this changes.
-
-8. **SM implies SW** (Vitest union-semantics). BEHAVIORAL §2.7 says "an
-   SM is also implicitly an SW." The test asserts that an SM-only user
-   (no explicit SW row in `user_roles`) is treated as a worker by all
-   four predicates. The implementation may instead require an explicit
-   SW row alongside SM at write time, in which case this test stays
-   green trivially because both rows always exist.
+| #   | Decision                                                                                                                                           |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **A** — unique key is `(user_id, role, scope_house_id)`. A person can be HM at two houses.                                                         |
+| 2   | N/A — tests assert behavior only; mechanism is the implementer's choice.                                                                           |
+| 3   | **A** — broadcast-subscribed guard is enforced at DB layer (trigger). pgTAP tests throw on violation.                                              |
+| 4   | **A** — `hm_leave.replacement_user_id` → inactive user is rejected at DB layer (trigger). pgTAP test throws.                                       |
+| 5   | **A** — no-roles user is ineligible in all four predicates.                                                                                        |
+| 6   | **B** — schema **rejects** inserting a worker role (`sw`/`sm`) for a user who holds `bm`, and vice versa. Two `throws_ok` pgTAP tests added (§7b). |
+| 7   | **B** — HMs are **excluded** from the swap counterparty pool. `isEligibleForSwapCounterparty(hm) → false`. SW+HM case also added.                  |
+| 8   | **A** — SM-only (no explicit SW row) is treated as a worker by predicate logic. Test is load-bearing.                                              |
 
 ---
 

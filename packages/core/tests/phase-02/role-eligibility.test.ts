@@ -234,11 +234,16 @@ describe('isEligibleForSwapCounterparty', () => {
     expect(isEligibleForSwapCounterparty(user('u', true, 'sw', 'sm')).eligible).toBe(true);
   });
 
-  it('accepts an HM (HMs hold shifts and may swap)', () => {
-    // AMBIGUOUS: §8 does not explicitly enumerate HMs as swap counterparties,
-    // but they hold shift assignments per §2.3 and the spec gives no
-    // rule excluding them. See TEST_PLAN.md.
-    expect(isEligibleForSwapCounterparty(user('u', true, 'hm')).eligible).toBe(true);
+  it('rejects an HM (excluded from swap counterparty pool — same exclusion as float)', () => {
+    // Resolved: HMs are excluded from swaps. BEH §8 does not list HMs
+    // as eligible counterparties; the float-exclusion pattern extends here.
+    const result = isEligibleForSwapCounterparty(user('u', true, 'hm'));
+    expect(result.eligible).toBe(false);
+    expect(result.reason).toMatch(/hm/i);
+  });
+
+  it('rejects HM + SW union (HM exclusion dominates)', () => {
+    expect(isEligibleForSwapCounterparty(user('u', true, 'sw', 'hm')).eligible).toBe(false);
   });
 
   it('rejects a BM (no shifts to swap)', () => {

@@ -9,7 +9,7 @@
 
 BEGIN;
 
-SELECT plan(58);
+SELECT plan(60);
 
 -- ============================================================
 -- Setup: seed an auth.users row and a couple houses for FK targets.
@@ -209,6 +209,32 @@ SELECT lives_ok(
   $$ INSERT INTO public.user_roles (user_id, role, scope_house_id)
      VALUES ('11111111-1111-1111-1111-111111111111', 'sm', 'harnwell') $$,
   'user can hold sw + sm roles concurrently'
+);
+
+-- ============================================================
+-- 7b. BM is exclusive of worker roles at the schema level (ARCHITECTURE §3.1)
+-- "a user with bm is excluded from preference submission, schedule-builder
+-- rosters, claim eligibility, and float lookup" — enforced by preventing
+-- the combination entirely rather than filtering at query time.
+-- ============================================================
+
+-- bm cannot be added to a user who already holds sw
+SELECT throws_ok(
+  $$ INSERT INTO public.user_roles (user_id, role, scope_house_id)
+     VALUES ('22222222-2222-2222-2222-222222222222', 'sw', NULL) $$,
+  NULL,
+  NULL,
+  'inserting sw role for a user who already holds bm is rejected'
+);
+
+-- sw cannot be converted into bm (no user with sw already set, use Dan BM directly)
+-- Dan (bm, quad) — try to also give him a sw role
+SELECT throws_ok(
+  $$ INSERT INTO public.user_roles (user_id, role, scope_house_id)
+     VALUES ('44444444-4444-4444-4444-444444444444', 'sm', 'quad') $$,
+  NULL,
+  NULL,
+  'inserting sm role for a user who already holds bm is rejected'
 );
 
 -- ============================================================

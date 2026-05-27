@@ -33,21 +33,27 @@ export type Database = {
           house_id: string;
           modified_at: string;
           modified_by: string | null;
+          reminder_2h_enabled: boolean;
           reminder_2h_offset: string | null;
+          reminder_6h_enabled: boolean;
           reminder_6h_offset: string | null;
         };
         Insert: {
           house_id: string;
           modified_at?: string;
           modified_by?: string | null;
+          reminder_2h_enabled?: boolean;
           reminder_2h_offset?: string | null;
+          reminder_6h_enabled?: boolean;
           reminder_6h_offset?: string | null;
         };
         Update: {
           house_id?: string;
           modified_at?: string;
           modified_by?: string | null;
+          reminder_2h_enabled?: boolean;
           reminder_2h_offset?: string | null;
+          reminder_6h_enabled?: boolean;
           reminder_6h_offset?: string | null;
         };
         Relationships: [

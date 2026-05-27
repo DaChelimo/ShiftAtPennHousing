@@ -3,7 +3,7 @@
 
 BEGIN;
 
-SELECT plan(168);
+SELECT plan(175);
 
 -- ============================================================
 -- 1. All 12 tables exist
@@ -102,14 +102,21 @@ SELECT col_type_is('public', 'hm_leave', 'end_date',     'date',                
 SELECT col_type_is('public', 'hm_leave', 'cancelled_at', 'timestamp with time zone',   'cancelled_at is timestamptz');
 
 -- ack_cadence_config
-SELECT has_column('public', 'ack_cadence_config', 'house_id',           'ack_cadence_config.house_id exists');
-SELECT has_column('public', 'ack_cadence_config', 'reminder_6h_offset', 'ack_cadence_config.reminder_6h_offset exists');
-SELECT has_column('public', 'ack_cadence_config', 'reminder_2h_offset', 'ack_cadence_config.reminder_2h_offset exists');
-SELECT has_column('public', 'ack_cadence_config', 'modified_by',        'ack_cadence_config.modified_by exists');
-SELECT has_column('public', 'ack_cadence_config', 'modified_at',        'ack_cadence_config.modified_at exists');
-SELECT col_type_is('public', 'ack_cadence_config', 'reminder_6h_offset', 'interval',                   'reminder_6h_offset is interval');
-SELECT col_type_is('public', 'ack_cadence_config', 'reminder_2h_offset', 'interval',                   'reminder_2h_offset is interval');
-SELECT col_type_is('public', 'ack_cadence_config', 'modified_at',        'timestamp with time zone',   'modified_at is timestamptz');
+SELECT has_column('public', 'ack_cadence_config', 'house_id',            'ack_cadence_config.house_id exists');
+SELECT has_column('public', 'ack_cadence_config', 'reminder_6h_offset',  'ack_cadence_config.reminder_6h_offset exists');
+SELECT has_column('public', 'ack_cadence_config', 'reminder_2h_offset',  'ack_cadence_config.reminder_2h_offset exists');
+SELECT has_column('public', 'ack_cadence_config', 'reminder_6h_enabled', 'ack_cadence_config.reminder_6h_enabled exists');
+SELECT has_column('public', 'ack_cadence_config', 'reminder_2h_enabled', 'ack_cadence_config.reminder_2h_enabled exists');
+SELECT has_column('public', 'ack_cadence_config', 'modified_by',         'ack_cadence_config.modified_by exists');
+SELECT has_column('public', 'ack_cadence_config', 'modified_at',         'ack_cadence_config.modified_at exists');
+SELECT col_type_is('public', 'ack_cadence_config', 'reminder_6h_offset',  'interval',                   'reminder_6h_offset is interval');
+SELECT col_type_is('public', 'ack_cadence_config', 'reminder_2h_offset',  'interval',                   'reminder_2h_offset is interval');
+SELECT col_type_is('public', 'ack_cadence_config', 'reminder_6h_enabled', 'boolean',                    'reminder_6h_enabled is boolean');
+SELECT col_type_is('public', 'ack_cadence_config', 'reminder_2h_enabled', 'boolean',                    'reminder_2h_enabled is boolean');
+SELECT col_type_is('public', 'ack_cadence_config', 'modified_at',         'timestamp with time zone',   'modified_at is timestamptz');
+-- enabled flags are NOT NULL (suppression is encoded as false, not null)
+SELECT col_not_null('public', 'ack_cadence_config', 'reminder_6h_enabled', 'reminder_6h_enabled is NOT NULL');
+SELECT col_not_null('public', 'ack_cadence_config', 'reminder_2h_enabled', 'reminder_2h_enabled is NOT NULL');
 
 -- break_periods
 SELECT has_column('public', 'break_periods', 'break_id',    'break_periods.break_id exists');
@@ -496,6 +503,17 @@ SELECT is(
    )),
   11,
   'system_config contains all 11 required keys'
+);
+
+-- weekly_cap_overrides: IN(20,40) check must not exist (§1.1 config-over-code)
+SELECT ok(
+  NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.weekly_cap_overrides'::regclass
+      AND contype = 'c'
+      AND conname = 'weekly_cap_overrides_hours_cap_check'
+  ),
+  'weekly_cap_overrides.hours_cap has no hard-coded IN(20,40) check constraint'
 );
 
 SELECT finish();

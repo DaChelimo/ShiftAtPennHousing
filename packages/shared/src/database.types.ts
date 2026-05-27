@@ -1,13 +1,188 @@
-// AUTO-GENERATED — do not edit by hand.
-// Regenerate with: supabase gen types typescript --local > packages/shared/src/database.types.ts
-// NOTE: hand-authored for phase-01 because Docker is not yet installed on this machine.
-//       Run the command above once Docker + Supabase local are running to replace this file.
-
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
 export type Database = {
+  graphql_public: {
+    Tables: {
+      [_ in never]: never;
+    };
+    Views: {
+      [_ in never]: never;
+    };
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json;
+          operationName?: string;
+          query?: string;
+          variables?: Json;
+        };
+        Returns: Json;
+      };
+    };
+    Enums: {
+      [_ in never]: never;
+    };
+    CompositeTypes: {
+      [_ in never]: never;
+    };
+  };
   public: {
     Tables: {
+      ack_cadence_config: {
+        Row: {
+          house_id: string;
+          modified_at: string;
+          modified_by: string | null;
+          reminder_2h_offset: string | null;
+          reminder_6h_offset: string | null;
+        };
+        Insert: {
+          house_id: string;
+          modified_at?: string;
+          modified_by?: string | null;
+          reminder_2h_offset?: string | null;
+          reminder_6h_offset?: string | null;
+        };
+        Update: {
+          house_id?: string;
+          modified_at?: string;
+          modified_by?: string | null;
+          reminder_2h_offset?: string | null;
+          reminder_6h_offset?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'ack_cadence_config_house_id_fkey';
+            columns: ['house_id'];
+            isOneToOne: true;
+            referencedRelation: 'houses';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      break_periods: {
+        Row: {
+          break_id: string;
+          break_name: string;
+          break_type: Database['public']['Enums']['break_type_enum'];
+          end_date: string;
+          profile_name: string;
+          start_date: string;
+        };
+        Insert: {
+          break_id?: string;
+          break_name: string;
+          break_type: Database['public']['Enums']['break_type_enum'];
+          end_date: string;
+          profile_name: string;
+          start_date: string;
+        };
+        Update: {
+          break_id?: string;
+          break_name?: string;
+          break_type?: Database['public']['Enums']['break_type_enum'];
+          end_date?: string;
+          profile_name?: string;
+          start_date?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'break_periods_profile_name_fkey';
+            columns: ['profile_name'];
+            isOneToOne: false;
+            referencedRelation: 'operating_profiles';
+            referencedColumns: ['profile_name'];
+          },
+        ];
+      };
+      float_routing: {
+        Row: {
+          destination_house_id: string;
+          precedence_order: number;
+          profile_name: string;
+          source_house_id: string;
+        };
+        Insert: {
+          destination_house_id: string;
+          precedence_order: number;
+          profile_name: string;
+          source_house_id: string;
+        };
+        Update: {
+          destination_house_id?: string;
+          precedence_order?: number;
+          profile_name?: string;
+          source_house_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'float_routing_destination_house_id_fkey';
+            columns: ['destination_house_id'];
+            isOneToOne: false;
+            referencedRelation: 'houses';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'float_routing_profile_name_fkey';
+            columns: ['profile_name'];
+            isOneToOne: false;
+            referencedRelation: 'operating_profiles';
+            referencedColumns: ['profile_name'];
+          },
+          {
+            foreignKeyName: 'float_routing_source_house_id_fkey';
+            columns: ['source_house_id'];
+            isOneToOne: false;
+            referencedRelation: 'houses';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      hm_leave: {
+        Row: {
+          cancelled_at: string | null;
+          end_date: string;
+          leave_id: string;
+          replacement_user_id: string | null;
+          start_date: string;
+          status: Database['public']['Enums']['hm_leave_status_enum'];
+          user_id: string;
+        };
+        Insert: {
+          cancelled_at?: string | null;
+          end_date: string;
+          leave_id?: string;
+          replacement_user_id?: string | null;
+          start_date: string;
+          status?: Database['public']['Enums']['hm_leave_status_enum'];
+          user_id: string;
+        };
+        Update: {
+          cancelled_at?: string | null;
+          end_date?: string;
+          leave_id?: string;
+          replacement_user_id?: string | null;
+          start_date?: string;
+          status?: Database['public']['Enums']['hm_leave_status_enum'];
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      hmod_rotor: {
+        Row: {
+          hmod_user_id: string;
+          week_start_date: string;
+        };
+        Insert: {
+          hmod_user_id: string;
+          week_start_date: string;
+        };
+        Update: {
+          hmod_user_id?: string;
+          week_start_date?: string;
+        };
+        Relationships: [];
+      };
       houses: {
         Row: {
           id: string;
@@ -20,48 +195,6 @@ export type Database = {
         Update: {
           id?: string;
           name?: string;
-        };
-        Relationships: [];
-      };
-      operating_profiles: {
-        Row: {
-          profile_name: string;
-          shift_start_bound: string;
-          shift_end_bound: string;
-          default_hours_cap: number;
-          default_cap_enforcement: Database['public']['Enums']['cap_enforcement_enum'];
-          scheduling_mode: Database['public']['Enums']['scheduling_mode_enum'];
-          float_enabled: boolean;
-          escalation_chain: Json;
-          claim_phase_open_offset: string | null;
-          claim_phase_alert_offset: string | null;
-          claim_phase_close_offset: string | null;
-        };
-        Insert: {
-          profile_name: string;
-          shift_start_bound: string;
-          shift_end_bound: string;
-          default_hours_cap: number;
-          default_cap_enforcement: Database['public']['Enums']['cap_enforcement_enum'];
-          scheduling_mode: Database['public']['Enums']['scheduling_mode_enum'];
-          float_enabled: boolean;
-          escalation_chain: Json;
-          claim_phase_open_offset?: string | null;
-          claim_phase_alert_offset?: string | null;
-          claim_phase_close_offset?: string | null;
-        };
-        Update: {
-          profile_name?: string;
-          shift_start_bound?: string;
-          shift_end_bound?: string;
-          default_hours_cap?: number;
-          default_cap_enforcement?: Database['public']['Enums']['cap_enforcement_enum'];
-          scheduling_mode?: Database['public']['Enums']['scheduling_mode_enum'];
-          float_enabled?: boolean;
-          escalation_chain?: Json;
-          claim_phase_open_offset?: string | null;
-          claim_phase_alert_offset?: string | null;
-          claim_phase_close_offset?: string | null;
         };
         Relationships: [];
       };
@@ -88,248 +221,75 @@ export type Database = {
           },
         ];
       };
-      staffing_patterns: {
+      operating_profiles: {
         Row: {
+          claim_phase_alert_offset: string | null;
+          claim_phase_close_offset: string | null;
+          claim_phase_open_offset: string | null;
+          default_cap_enforcement: Database['public']['Enums']['cap_enforcement_enum'];
+          default_hours_cap: number;
+          escalation_chain: Json;
+          float_enabled: boolean;
           profile_name: string;
-          house_id: string;
-          day_type: Database['public']['Enums']['day_type_enum'];
-          block_headcounts: Json;
+          scheduling_mode: Database['public']['Enums']['scheduling_mode_enum'];
+          shift_end_bound: string;
+          shift_start_bound: string;
         };
         Insert: {
+          claim_phase_alert_offset?: string | null;
+          claim_phase_close_offset?: string | null;
+          claim_phase_open_offset?: string | null;
+          default_cap_enforcement: Database['public']['Enums']['cap_enforcement_enum'];
+          default_hours_cap: number;
+          escalation_chain: Json;
+          float_enabled: boolean;
           profile_name: string;
-          house_id: string;
-          day_type: Database['public']['Enums']['day_type_enum'];
-          block_headcounts: Json;
+          scheduling_mode: Database['public']['Enums']['scheduling_mode_enum'];
+          shift_end_bound: string;
+          shift_start_bound: string;
         };
         Update: {
+          claim_phase_alert_offset?: string | null;
+          claim_phase_close_offset?: string | null;
+          claim_phase_open_offset?: string | null;
+          default_cap_enforcement?: Database['public']['Enums']['cap_enforcement_enum'];
+          default_hours_cap?: number;
+          escalation_chain?: Json;
+          float_enabled?: boolean;
           profile_name?: string;
-          house_id?: string;
-          day_type?: Database['public']['Enums']['day_type_enum'];
-          block_headcounts?: Json;
-        };
-        Relationships: [
-          {
-            foreignKeyName: 'staffing_patterns_profile_name_fkey';
-            columns: ['profile_name'];
-            isOneToOne: false;
-            referencedRelation: 'operating_profiles';
-            referencedColumns: ['profile_name'];
-          },
-          {
-            foreignKeyName: 'staffing_patterns_house_id_fkey';
-            columns: ['house_id'];
-            isOneToOne: false;
-            referencedRelation: 'houses';
-            referencedColumns: ['id'];
-          },
-        ];
-      };
-      float_routing: {
-        Row: {
-          profile_name: string;
-          source_house_id: string;
-          destination_house_id: string;
-          precedence_order: number;
-        };
-        Insert: {
-          profile_name: string;
-          source_house_id: string;
-          destination_house_id: string;
-          precedence_order: number;
-        };
-        Update: {
-          profile_name?: string;
-          source_house_id?: string;
-          destination_house_id?: string;
-          precedence_order?: number;
-        };
-        Relationships: [
-          {
-            foreignKeyName: 'float_routing_profile_name_fkey';
-            columns: ['profile_name'];
-            isOneToOne: false;
-            referencedRelation: 'operating_profiles';
-            referencedColumns: ['profile_name'];
-          },
-          {
-            foreignKeyName: 'float_routing_source_house_id_fkey';
-            columns: ['source_house_id'];
-            isOneToOne: false;
-            referencedRelation: 'houses';
-            referencedColumns: ['id'];
-          },
-          {
-            foreignKeyName: 'float_routing_destination_house_id_fkey';
-            columns: ['destination_house_id'];
-            isOneToOne: false;
-            referencedRelation: 'houses';
-            referencedColumns: ['id'];
-          },
-        ];
-      };
-      weekly_cap_overrides: {
-        Row: {
-          week_start_date: string;
-          hours_cap: number;
-          cap_enforcement: Database['public']['Enums']['cap_enforcement_enum'];
-          modified_by: string | null;
-          modified_at: string;
-        };
-        Insert: {
-          week_start_date: string;
-          hours_cap: number;
-          cap_enforcement: Database['public']['Enums']['cap_enforcement_enum'];
-          modified_by?: string | null;
-          modified_at?: string;
-        };
-        Update: {
-          week_start_date?: string;
-          hours_cap?: number;
-          cap_enforcement?: Database['public']['Enums']['cap_enforcement_enum'];
-          modified_by?: string | null;
-          modified_at?: string;
+          scheduling_mode?: Database['public']['Enums']['scheduling_mode_enum'];
+          shift_end_bound?: string;
+          shift_start_bound?: string;
         };
         Relationships: [];
-      };
-      hmod_rotor: {
-        Row: {
-          week_start_date: string;
-          hmod_user_id: string;
-        };
-        Insert: {
-          week_start_date: string;
-          hmod_user_id: string;
-        };
-        Update: {
-          week_start_date?: string;
-          hmod_user_id?: string;
-        };
-        Relationships: [];
-      };
-      hm_leave: {
-        Row: {
-          leave_id: string;
-          user_id: string;
-          start_date: string;
-          end_date: string;
-          replacement_user_id: string | null;
-          status: Database['public']['Enums']['hm_leave_status_enum'];
-          cancelled_at: string | null;
-        };
-        Insert: {
-          leave_id?: string;
-          user_id: string;
-          start_date: string;
-          end_date: string;
-          replacement_user_id?: string | null;
-          status?: Database['public']['Enums']['hm_leave_status_enum'];
-          cancelled_at?: string | null;
-        };
-        Update: {
-          leave_id?: string;
-          user_id?: string;
-          start_date?: string;
-          end_date?: string;
-          replacement_user_id?: string | null;
-          status?: Database['public']['Enums']['hm_leave_status_enum'];
-          cancelled_at?: string | null;
-        };
-        Relationships: [];
-      };
-      ack_cadence_config: {
-        Row: {
-          house_id: string;
-          reminder_6h_offset: string | null;
-          reminder_2h_offset: string | null;
-          modified_by: string | null;
-          modified_at: string;
-        };
-        Insert: {
-          house_id: string;
-          reminder_6h_offset?: string | null;
-          reminder_2h_offset?: string | null;
-          modified_by?: string | null;
-          modified_at?: string;
-        };
-        Update: {
-          house_id?: string;
-          reminder_6h_offset?: string | null;
-          reminder_2h_offset?: string | null;
-          modified_by?: string | null;
-          modified_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: 'ack_cadence_config_house_id_fkey';
-            columns: ['house_id'];
-            isOneToOne: true;
-            referencedRelation: 'houses';
-            referencedColumns: ['id'];
-          },
-        ];
-      };
-      break_periods: {
-        Row: {
-          break_id: string;
-          break_name: string;
-          break_type: Database['public']['Enums']['break_type_enum'];
-          start_date: string;
-          end_date: string;
-          profile_name: string;
-        };
-        Insert: {
-          break_id?: string;
-          break_name: string;
-          break_type: Database['public']['Enums']['break_type_enum'];
-          start_date: string;
-          end_date: string;
-          profile_name: string;
-        };
-        Update: {
-          break_id?: string;
-          break_name?: string;
-          break_type?: Database['public']['Enums']['break_type_enum'];
-          start_date?: string;
-          end_date?: string;
-          profile_name?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: 'break_periods_profile_name_fkey';
-            columns: ['profile_name'];
-            isOneToOne: false;
-            referencedRelation: 'operating_profiles';
-            referencedColumns: ['profile_name'];
-          },
-        ];
       };
       scheduling_periods: {
         Row: {
+          end_date: string;
           period_id: string;
           period_name: string;
-          profile_name: string;
-          start_date: string;
-          end_date: string;
           preference_deadline: string | null;
+          profile_name: string;
           published_at: string | null;
+          start_date: string;
         };
         Insert: {
+          end_date: string;
           period_id?: string;
           period_name: string;
-          profile_name: string;
-          start_date: string;
-          end_date: string;
           preference_deadline?: string | null;
+          profile_name: string;
           published_at?: string | null;
+          start_date: string;
         };
         Update: {
+          end_date?: string;
           period_id?: string;
           period_name?: string;
-          profile_name?: string;
-          start_date?: string;
-          end_date?: string;
           preference_deadline?: string | null;
+          profile_name?: string;
           published_at?: string | null;
+          start_date?: string;
         };
         Relationships: [
           {
@@ -341,41 +301,101 @@ export type Database = {
           },
         ];
       };
+      staffing_patterns: {
+        Row: {
+          block_headcounts: Json;
+          day_type: Database['public']['Enums']['day_type_enum'];
+          house_id: string;
+          profile_name: string;
+        };
+        Insert: {
+          block_headcounts: Json;
+          day_type: Database['public']['Enums']['day_type_enum'];
+          house_id: string;
+          profile_name: string;
+        };
+        Update: {
+          block_headcounts?: Json;
+          day_type?: Database['public']['Enums']['day_type_enum'];
+          house_id?: string;
+          profile_name?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'staffing_patterns_house_id_fkey';
+            columns: ['house_id'];
+            isOneToOne: false;
+            referencedRelation: 'houses';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'staffing_patterns_profile_name_fkey';
+            columns: ['profile_name'];
+            isOneToOne: false;
+            referencedRelation: 'operating_profiles';
+            referencedColumns: ['profile_name'];
+          },
+        ];
+      };
       system_config: {
         Row: {
           config_key: string;
           config_value: string;
-          value_type: Database['public']['Enums']['value_type_enum'];
-          modified_by: string | null;
           modified_at: string;
+          modified_by: string | null;
           notes: string | null;
+          value_type: Database['public']['Enums']['value_type_enum'];
         };
         Insert: {
           config_key: string;
           config_value: string;
-          value_type: Database['public']['Enums']['value_type_enum'];
-          modified_by?: string | null;
           modified_at?: string;
+          modified_by?: string | null;
           notes?: string | null;
+          value_type: Database['public']['Enums']['value_type_enum'];
         };
         Update: {
           config_key?: string;
           config_value?: string;
-          value_type?: Database['public']['Enums']['value_type_enum'];
-          modified_by?: string | null;
           modified_at?: string;
+          modified_by?: string | null;
           notes?: string | null;
+          value_type?: Database['public']['Enums']['value_type_enum'];
+        };
+        Relationships: [];
+      };
+      weekly_cap_overrides: {
+        Row: {
+          cap_enforcement: Database['public']['Enums']['cap_enforcement_enum'];
+          hours_cap: number;
+          modified_at: string;
+          modified_by: string | null;
+          week_start_date: string;
+        };
+        Insert: {
+          cap_enforcement: Database['public']['Enums']['cap_enforcement_enum'];
+          hours_cap: number;
+          modified_at?: string;
+          modified_by?: string | null;
+          week_start_date: string;
+        };
+        Update: {
+          cap_enforcement?: Database['public']['Enums']['cap_enforcement_enum'];
+          hours_cap?: number;
+          modified_at?: string;
+          modified_by?: string | null;
+          week_start_date?: string;
         };
         Relationships: [];
       };
     };
-    Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Views: {
+      [_ in never]: never;
+    };
+    Functions: {
+      [_ in never]: never;
+    };
     Enums: {
-      cap_enforcement_enum: 'soft' | 'hard';
-      scheduling_mode_enum: 'sm_built' | 'claim_based';
-      day_type_enum: 'weekday' | 'weekend';
-      hm_leave_status_enum: 'active' | 'cancelled_early';
       break_type_enum:
         | 'thanksgiving'
         | 'fall_break'
@@ -383,31 +403,43 @@ export type Database = {
         | 'spring_fling'
         | 'winter_break'
         | 'other';
+      cap_enforcement_enum: 'soft' | 'hard';
+      day_type_enum: 'weekday' | 'weekend';
+      hm_leave_status_enum: 'active' | 'cancelled_early';
+      scheduling_mode_enum: 'sm_built' | 'claim_based';
       value_type_enum: 'integer' | 'interval' | 'time_of_day' | 'enum';
     };
-    CompositeTypes: Record<string, never>;
+    CompositeTypes: {
+      [_ in never]: never;
+    };
   };
 };
 
+type DatabaseWithoutInternals = Omit<Database, '__InternalSupabase'>;
+
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, 'public'>];
+
 export type Tables<
-  PublicTableNameOrOptions extends
-    | keyof (Database['public']['Tables'] & Database['public']['Views'])
-    | { schema: keyof Database },
-  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
-    ? keyof (Database[PublicTableNameOrOptions['schema']]['Tables'] &
-        Database[PublicTableNameOrOptions['schema']]['Views'])
+  DefaultSchemaTableNameOrOptions extends
+    | keyof (DefaultSchema['Tables'] & DefaultSchema['Views'])
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals;
+  }
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables'] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Views'])
     : never = never,
-> = PublicTableNameOrOptions extends { schema: keyof Database }
-  ? (Database[PublicTableNameOrOptions['schema']]['Tables'] &
-      Database[PublicTableNameOrOptions['schema']]['Views'])[TableName] extends {
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals;
+}
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables'] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Views'])[TableName] extends {
       Row: infer R;
     }
     ? R
     : never
-  : PublicTableNameOrOptions extends keyof (Database['public']['Tables'] &
-        Database['public']['Views'])
-    ? (Database['public']['Tables'] &
-        Database['public']['Views'])[PublicTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema['Tables'] & DefaultSchema['Views'])
+    ? (DefaultSchema['Tables'] & DefaultSchema['Views'])[DefaultSchemaTableNameOrOptions] extends {
         Row: infer R;
       }
       ? R
@@ -415,18 +447,24 @@ export type Tables<
     : never;
 
 export type TablesInsert<
-  PublicTableNameOrOptions extends keyof Database['public']['Tables'] | { schema: keyof Database },
-  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
-    ? keyof Database[PublicTableNameOrOptions['schema']]['Tables']
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema['Tables']
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals;
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables']
     : never = never,
-> = PublicTableNameOrOptions extends { schema: keyof Database }
-  ? Database[PublicTableNameOrOptions['schema']]['Tables'][TableName] extends {
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals;
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables'][TableName] extends {
       Insert: infer I;
     }
     ? I
     : never
-  : PublicTableNameOrOptions extends keyof Database['public']['Tables']
-    ? Database['public']['Tables'][PublicTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema['Tables']
+    ? DefaultSchema['Tables'][DefaultSchemaTableNameOrOptions] extends {
         Insert: infer I;
       }
       ? I
@@ -434,18 +472,24 @@ export type TablesInsert<
     : never;
 
 export type TablesUpdate<
-  PublicTableNameOrOptions extends keyof Database['public']['Tables'] | { schema: keyof Database },
-  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
-    ? keyof Database[PublicTableNameOrOptions['schema']]['Tables']
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema['Tables']
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals;
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables']
     : never = never,
-> = PublicTableNameOrOptions extends { schema: keyof Database }
-  ? Database[PublicTableNameOrOptions['schema']]['Tables'][TableName] extends {
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals;
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables'][TableName] extends {
       Update: infer U;
     }
     ? U
     : never
-  : PublicTableNameOrOptions extends keyof Database['public']['Tables']
-    ? Database['public']['Tables'][PublicTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema['Tables']
+    ? DefaultSchema['Tables'][DefaultSchemaTableNameOrOptions] extends {
         Update: infer U;
       }
       ? U
@@ -453,12 +497,58 @@ export type TablesUpdate<
     : never;
 
 export type Enums<
-  PublicEnumNameOrOptions extends keyof Database['public']['Enums'] | { schema: keyof Database },
-  EnumName extends PublicEnumNameOrOptions extends { schema: keyof Database }
-    ? keyof Database[PublicEnumNameOrOptions['schema']]['Enums']
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema['Enums']
+    | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals;
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions['schema']]['Enums']
     : never = never,
-> = PublicEnumNameOrOptions extends { schema: keyof Database }
-  ? Database[PublicEnumNameOrOptions['schema']]['Enums'][EnumName]
-  : PublicEnumNameOrOptions extends keyof Database['public']['Enums']
-    ? Database['public']['Enums'][PublicEnumNameOrOptions]
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals;
+}
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions['schema']]['Enums'][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema['Enums']
+    ? DefaultSchema['Enums'][DefaultSchemaEnumNameOrOptions]
     : never;
+
+export type CompositeTypes<
+  PublicCompositeTypeNameOrOptions extends
+    | keyof DefaultSchema['CompositeTypes']
+    | { schema: keyof DatabaseWithoutInternals },
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals;
+  }
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions['schema']]['CompositeTypes']
+    : never = never,
+> = PublicCompositeTypeNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals;
+}
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions['schema']]['CompositeTypes'][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema['CompositeTypes']
+    ? DefaultSchema['CompositeTypes'][PublicCompositeTypeNameOrOptions]
+    : never;
+
+export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
+  public: {
+    Enums: {
+      break_type_enum: [
+        'thanksgiving',
+        'fall_break',
+        'spring_break',
+        'spring_fling',
+        'winter_break',
+        'other',
+      ],
+      cap_enforcement_enum: ['soft', 'hard'],
+      day_type_enum: ['weekday', 'weekend'],
+      hm_leave_status_enum: ['active', 'cancelled_early'],
+      scheduling_mode_enum: ['sm_built', 'claim_based'],
+      value_type_enum: ['integer', 'interval', 'time_of_day', 'enum'],
+    },
+  },
+} as const;

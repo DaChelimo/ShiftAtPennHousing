@@ -834,6 +834,39 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      claim_hours_projection: {
+        Args: { p_assignment_id: string; p_user_id: string };
+        Returns: {
+          cap_enforcement: Database['public']['Enums']['cap_enforcement_enum'];
+          current_hours: number;
+          hours_cap: number;
+          projected_hours: number;
+          soft_cap_warning: boolean;
+        }[];
+      };
+      claim_open_shift: {
+        Args: { p_as_of: string; p_assignment_id: string; p_user_id: string };
+        Returns: string;
+      };
+      drop_shift: {
+        Args: {
+          p_as_of?: string;
+          p_assignment_ids: string[];
+          p_user_id: string;
+        };
+        Returns: {
+          direct_hmod_notification: boolean;
+          dropped_assignment_ids: string[];
+          short_notice_warning: boolean;
+        }[];
+      };
+      effective_weekly_cap: {
+        Args: { p_block_start_at: string; p_week_start_date: string };
+        Returns: {
+          cap_enforcement: Database['public']['Enums']['cap_enforcement_enum'];
+          hours_cap: number;
+        }[];
+      };
       generate_blocks_for_date: {
         Args: { target_date: string };
         Returns: {
@@ -848,9 +881,22 @@ export type Database = {
           blocks_inserted: number;
         }[];
       };
+      is_assignment_claimable: {
+        Args: { p_as_of: string; p_assignment_id: string };
+        Returns: boolean;
+      };
       name_array_contained_by_text_array: {
         Args: { left_names: unknown[]; right_text: string[] };
         Returns: boolean;
+      };
+      permanent_openings_feed: {
+        Args: { p_as_of?: string; p_house_id: string };
+        Returns: {
+          block_start_time: string;
+          day_of_week: number;
+          house_id: string;
+          occurrence_count: number;
+        }[];
       };
       preference_deadline_is_open: {
         Args: { check_period_id: string };
@@ -887,6 +933,50 @@ export type Database = {
       user_has_house_admin_role: {
         Args: { check_house_id: string; check_user_id: string };
         Returns: boolean;
+      };
+      weekly_feed_for_house: {
+        Args: {
+          p_as_of?: string;
+          p_calling_user_id: string;
+          p_house_id: string;
+        };
+        Returns: {
+          assignment_id: string;
+          block_id: string;
+          is_cross_house_pickup: boolean;
+          is_float: boolean;
+          parent_float_id: string | null;
+          source_house_id: string | null;
+          status: Database['public']['Enums']['shift_status_enum'];
+          user_id: string | null;
+          vacancy_origin: Database['public']['Enums']['vacancy_origin_enum'];
+        }[];
+        SetofOptions: {
+          from: '*';
+          to: 'shift_block_assignments';
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
+      weekly_open_shifts_feed: {
+        Args: { p_as_of?: string; p_house_id: string };
+        Returns: {
+          assignment_id: string;
+          block_id: string;
+          is_cross_house_pickup: boolean;
+          is_float: boolean;
+          parent_float_id: string | null;
+          source_house_id: string | null;
+          status: Database['public']['Enums']['shift_status_enum'];
+          user_id: string | null;
+          vacancy_origin: Database['public']['Enums']['vacancy_origin_enum'];
+        }[];
+        SetofOptions: {
+          from: '*';
+          to: 'shift_block_assignments';
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
       };
     };
     Enums: {

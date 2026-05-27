@@ -84,3 +84,8 @@ the JetBrains GitHub template (see Conventions above).
 
 - [Phase 00] House names: 11 single-staff houses use placeholder names House-3 through
   House-13. Real names are a TODO before launch.
+- [Phase 01] Houses: Harnwell and Quad have special rules throughout.
+  11 single-staff houses use placeholder IDs house-03..house-13 — real names TODO.
+- [Phase 01] RLS: all tables have service-role bypass; user-scoped policies come later.
+- [Phase 01] staffing_patterns stores compressed jsonb ranges.
+  Application layer expands them at read time.

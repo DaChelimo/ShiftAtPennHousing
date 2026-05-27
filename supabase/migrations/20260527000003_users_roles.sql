@@ -98,6 +98,78 @@ CREATE TRIGGER users_prevent_hm_bm_broadcast_subscription
   FOR EACH ROW
   EXECUTE FUNCTION prevent_hm_bm_broadcast_subscription();
 
+CREATE OR REPLACE FUNCTION prevent_home_house_update_without_admin_override()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF OLD.home_house_id IS DISTINCT FROM NEW.home_house_id
+     AND COALESCE(auth.role(), '') <> 'service_role' THEN
+    RAISE EXCEPTION 'home_house_id is immutable except by service-role admin override'
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER users_prevent_non_admin_home_house_update
+  BEFORE UPDATE OF home_house_id ON users
+  FOR EACH ROW
+  EXECUTE FUNCTION prevent_home_house_update_without_admin_override();
+
+CREATE OR REPLACE FUNCTION enforce_bm_worker_role_exclusion()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  old_user_id uuid;
+  old_role user_role_enum;
+  old_scope_house_id text;
+BEGIN
+  IF TG_OP = 'UPDATE' THEN
+    old_user_id := OLD.user_id;
+    old_role := OLD.role;
+    old_scope_house_id := OLD.scope_house_id;
+  END IF;
+
+  IF NEW.role = 'bm' THEN
+    DELETE FROM user_roles
+    WHERE user_id = NEW.user_id
+      AND role IN ('sw', 'sm')
+      AND NOT (
+        TG_OP = 'UPDATE' AND
+        user_id = old_user_id AND
+        role = old_role AND
+        scope_house_id IS NOT DISTINCT FROM old_scope_house_id
+      );
+  END IF;
+
+  IF NEW.role IN ('sw', 'sm') AND EXISTS (
+    SELECT 1
+    FROM user_roles
+    WHERE user_id = NEW.user_id
+      AND role = 'bm'
+      AND NOT (
+        TG_OP = 'UPDATE' AND
+        user_id = old_user_id AND
+        role = old_role AND
+        scope_house_id IS NOT DISTINCT FROM old_scope_house_id
+      )
+  ) THEN
+    RAISE EXCEPTION 'Worker roles sw and sm are exclusive with BM role'
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER user_roles_enforce_bm_worker_role_exclusion
+  BEFORE INSERT OR UPDATE OF user_id, role, scope_house_id ON user_roles
+  FOR EACH ROW
+  EXECUTE FUNCTION enforce_bm_worker_role_exclusion();
+
 CREATE OR REPLACE FUNCTION clear_broadcast_subscription_on_admin_role()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -234,6 +306,10 @@ CREATE POLICY "house admins can select scoped roles" ON user_roles
 -- DROP FUNCTION IF EXISTS enforce_active_hm_leave_replacement();
 -- DROP TRIGGER IF EXISTS user_roles_clear_broadcast_subscription_on_admin_role ON user_roles;
 -- DROP FUNCTION IF EXISTS clear_broadcast_subscription_on_admin_role();
+-- DROP TRIGGER IF EXISTS user_roles_enforce_bm_worker_role_exclusion ON user_roles;
+-- DROP FUNCTION IF EXISTS enforce_bm_worker_role_exclusion();
+-- DROP TRIGGER IF EXISTS users_prevent_non_admin_home_house_update ON users;
+-- DROP FUNCTION IF EXISTS prevent_home_house_update_without_admin_override();
 -- DROP TRIGGER IF EXISTS users_prevent_hm_bm_broadcast_subscription ON users;
 -- DROP FUNCTION IF EXISTS prevent_hm_bm_broadcast_subscription();
 -- DROP FUNCTION IF EXISTS user_can_select_user(uuid, uuid);

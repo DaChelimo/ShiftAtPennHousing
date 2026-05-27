@@ -86,18 +86,23 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return jsonResponse({ error: 'broadcast_subscribed must be a boolean' }, 400);
   }
 
-  const { data: roles, error: rolesError } = await supabase
-    .from('user_roles')
-    .select('role')
-    .eq('user_id', targetUserId)
-    .in('role', ['hm', 'bm']);
+  if (broadcastSubscribed === true) {
+    const { data: roles, error: rolesError } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', targetUserId)
+      .in('role', ['hm', 'bm']);
 
-  if (rolesError !== null) {
-    return jsonResponse({ error: rolesError.message }, 500);
-  }
+    if (rolesError !== null) {
+      return jsonResponse({ error: rolesError.message }, 500);
+    }
 
-  if ((roles?.length ?? 0) > 0) {
-    return jsonResponse({ error: 'HMs and BMs cannot subscribe to broadcast notifications' }, 403);
+    if ((roles?.length ?? 0) > 0) {
+      return jsonResponse(
+        { error: 'HMs and BMs cannot subscribe to broadcast notifications' },
+        403,
+      );
+    }
   }
 
   const { data: updatedUser, error: updateError } = await supabase

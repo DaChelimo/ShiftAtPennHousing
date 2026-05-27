@@ -1,0 +1,5 @@
+# Prompt library — excluded from all agent sessions.
+# These are source-of-prompt files for the human to copy manually.
+# Agents must NOT read these; doing so would break the cross-model TDD firewall
+# and allow test authors to contaminate implementation sessions.
+prompts/

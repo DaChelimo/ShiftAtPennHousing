@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "supabase": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@latest",
+        "--supabase-url",
+        "http://localhost:54321",
+        "--service-role-key",
+        "<key printed by `supabase start` — never commit the real value here>"
+      ]
+    }
+  }
+}

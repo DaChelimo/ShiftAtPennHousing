@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+.next/
+.turbo/
+out/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Supabase
+.supabase/
+
+# Android
+apps/mobile/.gradle/
+apps/mobile/build/
+apps/mobile/composeApp/build/
+apps/mobile/local.properties
+
+# iOS
+apps/mobile/iosApp/.build/
+apps/mobile/iosApp/iosApp.xcworkspace/xcuserdata/
+*.xcuserstate
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.iml
+.vscode/settings.json
+
+# Claude Code — local settings contain secrets (service role key)
+.claude/settings.local.json

@@ -140,6 +140,62 @@ export type Database = {
           },
         ];
       };
+      draft_block_assignments: {
+        Row: {
+          block_id: string;
+          created_at: string;
+          created_by: string;
+          draft_assignment_id: string;
+          period_id: string;
+          user_id: string;
+        };
+        Insert: {
+          block_id: string;
+          created_at?: string;
+          created_by: string;
+          draft_assignment_id?: string;
+          period_id: string;
+          user_id: string;
+        };
+        Update: {
+          block_id?: string;
+          created_at?: string;
+          created_by?: string;
+          draft_assignment_id?: string;
+          period_id?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'draft_block_assignments_block_id_fkey';
+            columns: ['block_id'];
+            isOneToOne: false;
+            referencedRelation: 'shift_blocks';
+            referencedColumns: ['block_id'];
+          },
+          {
+            foreignKeyName: 'draft_block_assignments_created_by_fkey';
+            columns: ['created_by'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'draft_block_assignments_period_id_fkey';
+            columns: ['period_id'];
+            isOneToOne: false;
+            referencedRelation: 'scheduling_periods';
+            referencedColumns: ['period_id'];
+          },
+          {
+            foreignKeyName: 'draft_block_assignments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+        ];
+      };
       float_routing: {
         Row: {
           destination_house_id: string;
@@ -258,6 +314,47 @@ export type Database = {
         };
         Relationships: [];
       };
+      notifications: {
+        Row: {
+          acknowledged_at: string | null;
+          created_at: string;
+          delivered_at: string | null;
+          notification_id: string;
+          payload: Json;
+          recipient_user_id: string;
+          scheduled_for: string;
+          type: string;
+        };
+        Insert: {
+          acknowledged_at?: string | null;
+          created_at?: string;
+          delivered_at?: string | null;
+          notification_id?: string;
+          payload?: Json;
+          recipient_user_id: string;
+          scheduled_for?: string;
+          type: string;
+        };
+        Update: {
+          acknowledged_at?: string | null;
+          created_at?: string;
+          delivered_at?: string | null;
+          notification_id?: string;
+          payload?: Json;
+          recipient_user_id?: string;
+          scheduled_for?: string;
+          type?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'notifications_recipient_user_id_fkey';
+            columns: ['recipient_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+        ];
+      };
       operating_calendar: {
         Row: {
           date: string;
@@ -322,6 +419,124 @@ export type Database = {
           shift_start_bound?: string;
         };
         Relationships: [];
+      };
+      period_targets: {
+        Row: {
+          opted_out: boolean;
+          period_id: string;
+          target_hours: number;
+          user_id: string;
+        };
+        Insert: {
+          opted_out?: boolean;
+          period_id: string;
+          target_hours: number;
+          user_id: string;
+        };
+        Update: {
+          opted_out?: boolean;
+          period_id?: string;
+          target_hours?: number;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'period_targets_period_id_fkey';
+            columns: ['period_id'];
+            isOneToOne: false;
+            referencedRelation: 'scheduling_periods';
+            referencedColumns: ['period_id'];
+          },
+          {
+            foreignKeyName: 'period_targets_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+        ];
+      };
+      preference_reminder_sends: {
+        Row: {
+          notification_id: string;
+          period_id: string;
+          sent_at: string;
+          threshold_days: number;
+          user_id: string;
+        };
+        Insert: {
+          notification_id?: string;
+          period_id: string;
+          sent_at?: string;
+          threshold_days: number;
+          user_id: string;
+        };
+        Update: {
+          notification_id?: string;
+          period_id?: string;
+          sent_at?: string;
+          threshold_days?: number;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'preference_reminder_sends_period_id_fkey';
+            columns: ['period_id'];
+            isOneToOne: false;
+            referencedRelation: 'scheduling_periods';
+            referencedColumns: ['period_id'];
+          },
+          {
+            foreignKeyName: 'preference_reminder_sends_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+        ];
+      };
+      preferences: {
+        Row: {
+          block_id: string;
+          period_id: string;
+          status: Database['public']['Enums']['preference_status_enum'];
+          user_id: string;
+        };
+        Insert: {
+          block_id: string;
+          period_id: string;
+          status: Database['public']['Enums']['preference_status_enum'];
+          user_id: string;
+        };
+        Update: {
+          block_id?: string;
+          period_id?: string;
+          status?: Database['public']['Enums']['preference_status_enum'];
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'preferences_block_id_fkey';
+            columns: ['block_id'];
+            isOneToOne: false;
+            referencedRelation: 'shift_blocks';
+            referencedColumns: ['block_id'];
+          },
+          {
+            foreignKeyName: 'preferences_period_id_fkey';
+            columns: ['period_id'];
+            isOneToOne: false;
+            referencedRelation: 'scheduling_periods';
+            referencedColumns: ['period_id'];
+          },
+          {
+            foreignKeyName: 'preferences_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+        ];
       };
       scheduling_periods: {
         Row: {
@@ -637,6 +852,34 @@ export type Database = {
         Args: { left_names: unknown[]; right_text: string[] };
         Returns: boolean;
       };
+      preference_deadline_is_open: {
+        Args: { check_period_id: string };
+        Returns: boolean;
+      };
+      publish_schedule:
+        | { Args: { p_period_id: string }; Returns: number }
+        | {
+            Args: { p_period_id: string; p_published_by: string };
+            Returns: number;
+          };
+      publish_schedule_impl: {
+        Args: { p_period_id: string; p_published_by?: string };
+        Returns: number;
+      };
+      send_preference_reminders: { Args: never; Returns: number };
+      submit_preferences: {
+        Args: {
+          p_opted_out?: boolean;
+          p_period_id: string;
+          p_preferences: Json;
+          p_target_hours: number;
+          p_user_id: string;
+        };
+        Returns: {
+          preferences_upserted: number;
+          target_upserted: number;
+        }[];
+      };
       user_can_select_user: {
         Args: { target_user_id: string; viewer_user_id: string };
         Returns: boolean;
@@ -658,6 +901,7 @@ export type Database = {
       cap_enforcement_enum: 'soft' | 'hard';
       day_type_enum: 'weekday' | 'weekend';
       hm_leave_status_enum: 'active' | 'cancelled_early';
+      preference_status_enum: 'preferred' | 'available' | 'cannot' | 'none';
       scheduling_mode_enum: 'sm_built' | 'claim_based';
       shift_status_enum:
         | 'scheduled'
@@ -817,6 +1061,7 @@ export const Constants = {
       cap_enforcement_enum: ['soft', 'hard'],
       day_type_enum: ['weekday', 'weekend'],
       hm_leave_status_enum: ['active', 'cancelled_early'],
+      preference_status_enum: ['preferred', 'available', 'cannot', 'none'],
       scheduling_mode_enum: ['sm_built', 'claim_based'],
       shift_status_enum: [
         'scheduled',

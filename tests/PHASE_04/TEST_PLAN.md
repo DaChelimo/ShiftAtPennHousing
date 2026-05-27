@@ -379,6 +379,11 @@ Total: 19 test cases distributed across 7 `describe` blocks.
 
 ## Ambiguities — resolved
 
+> The table below records ambiguities the test suite leaves open
+> (any of multiple resolutions passes). The **Implementation notes**
+> section that follows pins the specific resolution Codex MUST adopt
+> when those notes overlap (#2/§3, #3/§4, #8/§2, #9/§5 below).
+
 | #   | Surface                                                                          | Resolution                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | --- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | Draft uniqueness — "same house + block_id can have at most one draft assignment" | Interpreted as **UNIQUE(period_id, block_id, user_id)** — a single worker cannot be drafted twice into the same seat at the same block. Multi-headcount blocks legitimately carry up to `required_headcount` draft rows for distinct workers; per-block headcount enforcement is a draft-UI concern (the prompt's wording would otherwise contradict ARCH §3.2 multi-headcount blocks). Test §14 covers both directions: duplicate (period, block, user) rejected; different user on the same block accepted. |
@@ -390,6 +395,118 @@ Total: 19 test cases distributed across 7 `describe` blocks.
 | 7   | Reminder cron in phase-04?                                                       | **Deferred to phase-07.** The DB layer in phase-04 is the source of truth for `preference_deadline` — the cron consumer (a scheduled task or orchestrator step) reads it. The reminder-filtering query ("workers who have not submitted") is a SELECT that joins `preferences` and `period_targets` against `users`; that query is an orchestrator concern. Phase-04 covers the underlying DB invariants the reminder query depends on (cross-period isolation, opt-out flag, deadline write-lock).           |
 | 8   | `period_targets.target_hours` upper bound mechanism                              | **CHECK constraint or trigger** — implementer's choice, but the cap must come from `operating_profiles.default_hours_cap` for the period's profile. The test seeds only `regular_school_year` (cap = 20) and asserts `21` rejected, `20` accepted. The implementer may either hard-code the regular_school_year cap or join on `operating_profiles`; both pass the test.                                                                                                                                      |
 | 9   | Draft RLS — workers see nothing, but who reads it via `authenticated`?           | **House admins (SMs/HMs/BMs) only.** Test §15 asserts (a) no `auth.uid()=user_id` SELECT policy exists, and (b) at least one authenticated-role policy other than service-role bypass exists. The exact policy name and predicate are not pinned because they will use the `user_has_house_admin_role()` helper introduced in phase-02; the test only constrains "no worker-self read, yes house-admin read."                                                                                                 |
+
+---
+
+## Implementation notes for the next agent
+
+These nine decisions resolve every ambiguity the test suite leaves
+under-specified. They are binding for phase-04 implementation: the
+tests are written to accept any reasonable choice, but Codex should
+pick the option below for consistency with downstream phases.
+
+### 1. `preference_status_enum` — keep `none`
+
+The enum MUST carry all four labels `{preferred, available, cannot, none}`
+(ARCH §3.6, pinned by Test §2). The application's preference-write path
+only emits `preferred` / `available` / `cannot`. Leave `none` in the
+enum as an explicit "no-preference-on-record" marker if a downstream
+use case surfaces (e.g., phase-09 Phase-2 roster display that wants to
+distinguish "no row" from "explicit null"); do not write `none` from
+phase-04 code.
+
+### 2. `period_targets.target_hours` upper bound — trigger that joins `operating_profiles`
+
+Use a `BEFORE INSERT OR UPDATE` trigger on `period_targets` that joins
+`scheduling_periods → operating_profiles` for the row's `period_id`,
+reads `default_hours_cap`, and raises if `NEW.target_hours > cap` or
+`NEW.target_hours < 0`. This means a future profile change to the cap
+propagates without a separate migration to bump a hard-coded value.
+The CHECK-constraint shortcut is rejected because it would freeze the
+cap into DDL.
+
+### 3. `publish_schedule` re-publish guard — explicit error (not silent no-op)
+
+Re-invoking `publish_schedule(period_id)` against an already-published
+period (i.e. `scheduling_periods.published_at IS NOT NULL`) MUST
+`RAISE EXCEPTION 'period already published'`. Reasoning: re-publish is
+always a caller mistake. A silent no-op masks UI bugs (double-click,
+stale tab) and makes the eventual debug session harder. Test §9 wraps
+the second call in `EXCEPTION WHEN OTHERS` so the error path passes.
+
+### 4. `publish_schedule` atomicity — error on pre-existing rows
+
+If any `shift_block_assignments` row already exists for any block in
+the period at publish time, `publish_schedule` MUST `RAISE EXCEPTION`
+and roll back. Do NOT use UPSERT semantics. Reasoning: a pre-existing
+row before first publish is anomalous state (the SM-built flow has no
+mechanism to create one), and silently reconciling it would obscure
+the underlying bug. Combined with #3, this gives a clean rule: publish
+runs exactly once per period, against an empty-of-assignments period.
+Test §10's rollback-branch assertions become live.
+
+### 5. Draft RLS house-admin policy — new helper `user_can_build_schedule`
+
+Phase-02's `user_has_house_admin_role(user_id, house_id)` checks only
+`hm` and `bm` roles. The schedule-builder UI is also accessible to `sm`
+(ARCH §3.9: "schedule-builder UI scoped to SMs/HMs/BMs"). Add a new
+helper in the phase-04 migration:
+
+```sql
+CREATE OR REPLACE FUNCTION user_can_build_schedule(
+  check_user_id uuid,
+  check_house_id text
+)
+RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM user_roles
+    WHERE user_id = check_user_id
+      AND role IN ('sm', 'hm', 'bm')
+      AND scope_house_id = check_house_id
+  );
+$$;
+```
+
+The `draft_block_assignments` SELECT policy then joins through
+`shift_blocks` to find the block's house:
+
+```sql
+CREATE POLICY "house schedule-builders can select drafts" ON draft_block_assignments
+  FOR SELECT TO authenticated
+  USING (EXISTS (
+    SELECT 1 FROM shift_blocks b
+    WHERE b.block_id = draft_block_assignments.block_id
+      AND user_can_build_schedule(auth.uid(), b.house_id)
+  ));
+```
+
+Do NOT extend phase-02's `user_has_house_admin_role` to include `sm` —
+that helper has documented HM/BM-only semantics used elsewhere
+(non-broadcast subscription, eligibility filters), and conflating
+worker-facing SM with admin-facing HM/BM there would create
+hard-to-trace regressions.
+
+### 6. Vitest module path — create `packages/core/src/scheduling/phase1Grouping.ts`
+
+The test file imports from `../../src/scheduling/phase1Grouping.js`.
+Codex must:
+
+1. Create the directory `packages/core/src/scheduling/`.
+2. Implement `phase1Grouping.ts` exporting `groupWorkersForSpan` plus
+   the types `Worker`, `SpanBlock`, `PreferenceRecord`, `PreferenceStatus`,
+   `BlockedReason`, `GroupedWorker`, `GroupingResult` (signatures
+   reproduced verbatim in the test file's header comment).
+3. Add `export * from './scheduling/phase1Grouping.js';` to
+   `packages/core/src/index.ts`.
+
+The implementation is pure — no Supabase imports — and must sort each
+output group alphabetically by `worker.name`. The blocked-reason rule
+(first triggering block in span order, regardless of `cannot` vs
+`missing`) is the trickiest part; iterate the span in order and
+short-circuit on the first non-`preferred`/`available` outcome.
 
 ---
 

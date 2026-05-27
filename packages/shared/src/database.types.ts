@@ -64,6 +64,13 @@ export type Database = {
             referencedRelation: 'houses';
             referencedColumns: ['id'];
           },
+          {
+            foreignKeyName: 'ack_cadence_config_modified_by_fkey';
+            columns: ['modified_by'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
         ];
       };
       break_periods: {
@@ -172,7 +179,22 @@ export type Database = {
           status?: Database['public']['Enums']['hm_leave_status_enum'];
           user_id?: string;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: 'hm_leave_replacement_user_id_fkey';
+            columns: ['replacement_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'hm_leave_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+        ];
       };
       hmod_rotor: {
         Row: {
@@ -370,6 +392,77 @@ export type Database = {
         };
         Relationships: [];
       };
+      user_roles: {
+        Row: {
+          role: Database['public']['Enums']['user_role_enum'];
+          scope_house_id: string | null;
+          user_id: string;
+        };
+        Insert: {
+          role: Database['public']['Enums']['user_role_enum'];
+          scope_house_id?: string | null;
+          user_id: string;
+        };
+        Update: {
+          role?: Database['public']['Enums']['user_role_enum'];
+          scope_house_id?: string | null;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'user_roles_scope_house_id_fkey';
+            columns: ['scope_house_id'];
+            isOneToOne: false;
+            referencedRelation: 'houses';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'user_roles_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+        ];
+      };
+      users: {
+        Row: {
+          broadcast_subscribed: boolean;
+          email: string;
+          home_house_id: string;
+          is_active: boolean;
+          name: string;
+          phone: string | null;
+          user_id: string;
+        };
+        Insert: {
+          broadcast_subscribed?: boolean;
+          email: string;
+          home_house_id: string;
+          is_active?: boolean;
+          name: string;
+          phone?: string | null;
+          user_id: string;
+        };
+        Update: {
+          broadcast_subscribed?: boolean;
+          email?: string;
+          home_house_id?: string;
+          is_active?: boolean;
+          name?: string;
+          phone?: string | null;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'users_home_house_id_fkey';
+            columns: ['home_house_id'];
+            isOneToOne: false;
+            referencedRelation: 'houses';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       weekly_cap_overrides: {
         Row: {
           cap_enforcement: Database['public']['Enums']['cap_enforcement_enum'];
@@ -392,14 +485,33 @@ export type Database = {
           modified_by?: string | null;
           week_start_date?: string;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: 'weekly_cap_overrides_modified_by_fkey';
+            columns: ['modified_by'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+        ];
       };
     };
     Views: {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      name_array_contained_by_text_array: {
+        Args: { left_names: unknown[]; right_text: string[] };
+        Returns: boolean;
+      };
+      user_can_select_user: {
+        Args: { target_user_id: string; viewer_user_id: string };
+        Returns: boolean;
+      };
+      user_has_house_admin_role: {
+        Args: { check_house_id: string; check_user_id: string };
+        Returns: boolean;
+      };
     };
     Enums: {
       break_type_enum:
@@ -413,6 +525,7 @@ export type Database = {
       day_type_enum: 'weekday' | 'weekend';
       hm_leave_status_enum: 'active' | 'cancelled_early';
       scheduling_mode_enum: 'sm_built' | 'claim_based';
+      user_role_enum: 'sw' | 'sm' | 'hm' | 'bm';
       value_type_enum: 'integer' | 'interval' | 'time_of_day' | 'enum';
     };
     CompositeTypes: {
@@ -554,6 +667,7 @@ export const Constants = {
       day_type_enum: ['weekday', 'weekend'],
       hm_leave_status_enum: ['active', 'cancelled_early'],
       scheduling_mode_enum: ['sm_built', 'claim_based'],
+      user_role_enum: ['sw', 'sm', 'hm', 'bm'],
       value_type_enum: ['integer', 'interval', 'time_of_day', 'enum'],
     },
   },

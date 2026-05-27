@@ -89,3 +89,7 @@ the JetBrains GitHub template (see Conventions above).
 - [Phase 01] RLS: all tables have service-role bypass; user-scoped policies come later.
 - [Phase 01] staffing_patterns stores compressed jsonb ranges.
   Application layer expands them at read time.
+- [Phase 02] The broadcast_subscribed guard is enforced at both DB trigger level AND
+  Edge Function level. The DB trigger is authoritative; the EF layer is UX guard.
+- [Phase 02] eligibility functions live in packages/core/src/eligibility/index.ts
+  and are used by phases 05, 06, 07. They take UserEligibilityProfile, not DB rows.

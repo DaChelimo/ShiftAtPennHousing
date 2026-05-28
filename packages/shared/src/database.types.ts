@@ -895,7 +895,7 @@ export type Database = {
           block_start_time: string;
           day_of_week: number;
           house_id: string;
-          occurrence_count: number;
+          weeks_remaining: number;
         }[];
       };
       preference_deadline_is_open: {

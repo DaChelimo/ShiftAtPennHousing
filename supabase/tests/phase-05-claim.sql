@@ -341,6 +341,12 @@ SELECT throws_ok(
 -- week containing H_far_mon (= as_of + 7 days = Mon 2026-06-08). Then
 -- attempt to claim H_far_mon — must reject with hard_cap_exceeded.
 --
+-- Hard-cap enforcement requires cap_enforcement='hard' for the week
+-- (TEST_PLAN decision #4 — DB raises hard_cap_exceeded ONLY when
+-- enforcement='hard' AND projected > cap). The default operating
+-- profile is soft 20h, so we install a weekly_cap_overrides row for
+-- the target week to switch it to hard 40h.
+--
 -- H_safe_mon (+5d Sat) and Q_safe (+6d Sun) sit in the as_of week, not
 -- the +7d week, so they do not contribute to the target-week budget.
 -- We insert exactly 80 Quad assignments in the +7d week, leaving
@@ -348,6 +354,18 @@ SELECT throws_ok(
 -- target. Use offsets v_week + (i+1)*30min for i=0..79 — distinct from
 -- H_far_mon's exact start time.
 -- ============================================================
+
+INSERT INTO public.weekly_cap_overrides
+  (week_start_date, hours_cap, cap_enforcement)
+VALUES (
+  date_trunc(
+    'week',
+    ((current_setting('test.phase05c.as_of')::timestamptz + interval '7 days')
+      AT TIME ZONE 'America/New_York')
+  )::date,
+  40,
+  'hard'
+);
 
 DO $$
 DECLARE

@@ -78,7 +78,7 @@ RETURNS TABLE (
   house_id text,
   day_of_week integer,
   block_start_time time,
-  occurrence_count bigint
+  weeks_remaining bigint
 )
 LANGUAGE sql
 STABLE
@@ -88,14 +88,8 @@ AS $$
   SELECT
     sb.house_id,
     EXTRACT(DOW FROM sb.block_start_at AT TIME ZONE 'America/New_York')::integer AS day_of_week,
-    (
-      (sb.block_start_at AT TIME ZONE 'America/New_York')::time
-      + (
-        EXTRACT(DOW FROM sb.block_start_at AT TIME ZONE 'America/New_York')::integer
-        * interval '1 microsecond'
-      )
-    )::time AS block_start_time,
-    COUNT(*) AS occurrence_count
+    (sb.block_start_at AT TIME ZONE 'America/New_York')::time AS block_start_time,
+    COUNT(*) AS weeks_remaining
   FROM shift_block_assignments sba
   JOIN shift_blocks sb USING (block_id)
   WHERE sb.house_id = p_house_id
@@ -105,13 +99,7 @@ AS $$
   GROUP BY
     sb.house_id,
     EXTRACT(DOW FROM sb.block_start_at AT TIME ZONE 'America/New_York')::integer,
-    (
-      (sb.block_start_at AT TIME ZONE 'America/New_York')::time
-      + (
-        EXTRACT(DOW FROM sb.block_start_at AT TIME ZONE 'America/New_York')::integer
-        * interval '1 microsecond'
-      )
-    )::time
+    (sb.block_start_at AT TIME ZONE 'America/New_York')::time
   ORDER BY day_of_week, block_start_time;
 $$;
 
@@ -205,12 +193,13 @@ BEGIN
     RAISE EXCEPTION 'time_conflict';
   END IF;
 
-  v_week_start_at := p_as_of + (
-    floor(EXTRACT(EPOCH FROM (v_target.block_start_at - p_as_of)) / 604800)::integer
-    * interval '7 days'
-  );
-  v_week_end_at := v_week_start_at + interval '7 days';
-  v_week_start_date := (v_week_start_at AT TIME ZONE 'America/New_York')::date;
+  -- §9.2: calendar week (Monday 00:00 → Sunday 23:59) in America/New_York.
+  v_week_start_date := date_trunc(
+    'week',
+    v_target.block_start_at AT TIME ZONE 'America/New_York'
+  )::date;
+  v_week_start_at := v_week_start_date::timestamp AT TIME ZONE 'America/New_York';
+  v_week_end_at := (v_week_start_date + 7)::timestamp AT TIME ZONE 'America/New_York';
 
   SELECT COUNT(*)::integer
   INTO v_current_blocks
@@ -225,11 +214,8 @@ BEGIN
   INTO v_cap
   FROM effective_weekly_cap(v_week_start_date, v_target.block_start_at);
 
-  IF v_current_blocks >= 80
-     OR (
-       v_cap.cap_enforcement = 'hard'
-       AND ((v_current_blocks + 1)::numeric * 0.5) > v_cap.hours_cap
-     ) THEN
+  IF v_cap.cap_enforcement = 'hard'
+     AND ((v_current_blocks + 1)::numeric * 0.5) > v_cap.hours_cap THEN
     RAISE EXCEPTION 'hard_cap_exceeded';
   END IF;
 
@@ -371,6 +357,13 @@ BEGIN
 
   v_short_notice := v_min_start <= p_as_of + interval '20 minutes';
   v_direct_hmod := v_min_start <= p_as_of + interval '2 hours';
+
+  -- TODO(phase-07): if any of the dropped assignments is a 'floated_in' or
+  -- 'pending_float_in' row (worker currently floating out from their home
+  -- desk), §5.5 requires the float destination to re-enter float lookup
+  -- immediately with the dropper excluded, and the home desk to run a
+  -- below-required-headcount check. Neither is wired here; this drop just
+  -- vacates the row. Re-escalation is the phase-07 escalation engine's job.
 
   UPDATE shift_block_assignments
   SET status = 'vacant',

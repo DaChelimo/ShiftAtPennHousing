@@ -24,7 +24,7 @@
 --   public.permanent_openings_feed(p_house_id text,
 --                                   p_as_of timestamptz DEFAULT now())
 --     RETURNS TABLE (house_id text, day_of_week int, block_start_time time,
---                    occurrence_count bigint)
+--                    weeks_remaining bigint)
 --   — recurring slot view: rows with status='vacant' AND
 --     vacancy_origin='permanent_drop' at the house whose block_start_at
 --     is >= p_as_of, grouped by (house_id, day_of_week,
@@ -342,10 +342,10 @@ SELECT is(
 );
 
 SELECT is(
-  (SELECT occurrence_count FROM public.permanent_openings_feed('harnwell')
+  (SELECT weeks_remaining FROM public.permanent_openings_feed('harnwell')
     LIMIT 1)::integer,
   2,
-  'grouped row reports occurrence_count=2 (two future occurrences of the slot)'
+  'grouped row reports weeks_remaining=2 (two future occurrences of the slot)'
 );
 
 -- The temporary-drop block on a2 must NOT leak into the permanent openings feed.
@@ -486,14 +486,14 @@ SELECT is(
   (SELECT count(*) FROM public.permanent_openings_feed('harnwell'))::integer,
   -- c2 is still vacant + permanent_drop → 1 grouped row remains.
   1,
-  'after one of two permanent_drop occurrences is claimed, the feed still surfaces the remaining occurrence (occurrence_count drops to 1)'
+  'after one of two permanent_drop occurrences is claimed, the feed still surfaces the remaining occurrence (weeks_remaining drops to 1)'
 );
 
 SELECT is(
-  (SELECT occurrence_count FROM public.permanent_openings_feed('harnwell')
+  (SELECT weeks_remaining FROM public.permanent_openings_feed('harnwell')
     LIMIT 1)::integer,
   1,
-  'after a permanent_drop occurrence is claimed, occurrence_count reflects only the remaining vacant occurrences'
+  'after a permanent_drop occurrence is claimed, weeks_remaining reflects only the remaining vacant occurrences'
 );
 
 SELECT finish();

@@ -1,12 +1,17 @@
-import type { BlockId, ScheduledWorker } from './types.js';
-
+// §6.3 tiebreaker chain — candidate-set narrowing.
+//
+// Each check narrows the candidate set. Once a check has exactly one
+// satisfier, it is selected. If multiple satisfy, the set is narrowed
+// and the next check runs on the narrowed set. Zero satisfiers leaves
+// the set unchanged (pinned-decision #5). Check 3 ("arbitrary") is
+// `narrowed[0]` — deterministic per pinned-decision #4.
 export function selectByTiebreaker<T>(
   candidates: T[],
   startsAtSelectedSpan: (candidate: T) => boolean,
   endsAtSelectedSpan: (candidate: T) => boolean,
 ): T {
   if (candidates.length === 0) {
-    throw new Error('breakTie requires at least one candidate');
+    throw new Error('selectByTiebreaker requires at least one candidate');
   }
 
   let narrowed = candidates;
@@ -28,19 +33,4 @@ export function selectByTiebreaker<T>(
   }
 
   return narrowed[0]!;
-}
-
-export function breakTie(
-  candidates: ScheduledWorker[],
-  selectedSpan: BlockId[],
-  _gapBlockOrder: BlockId[],
-): ScheduledWorker {
-  const spanStart = selectedSpan[0];
-  const spanEnd = selectedSpan.at(-1);
-
-  return selectByTiebreaker(
-    candidates,
-    (candidate) => candidate.scheduledBlockIds[0] === spanStart,
-    (candidate) => candidate.scheduledBlockIds.at(-1) === spanEnd,
-  );
 }

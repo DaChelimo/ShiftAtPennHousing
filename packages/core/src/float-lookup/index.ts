@@ -7,7 +7,13 @@ import {
   getLeadingSpan,
 } from './spans.js';
 import { selectByTiebreaker } from './tiebreaker.js';
-import type { BlockId, FloatAssignment, FloatLookupInput, FloatLookupResult } from './types.js';
+import type {
+  BlockId,
+  FloatAssignment,
+  FloatLookupInput,
+  FloatLookupResult,
+  HouseId,
+} from './types.js';
 
 const HARNWELL_HOUSE_ID = 'harnwell';
 const MIN_FLOAT_CHUNK_BLOCKS = 2;
@@ -22,10 +28,6 @@ function sameBlockIds(left: BlockId[], right: BlockId[]): boolean {
   return left.length === right.length && left.every((blockId, index) => blockId === right[index]);
 }
 
-function blockStartTime(gap: NormalizedGap, blockId: BlockId): Date | undefined {
-  return gap.blockStartTimes.get(blockId);
-}
-
 function workerStartsAtSpan(
   worker: NormalizedWorker,
   span: BlockId[],
@@ -37,13 +39,13 @@ function workerStartsAtSpan(
     return false;
   }
 
-  const spanStartAt = blockStartTime(gap, spanStart);
+  const spanStartAt = gap.blockStartTimes.get(spanStart);
 
-  if (worker.shiftStartAt !== undefined && spanStartAt !== undefined) {
-    return worker.shiftStartAt.getTime() === spanStartAt.getTime();
+  if (spanStartAt === undefined) {
+    return false;
   }
 
-  return worker.scheduledBlockIds[0] === spanStart;
+  return worker.shiftStartAt.getTime() === spanStartAt.getTime();
 }
 
 function workerEndsAtSpan(worker: NormalizedWorker, span: BlockId[], gap: NormalizedGap): boolean {
@@ -53,13 +55,13 @@ function workerEndsAtSpan(worker: NormalizedWorker, span: BlockId[], gap: Normal
     return false;
   }
 
-  const spanEndStartAt = blockStartTime(gap, spanEnd);
+  const spanEndStartAt = gap.blockStartTimes.get(spanEnd);
 
-  if (worker.shiftEndAt !== undefined && spanEndStartAt !== undefined) {
-    return worker.shiftEndAt.getTime() === spanEndStartAt.getTime() + BLOCK_DURATION_MS;
+  if (spanEndStartAt === undefined) {
+    return false;
   }
 
-  return worker.scheduledBlockIds.at(-1) === spanEnd;
+  return worker.shiftEndAt.getTime() === spanEndStartAt.getTime() + BLOCK_DURATION_MS;
 }
 
 function selectWorkerForSpan(
@@ -76,13 +78,12 @@ function selectWorkerForSpan(
 
 function buildAssignment(
   worker: NormalizedWorker,
-  sourceHouseId: string,
+  sourceHouseId: HouseId,
   span: BlockId[],
 ): FloatAssignment {
   return {
     workerId: worker.workerId,
     sourceHouseId,
-    coveredBlockIds: [...span],
     blocks: [...span],
   };
 }
@@ -103,8 +104,13 @@ function chooseLargestNonLeadingSpan(
   const maxLength = Math.max(...viable.map((candidate) => candidate.span.length));
   const maxCandidates = viable.filter((candidate) => candidate.span.length === maxLength);
 
-  // A purely trailing partial leaves the start of this source's current run
-  // uncovered and does not improve the leading handoff the fallback is for.
+  // A purely trailing partial leaves the start of the current run
+  // uncovered and does not improve the leading handoff the fallback
+  // is for. On the first iteration at each source we exclude trailing
+  // partials so a Quad-trailing worker cannot preempt a Harnwell-full
+  // worker on the next source. After the source has selected at least
+  // once, this restriction is lifted: interior-hole scenarios
+  // (Integration Scenario 9) need to allow the trailing remainder.
   const nonTrailing = allowTrailingPartial
     ? maxCandidates
     : maxCandidates.filter((candidate) => candidate.span.at(-1) !== targetRun.at(-1));
@@ -112,6 +118,22 @@ function chooseLargestNonLeadingSpan(
   return nonTrailing[0] ?? null;
 }
 
+// Partial-coverage fallback — tiered selection (pinned decision #16).
+//
+// Against the current uncovered run, the algorithm tries three tiers
+// in order. Each tier hands its tied candidates to the §6.3
+// tiebreaker chain (selectByTiebreaker). The first non-empty tier
+// yields the selection.
+//
+//   Tier 1: FULL coverage — workers covering the entire targetRun.
+//   Tier 2: LEADING coverage — workers covering the run's start with
+//           a ≥2-block leading portion (pinned #13).
+//   Tier 3: LARGEST CONSECUTIVE anywhere within the run, ≥2 blocks,
+//           with a non-trailing filter on the first iteration at each
+//           source (allowTrailingPartial=false).
+//
+// If all three tiers yield no candidate, return null; the caller
+// breaks out of this source's loop and moves on.
 function chooseCandidateForCurrentRun(
   eligibleWorkers: NormalizedWorker[],
   targetRun: BlockId[],
@@ -169,17 +191,19 @@ function chooseCandidateForCurrentRun(
 }
 
 export function findFloaters(input: FloatLookupInput): FloatLookupResult {
-  const { gap, sources, legacyMode } = normalizeInput(input);
+  const { gap, sources } = normalizeInput(input);
 
+  // BSpec §6.1: Harnwell-as-destination short-circuit. Off-duty
+  // Harnwell workers route through the weekly feed, not float lookup.
   if (gap.destinationHouseId === HARNWELL_HOUSE_ID) {
     return { assignments: [], alliedBlockIds: [...gap.blockIds] };
   }
 
   const assignments: FloatAssignment[] = [];
   const remainingUncoveredBlocks = [...gap.blockIds];
-  const tentativeFloatingOut = new Map<string, number>();
+  const tentativeFloatingOut = new Map<HouseId, number>();
   const selectedWorkerIds = new Set<string>();
-  const selectedSpanLengthsBySource = new Map<string, number[]>();
+  const sourcesWithPriorSelection = new Set<HouseId>();
 
   for (const source of sources) {
     while (remainingUncoveredBlocks.length > 0) {
@@ -200,11 +224,12 @@ export function findFloaters(input: FloatLookupInput): FloatLookupResult {
         break;
       }
 
+      const allowTrailingPartial = sourcesWithPriorSelection.has(source.houseId);
       const selected = chooseCandidateForCurrentRun(
         eligibleWorkers,
         targetRun,
         gap,
-        !legacyMode || (selectedSpanLengthsBySource.get(source.houseId)?.length ?? 0) > 0,
+        allowTrailingPartial,
       );
 
       if (selected === null || selected.span.length < MIN_FLOAT_CHUNK_BLOCKS) {
@@ -213,15 +238,15 @@ export function findFloaters(input: FloatLookupInput): FloatLookupResult {
 
       assignments.push(buildAssignment(selected.worker, source.houseId, selected.span));
       selectedWorkerIds.add(selected.worker.workerId);
-      const priorSpanLengths = selectedSpanLengthsBySource.get(source.houseId) ?? [];
-      selectedSpanLengthsBySource.set(source.houseId, [...priorSpanLengths, selected.span.length]);
+      sourcesWithPriorSelection.add(source.houseId);
 
-      if (!legacyMode || selected.span.length === MIN_FLOAT_CHUNK_BLOCKS) {
-        tentativeFloatingOut.set(
-          source.houseId,
-          (tentativeFloatingOut.get(source.houseId) ?? 0) + 1,
-        );
-      }
+      // Pinned decision #1: tentative counter is GLOBAL per source.
+      // Increment unconditionally after each selection, regardless of
+      // the selected span's length. The floor check
+      // (sourceHasFloor / workerBlocksRespectSourceFloor) reads this
+      // counter so that a single lookup invocation cannot over-float
+      // a source beyond (headcount − 1) selections per pass.
+      tentativeFloatingOut.set(source.houseId, (tentativeFloatingOut.get(source.houseId) ?? 0) + 1);
 
       const covered = new Set(selected.span);
       for (let index = remainingUncoveredBlocks.length - 1; index >= 0; index -= 1) {
@@ -242,7 +267,7 @@ export function runFloatLookup(input: FloatLookupInput): FloatAssignment[] {
   return findFloaters(input).assignments;
 }
 
-export * from './eligibility.js';
 export * from './spans.js';
 export * from './tiebreaker.js';
 export * from './types.js';
+export { getEligibleWorkersForSource } from './eligibility.js';

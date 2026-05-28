@@ -1,17 +1,13 @@
 import type { NormalizedGap, NormalizedSource, NormalizedWorker } from './normalize.js';
-import type {
-  BlockId,
-  FloatExclusion,
-  Gap,
-  HouseId,
-  ScheduledWorker,
-  SourceHouseInfo,
-} from './types.js';
+import type { FloatExclusion, HouseId } from './types.js';
 
 const HARNWELL_HOUSE_ID = 'harnwell';
 const QUAD_HOUSE_ID = 'quad';
 const BLOCK_DURATION_MS = 30 * 60 * 1000;
 
+// AGENTS hard invariant #2 (BSpec §1.2 absolute): enforced
+// algorithmically, never trusted from float_routing config. The
+// allowlist is closed; any source house id not in it is rejected.
 function isPermittedSourceHouse(sourceHouseId: HouseId, destinationHouseId: HouseId): boolean {
   if (sourceHouseId === HARNWELL_HOUSE_ID) {
     return true;
@@ -24,16 +20,30 @@ function isPermittedSourceHouse(sourceHouseId: HouseId, destinationHouseId: Hous
   return false;
 }
 
-function hasAdminWorkerExclusion(worker: ScheduledWorker): boolean {
+function hasAdminWorkerExclusion(worker: NormalizedWorker): boolean {
   return worker.roles.includes('hm') || worker.roles.includes('bm');
 }
 
+// Source-level early exit (pinned-decision #1): the source can admit
+// at least one more floater iff some block still has slack after
+// accounting for the running tentative counter. Using MAX (not MIN)
+// of per-block headcount preserves correctness for sources with
+// uneven staffing — a low-headcount block on one end of the gap
+// must not disqualify candidates whose coverage avoids that block.
+// The per-worker floor check (workerBlocksRespectSourceFloor) then
+// enforces the floor on the exact blocks each candidate covers.
 function sourceHasFloor(
   source: NormalizedSource,
   tentativeFloatingOut: Map<HouseId, number>,
 ): boolean {
   const tentativeCount = tentativeFloatingOut.get(source.houseId) ?? 0;
-  return source.currentHeadcount - tentativeCount > 1;
+
+  for (const headcount of source.headcountByBlockId.values()) {
+    if (headcount - tentativeCount > 1) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function workerBlocksRespectSourceFloor(
@@ -42,25 +52,26 @@ function workerBlocksRespectSourceFloor(
   gap: NormalizedGap,
   tentativeFloatingOut: Map<HouseId, number>,
 ): boolean {
-  if (source.headcountByBlockId === undefined) {
-    return true;
-  }
-
   const tentativeCount = tentativeFloatingOut.get(source.houseId) ?? 0;
   const gapBlocks = new Set(gap.blockIds);
 
   return worker.scheduledBlockIds
     .filter((blockId) => gapBlocks.has(blockId))
     .every((blockId) => {
-      const headcount = source.headcountByBlockId?.get(blockId) ?? source.currentHeadcount;
+      const headcount = source.headcountByBlockId.get(blockId);
+      if (headcount === undefined) {
+        // No headcount data for a block the worker claims to cover
+        // is a caller bug; fail closed.
+        return false;
+      }
       return headcount - tentativeCount > 1;
     });
 }
 
-function getGapWindow(gap: NormalizedGap): { startAt: Date; endAt: Date } | null {
-  const starts = gap.blockIds
-    .map((blockId) => gap.blockStartTimes.get(blockId))
-    .filter((value): value is Date => value !== undefined);
+type TimeRange = { startAt: Date; endAt: Date };
+
+function getGapWindow(gap: NormalizedGap): TimeRange | null {
+  const starts = [...gap.blockStartTimes.values()];
 
   if (starts.length === 0) {
     return null;
@@ -72,103 +83,27 @@ function getGapWindow(gap: NormalizedGap): { startAt: Date; endAt: Date } | null
   return { startAt, endAt };
 }
 
-function rangesOverlap(
-  left: { startAt: Date; endAt: Date },
-  right: { startAt: Date; endAt: Date },
-): boolean {
+// Half-open intervals — abutting ranges (left.end == right.start) do
+// not overlap. Pinned-decision #6.
+function rangesOverlap(left: TimeRange, right: TimeRange): boolean {
   return left.startAt < right.endAt && left.endAt > right.startAt;
-}
-
-function blockIdsOverlapGap(
-  blockIds: BlockId[],
-  gap: NormalizedGap,
-  gapWindow: { startAt: Date; endAt: Date } | null,
-): boolean {
-  const gapBlockIds = new Set(gap.blockIds);
-
-  if (blockIds.some((blockId) => gapBlockIds.has(blockId))) {
-    return true;
-  }
-
-  if (gapWindow === null) {
-    return false;
-  }
-
-  return blockIds.some((blockId) => {
-    const startAt = gap.blockStartTimes.get(blockId);
-
-    if (startAt === undefined) {
-      return false;
-    }
-
-    return rangesOverlap(
-      { startAt, endAt: new Date(startAt.getTime() + BLOCK_DURATION_MS) },
-      gapWindow,
-    );
-  });
-}
-
-function exclusionWorkerId(exclusion: FloatExclusion): string | undefined {
-  return exclusion.workerId ?? exclusion.userId;
-}
-
-function exclusionOverlapsGap(
-  exclusion: FloatExclusion,
-  gap: NormalizedGap,
-  gapWindow: { startAt: Date; endAt: Date } | null,
-): boolean {
-  if (
-    exclusion.windowStartAt !== undefined &&
-    exclusion.windowEndAt !== undefined &&
-    gapWindow !== null
-  ) {
-    return rangesOverlap(
-      { startAt: exclusion.windowStartAt, endAt: exclusion.windowEndAt },
-      gapWindow,
-    );
-  }
-
-  if (exclusion.windowStartBlockId === undefined || exclusion.windowEndBlockId === undefined) {
-    return false;
-  }
-
-  const startAt = gap.blockStartTimes.get(exclusion.windowStartBlockId);
-  const endBlockStartAt = gap.blockStartTimes.get(exclusion.windowEndBlockId);
-
-  if (startAt !== undefined && endBlockStartAt !== undefined && gapWindow !== null) {
-    return rangesOverlap(
-      {
-        startAt,
-        endAt: new Date(endBlockStartAt.getTime() + BLOCK_DURATION_MS),
-      },
-      gapWindow,
-    );
-  }
-
-  const startIndex = gap.blockIds.indexOf(exclusion.windowStartBlockId);
-  const endIndex = gap.blockIds.indexOf(exclusion.windowEndBlockId);
-
-  if (startIndex === -1 || endIndex === -1) {
-    return false;
-  }
-
-  const [fromIndex, toIndex] =
-    startIndex <= endIndex ? [startIndex, endIndex] : [endIndex, startIndex];
-  return gap.blockIds.slice(fromIndex, toIndex + 1).length > 0;
 }
 
 function hasMatchingExclusion(
   worker: NormalizedWorker,
   destinationHouseId: HouseId,
   exclusions: FloatExclusion[],
-  gap: NormalizedGap,
-  gapWindow: { startAt: Date; endAt: Date } | null,
+  gapWindow: TimeRange | null,
 ): boolean {
+  if (gapWindow === null) {
+    return false;
+  }
+
   return exclusions.some(
     (exclusion) =>
-      exclusionWorkerId(exclusion) === worker.workerId &&
+      exclusion.userId === worker.workerId &&
       exclusion.destinationHouseId === destinationHouseId &&
-      exclusionOverlapsGap(exclusion, gap, gapWindow),
+      rangesOverlap({ startAt: exclusion.windowStartAt, endAt: exclusion.windowEndAt }, gapWindow),
   );
 }
 
@@ -205,36 +140,20 @@ export function getEligibleWorkersForSource(
       return false;
     }
 
-    if (blockIdsOverlapGap(worker.pendingFloatBlockIds, gap, gapWindow)) {
+    // BSpec §6.1: worker already assigned to a float (pending or
+    // acknowledged) whose window overlaps the gap is excluded.
+    // The caller pre-computes this as a boolean against the gap window.
+    if (worker.hasConflictingFloat) {
       return false;
     }
 
-    if (blockIdsOverlapGap(worker.crossHousePickupBlockIds, gap, gapWindow)) {
+    // BSpec §6.1: a worker on a cross-house pickup at any house is
+    // treated as a worker at that house for headcount, but is NOT
+    // floatable during the pickup window.
+    if (worker.hasConflictingCrossHousePickup) {
       return false;
     }
 
-    return !hasMatchingExclusion(worker, gap.destinationHouseId, exclusions, gap, gapWindow);
+    return !hasMatchingExclusion(worker, gap.destinationHouseId, exclusions, gapWindow);
   });
-}
-
-export function getEligibleWorkers(
-  source: SourceHouseInfo,
-  gap: Gap,
-  exclusions: FloatExclusion[],
-  tentativeFloatingOut: Map<HouseId, number>,
-): ScheduledWorker[] {
-  return getEligibleWorkersForSource(
-    {
-      houseId: source.houseId,
-      workers: source.workers,
-      currentHeadcount: source.currentHeadcount,
-    },
-    {
-      destinationHouseId: gap.destinationHouseId,
-      blockIds: gap.blockIds,
-      blockStartTimes: new Map<BlockId, Date>(),
-    },
-    exclusions,
-    tentativeFloatingOut,
-  );
 }

@@ -152,6 +152,15 @@ describe('multi-floater chunking — within a single source', () => {
     //    24:00 destination gap covered by worker B (19:00 to 21:00 from
     //    Harnwell) and worker D (21:00 to 24:00 from Harnwell) results
     //    in two distinct float assignment records."
+    //
+    // Harnwell headcount is set to 3 here (not 2) because pinned
+    // decision #1 enforces a GLOBAL per-source tentative counter:
+    // (headcount − globalCount ≥ 2) for each successive selection.
+    // A 2-worker source can spare exactly one floater per pass, so
+    // demonstrating the BSpec two-floater worked example requires a
+    // source with at least 3 workers. The BSpec example does not
+    // pin Harnwell's headcount; the test fixture chooses 3 to keep
+    // the example expressible under pinned #1.
     const gap = makeGap(GAP_HOUSE, ANCHOR_19_00_EDT, 10);
     const b = makeCandidate({
       userId: 'harn-B',
@@ -173,7 +182,7 @@ describe('multi-floater chunking — within a single source', () => {
           precedenceOrder: 1,
           candidates: [b, d],
           gap,
-          homogeneousHeadcount: 2,
+          homogeneousHeadcount: 3,
         }),
       ]),
     );

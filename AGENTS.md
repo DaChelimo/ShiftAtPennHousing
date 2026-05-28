@@ -113,3 +113,36 @@ the JetBrains GitHub template (see Conventions above).
   The own-assignment clause is load-bearing for personal-calendar visibility of
   float-out and cross-house-pickup rows (BEH §11.2) — those rows attach to
   non-home-house blocks and would otherwise be invisible to the worker.
+- [Phase 06] The float lookup algorithm (`packages/core/src/float-lookup/`) is a
+  PURE FUNCTION — zero Supabase imports, deterministic for a given input. The
+  orchestrator (phase 07) snapshots all DB state into `FloatLookupInput` and
+  writes the resulting `FloatAssignment[]` rows itself. Do not call the
+  algorithm from inside a DB transaction loop; build the snapshot once.
+- [Phase 06] Tentative counter is GLOBAL per source (pinned decision #1 in
+  `tests/PHASE_06/TEST_PLAN.md`): increment unconditionally after EACH selection,
+  regardless of the span's length or block positions. A k-worker source can
+  spare exactly k−1 floaters per pass. Hybrid heuristics (e.g., "only count
+  2-block selections") look correct against tests with overlapping spans but
+  silently over-float when spans are disjoint. The phase-06 audit pass
+  removed such a heuristic; do not reintroduce.
+- [Phase 06] Partial-coverage fallback is THREE TIERS (pinned decision #16):
+  full coverage → leading portion ≥2 blocks → largest consecutive span ≥2
+  blocks (with non-trailing filter on the first iteration at each source).
+  BSpec §6.2 #5 text describes only the first two; the third tier is required
+  by Integration Scenario 9 (interior 1-block hole). Document any change to
+  this tiering in both `tests/PHASE_06/TEST_PLAN.md` and the header comment
+  on `chooseCandidateForCurrentRun`.
+- [Phase 06] `float_assignments.source_assignment_ids` / `destination_assignment_ids`
+  are uuid[] columns validated by an INSERT/UPDATE trigger (not by per-row FK,
+  which Postgres does not support on array elements). The reverse direction —
+  `shift_block_assignments.parent_float_id` → `float_assignments.float_id` —
+  IS a true FK, deferrable, ON DELETE SET NULL. Phase 07 must populate both
+  sides inside the same transaction (the algorithm returns block ids; the
+  caller resolves them to assignment_ids).
+- [Phase 06] Hours cap is NOT checked in the float algorithm (BSpec §6.1,
+  AGENTS hard invariant #4) and the algorithm input has no cap field by
+  design. Floats relocate already-scheduled hours; total weekly hours are
+  unchanged. A worker at 39h is still eligible to float. The shared
+  `isEligibleForFloatLookup` in `packages/core/src/eligibility/` is a
+  separate, broader pre-filter the orchestrator may use; it also does not
+  check hours.

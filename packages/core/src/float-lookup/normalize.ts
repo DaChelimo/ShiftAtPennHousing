@@ -2,10 +2,7 @@ import type {
   BlockId,
   FloatCandidate,
   FloatLookupInput,
-  GapBlock,
   HouseId,
-  ScheduledWorker,
-  SourceHouseInfo,
   SourceHouseRoster,
   WorkerId,
   WorkerRole,
@@ -17,122 +14,73 @@ export type NormalizedGap = {
   blockStartTimes: Map<BlockId, Date>;
 };
 
-export type NormalizedWorker = ScheduledWorker & {
-  shiftStartAt?: Date;
-  shiftEndAt?: Date;
+// The worker shape the algorithm operates on. Every list is copied
+// from the input on normalization so the algorithm cannot mutate
+// caller-owned arrays.
+export type NormalizedWorker = {
+  workerId: WorkerId;
+  homeHouseId: HouseId;
+  roles: WorkerRole[];
+  isActive: boolean;
+  scheduledBlockIds: BlockId[];
+  hasConflictingFloat: boolean;
+  hasConflictingCrossHousePickup: boolean;
+  shiftStartAt: Date;
+  shiftEndAt: Date;
 };
 
 export type NormalizedSource = {
   houseId: HouseId;
   workers: NormalizedWorker[];
-  currentHeadcount: number;
-  headcountByBlockId?: Map<BlockId, number>;
+  // Per-block effective headcount. The floor check uses this directly
+  // (per-block accounting), with the running tentative counter
+  // subtracted per pinned-decision #1.
+  headcountByBlockId: Map<BlockId, number>;
 };
 
-function isLegacyGap(
-  gap: FloatLookupInput['gap'],
-): gap is { destinationHouseId: HouseId; blocks: GapBlock[] } {
-  return 'blocks' in gap;
-}
-
 function normalizeGap(input: FloatLookupInput): NormalizedGap {
-  if (isLegacyGap(input.gap)) {
-    return {
-      destinationHouseId: input.gap.destinationHouseId,
-      blockIds: input.gap.blocks.map((block) => block.blockId),
-      blockStartTimes: new Map(
-        input.gap.blocks.map((block) => [block.blockId, block.blockStartAt]),
-      ),
-    };
-  }
-
   return {
     destinationHouseId: input.gap.destinationHouseId,
-    blockIds: input.gap.blockIds,
-    blockStartTimes: input.gapBlockToStartTime ?? new Map<BlockId, Date>(),
+    blockIds: input.gap.blocks.map((block) => block.blockId),
+    blockStartTimes: new Map(input.gap.blocks.map((block) => [block.blockId, block.blockStartAt])),
   };
 }
 
-function getMinimumHeadcount(
-  effectiveHeadcountByBlockId: Record<BlockId, number>,
-  gapBlockIds: BlockId[],
-): number {
-  const values = gapBlockIds
-    .map((blockId) => effectiveHeadcountByBlockId[blockId])
-    .filter((value): value is number => value !== undefined);
-
-  return values.length === 0 ? 0 : Math.min(...values);
-}
-
-function normalizeScheduledWorker(worker: ScheduledWorker): NormalizedWorker {
-  return {
-    ...worker,
-    roles: [...worker.roles],
-    scheduledBlockIds: [...worker.scheduledBlockIds],
-    pendingFloatBlockIds: [...worker.pendingFloatBlockIds],
-    crossHousePickupBlockIds: [...worker.crossHousePickupBlockIds],
-  };
-}
-
-function normalizeFloatCandidate(
-  candidate: FloatCandidate,
-  gapBlockIds: BlockId[],
-): NormalizedWorker {
+function normalizeFloatCandidate(candidate: FloatCandidate): NormalizedWorker {
   return {
     workerId: candidate.userId,
     homeHouseId: candidate.homeHouseId,
     roles: [...candidate.roles] as WorkerRole[],
     isActive: candidate.isActive,
     scheduledBlockIds: [...candidate.coveredGapBlockIds],
-    pendingFloatBlockIds: candidate.hasConflictingFloat ? [...gapBlockIds] : [],
-    crossHousePickupBlockIds: candidate.hasConflictingCrossHousePickup ? [...gapBlockIds] : [],
-    currentWeeklyHours: 0,
+    hasConflictingFloat: candidate.hasConflictingFloat,
+    hasConflictingCrossHousePickup: candidate.hasConflictingCrossHousePickup,
     shiftStartAt: candidate.shiftStartAt,
     shiftEndAt: candidate.shiftEndAt,
   };
 }
 
-function normalizeSourceHouseInfo(source: SourceHouseInfo): NormalizedSource {
-  return {
-    houseId: source.houseId,
-    workers: source.workers.map(normalizeScheduledWorker),
-    currentHeadcount: source.currentHeadcount,
-  };
-}
-
-function normalizeSourceHouseRoster(
-  source: SourceHouseRoster,
-  gapBlockIds: BlockId[],
-): NormalizedSource {
-  const headcountByBlockId = new Map(
-    Object.entries(source.effectiveHeadcountByBlockId) as Array<[BlockId, number]>,
-  );
-
+function normalizeSourceHouseRoster(source: SourceHouseRoster): NormalizedSource {
   return {
     houseId: source.sourceHouseId,
-    workers: source.candidates.map((candidate) => normalizeFloatCandidate(candidate, gapBlockIds)),
-    currentHeadcount: getMinimumHeadcount(source.effectiveHeadcountByBlockId, gapBlockIds),
-    headcountByBlockId,
+    workers: source.candidates.map(normalizeFloatCandidate),
+    headcountByBlockId: new Map(
+      Object.entries(source.effectiveHeadcountByBlockId) as Array<[BlockId, number]>,
+    ),
   };
 }
 
 export function normalizeInput(input: FloatLookupInput): {
   gap: NormalizedGap;
   sources: NormalizedSource[];
-  legacyMode: boolean;
 } {
   const gap = normalizeGap(input);
-  const legacyMode = input.sourceHousesInPriorityOrder === undefined;
+  // ARCH §5.2 step 2: sort by precedenceOrder ASC. Quad's
+  // float_routing row has precedence 1; Harnwell's has 2. The
+  // algorithm never trusts the caller's array order.
+  const sources = [...input.sources]
+    .sort((left, right) => left.precedenceOrder - right.precedenceOrder)
+    .map(normalizeSourceHouseRoster);
 
-  const sources =
-    input.sourceHousesInPriorityOrder?.map(normalizeSourceHouseInfo) ??
-    [...(input.sources ?? [])]
-      .sort((left, right) => left.precedenceOrder - right.precedenceOrder)
-      .map((source) => normalizeSourceHouseRoster(source, gap.blockIds));
-
-  return { gap, sources, legacyMode };
-}
-
-export function getWorkerId(worker: NormalizedWorker | ScheduledWorker): WorkerId {
-  return worker.workerId;
+  return { gap, sources };
 }

@@ -84,10 +84,6 @@ function addMinutes(date: Date, minutes: number): Date {
   return new Date(date.getTime() + minutes * 60 * 1000);
 }
 
-function addDays(date: Date, days: number): Date {
-  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
-}
-
 function nestedOne<T>(value: T | T[] | null | undefined): T | null {
   if (Array.isArray(value)) {
     return value[0] ?? null;
@@ -139,41 +135,6 @@ function localDateIso(date: Date, timezone = TIMEZONE): string {
     String(parts.month).padStart(2, '0'),
     String(parts.day).padStart(2, '0'),
   ].join('-');
-}
-
-function timeOfDayMs(value: string): number {
-  const match = value.match(/^(\d{2}):(\d{2})$/);
-  if (match === null) {
-    throw new Error(`invalid time of day: ${value}`);
-  }
-  return (Number(match[1]) * 60 + Number(match[2])) * 60 * 1000;
-}
-
-function isHmWorkingTime(date: Date, start = '08:00', end = '17:00'): boolean {
-  const parts = localParts(date, TIMEZONE);
-  return (
-    parts.weekday >= 1 &&
-    parts.weekday <= 5 &&
-    parts.msSinceMidnight >= timeOfDayMs(start) &&
-    parts.msSinceMidnight < timeOfDayMs(end)
-  );
-}
-
-function notificationTarget(blockStartAt: Date, firedAt: Date): 'hm' | 'hmod' {
-  return isHmWorkingTime(firedAt) && isHmWorkingTime(blockStartAt) ? 'hm' : 'hmod';
-}
-
-function hmodWeekStartDate(date: Date): string {
-  const parts = localParts(date, TIMEZONE);
-  let daysSinceMonday = (parts.weekday + 6) % 7;
-  if (parts.weekday === 1 && parts.msSinceMidnight < timeOfDayMs('08:00')) {
-    daysSinceMonday = 7;
-  }
-
-  const localMidnightUtc = Date.UTC(parts.year, parts.month - 1, parts.day);
-  return new Date(localMidnightUtc - daysSinceMonday * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 10);
 }
 
 function parseOffsetMinutes(offset: unknown): number {
@@ -261,7 +222,14 @@ function evaluateChainSteps(params: {
       return [];
     }
     if (status === 'rolled_back') {
-      return nowMs === fireAt
+      // C-2 audit fix: minute-bucket comparison tolerates the
+      // sub-minute cron jitter the Edge Function inevitably accrues
+      // between pg_cron firing at HH:MM:00 and `new Date()` resolving
+      // a few hundred milliseconds later. See evaluate.ts in
+      // packages/core for the canonical version.
+      const fireAtMinute = Math.floor(fireAt / 60_000);
+      const nowMinute = Math.floor(nowMs / 60_000);
+      return nowMinute === fireAtMinute
         ? [
             {
               stepName: step.stepName,
@@ -375,167 +343,54 @@ async function claimStep(
   return (inserted?.length ?? 0) > 0;
 }
 
-async function broadcastStep(supabase: Supabase, block: BlockRef, firedAt: Date): Promise<number> {
-  const { data: users, error: usersError } = await supabase
-    .from('users')
-    .select('user_id')
-    .eq('broadcast_subscribed', true)
-    .eq('home_house_id', block.houseId)
-    .eq('is_active', true);
-
-  if (usersError !== null) {
-    throw usersError;
-  }
-
-  const rows = (users ?? []).map((user) => ({
-    recipient_user_id: user.user_id,
-    type: 'broadcast',
-    scheduled_for: firedAt.toISOString(),
-    payload: {
-      block_id: block.blockId,
-      house_id: block.houseId,
-      block_start_at: block.blockStartAt.toISOString(),
-    },
-  }));
-
-  if (rows.length === 0) {
-    return 0;
-  }
-
-  const { error } = await supabase.from('notifications').insert(rows);
-  if (error !== null) {
-    throw error;
-  }
-
-  return rows.length;
-}
-
-async function resolveLeaveReplacement(
-  supabase: Supabase,
-  userId: string,
-  at: Date,
-): Promise<string | null> {
-  const leaveDate = localDateIso(at);
-  let currentUserId: string | null = userId;
-
-  for (let depth = 0; depth < 10 && currentUserId !== null; depth += 1) {
-    const { data: leave, error } = await supabase
-      .from('hm_leave')
-      .select('replacement_user_id')
-      .eq('user_id', currentUserId)
-      .eq('status', 'active')
-      .lte('start_date', leaveDate)
-      .gte('end_date', leaveDate)
-      .limit(1)
-      .maybeSingle();
-
-    if (error !== null) {
-      throw error;
-    }
-    if (leave === null) {
-      return currentUserId;
-    }
-    currentUserId = leave.replacement_user_id;
-  }
-
-  return null;
-}
-
-async function firstActiveUser(supabase: Supabase, userIds: string[]): Promise<string | null> {
-  if (userIds.length === 0) {
-    return null;
-  }
-
-  const { data, error } = await supabase
-    .from('users')
-    .select('user_id')
-    .in('user_id', userIds)
-    .eq('is_active', true)
-    .limit(1)
-    .maybeSingle();
-
-  if (error !== null) {
-    throw error;
-  }
-  return data?.user_id ?? null;
-}
-
-async function resolveHmForHouse(
-  supabase: Supabase,
-  houseId: string,
-  at: Date,
-): Promise<string | null> {
-  const { data: roles, error } = await supabase
-    .from('user_roles')
-    .select('user_id')
-    .eq('role', 'hm')
-    .eq('scope_house_id', houseId);
-
-  if (error !== null) {
-    throw error;
-  }
-
-  for (const role of roles ?? []) {
-    const resolved = await resolveLeaveReplacement(supabase, role.user_id, at);
-    const active = resolved === null ? null : await firstActiveUser(supabase, [resolved]);
-    if (active !== null) {
-      return active;
-    }
-  }
-
-  return null;
-}
-
-async function resolveHmod(supabase: Supabase, at: Date): Promise<string | null> {
-  const { data, error } = await supabase
-    .from('hmod_rotor')
-    .select('hmod_user_id')
-    .eq('week_start_date', hmodWeekStartDate(at))
-    .maybeSingle();
-
-  if (error !== null || data === null) {
-    return null;
-  }
-
-  const resolved = await resolveLeaveReplacement(supabase, data.hmod_user_id, at);
-  return resolved === null ? null : firstActiveUser(supabase, [resolved]);
-}
-
-async function hmodNotifyAlliedStep(
-  supabase: Supabase,
-  block: BlockRef,
-  firedAt: Date,
-  reason = 'escalation_chain',
-): Promise<number> {
-  const target = notificationTarget(block.blockStartAt, firedAt);
-  const recipient =
-    target === 'hm'
-      ? ((await resolveHmForHouse(supabase, block.houseId, firedAt)) ??
-        (await resolveHmod(supabase, firedAt)))
-      : await resolveHmod(supabase, firedAt);
-
-  if (recipient === null) {
-    return 0;
-  }
-
-  const { error } = await supabase.from('notifications').insert({
-    recipient_user_id: recipient,
-    type: 'hmod_urgent',
-    scheduled_for: firedAt.toISOString(),
-    payload: {
-      target,
-      reason,
-      block_id: block.blockId,
-      house_id: block.houseId,
-      block_start_at: block.blockStartAt.toISOString(),
-    },
+// B-1 audit fix (broadcast portion): the claim INSERT and the
+// notification INSERTs are now performed atomically inside the
+// process_broadcast_step RPC. The Edge Function side is a thin
+// wrapper that surfaces `claimed` to the chain loop.
+async function broadcastStep(supabase: Supabase, block: BlockRef, firedAt: Date): Promise<boolean> {
+  const { data, error } = await supabase.rpc('process_broadcast_step', {
+    p_block_id: block.blockId,
+    p_house_id: block.houseId,
+    p_block_start_at: block.blockStartAt.toISOString(),
+    p_now: firedAt.toISOString(),
   });
 
   if (error !== null) {
     throw error;
   }
 
-  return 1;
+  return (data as { claimed?: boolean } | null)?.claimed === true;
+}
+
+// B-1 audit fix (hmod portion): the recipient resolution and the
+// notification INSERT now happen atomically inside the
+// process_hmod_notify_allied_step RPC, alongside the chain step
+// claim. The Edge Function side is a thin wrapper that surfaces
+// `claimed` to the chain loop.
+//
+// Recipient resolution helpers (resolve_hm_for_user,
+// resolve_hm_for_house, resolve_hmod_on_duty, is_hm_working_time)
+// were moved into SQL in migration 20260528000004; the TS-side helpers
+// they replaced have been deleted.
+async function hmodNotifyAlliedStep(
+  supabase: Supabase,
+  block: BlockRef,
+  firedAt: Date,
+  reason = 'escalation_chain',
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc('process_hmod_notify_allied_step', {
+    p_block_id: block.blockId,
+    p_house_id: block.houseId,
+    p_block_start_at: block.blockStartAt.toISOString(),
+    p_now: firedAt.toISOString(),
+    p_reason: reason,
+  });
+
+  if (error !== null) {
+    throw error;
+  }
+
+  return (data as { claimed?: boolean } | null)?.claimed === true;
 }
 
 async function loadVacantGap(
@@ -766,6 +621,7 @@ async function floatLookupStep(
     return 'no_float';
   }
 
+  let anyAssigned = false;
   for (const assignment of result.assignments) {
     const destinationAssignmentIds = assignment.blocks.flatMap((blockId) => {
       const assignmentId = snapshot.destinationAssignmentByBlockId.get(blockId);
@@ -782,76 +638,41 @@ async function floatLookupStep(
       continue;
     }
 
-    const latestBlockStart = Math.max(
-      ...snapshot.input.gap.blocks
-        .filter((gapBlock) => assignment.blocks.includes(gapBlock.blockId))
-        .map((gapBlock) => gapBlock.blockStartAt.getTime()),
-    );
-    const { data: floatRow, error: floatError } = await supabase
-      .from('float_assignments')
-      .insert({
-        user_id: assignment.workerId,
-        source_assignment_ids: sourceAssignmentIds,
-        destination_assignment_ids: destinationAssignmentIds,
-        status: 'pending',
-        initiated_by: 'automated',
-        expires_for_cleanup_at: addDays(
-          new Date(latestBlockStart),
-          FLOAT_RETENTION_DAYS,
-        ).toISOString(),
-      })
-      .select('float_id')
-      .single();
-
-    if (floatError !== null) {
-      throw floatError;
-    }
-
-    const { error: destinationError } = await supabase
-      .from('shift_block_assignments')
-      .update({
-        user_id: assignment.workerId,
-        status: 'pending_float_in',
-        vacancy_origin: 'none',
-        is_float: true,
-        source_house_id: assignment.sourceHouseId,
-        parent_float_id: floatRow.float_id,
-      })
-      .in('assignment_id', destinationAssignmentIds);
-
-    if (destinationError !== null) {
-      throw destinationError;
-    }
-
-    const { error: sourceError } = await supabase
-      .from('shift_block_assignments')
-      .update({
-        status: 'pending_float_out',
-        vacancy_origin: 'none',
-        is_float: true,
-        source_house_id: assignment.sourceHouseId,
-        parent_float_id: floatRow.float_id,
-      })
-      .in('assignment_id', sourceAssignmentIds);
-
-    if (sourceError !== null) {
-      throw sourceError;
-    }
-
-    await supabase.from('notifications').insert({
-      recipient_user_id: assignment.workerId,
-      type: 'personal_shift',
-      scheduled_for: firedAt.toISOString(),
-      payload: {
-        kind: 'float_assigned',
-        float_id: floatRow.float_id,
-        destination_house_id: block.houseId,
-        block_ids: assignment.blocks,
+    // B-2 audit fix: the four writes (float_assignments INSERT,
+    // destination + source UPDATEs, notification INSERT) run inside a
+    // single plpgsql transaction so partial state — e.g. destination
+    // flipped to pending_float_in while source is still scheduled —
+    // is impossible. The RPC also re-validates the destination is
+    // still vacant under FOR UPDATE; a concurrent claim between the
+    // algorithm's snapshot and this call cleanly returns
+    // assigned=false with no writes.
+    const { data: assignmentResult, error: assignmentError } = await supabase.rpc(
+      'process_float_lookup_assignment',
+      {
+        p_worker_id: assignment.workerId,
+        p_source_house_id: assignment.sourceHouseId,
+        p_source_assignment_ids: sourceAssignmentIds,
+        p_destination_assignment_ids: destinationAssignmentIds,
+        p_destination_house_id: block.houseId,
+        p_now: firedAt.toISOString(),
+        p_retention_days: FLOAT_RETENTION_DAYS,
       },
-    });
+    );
+    if (assignmentError !== null) {
+      throw assignmentError;
+    }
+
+    if ((assignmentResult as { assigned?: boolean } | null)?.assigned === true) {
+      anyAssigned = true;
+    }
   }
 
-  return 'float_assigned';
+  // Any successful per-worker assignment means the lookup yielded a
+  // float for the orchestrator's purposes. If ALL assignments aborted
+  // because their destinations were no longer vacant, the chain
+  // re-evaluates next tick (or hmod_notify_allied fires for the
+  // residual gap).
+  return anyAssigned ? 'float_assigned' : 'no_float';
 }
 
 async function hasActiveFloatForBlock(supabase: Supabase, blockId: string): Promise<boolean> {
@@ -868,17 +689,43 @@ async function hasActiveFloatForBlock(supabase: Supabase, blockId: string): Prom
   return (data?.length ?? 0) > 0;
 }
 
+// Dispatcher for chain steps.
+//
+// Per-step atomicity model after the B-1 + B-2 audit fixes:
+//
+//   - broadcast            → process_broadcast_step RPC (claims +
+//                            inserts notifications atomically).
+//   - hmod_notify_allied   → process_hmod_notify_allied_step RPC
+//                            (claims + resolves recipient + inserts
+//                            notification atomically).
+//   - float_lookup         → claim block_step_status first via
+//                            claimStep helper, then call the
+//                            process_float_lookup_assignment RPC per
+//                            assignment (each is atomic). The TS-side
+//                            algorithm runs between claim and write
+//                            calls; failure between leaves the chain
+//                            step claimed but no float assignment,
+//                            which the next tick correctly routes to
+//                            hmod_notify_allied.
+//
+// Returns:
+//   'float_assigned' — at least one floater was successfully assigned.
+//   'no_float'       — float_lookup returned nothing or every
+//                      candidate's destination was concurrently filled.
+//   'done'           — broadcast / hmod completed.
+//   'skipped'        — chain step was already claimed elsewhere (race).
 async function fireStep(params: {
   supabase: Supabase;
   block: VacantAssignment;
   profileName: string;
   stepName: string;
   firedAt: Date;
-}): Promise<'float_assigned' | 'no_float' | 'done'> {
+}): Promise<'float_assigned' | 'no_float' | 'done' | 'skipped'> {
   switch (params.stepName) {
-    case 'broadcast':
-      await broadcastStep(params.supabase, params.block, params.firedAt);
-      return 'done';
+    case 'broadcast': {
+      const claimed = await broadcastStep(params.supabase, params.block, params.firedAt);
+      return claimed ? 'done' : 'skipped';
+    }
     case 'float_lookup':
       return await floatLookupStep(
         params.supabase,
@@ -886,9 +733,10 @@ async function fireStep(params: {
         params.profileName,
         params.firedAt,
       );
-    case 'hmod_notify_allied':
-      await hmodNotifyAlliedStep(params.supabase, params.block, params.firedAt);
-      return 'done';
+    case 'hmod_notify_allied': {
+      const claimed = await hmodNotifyAlliedStep(params.supabase, params.block, params.firedAt);
+      return claimed ? 'done' : 'skipped';
+    }
     default:
       return 'done';
   }
@@ -944,9 +792,16 @@ async function processVacantBlocks(supabase: Supabase, now: Date): Promise<numbe
         continue;
       }
 
-      const claimed = await claimStep(supabase, block.blockId, step.stepName, now);
-      if (!claimed) {
-        continue;
+      // float_lookup still requires the orchestrator-side claim
+      // because the algorithm runs in TypeScript and cannot be wrapped
+      // in a single SQL transaction. broadcast and hmod_notify_allied
+      // claim inside their RPCs (B-1 audit fix), so we skip the
+      // claimStep round-trip for them.
+      if (step.stepName === 'float_lookup') {
+        const claimed = await claimStep(supabase, block.blockId, step.stepName, now);
+        if (!claimed) {
+          continue;
+        }
       }
 
       const outcome = await fireStep({
@@ -956,6 +811,10 @@ async function processVacantBlocks(supabase: Supabase, now: Date): Promise<numbe
         stepName: step.stepName,
         firedAt: now,
       });
+
+      if (outcome === 'skipped') {
+        continue;
+      }
       fired += 1;
 
       if (outcome === 'float_assigned') {
@@ -965,9 +824,8 @@ async function processVacantBlocks(supabase: Supabase, now: Date): Promise<numbe
         outcome === 'no_float' &&
         !dueSteps.some((candidate) => candidate.stepName === 'hmod_notify_allied')
       ) {
-        const hmodClaimed = await claimStep(supabase, block.blockId, 'hmod_notify_allied', now);
-        if (hmodClaimed) {
-          await hmodNotifyAlliedStep(supabase, block, now, 'float_lookup_failed');
+        const claimed = await hmodNotifyAlliedStep(supabase, block, now, 'float_lookup_failed');
+        if (claimed) {
           fired += 1;
         }
       }
@@ -1059,8 +917,12 @@ async function processNoAckFloats(supabase: Supabase, now: Date): Promise<number
       continue;
     }
 
-    // Atomic write — single transaction in the RPC. See ARCH §4.4 and
-    // migration 20260528000003 for the full set of writes performed.
+    // Atomic write — single transaction in the RPC. After the B-1
+    // audit fix the RPC also INSERTs the HMOD-for-Allied notification
+    // inside the same transaction (using the SQL recipient-resolution
+    // helpers introduced in migration 20260528000004), so the
+    // Edge Function no longer fans out to hmodNotifyAlliedStep on this
+    // path.
     const { data: rpcResult, error: rpcError } = await supabase.rpc('process_no_ack_float', {
       p_float_id: floatRow.float_id,
       p_now: now.toISOString(),
@@ -1073,28 +935,6 @@ async function processNoAckFloats(supabase: Supabase, now: Date): Promise<number
     const outcome = (rpcResult ?? null) as NoAckRpcResult | null;
     if (outcome === null || outcome.processed !== true) {
       continue;
-    }
-
-    if (
-      outcome.hmod_step_claimed === true &&
-      outcome.block_id !== undefined &&
-      outcome.block_start_at !== undefined &&
-      outcome.house_id !== undefined
-    ) {
-      // Notification fires after the RPC's transaction commits so
-      // external delivery only happens once the state changes are
-      // durable. ARCH §4.4 explicitly orders this after the rollback
-      // write.
-      await hmodNotifyAlliedStep(
-        supabase,
-        {
-          blockId: outcome.block_id,
-          blockStartAt: new Date(outcome.block_start_at),
-          houseId: outcome.house_id,
-        },
-        now,
-        'float_no_acknowledgment',
-      );
     }
     processed += 1;
   }

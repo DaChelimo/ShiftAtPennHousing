@@ -196,6 +196,108 @@ export type Database = {
           },
         ];
       };
+      float_assignments: {
+        Row: {
+          acknowledged_at: string | null;
+          created_at: string;
+          declined_at: string | null;
+          destination_assignment_ids: string[];
+          expires_for_cleanup_at: string;
+          float_id: string;
+          force_triggered_by: string | null;
+          initiated_by: string;
+          source_assignment_ids: string[];
+          status: string;
+          user_id: string;
+        };
+        Insert: {
+          acknowledged_at?: string | null;
+          created_at?: string;
+          declined_at?: string | null;
+          destination_assignment_ids: string[];
+          expires_for_cleanup_at: string;
+          float_id?: string;
+          force_triggered_by?: string | null;
+          initiated_by: string;
+          source_assignment_ids: string[];
+          status: string;
+          user_id: string;
+        };
+        Update: {
+          acknowledged_at?: string | null;
+          created_at?: string;
+          declined_at?: string | null;
+          destination_assignment_ids?: string[];
+          expires_for_cleanup_at?: string;
+          float_id?: string;
+          force_triggered_by?: string | null;
+          initiated_by?: string;
+          source_assignment_ids?: string[];
+          status?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'float_assignments_force_triggered_by_fkey';
+            columns: ['force_triggered_by'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'float_assignments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+        ];
+      };
+      float_exclusions: {
+        Row: {
+          destination_house_id: string;
+          excluded_at: string;
+          exclusion_id: string;
+          reason: string;
+          user_id: string;
+          window_end_at: string;
+          window_start_at: string;
+        };
+        Insert: {
+          destination_house_id: string;
+          excluded_at?: string;
+          exclusion_id?: string;
+          reason: string;
+          user_id: string;
+          window_end_at: string;
+          window_start_at: string;
+        };
+        Update: {
+          destination_house_id?: string;
+          excluded_at?: string;
+          exclusion_id?: string;
+          reason?: string;
+          user_id?: string;
+          window_end_at?: string;
+          window_start_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'float_exclusions_destination_house_id_fkey';
+            columns: ['destination_house_id'];
+            isOneToOne: false;
+            referencedRelation: 'houses';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'float_exclusions_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+        ];
+      };
       float_routing: {
         Row: {
           destination_house_id: string;
@@ -617,6 +719,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'shift_blocks';
             referencedColumns: ['block_id'];
+          },
+          {
+            foreignKeyName: 'shift_block_assignments_parent_float_id_fkey';
+            columns: ['parent_float_id'];
+            isOneToOne: false;
+            referencedRelation: 'float_assignments';
+            referencedColumns: ['float_id'];
           },
           {
             foreignKeyName: 'shift_block_assignments_source_house_id_fkey';

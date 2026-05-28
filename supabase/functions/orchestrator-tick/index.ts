@@ -977,24 +977,6 @@ async function processVacantBlocks(supabase: Supabase, now: Date): Promise<numbe
   return fired;
 }
 
-function decideNoAckAction(floatRow: {
-  acknowledged_at: string | null;
-  declined_at: string | null;
-  initiated_by: 'automated' | 'force_triggered';
-}): {
-  kind: 'skip' | 'void';
-  rolledBackSteps: Array<'broadcast' | 'float_lookup'>;
-} {
-  if (floatRow.acknowledged_at !== null || floatRow.declined_at !== null) {
-    return { kind: 'skip', rolledBackSteps: [] };
-  }
-  return {
-    kind: 'void',
-    rolledBackSteps:
-      floatRow.initiated_by === 'force_triggered' ? ['broadcast', 'float_lookup'] : [],
-  };
-}
-
 async function loadAssignmentBlocks(
   supabase: Supabase,
   assignmentIds: string[],
@@ -1038,13 +1020,25 @@ async function loadAssignmentBlocks(
   });
 }
 
+type NoAckRpcResult = {
+  processed: boolean;
+  block_id?: string;
+  block_start_at?: string;
+  house_id?: string;
+  hmod_step_claimed?: boolean;
+  reason?: string;
+};
+
 async function processNoAckFloats(supabase: Supabase, now: Date): Promise<number> {
+  // Pre-filter pending floats by lookahead so the RPC only runs for
+  // floats within the no-ack window. The RPC also re-validates this
+  // under FOR UPDATE as defense-in-depth.
   const { data: floats, error } = await supabase
     .from('float_assignments')
-    .select(
-      'float_id, user_id, source_assignment_ids, destination_assignment_ids, status, acknowledged_at, declined_at, initiated_by',
-    )
-    .eq('status', 'pending');
+    .select('float_id, destination_assignment_ids')
+    .eq('status', 'pending')
+    .is('acknowledged_at', null)
+    .is('declined_at', null);
 
   if (error !== null) {
     throw error;
@@ -1060,113 +1054,47 @@ async function processNoAckFloats(supabase: Supabase, now: Date): Promise<number
       continue;
     }
 
-    const starts = destinationRows.map((row) => row.blockStartAt.getTime());
-    const floatStartAt = new Date(Math.min(...starts));
-    if (floatStartAt.getTime() > addMinutes(now, NO_ACK_LOOKAHEAD_MINUTES).getTime()) {
+    const earliestStart = Math.min(...destinationRows.map((row) => row.blockStartAt.getTime()));
+    if (earliestStart > addMinutes(now, NO_ACK_LOOKAHEAD_MINUTES).getTime()) {
       continue;
     }
 
-    const decision = decideNoAckAction(
-      floatRow as {
-        acknowledged_at: string | null;
-        declined_at: string | null;
-        initiated_by: 'automated' | 'force_triggered';
-      },
-    );
-    if (decision.kind === 'skip') {
-      continue;
-    }
-
-    const latestStart = new Date(Math.max(...starts));
-    const windowEnd = addMinutes(latestStart, BLOCK_MINUTES);
-    const destinationHouseId = destinationRows[0]!.houseId;
-
-    const { error: floatError } = await supabase
-      .from('float_assignments')
-      .update({ status: 'voided', declined_at: now.toISOString() })
-      .eq('float_id', floatRow.float_id)
-      .eq('status', 'pending');
-    if (floatError !== null) {
-      throw floatError;
-    }
-
-    const { error: destinationError } = await supabase
-      .from('shift_block_assignments')
-      .update({
-        user_id: null,
-        status: 'vacant',
-        vacancy_origin: 'displaced_decliner',
-        is_float: false,
-        source_house_id: null,
-        parent_float_id: null,
-      })
-      .in('assignment_id', floatRow.destination_assignment_ids);
-    if (destinationError !== null) {
-      throw destinationError;
-    }
-
-    const { error: exclusionError } = await supabase.from('float_exclusions').insert({
-      user_id: floatRow.user_id,
-      window_start_at: floatStartAt.toISOString(),
-      window_end_at: windowEnd.toISOString(),
-      destination_house_id: destinationHouseId,
-      reason: 'no_acknowledgment',
+    // Atomic write — single transaction in the RPC. See ARCH §4.4 and
+    // migration 20260528000003 for the full set of writes performed.
+    const { data: rpcResult, error: rpcError } = await supabase.rpc('process_no_ack_float', {
+      p_float_id: floatRow.float_id,
+      p_now: now.toISOString(),
+      p_lookahead_minutes: NO_ACK_LOOKAHEAD_MINUTES,
     });
-    if (exclusionError !== null) {
-      throw exclusionError;
+    if (rpcError !== null) {
+      throw rpcError;
     }
 
-    if (decision.rolledBackSteps.length > 0) {
-      const blockIds = destinationRows.map((row) => row.blockId);
-      const { error: rollbackError } = await supabase
-        .from('block_step_status')
-        .update({ status: 'rolled_back', updated_at: now.toISOString() })
-        .in('block_id', blockIds)
-        .in('step_name', decision.rolledBackSteps);
-      if (rollbackError !== null) {
-        throw rollbackError;
-      }
+    const outcome = (rpcResult ?? null) as NoAckRpcResult | null;
+    if (outcome === null || outcome.processed !== true) {
+      continue;
     }
 
-    const sourceRows = await loadAssignmentBlocks(supabase, floatRow.source_assignment_ids);
-    const sourceStillHeldByFloater = sourceRows.every((row) => row.status === 'pending_float_out');
-    const { error: sourceError } = await supabase
-      .from('shift_block_assignments')
-      .update(
-        sourceStillHeldByFloater
-          ? {
-              user_id: floatRow.user_id,
-              status: 'scheduled',
-              vacancy_origin: 'none',
-              is_float: false,
-              source_house_id: null,
-              parent_float_id: null,
-            }
-          : {
-              user_id: null,
-              status: 'vacant',
-              vacancy_origin: 'displaced_decliner',
-              is_float: false,
-              source_house_id: null,
-              parent_float_id: null,
-            },
-      )
-      .in('assignment_id', floatRow.source_assignment_ids);
-    if (sourceError !== null) {
-      throw sourceError;
-    }
-
-    const firstDestination = destinationRows
-      .sort((left, right) => left.blockStartAt.getTime() - right.blockStartAt.getTime())
-      .at(0)!;
-    const block: BlockRef = {
-      blockId: firstDestination.blockId,
-      blockStartAt: firstDestination.blockStartAt,
-      houseId: destinationHouseId,
-    };
-    const claimed = await claimStep(supabase, block.blockId, 'hmod_notify_allied', now);
-    if (claimed) {
-      await hmodNotifyAlliedStep(supabase, block, now, 'float_no_acknowledgment');
+    if (
+      outcome.hmod_step_claimed === true &&
+      outcome.block_id !== undefined &&
+      outcome.block_start_at !== undefined &&
+      outcome.house_id !== undefined
+    ) {
+      // Notification fires after the RPC's transaction commits so
+      // external delivery only happens once the state changes are
+      // durable. ARCH §4.4 explicitly orders this after the rollback
+      // write.
+      await hmodNotifyAlliedStep(
+        supabase,
+        {
+          blockId: outcome.block_id,
+          blockStartAt: new Date(outcome.block_start_at),
+          houseId: outcome.house_id,
+        },
+        now,
+        'float_no_acknowledgment',
+      );
     }
     processed += 1;
   }

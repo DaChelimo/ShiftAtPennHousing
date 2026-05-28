@@ -27,7 +27,7 @@
 
 BEGIN;
 
-SELECT plan(27);
+SELECT plan(34);
 
 -- ============================================================
 -- 0. Fixture: users, blocks, assignments, and float records.
@@ -50,7 +50,9 @@ VALUES
   ('e0000507-0000-0000-0000-000000000007', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 'p07-precl@test.local'),
   ('e0000507-0000-0000-0000-000000000008', '00000000-0000-0000-0000-000000000000',
-   'authenticated', 'authenticated', 'p07-gap-claimer@test.local')
+   'authenticated', 'authenticated', 'p07-gap-claimer@test.local'),
+  ('e0000507-0000-0000-0000-000000000009', '00000000-0000-0000-0000-000000000000',
+   'authenticated', 'authenticated', 'p07-ft-nocomp@test.local')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active)
@@ -70,6 +72,8 @@ VALUES
   ('e0000507-0000-0000-0000-000000000007', 'Pre-Claimed Floater', 'p07-precl@test.local',
    'harnwell', true),
   ('e0000507-0000-0000-0000-000000000008', 'Gap Claimer', 'p07-gap-claimer@test.local',
+   'harnwell', true),
+  ('e0000507-0000-0000-0000-000000000009', 'FT Floater NoComp', 'p07-ft-nocomp@test.local',
    'harnwell', true);
 
 -- Anchor 30 days in the future, hour-truncated NY local time (already
@@ -90,6 +94,7 @@ SELECT set_config(
 --   +60  : scenario #3 (force-trigger, gap claimed)
 --   +90  : scenario #4 (already acknowledged)
 --   +120 : scenario #6 (hmod pre-claimed)
+--   +150 : scenario #7 (force-trigger, NO compensation rows — A-1 audit fix)
 --   +1440 (24h) : scenario #5 (outside lookahead)
 
 INSERT INTO public.shift_blocks
@@ -118,7 +123,11 @@ VALUES
   ('f0000507-0000-0000-0000-00000000000b', 'harnwell',
    current_setting('test.phase07rpc.anchor')::timestamptz + interval '120 minutes', 3),
   ('f0000507-0000-0000-0000-00000000000c', 'house-03',
-   current_setting('test.phase07rpc.anchor')::timestamptz + interval '120 minutes', 1);
+   current_setting('test.phase07rpc.anchor')::timestamptz + interval '120 minutes', 1),
+  ('f0000507-0000-0000-0000-00000000000d', 'harnwell',
+   current_setting('test.phase07rpc.anchor')::timestamptz + interval '150 minutes', 3),
+  ('f0000507-0000-0000-0000-00000000000e', 'house-03',
+   current_setting('test.phase07rpc.anchor')::timestamptz + interval '150 minutes', 1);
 
 -- ============================================================
 -- AUTOMATED scenario (float #1).
@@ -343,6 +352,55 @@ VALUES
    current_setting('test.phase07rpc.anchor')::timestamptz - interval '1 hour');
 
 -- ============================================================
+-- FORCE_TRIGGERED + NO compensation rows scenario (float #7).
+--
+-- Audit finding A-1: when force-trigger pulls a floater but source
+-- still has enough headcount (i.e., no compensation rows are created
+-- because source isn't dropped below required), the no-ack handler
+-- must RESTORE the floater to scheduled — there's no displaced gap to
+-- worry about. Per ARCH §4.5 #2 ("If still vacant: revert the
+-- floater's row from pending_float_out back to scheduled"), the
+-- restore branch should also fire when no compensation rows ever
+-- existed.
+-- ============================================================
+
+INSERT INTO public.shift_block_assignments
+  (assignment_id, block_id, user_id, status, vacancy_origin, is_float,
+   source_house_id, parent_float_id)
+VALUES
+  ('a0000507-0000-0000-0000-00000000000f',
+   'f0000507-0000-0000-0000-00000000000d',
+   'e0000507-0000-0000-0000-000000000009',
+   'pending_float_out', 'none', true, 'harnwell', NULL),
+  ('a0000507-0000-0000-0000-000000000010',
+   'f0000507-0000-0000-0000-00000000000e',
+   'e0000507-0000-0000-0000-000000000009',
+   'pending_float_in', 'none', true, 'harnwell', NULL);
+
+-- Note: NO compensation row inserted here. This is the key fixture
+-- difference from float #2 (which has a vacant compensation row at
+-- a0...05).
+
+INSERT INTO public.float_assignments
+  (float_id, user_id, source_assignment_ids, destination_assignment_ids,
+   status, initiated_by, force_triggered_by, expires_for_cleanup_at)
+VALUES
+  ('b0000507-0000-0000-0000-000000000007',
+   'e0000507-0000-0000-0000-000000000009',
+   ARRAY['a0000507-0000-0000-0000-00000000000f']::uuid[],
+   ARRAY['a0000507-0000-0000-0000-000000000010']::uuid[],
+   'pending', 'force_triggered',
+   'e0000507-0000-0000-0000-000000000006',
+   current_setting('test.phase07rpc.anchor')::timestamptz + interval '14 days');
+
+UPDATE public.shift_block_assignments
+SET parent_float_id = 'b0000507-0000-0000-0000-000000000007'::uuid
+WHERE assignment_id IN (
+  'a0000507-0000-0000-0000-00000000000f'::uuid,
+  'a0000507-0000-0000-0000-000000000010'::uuid
+);
+
+-- ============================================================
 -- 1. Function exists.
 -- ============================================================
 
@@ -386,11 +444,16 @@ SELECT is(
   'automated no-ack: destination -> vacant'
 );
 
+-- Audit finding A-2: destination on no-ack must NOT reuse the
+-- 'displaced_decliner' enum value, which BSpec §3.3 defines for the
+-- floater's now-vacant source seat. The destination block is the
+-- original gap re-opening — 'temporary_drop' is the correct enum
+-- value (block was effectively dropped via the no-ack).
 SELECT is(
   (SELECT vacancy_origin::text FROM public.shift_block_assignments
    WHERE assignment_id = 'a0000507-0000-0000-0000-000000000002'),
-  'displaced_decliner',
-  'automated no-ack: destination vacancy_origin -> displaced_decliner'
+  'temporary_drop',
+  'A-2: automated no-ack destination vacancy_origin -> temporary_drop (NOT displaced_decliner)'
 );
 
 SELECT is(
@@ -584,6 +647,81 @@ SELECT is(
    WHERE float_id = 'b0000507-0000-0000-0000-000000000006'),
   'voided',
   'pre-claimed hmod_notify_allied scenario: float still voided'
+);
+
+-- ============================================================
+-- 9. A-2: force-trigger destinations also get 'temporary_drop'
+--    (not 'displaced_decliner'). The destination is the original gap
+--    re-opening, regardless of how the float was initiated.
+-- ============================================================
+
+SELECT is(
+  (SELECT vacancy_origin::text FROM public.shift_block_assignments
+   WHERE assignment_id = 'a0000507-0000-0000-0000-000000000004'),
+  'temporary_drop',
+  'A-2: force-trigger (still-vacant gap) destination vacancy_origin -> temporary_drop'
+);
+
+SELECT is(
+  (SELECT vacancy_origin::text FROM public.shift_block_assignments
+   WHERE assignment_id = 'a0000507-0000-0000-0000-000000000007'),
+  'temporary_drop',
+  'A-2: force-trigger (claimed gap) destination vacancy_origin -> temporary_drop'
+);
+
+-- ============================================================
+-- 10. A-1: force-trigger with NO compensation rows must RESTORE the
+--     floater, not displace them. The original RPC ELSE branch fired
+--     when v_gap_rows_total = 0 (no compensation rows) and incorrectly
+--     displaced. Per ARCH §4.5 #2: "If still vacant: revert the
+--     floater's row from pending_float_out back to scheduled." A
+--     non-existent compensation row is logically "still vacant" — no
+--     other worker has claimed anything.
+-- ============================================================
+
+SELECT lives_ok(
+  $$ SELECT public.process_no_ack_float(
+       'b0000507-0000-0000-0000-000000000007'::uuid,
+       (current_setting('test.phase07rpc.anchor')::timestamptz + interval '145 minutes'),
+       15
+     ) $$,
+  'A-1: force-trigger (no compensation rows): RPC runs without error'
+);
+
+SELECT is(
+  (SELECT status::text FROM public.shift_block_assignments
+   WHERE assignment_id = 'a0000507-0000-0000-0000-00000000000f'),
+  'scheduled',
+  'A-1: force-trigger (no compensation rows): floater RESTORED to scheduled (not displaced)'
+);
+
+SELECT is(
+  (SELECT vacancy_origin::text FROM public.shift_block_assignments
+   WHERE assignment_id = 'a0000507-0000-0000-0000-00000000000f'),
+  'none',
+  'A-1: force-trigger (no compensation rows): floater source vacancy_origin -> none (restored)'
+);
+
+SELECT is(
+  (SELECT user_id FROM public.shift_block_assignments
+   WHERE assignment_id = 'a0000507-0000-0000-0000-00000000000f'),
+  'e0000507-0000-0000-0000-000000000009'::uuid,
+  'A-1: force-trigger (no compensation rows): floater user_id restored on source'
+);
+
+-- ============================================================
+-- 11. B-3: process_no_ack_float must take FOR UPDATE on compensation
+--     rows before deciding restore-vs-displace. Without the lock a
+--     concurrent claim can land between SELECT and IF branch and
+--     cause over-staffing. We can't drive a true concurrent test in
+--     pgTAP single-connection, so we inspect the function source to
+--     verify the lock clause is present near the compensation SELECT.
+-- ============================================================
+
+SELECT ok(
+  pg_get_functiondef('public.process_no_ack_float(uuid, timestamptz, integer)'::regprocedure)
+    ~* 'parent_float_id\s*=\s*p_float_id.*FOR\s+UPDATE',
+  'B-3: process_no_ack_float locks compensation rows with FOR UPDATE'
 );
 
 SELECT * FROM finish();

@@ -269,6 +269,116 @@ describe('`rolled_back` row + offset in future → fires at offset (pinned #2)',
 });
 
 // ---------------------------------------------------------------------
+// 6b. Audit finding C-2 — rolled_back must tolerate sub-minute cron
+//     jitter while still respecting the spec's "broadcast skipped
+//     after T-3h has passed" rule (BSpec §6.6 #7 second bullet).
+//
+//     The orchestrator is pg_cron-driven on a minute-boundary cadence
+//     (`* * * * *`). pg_cron fires at HH:MM:00; the Edge Function then
+//     calls `new Date()` which lands a few hundred milliseconds later
+//     after HTTP latency. Comparing the resulting `now` against
+//     `fireAt` with strict equality (`nowMs === fireAt`) means
+//     production ticks essentially NEVER match — rolled_back rows
+//     would silently fail to fire.
+//
+//     The fix is minute-bucket comparison (floor both to the minute):
+//       - same minute as the offset boundary → fire
+//       - any later minute → skip (the offset has passed)
+//
+//     These tests pin that behavior. Existing tests construct
+//     `now = T_MINUS_3H` exactly, so they pass under either rule;
+//     these cases force the distinction.
+// ---------------------------------------------------------------------
+
+describe('C-2: `rolled_back` evaluator tolerates sub-minute cron jitter (minute-bucket comparison)', () => {
+  it('rolled_back broadcast, scan at T-3h + 150ms (same minute) → broadcast fires', () => {
+    // pg_cron lands HH:00:00.000; new Date() inside the Edge Function
+    // resolves to HH:00:00.150 after typical HTTP latency. The minute
+    // bucket is still HH:00 — the step's offset moment.
+    const result = evaluateChainSteps(
+      makeEvaluateInput({
+        blockStartAt: BLOCK_START,
+        now: plusMilliseconds(T_MINUS_3H, 150),
+        stepStatus: forceTriggerRolledBack(),
+      }),
+    );
+
+    expect(evaluatedStepNames(result)).toContain('broadcast');
+  });
+
+  it('rolled_back broadcast, scan at T-3h + 30s (same minute) → broadcast fires', () => {
+    const result = evaluateChainSteps(
+      makeEvaluateInput({
+        blockStartAt: BLOCK_START,
+        now: plusMilliseconds(T_MINUS_3H, 30_000),
+        stepStatus: forceTriggerRolledBack(),
+      }),
+    );
+
+    expect(evaluatedStepNames(result)).toContain('broadcast');
+  });
+
+  it('rolled_back broadcast, scan at T-3h + 59.999s (last ms of the same minute) → broadcast fires', () => {
+    const result = evaluateChainSteps(
+      makeEvaluateInput({
+        blockStartAt: BLOCK_START,
+        now: plusMilliseconds(T_MINUS_3H, 59_999),
+        stepStatus: forceTriggerRolledBack(),
+      }),
+    );
+
+    expect(evaluatedStepNames(result)).toContain('broadcast');
+  });
+
+  it('rolled_back broadcast, scan at T-3h + 60s (next minute) → broadcast skipped (offset has passed)', () => {
+    // One full minute past the offset boundary: the orchestrator
+    // missed the tick at HH:00 and is firing at HH:01. Per BSpec
+    // §6.6 #7 second bullet, broadcast must be skipped after T-3h
+    // has passed. The minute-bucket comparison correctly returns
+    // empty here.
+    const result = evaluateChainSteps(
+      makeEvaluateInput({
+        blockStartAt: BLOCK_START,
+        now: plusMilliseconds(T_MINUS_3H, 60_000),
+        stepStatus: forceTriggerRolledBack(),
+      }),
+    );
+
+    expect(evaluatedStepNames(result)).not.toContain('broadcast');
+  });
+
+  it('rolled_back broadcast, scan at T-2.5h → broadcast skipped (existing pinned behaviour preserved)', () => {
+    // Sanity: the new minute-bucket rule must NOT regress the existing
+    // pinned behaviour at T-2.5h (30 min past T-3h).
+    const result = evaluateChainSteps(
+      makeEvaluateInput({
+        blockStartAt: BLOCK_START,
+        now: plusMinutes(T_MINUS_3H, 30),
+        stepStatus: forceTriggerRolledBack(),
+      }),
+    );
+
+    expect(evaluatedStepNames(result)).not.toContain('broadcast');
+  });
+
+  it('rolled_back broadcast, scan 1ms before T-3h → broadcast NOT fired (offset not yet reached)', () => {
+    // The minute-bucket rule must not fire the step before its offset
+    // is actually reached — even when the previous minute bucket
+    // matches. This is the existing nowMs < fireAt guard kicking in
+    // before the minute comparison.
+    const result = evaluateChainSteps(
+      makeEvaluateInput({
+        blockStartAt: BLOCK_START,
+        now: plusMilliseconds(T_MINUS_3H, -1),
+        stepStatus: forceTriggerRolledBack(),
+      }),
+    );
+
+    expect(result).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------
 // 7. `rolled_back` row + offset in past → skipped (pinned #2)
 //
 //    Case: force-trigger no-ack at T-15m. Both broadcast and float_lookup

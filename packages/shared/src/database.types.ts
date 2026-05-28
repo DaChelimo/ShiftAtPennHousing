@@ -424,8 +424,8 @@ export type Database = {
           notification_id: string;
           payload: Json;
           recipient_user_id: string;
-          scheduled_for: string;
-          type: string;
+          scheduled_for: string | null;
+          type: Database['public']['Enums']['notification_type'];
         };
         Insert: {
           acknowledged_at?: string | null;
@@ -434,8 +434,8 @@ export type Database = {
           notification_id?: string;
           payload?: Json;
           recipient_user_id: string;
-          scheduled_for?: string;
-          type: string;
+          scheduled_for?: string | null;
+          type: Database['public']['Enums']['notification_type'];
         };
         Update: {
           acknowledged_at?: string | null;
@@ -444,8 +444,8 @@ export type Database = {
           notification_id?: string;
           payload?: Json;
           recipient_user_id?: string;
-          scheduled_for?: string;
-          type?: string;
+          scheduled_for?: string | null;
+          type?: Database['public']['Enums']['notification_type'];
         };
         Relationships: [
           {
@@ -1100,6 +1100,15 @@ export type Database = {
       cap_enforcement_enum: 'soft' | 'hard';
       day_type_enum: 'weekday' | 'weekend';
       hm_leave_status_enum: 'active' | 'cancelled_early';
+      notification_type:
+        | 'personal_shift'
+        | 'broadcast'
+        | 'hmod_urgent'
+        | 'ack_reminder'
+        | 'swap_request'
+        | 'hm_leave_notice'
+        | 'sm_permanent_drop_alert'
+        | 'sw_permanent_removal_alert';
       preference_status_enum: 'preferred' | 'available' | 'cannot' | 'none';
       scheduling_mode_enum: 'sm_built' | 'claim_based';
       shift_status_enum:
@@ -1260,6 +1269,16 @@ export const Constants = {
       cap_enforcement_enum: ['soft', 'hard'],
       day_type_enum: ['weekday', 'weekend'],
       hm_leave_status_enum: ['active', 'cancelled_early'],
+      notification_type: [
+        'personal_shift',
+        'broadcast',
+        'hmod_urgent',
+        'ack_reminder',
+        'swap_request',
+        'hm_leave_notice',
+        'sm_permanent_drop_alert',
+        'sw_permanent_removal_alert',
+      ],
       preference_status_enum: ['preferred', 'available', 'cannot', 'none'],
       scheduling_mode_enum: ['sm_built', 'claim_based'],
       shift_status_enum: [

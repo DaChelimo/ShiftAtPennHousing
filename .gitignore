@@ -38,3 +38,7 @@ Thumbs.db
 
 # Claude Code — local settings contain secrets (service role key)
 .claude/settings.local.json
+
+# Emitted JS from TS sources (build output belongs in dist/)
+packages/core/src/**/*.js
+packages/core/src/**/*.d.ts

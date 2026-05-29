@@ -102,6 +102,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return jsonResponse({ error: "claim_type must be 'temporary' or 'permanent'" }, 400);
   }
 
+  // F-05-007: permanent pickup is not implemented yet; reject explicitly rather
+  // than silently treating it as a temporary claim.
+  if (claimType === 'permanent') {
+    return jsonResponse({ error: 'permanent_pickup_not_implemented' }, 501);
+  }
+
   const { data: projection, error: projectionError } = await supabase
     .rpc('claim_hours_projection', {
       p_assignment_id: assignmentId,

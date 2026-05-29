@@ -187,64 +187,26 @@ function parseEscalationChain(value: unknown): ChainStep[] {
   });
 }
 
-function stepFireAt(blockStartAt: Date, step: ChainStep): number {
-  return blockStartAt.getTime() + step.offsetMinutes * 60 * 1000;
-}
-
-function evaluateChainSteps(params: {
+// C6a: delegate to the canonical, unit-tested implementation in
+// packages/core/src/orchestrator/evaluate.ts (covered by escalation-timing.test.ts),
+// using the same dynamic-import pattern as findFloaters. This removes the
+// previously-duplicated inline copy so the deployed orchestrator runs exactly
+// the logic the tests exercise.
+async function evaluateChainSteps(params: {
   blockStartAt: Date;
   now: Date;
   chain: ChainStep[];
   stepStatus: StepStatusMap;
-}): ChainStepEvaluation[] {
-  const nowMs = params.now.getTime();
-  if (nowMs >= params.blockStartAt.getTime()) {
-    return [];
-  }
-
-  const maxReachedMissingOffset = params.chain.reduce<number | null>((maxOffset, step) => {
-    if (
-      params.stepStatus[step.stepName] !== undefined ||
-      nowMs < stepFireAt(params.blockStartAt, step)
-    ) {
-      return maxOffset;
-    }
-    return maxOffset === null ? step.offsetMinutes : Math.max(maxOffset, step.offsetMinutes);
-  }, null);
-
-  return params.chain.flatMap((step) => {
-    const status = params.stepStatus[step.stepName];
-    const fireAt = stepFireAt(params.blockStartAt, step);
-    if (nowMs < fireAt) {
-      return [];
-    }
-    if (status === 'fired' || status === 'completed_via_force_trigger') {
-      return [];
-    }
-    if (status === 'rolled_back') {
-      // C-2 audit fix: minute-bucket comparison tolerates the
-      // sub-minute cron jitter the Edge Function inevitably accrues
-      // between pg_cron firing at HH:MM:00 and `new Date()` resolving
-      // a few hundred milliseconds later. See evaluate.ts in
-      // packages/core for the canonical version.
-      const fireAtMinute = Math.floor(fireAt / 60_000);
-      const nowMinute = Math.floor(nowMs / 60_000);
-      return nowMinute === fireAtMinute
-        ? [
-            {
-              stepName: step.stepName,
-              ...(step.trigger === undefined ? {} : { trigger: step.trigger }),
-            },
-          ]
-        : [];
-    }
-    if (maxReachedMissingOffset !== null && step.offsetMinutes < maxReachedMissingOffset) {
-      return [];
-    }
-    return [
-      { stepName: step.stepName, ...(step.trigger === undefined ? {} : { trigger: step.trigger }) },
-    ];
-  });
+}): Promise<ChainStepEvaluation[]> {
+  const module = (await import('../../../packages/core/src/orchestrator/evaluate.ts')) as {
+    evaluateChainSteps: (input: {
+      blockStartAt: Date;
+      now: Date;
+      chain: ChainStep[];
+      stepStatus: StepStatusMap;
+    }) => ChainStepEvaluation[];
+  };
+  return module.evaluateChainSteps(params);
 }
 
 async function findFloaters(input: FloatLookupInput): Promise<FloatLookupResult> {
@@ -550,6 +512,39 @@ async function buildFloatLookupSnapshot(
       coveredByUser.set(row.user_id, existing);
     }
 
+    // C4 (F-07-005): per-candidate conflict flags. A worker already committed
+    // to a float (pending/acknowledged manifests as pending/floated in/out rows)
+    // or to a cross-house pickup overlapping the gap window must not be selected.
+    const floatConflictUserIds = new Set<string>();
+    const crossHousePickupConflictUserIds = new Set<string>();
+    if (userIds.length > 0) {
+      const { data: conflictRows, error: conflictError } = await supabase
+        .from('shift_block_assignments')
+        .select('user_id, status, is_cross_house_pickup, shift_blocks!inner(block_start_at)')
+        .in('user_id', userIds)
+        .gte('shift_blocks.block_start_at', gapStart.toISOString())
+        .lt('shift_blocks.block_start_at', gapEnd.toISOString());
+      if (conflictError !== null) {
+        throw conflictError;
+      }
+      for (const row of conflictRows ?? []) {
+        if (row.user_id === null) {
+          continue;
+        }
+        if (
+          row.status === 'pending_float_in' ||
+          row.status === 'floated_in' ||
+          row.status === 'pending_float_out' ||
+          row.status === 'floated_out'
+        ) {
+          floatConflictUserIds.add(row.user_id);
+        }
+        if (row.is_cross_house_pickup === true) {
+          crossHousePickupConflictUserIds.add(row.user_id);
+        }
+      }
+    }
+
     const candidates = [...coveredByUser.entries()].flatMap(([userId, coveredBlocks]) => {
       const user = usersById.get(userId);
       if (user === undefined || coveredBlocks.length === 0) {
@@ -567,8 +562,8 @@ async function buildFloatLookupSnapshot(
           coveredGapBlockIds: sortedBlocks.map((gapBlock) => gapBlock.blockId),
           shiftStartAt: sortedBlocks[0]!.blockStartAt,
           shiftEndAt: addMinutes(sortedBlocks.at(-1)!.blockStartAt, BLOCK_MINUTES),
-          hasConflictingFloat: false,
-          hasConflictingCrossHousePickup: false,
+          hasConflictingFloat: floatConflictUserIds.has(userId),
+          hasConflictingCrossHousePickup: crossHousePickupConflictUserIds.has(userId),
         },
       ];
     });
@@ -776,7 +771,7 @@ async function processVacantBlocks(supabase: Supabase, now: Date): Promise<numbe
     }
 
     const stepStatus = await loadStepStatus(supabase, block.blockId);
-    const dueSteps = evaluateChainSteps({
+    const dueSteps = await evaluateChainSteps({
       blockStartAt: block.blockStartAt,
       now,
       chain: profile.chain,

@@ -150,6 +150,15 @@ BEGIN
   PERFORM set_config('test.phase03.src_block_id', v_block_id::text, true);
 END $$;
 
+-- A floater for the accepted is_float row (a filled float-in seat carries a
+-- user_id per the sba_user_id_matches_status invariant).
+INSERT INTO auth.users (id, instance_id, aud, role, email)
+VALUES ('a3000003-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000000',
+        'authenticated','authenticated','p03-floater@test.local')
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO public.users (user_id, name, email, home_house_id, is_active)
+VALUES ('a3000003-0000-0000-0000-000000000001','P03 Floater','p03-floater@test.local','harnwell',true);
+
 SELECT throws_ok(
   format(
     $sql$ INSERT INTO public.shift_block_assignments
@@ -169,7 +178,8 @@ SELECT lives_ok(
     $sql$ INSERT INTO public.shift_block_assignments
             (assignment_id, block_id, user_id, status, vacancy_origin,
              is_float, is_cross_house_pickup, source_house_id)
-          VALUES (gen_random_uuid(), %L, NULL, 'pending_float_in', 'none',
+          VALUES (gen_random_uuid(), %L,
+                  'a3000003-0000-0000-0000-000000000001', 'pending_float_in', 'none',
                   true, false, 'harnwell') $sql$,
     current_setting('test.phase03.src_block_id')
   ),
@@ -508,11 +518,11 @@ SELECT ok(
     WHERE conrelid = 'public.block_step_status'::regclass
       AND contype = 'p'
       AND ARRAY(
-        SELECT attname FROM pg_attribute
+        SELECT attname::text FROM pg_attribute
         WHERE attrelid = conrelid AND attnum = ANY(conkey)
       ) <@ ARRAY['block_id','step_name']
       AND ARRAY['block_id','step_name'] <@ ARRAY(
-        SELECT attname FROM pg_attribute
+        SELECT attname::text FROM pg_attribute
         WHERE attrelid = conrelid AND attnum = ANY(conkey)
       )
   ),

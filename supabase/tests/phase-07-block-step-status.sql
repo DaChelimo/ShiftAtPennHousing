@@ -100,11 +100,11 @@ SELECT ok(
     WHERE conrelid = 'public.block_step_status'::regclass
       AND contype = 'p'
       AND ARRAY(
-        SELECT attname FROM pg_attribute
+        SELECT attname::text FROM pg_attribute
         WHERE attrelid = conrelid AND attnum = ANY(conkey)
       ) <@ ARRAY['block_id','step_name']
       AND ARRAY['block_id','step_name'] <@ ARRAY(
-        SELECT attname FROM pg_attribute
+        SELECT attname::text FROM pg_attribute
         WHERE attrelid = conrelid AND attnum = ANY(conkey)
       )
   ),

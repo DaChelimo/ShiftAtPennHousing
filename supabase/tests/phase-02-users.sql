@@ -87,12 +87,12 @@ SELECT ok(
     WHERE conrelid = 'public.user_roles'::regclass
       AND contype IN ('u','p')
       AND ARRAY(
-        SELECT attname FROM pg_attribute
+        SELECT attname::text FROM pg_attribute
         WHERE attrelid = conrelid AND attnum = ANY(conkey)
         ORDER BY array_position(conkey, attnum)
       ) <@ ARRAY['user_id','role','scope_house_id']
       AND ARRAY['user_id','role','scope_house_id'] <@ ARRAY(
-        SELECT attname FROM pg_attribute
+        SELECT attname::text FROM pg_attribute
         WHERE attrelid = conrelid AND attnum = ANY(conkey)
       )
   ),
@@ -463,8 +463,11 @@ SELECT lives_ok(
 -- Actually: per §3.1, no NEW operation may *select* a deactivated user.
 -- The schema doesn't prevent writes; the application layer does.
 -- What we DO assert: existing user_roles rows for the fired user remain.
+-- (sm, quad) is a valid third role for Frank (sw must have NULL scope per
+-- the F-02-009 invariant); the point of this row is only to verify it
+-- survives a later firing.
 INSERT INTO public.user_roles (user_id, role, scope_house_id)
-VALUES ('11111111-1111-1111-1111-111111111111', 'sw', 'quad');
+VALUES ('11111111-1111-1111-1111-111111111111', 'sm', 'quad');
 
 UPDATE public.users SET is_active = false
 WHERE user_id = '11111111-1111-1111-1111-111111111111';

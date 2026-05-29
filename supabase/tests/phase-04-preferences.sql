@@ -122,11 +122,11 @@ SELECT ok(
     WHERE conrelid = 'public.preferences'::regclass
       AND contype = 'p'
       AND ARRAY(
-        SELECT attname FROM pg_attribute
+        SELECT attname::text FROM pg_attribute
         WHERE attrelid = conrelid AND attnum = ANY(conkey)
       ) <@ ARRAY['user_id','block_id','period_id']
       AND ARRAY['user_id','block_id','period_id'] <@ ARRAY(
-        SELECT attname FROM pg_attribute
+        SELECT attname::text FROM pg_attribute
         WHERE attrelid = conrelid AND attnum = ANY(conkey)
       )
   ),
@@ -165,11 +165,11 @@ SELECT ok(
     WHERE conrelid = 'public.period_targets'::regclass
       AND contype = 'p'
       AND ARRAY(
-        SELECT attname FROM pg_attribute
+        SELECT attname::text FROM pg_attribute
         WHERE attrelid = conrelid AND attnum = ANY(conkey)
       ) <@ ARRAY['user_id','period_id']
       AND ARRAY['user_id','period_id'] <@ ARRAY(
-        SELECT attname FROM pg_attribute
+        SELECT attname::text FROM pg_attribute
         WHERE attrelid = conrelid AND attnum = ANY(conkey)
       )
   ),

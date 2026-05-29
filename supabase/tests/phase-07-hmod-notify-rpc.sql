@@ -57,7 +57,8 @@ VALUES
 
 -- Anchor: a Wednesday 30 days out, 12:00 EDT — solidly inside HM
 -- working hours so the HM path is exercised. We resolve the
--- Monday-of-week from this anchor for the hmod_rotor row.
+-- Friday-anchored duty week from this anchor for the hmod_rotor row
+-- (Fri 08:00 -> next Fri 08:00; see 20260528000008_hmod_friday_boundary).
 SELECT set_config(
   'test.phase07hm.anchor',
   (
@@ -71,13 +72,20 @@ SELECT set_config(
   false
 );
 
--- hmod_rotor row covering the Monday-of-week the anchor falls into.
+-- hmod_rotor row covering the Friday-anchored duty week the anchor falls
+-- into (mirrors resolve_hmod_on_duty: shift -8h, snap back to Friday/isodow 5).
 INSERT INTO public.hmod_rotor (week_start_date, hmod_user_id)
 VALUES
   (
-    date_trunc('week',
-               (current_setting('test.phase07hm.anchor')::timestamptz)
-                 AT TIME ZONE 'America/New_York')::date,
+    (
+      WITH shifted AS (
+        SELECT (
+          (current_setting('test.phase07hm.anchor')::timestamptz
+            AT TIME ZONE 'America/New_York') - interval '8 hours'
+        )::date AS d
+      )
+      SELECT d - (((extract(isodow FROM d)::int + 2) % 7)) FROM shifted
+    ),
     'e000050a-0000-0000-0000-000000000002'
   )
 ON CONFLICT (week_start_date) DO UPDATE

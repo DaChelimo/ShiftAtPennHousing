@@ -349,11 +349,17 @@ SELECT is(
 );
 
 -- The temporary-drop block on a2 must NOT leak into the permanent openings feed.
+-- Match on the block's specific (day_of_week, time-of-day): the permanent_drop
+-- fixture blocks share as_of's time-of-day but sit on a different day_of_week,
+-- so a temporary_drop slot identified by both must be absent from the feed.
 SELECT is(
   (SELECT count(*) FROM public.permanent_openings_feed('harnwell')
-    WHERE block_start_time = (
-      (((current_setting('test.phase05.as_of')::timestamptz) + interval '10 days')
-        AT TIME ZONE 'America/New_York')::time))::integer,
+    WHERE day_of_week = EXTRACT(DOW FROM
+            ((current_setting('test.phase05.as_of')::timestamptz) + interval '10 days')
+              AT TIME ZONE 'America/New_York')::integer
+      AND block_start_time = (
+        (((current_setting('test.phase05.as_of')::timestamptz) + interval '10 days')
+          AT TIME ZONE 'America/New_York')::time))::integer,
   0,
   'temporary_drop vacancies do NOT appear in the permanent openings feed'
 );
@@ -361,9 +367,12 @@ SELECT is(
 -- The never_assigned vacancy 45 days out must NOT appear either.
 SELECT is(
   (SELECT count(*) FROM public.permanent_openings_feed('harnwell')
-    WHERE block_start_time = (
-      (((current_setting('test.phase05.as_of')::timestamptz) + interval '45 days')
-        AT TIME ZONE 'America/New_York')::time))::integer,
+    WHERE day_of_week = EXTRACT(DOW FROM
+            ((current_setting('test.phase05.as_of')::timestamptz) + interval '45 days')
+              AT TIME ZONE 'America/New_York')::integer
+      AND block_start_time = (
+        (((current_setting('test.phase05.as_of')::timestamptz) + interval '45 days')
+          AT TIME ZONE 'America/New_York')::time))::integer,
   0,
   'never_assigned vacancies do NOT appear in the permanent openings feed'
 );

@@ -431,10 +431,10 @@ SELECT is(
 );
 
 SELECT is(
-  (SELECT declined_at IS NOT NULL FROM public.float_assignments
+  (SELECT no_ack_at IS NOT NULL AND declined_at IS NULL FROM public.float_assignments
    WHERE float_id = 'b0000507-0000-0000-0000-000000000001'),
   true,
-  'automated no-ack: declined_at set'
+  'automated no-ack: no_ack_at set, declined_at left NULL (F-07-010)'
 );
 
 SELECT is(

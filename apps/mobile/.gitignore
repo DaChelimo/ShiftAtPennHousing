@@ -1,15 +1,25 @@
+# Gradle / Kotlin
 *.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
+.gradle/
+.kotlin/
+local.properties
 /captures
 .externalNativeBuild
 .cxx
-local.properties
+
+# Per-module build output (root + :shared + :androidApp)
+build/
+**/build/
+
+# IDE
+.idea/
+.DS_Store
+
+# Kotlin/Native & KMP framework output consumed by Xcode
+**/*.klib
+
+# iOS / Xcode (the iosApp project is maintained locally)
+iosApp/**/xcuserdata/
+iosApp/**/*.xcuserstate
+iosApp/**/DerivedData/
+iosApp/Pods/

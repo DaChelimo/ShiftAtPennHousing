@@ -1,6 +1,27 @@
-// Top-level build file where you can add configuration options common to all sub-projects/modules.
+// Top-level build file. Plugin versions are resolved once here (apply false) so
+// every sub-module shares them; Spotless/ktlint is applied to all modules.
 plugins {
-  alias(libs.plugins.android.application) apply false
-  alias(libs.plugins.compose.compiler) apply false
-  alias(libs.plugins.kotlin.serialization) apply false
+    alias(libs.plugins.androidApplication) apply false
+    alias(libs.plugins.androidKmpLibrary) apply false
+    alias(libs.plugins.kotlinAndroid) apply false
+    alias(libs.plugins.kotlinMultiplatform) apply false
+    alias(libs.plugins.kotlinxSerialization) apply false
+    alias(libs.plugins.compose.compiler) apply false
+    alias(libs.plugins.skie) apply false
+    alias(libs.plugins.spotless) apply false
+}
+
+subprojects {
+    apply(plugin = "com.diffplug.spotless")
+    configure<com.diffplug.gradle.spotless.SpotlessExtension> {
+        kotlin {
+            target("**/*.kt")
+            targetExclude("${layout.buildDirectory}/**/*.kt")
+            ktlint()
+        }
+        kotlinGradle {
+            target("*.gradle.kts")
+            ktlint()
+        }
+    }
 }

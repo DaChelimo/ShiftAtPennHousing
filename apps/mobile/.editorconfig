@@ -1,0 +1,7 @@
+[*.{kt,kts}]
+# Kotlin style requires functions to start with a lowercase letter, but
+# @Composable functions are PascalCase by convention — exempt them.
+ktlint_function_naming_ignore_when_annotated_with = Composable
+
+# Allow some multi-line assignments to stay on the same line as the `=`.
+ktlint_standard_multiline-expression-wrapping = disabled

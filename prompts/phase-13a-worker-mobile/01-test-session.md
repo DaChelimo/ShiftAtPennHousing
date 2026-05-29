@@ -62,8 +62,8 @@ Sources of truth:
 
 ### Test files
 
-1. `apps/mobile/composeApp/src/commonTest/kotlin/ShiftsScreenViewModelTest.kt` — KMP unit tests: tab data mapping, grouping logic (picked-up/dropped/scheduled)
-2. `apps/mobile/composeApp/src/commonTest/kotlin/AckDeclineViewModelTest.kt` — deadline logic
+1. `apps/mobile/shared/src/commonTest/kotlin/ShiftsScreenViewModelTest.kt` — KMP unit tests: tab data mapping, grouping logic (picked-up/dropped/scheduled). (Shared ViewModels live in `:shared`; the Compose/SwiftUI UIs in `:androidApp`/`iosApp` render them.)
+2. `apps/mobile/shared/src/commonTest/kotlin/AckDeclineViewModelTest.kt` — deadline logic
 3. `apps/mobile/maestro/` — Maestro E2E flows (run on both Android emulator + iOS simulator):
    - `01-view-my-shifts.yaml` — launches app, verifies 3-tab structure
    - `02-claim-shift.yaml` — finds an open shift, claims it, verifies it appears in My Shifts

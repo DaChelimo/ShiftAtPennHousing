@@ -1,33 +1,30 @@
+enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
+
 pluginManagement {
     repositories {
         google {
             content {
-                includeGroupByRegex("androidx.*")
                 includeGroupByRegex("com\\.android.*")
                 includeGroupByRegex("com\\.google.*")
+                includeGroupByRegex("androidx.*")
             }
         }
         mavenCentral()
         gradlePluginPortal()
     }
 }
+
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        google {
-            content {
-                includeGroupByRegex("androidx.*")
-                includeGroupByRegex("com\\.android.*")
-                includeGroupByRegex("com\\.google.*")
-            }
-        }
+        google()
         mavenCentral()
     }
 }
 
-plugins {
-    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
-}
-
-rootProject.name = "Shift PennHousing"
-include(":composeApp")
+// No spaces: rootProject.name must match [a-zA-Z]([A-Za-z0-9-_])* for
+// TYPESAFE_PROJECT_ACCESSORS (projects.shared). The user-facing app name lives
+// in androidApp strings.xml (@string/app_name = "Shift PennHousing").
+rootProject.name = "ShiftPennHousing"
+include(":shared")
+include(":androidApp")

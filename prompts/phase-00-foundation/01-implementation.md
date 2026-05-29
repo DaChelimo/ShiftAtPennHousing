@@ -71,16 +71,20 @@ shift-pennhousing/
 └── apps/
     ├── web/
     │   └── (Next.js scaffold)
-    └── mobile/
-        ├── composeApp/
+    └── mobile/                       (Kotlin Multiplatform — Fruitties pattern)
+        ├── shared/                   (shared logic + ViewModels)
         │   ├── src/
         │   │   ├── commonMain/kotlin/
         │   │   ├── androidMain/kotlin/
         │   │   └── iosMain/kotlin/
         │   └── build.gradle.kts
-        ├── iosApp/
+        ├── androidApp/               (Jetpack Compose UI → :shared)
+        │   ├── src/main/
+        │   └── build.gradle.kts
+        ├── iosApp/                   (SwiftUI → Shared framework)
         │   ├── iosApp/
-        │   └── iosApp.xcodeproj/
+        │   └── Configuration/
+        ├── gradle/libs.versions.toml
         └── settings.gradle.kts
 ```
 
@@ -103,30 +107,34 @@ Run `supabase init` in the repo root. Verify `supabase start` brings up local Po
 **3. Initialize Next.js in `apps/web`.**
 Use `create-next-app` with TypeScript, App Router, Tailwind CSS, ESLint. Verify `pnpm dev` in `apps/web` starts the dev server.
 
-**4. Initialize Compose Multiplatform in `apps/mobile`.**
-Clone the official JetBrains Compose Multiplatform iOS+Android template directly from GitHub.
-Do NOT use the web wizard at kmp.jetbrains.com — it generates stale configs.
-Do NOT use `android create` — its only template (`empty-activity`) is Android-only with no iOS target.
+**4. Kotlin Multiplatform mobile in `apps/mobile` (Fruitties pattern).**
+The mobile app follows Google's Fruitties sample — **shared logic, native UI per
+platform**, NOT Compose Multiplatform shared UI. Three pieces:
 
-```bash
-git clone --depth=1 \
-  https://github.com/JetBrains/compose-multiplatform-ios-android-template.git \
-  apps/mobile
-rm -rf apps/mobile/.git
-```
+- `:shared` — a KMP library (`com.android.kotlin.multiplatform.library` + the
+  Kotlin Multiplatform plugin) with `commonMain` / `androidMain` / `iosMain`,
+  three iOS targets (iosX64, iosArm64, iosSimulatorArm64) producing the `Shared`
+  framework, and SKIE for Swift interop. Namespace `com.pennhousing.shift.shared`;
+  exports `androidx.lifecycle.viewmodel` so the shared ViewModel is visible in Swift.
+- `:androidApp` — the Android Jetpack Compose app (`applicationId`
+  `com.pennhousing.shift`), depends on `:shared`.
+- `iosApp/` — the SwiftUI app; links the `Shared` framework via a
+  `./gradlew :shared:embedAndSignAppleFrameworkForXcode` run-script. Bundle id
+  `com.pennhousing.shift`. The Xcode project + signing is maintained in Xcode
+  (see `apps/mobile/iosApp/README.md`).
 
-After cloning, update `composeApp/build.gradle.kts`:
-
-- `applicationId` → `com.pennhousing.shift`
-- `namespace` → `com.pennhousing.shift`
+Toolchain (mirrors Fruitties): AGP 8.13.1 / Kotlin 2.2.21 / Gradle 9.2.1, defined
+in `gradle/libs.versions.toml`.
 
 Verify:
 
-- `./gradlew :composeApp:assembleDebug` succeeds (Android)
-- `./gradlew :composeApp:iosSimulatorArm64Test` succeeds (iOS simulator)
+- `./gradlew :androidApp:assembleDebug` succeeds (Android APK)
+- `./gradlew :shared:testAndroidHostTest` passes (shared unit tests on the JVM host)
+- `./gradlew :shared:linkDebugFrameworkIosSimulatorArm64` succeeds (iOS framework; macOS + Xcode)
+- `./gradlew :shared:iosSimulatorArm64Test` passes (shared unit tests on Kotlin/Native)
 
-Note: Android CLI (`android`) is installed and used elsewhere in this project (emulator
-management, device runs, screen capture for Maestro E2E) but does not scaffold KMP projects.
+Note: the `android` CLI is for emulator/device operations only; it does not
+scaffold KMP projects.
 
 **5. Create `packages/core`.**
 TypeScript package with Vitest. Add one placeholder export and one passing smoke test (`expect(1 + 1).toBe(2)`).
@@ -149,8 +157,8 @@ TypeScript package, empty for now. Will hold `database.types.ts` (generated from
 - `lint-and-typecheck`: runs on `ubuntu-latest`, checks all TS packages
 - `test-core`: runs Vitest for `packages/core`
 - `test-supabase`: runs pgTAP via `supabase test db` on `ubuntu-latest`
-- `build-android`: runs `./gradlew :composeApp:assembleDebug` on `ubuntu-latest`
-- `build-ios`: runs `./gradlew :composeApp:iosSimulatorArm64Test` on `macos-latest` (macOS runner required for iOS)
+- `build-android`: runs `./gradlew :androidApp:assembleDebug :shared:testAndroidHostTest` on `ubuntu-latest`
+- `build-ios`: runs `./gradlew :shared:linkDebugFrameworkIosSimulatorArm64 :shared:iosSimulatorArm64Test` on `macos-latest` (macOS runner required for iOS)
   All jobs run on every PR and push to main.
 
 **10. Create `AGENTS.md` at repo root.**
@@ -324,8 +332,9 @@ Create `tests/PHASE_PLAN.md` — paste the 14-phase table from the implementatio
 - [ ] `supabase start` brings up local Postgres with no errors.
 - [ ] `supabase stop` cleanly stops it.
 - [ ] `cd apps/web && pnpm dev` starts Next.js dev server.
-- [ ] `cd apps/mobile && ./gradlew :composeApp:assembleDebug` builds Android APK.
-- [ ] `cd apps/mobile && ./gradlew :composeApp:iosSimulatorArm64Test` passes iOS simulator tests.
+- [ ] `cd apps/mobile && ./gradlew :androidApp:assembleDebug` builds the Android APK.
+- [ ] `cd apps/mobile && ./gradlew :shared:linkDebugFrameworkIosSimulatorArm64` links the iOS `Shared` framework (macOS + Xcode).
+- [ ] `cd apps/mobile && ./gradlew :shared:iosSimulatorArm64Test` passes the shared Kotlin/Native unit tests.
 - [ ] `AGENTS.md` exists at repo root with the content above.
 - [ ] `.claudeignore` is untouched and still lists `prompts/`.
 - [ ] `.claude/settings.json` exists and contains the Supabase MCP config (with placeholder key).

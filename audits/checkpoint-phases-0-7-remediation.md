@@ -569,3 +569,17 @@ Independent re-verification of the remediation (pgTAP re-run = **711 green basel
 3. **D9 over-corrected SM permissions (spec regression).** Reverting `user_has_house_admin_role` to hm/bm-only also removed the destination SM's READ visibility of inbound floats / live schedule, which BSpec §7.1/§10 require. Fixed in `20260528000027` (re-point `float_assignments` / `float_exclusions` / `shift_block_assignments` SELECT to `user_can_build_schedule`; admin over users/roles stays hm/bm-only). `phase-07-sm-float-visibility.sql` proves scoped SM access with no X-2 over-reach.
 
 **Exhaustiveness:** the original audit was strong but not exhaustive — it missed the §7.1 SM-visibility requirement (#3) and understated F-07-009 as no-ack-only. **Deferred (non-blocking, tracked for Phase 8):** NEW-1/NEW-9 the same multi-block HMOD-notification fan-out in the primary tick path (`orchestrator-tick` `processVacantBlocks`, TS — only the no-ack copy was deduped); NEW-6 `effective_weekly_cap` down-classifying an under-populated `short_break` day to soft-20; NEW-8 the 3-arg `resolve_hm_for_user` REVOKE living in a later migration than its definition; F-06-003 float-table schema pgTAP; the B3 F-01-001 test-flip; F3 ack-snapshot skip-past-due/non-default-cadence coverage.
+
+### Mobile: G7 Android-only → multiplatform (2026-05-29) — supersedes the "G7 resolved" section above
+
+The G7 resolution (Android-only `:composeApp`) was reversed per user direction:
+`apps/mobile` is now a **Kotlin Multiplatform** project following Google's
+Fruitties sample (shared logic + native UI) — `:shared` (commonMain/androidMain/iosMain,
+3 iOS targets + SKIE → `Shared` framework) + `:androidApp` (Jetpack Compose) +
+`iosApp` (SwiftUI). This re-aligns with BSpec/ARCH "Android + iOS ship together."
+Toolchain mirrors Fruitties: AGP 8.13.1 / Kotlin 2.2.21 / Gradle 9.2.1 (down from
+the scaffold's AGP 9.0.1 / Kotlin 2.3.20, for SKIE/KMP compatibility). **Build-verified:**
+`:androidApp:assembleDebug` → APK; `:shared:testAndroidHostTest` green;
+`:shared:linkDebugFrameworkIosSimulatorArm64` → `Shared.framework` (Xcode 26.1). CI gained a
+macOS `build-ios` job; AGENTS.md + Phase-0/13a prompts updated. The iosApp `.xcodeproj` /
+signing is set up in Xcode (see `apps/mobile/iosApp/README.md`).

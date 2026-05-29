@@ -42,14 +42,19 @@ It supplements but does not replace BEHAVIORAL_SPECIFICATION.md and ARCHITECTURE
   Service-role bypasses all RLS (for Edge Functions and orchestrator).
 - Tests: pgTAP for DB-layer behavior, Vitest for TypeScript logic.
   Never skip a test because a behavior is "unlikely" — the spec is the truth.
-- Mobile: an Android-first Jetpack Compose app at `apps/mobile/composeApp`
-  (single Gradle module `:composeApp`, package `com.pennhousing.shift`,
-  AGP 9 / Kotlin 2.x / Gradle version catalog). iOS / Compose Multiplatform is
-  deferred to the Phase-13 mobile work.
-- Mobile scaffolding: use the `android` CLI (skill: `android-cli`) — e.g.
-  `android create empty-activity` to scaffold/modernize Compose modules, and
-  `android studio version-lookup` for current artifact versions. Build with
-  `./gradlew :composeApp:assembleDebug` from `apps/mobile`.
+- Mobile: a Kotlin Multiplatform app at `apps/mobile` following Google's
+  Fruitties pattern — **shared logic, native UI per platform**: `:shared`
+  (commonMain/androidMain/iosMain) holds logic + ViewModels; `:androidApp`
+  (Jetpack Compose) and `iosApp` (SwiftUI, consuming the `Shared` framework via
+  SKIE) are the front ends. App id `com.pennhousing.shift`; shared namespace
+  `com.pennhousing.shift.shared`. AGP 8.13.1 / Kotlin 2.2.21 / Gradle 9.2.1 /
+  version catalog. Build Android: `./gradlew :androidApp:assembleDebug`. Link the
+  iOS framework (macOS + Xcode): `./gradlew :shared:linkDebugFrameworkIosSimulatorArm64`.
+  Shared tests: `:shared:testAndroidHostTest` (JVM) / `:shared:iosSimulatorArm64Test`.
+- Mobile scaffolding: the KMP layout (`:shared` + `:androidApp` + `iosApp`) is in
+  place. The `android` CLI (skill: `android-cli`) is for emulator/device runs
+  only — it does NOT scaffold KMP. The iosApp Xcode project / signing is
+  maintained in Xcode (see `apps/mobile/iosApp/README.md`).
 - Type generation: after any migration change, run:
   `supabase gen types typescript --local > packages/shared/src/database.types.ts`
 - Supabase MCP: configured in `.claude/settings.local.json` (gitignored). When active,
@@ -67,8 +72,10 @@ It supplements but does not replace BEHAVIORAL_SPECIFICATION.md and ARCHITECTURE
 | `java` 17+     | Gradle / Android builds                                        | https://adoptium.net                                   |
 | `xcode` 15+    | iOS simulator builds (macOS only)                              | Mac App Store                                          |
 
-Note: `android` CLI is for emulator/device operations only. KMP project scaffolding uses
-the JetBrains GitHub template (see Conventions above).
+Note: `android` CLI is for emulator/device operations only; it does not scaffold KMP.
+The KMP layout (`:shared` + `:androidApp` + `iosApp`, Fruitties-style) is already in
+place (see Conventions above). `xcode` + command-line tools are required to build the
+iOS framework and the iosApp.
 
 ## Excluded from Agent Reads
 
@@ -157,7 +164,7 @@ the JetBrains GitHub template (see Conventions above).
   `process_hmod_notify_allied_step`). **Every deployed environment MUST set it**
   to an active `users.user_id`:
   `INSERT INTO system_config (config_key, config_value, value_type) VALUES
- ('project_administrator_user_id', '<admin user_id>', 'uuid');`
+('project_administrator_user_id', '<admin user_id>', 'uuid');`
   `seed.sql` does not set it (the local seed has no users); the pgTAP suite
   exercises the configured path in `phase-07-admin-terminal.sql`. If unset/invalid,
   the urgent notification is logged via `RAISE WARNING` (not silently dropped) and

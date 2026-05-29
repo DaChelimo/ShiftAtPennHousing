@@ -149,3 +149,22 @@ the JetBrains GitHub template (see Conventions above).
   `isEligibleForFloatLookup` in `packages/core/src/eligibility/` is a
   separate, broader pre-filter the orchestrator may use; it also does not
   check hours.
+- [Phase 07] **Project-administrator terminal (BSpec §2.6) — required deploy
+  config.** When an urgent (HMOD-for-Allied) notification resolves past both HM
+  and HMOD (e.g. a fully-delegated-to-admin leave window), the terminal contact
+  is `system_config('project_administrator_user_id')` (`value_type = 'uuid'`,
+  read with `config_value::uuid` by `process_no_ack_float` and
+  `process_hmod_notify_allied_step`). **Every deployed environment MUST set it**
+  to an active `users.user_id`:
+  `INSERT INTO system_config (config_key, config_value, value_type) VALUES
+ ('project_administrator_user_id', '<admin user_id>', 'uuid');`
+  `seed.sql` does not set it (the local seed has no users); the pgTAP suite
+  exercises the configured path in `phase-07-admin-terminal.sql`. If unset/invalid,
+  the urgent notification is logged via `RAISE WARNING` (not silently dropped) and
+  no `hmod_urgent` row is created.
+- [Phase 07] **Inbound-float visibility is sm/hm/bm, not hm/bm.** The destination
+  house's SM sees inbound floats and the live house schedule (BSpec §7.1/§10), so
+  the `float_assignments` / `float_exclusions` / `shift_block_assignments` SELECT
+  policies use `user_can_build_schedule` (sm/hm/bm). Admin over PEOPLE
+  (`users` / `user_roles`) and preference/period-target WRITES stay hm/bm-only
+  (`user_has_house_admin_role`). Do not collapse the two helpers.

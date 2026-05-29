@@ -27,7 +27,7 @@
 
 BEGIN;
 
-SELECT plan(34);
+SELECT plan(36);
 
 -- ============================================================
 -- 0. Fixture: users, blocks, assignments, and float records.
@@ -722,6 +722,78 @@ SELECT ok(
   pg_get_functiondef('public.process_no_ack_float(uuid, timestamptz, integer)'::regprocedure)
     ~* 'parent_float_id\s*=\s*p_float_id.*FOR\s+UPDATE',
   'B-3: process_no_ack_float locks compensation rows with FOR UPDATE'
+);
+
+-- ============================================================
+-- 12. F-07-009 regression: a MULTI-BLOCK destination gap. The no-ack RPC claims
+--     hmod_notify_allied for every destination block (here 2). The pre-fix code
+--     assigned GET DIAGNOSTICS = ROW_COUNT (=2) into a boolean and aborted with
+--     "invalid input syntax for type boolean". This scenario drives ROW_COUNT=2,
+--     so it errors on the old code and passes on the integer-count fix.
+-- ============================================================
+
+INSERT INTO public.shift_blocks
+  (block_id, house_id, block_start_at, required_headcount)
+VALUES
+  ('f0000507-0000-0000-0000-000000000020', 'harnwell',
+   current_setting('test.phase07rpc.anchor')::timestamptz + interval '180 minutes', 3),
+  ('f0000507-0000-0000-0000-000000000021', 'house-03',
+   current_setting('test.phase07rpc.anchor')::timestamptz + interval '180 minutes', 1),
+  ('f0000507-0000-0000-0000-000000000022', 'harnwell',
+   current_setting('test.phase07rpc.anchor')::timestamptz + interval '210 minutes', 3),
+  ('f0000507-0000-0000-0000-000000000023', 'house-03',
+   current_setting('test.phase07rpc.anchor')::timestamptz + interval '210 minutes', 1);
+
+INSERT INTO public.shift_block_assignments
+  (assignment_id, block_id, user_id, status, vacancy_origin, is_float,
+   source_house_id, parent_float_id)
+VALUES
+  ('a0000507-0000-0000-0000-000000000020', 'f0000507-0000-0000-0000-000000000020',
+   'e0000507-0000-0000-0000-000000000001', 'pending_float_out', 'none', true, 'harnwell', NULL),
+  ('a0000507-0000-0000-0000-000000000021', 'f0000507-0000-0000-0000-000000000021',
+   'e0000507-0000-0000-0000-000000000001', 'pending_float_in', 'none', true, 'harnwell', NULL),
+  ('a0000507-0000-0000-0000-000000000022', 'f0000507-0000-0000-0000-000000000022',
+   'e0000507-0000-0000-0000-000000000001', 'pending_float_out', 'none', true, 'harnwell', NULL),
+  ('a0000507-0000-0000-0000-000000000023', 'f0000507-0000-0000-0000-000000000023',
+   'e0000507-0000-0000-0000-000000000001', 'pending_float_in', 'none', true, 'harnwell', NULL);
+
+INSERT INTO public.float_assignments
+  (float_id, user_id, source_assignment_ids, destination_assignment_ids,
+   status, initiated_by, expires_for_cleanup_at)
+VALUES
+  ('b0000507-0000-0000-0000-000000000020',
+   'e0000507-0000-0000-0000-000000000001',
+   ARRAY['a0000507-0000-0000-0000-000000000020','a0000507-0000-0000-0000-000000000022']::uuid[],
+   ARRAY['a0000507-0000-0000-0000-000000000021','a0000507-0000-0000-0000-000000000023']::uuid[],
+   'pending', 'automated',
+   current_setting('test.phase07rpc.anchor')::timestamptz + interval '14 days');
+
+UPDATE public.shift_block_assignments
+SET parent_float_id = 'b0000507-0000-0000-0000-000000000020'::uuid
+WHERE assignment_id IN (
+  'a0000507-0000-0000-0000-000000000020'::uuid,
+  'a0000507-0000-0000-0000-000000000021'::uuid,
+  'a0000507-0000-0000-0000-000000000022'::uuid,
+  'a0000507-0000-0000-0000-000000000023'::uuid
+);
+
+SELECT lives_ok(
+  $$ SELECT public.process_no_ack_float(
+       'b0000507-0000-0000-0000-000000000020'::uuid,
+       (current_setting('test.phase07rpc.anchor')::timestamptz + interval '175 minutes'),
+       15
+     ) $$,
+  'F-07-009: multi-block destination no-ack runs without a boolean-cast error'
+);
+
+SELECT is(
+  (SELECT count(*)::integer FROM public.block_step_status
+   WHERE block_id IN ('f0000507-0000-0000-0000-000000000021',
+                      'f0000507-0000-0000-0000-000000000023')
+     AND step_name = 'hmod_notify_allied'
+     AND status = 'fired'),
+  2,
+  'F-07-009: hmod_notify_allied claimed once for each of the 2 destination blocks'
 );
 
 SELECT * FROM finish();

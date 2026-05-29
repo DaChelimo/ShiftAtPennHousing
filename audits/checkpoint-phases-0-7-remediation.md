@@ -114,7 +114,7 @@ REVOKE ALL ON FUNCTION generate_blocks_for_range(date, date) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION generate_blocks_for_range(date, date) TO service_role;
 ```
 
-Optionally also drop `SECURITY DEFINER` from both (service_role bypasses RLS anyway), per audit Q-03-003. _(confirm signatures.)_
+Optionally also drop `SECURITY DEFINER` from both (service*role bypasses RLS anyway), per audit Q-03-003. *(confirm signatures.)\_
 **Approve?** ☐ yes ☐ no ☐ defer
 
 ### A2 — `SECURITY DEFINER` sweep: revoke PUBLIC execute on all mutating/data RPCs (F-04-001/002 + extension · Critical) **[migration]**
@@ -557,3 +557,15 @@ Per the G7a decision (**composeApp**) and using the **`android` CLI** (skill `an
 - CI (`build-android` → `:composeApp:assembleDebug`), AGENTS.md mobile guidance, and the mobile-scaffolding memory updated to match.
 - **Platform change to flag:** the `android` CLI produces Android-only Compose (no Compose-Multiplatform). The old `androidApp`+`shared`+`iosApp` (CMP, pre-Phase-13 boilerplate) were removed and the iOS CI job retired. **iOS is deferred to Phase 13.** BSpec/ARCH still say "Android + iOS ship together" — that platform commitment needs your spec update if iOS is dropped for good.
 - G7c (ktlint / Playwright / Maestro / ESLint v8-v9) remains as optional tooling additions; the CLI scaffold ships JUnit/Espresso/Compose-UI test deps.
+
+---
+
+## Post-verification pass (2026-05-29)
+
+Independent re-verification of the remediation (pgTAP re-run = **711 green baseline**, vitest 297, type-check) confirmed the large majority of fixes landed correctly, but found **3 Phase-8 blockers** that were then fixed and verified (suite now **721 pgTAP green**):
+
+1. **F-07-009 fix was incorrect (runtime bug).** `process_no_ack_float` (`20260528000021`) assigned `GET DIAGNOSTICS = ROW_COUNT` into a **boolean**; the multi-block destination gap the fix targets makes ROW_COUNT ≥ 2 → no int8→bool cast → `boolin('2')` error. Fixed in `20260528000025` (integer count + `IF > 0`, matching the `…007` sibling). Regression test added (`phase-07-no-ack-rpc.sql` multi-block scenario).
+2. **C3a project-admin terminal was inert.** `system_config('project_administrator_user_id')` was read by two RPCs but never seedable (`value_type_enum` had no `uuid` member) and never set, so leave→NULL urgent notifications were still dropped (re-opening F-07-003). Fixed: `20260528000026` adds the `uuid` value-type; `20260528000025` makes both urgent-notify paths `RAISE WARNING` instead of silently dropping; `phase-07-admin-terminal.sql` proves the configured path routes to `project_admin`. **Deploy requirement** documented in AGENTS.md (every env must set the key to an active admin `user_id`).
+3. **D9 over-corrected SM permissions (spec regression).** Reverting `user_has_house_admin_role` to hm/bm-only also removed the destination SM's READ visibility of inbound floats / live schedule, which BSpec §7.1/§10 require. Fixed in `20260528000027` (re-point `float_assignments` / `float_exclusions` / `shift_block_assignments` SELECT to `user_can_build_schedule`; admin over users/roles stays hm/bm-only). `phase-07-sm-float-visibility.sql` proves scoped SM access with no X-2 over-reach.
+
+**Exhaustiveness:** the original audit was strong but not exhaustive — it missed the §7.1 SM-visibility requirement (#3) and understated F-07-009 as no-ack-only. **Deferred (non-blocking, tracked for Phase 8):** NEW-1/NEW-9 the same multi-block HMOD-notification fan-out in the primary tick path (`orchestrator-tick` `processVacantBlocks`, TS — only the no-ack copy was deduped); NEW-6 `effective_weekly_cap` down-classifying an under-populated `short_break` day to soft-20; NEW-8 the 3-arg `resolve_hm_for_user` REVOKE living in a later migration than its definition; F-06-003 float-table schema pgTAP; the B3 F-01-001 test-flip; F3 ack-snapshot skip-past-due/non-default-cadence coverage.

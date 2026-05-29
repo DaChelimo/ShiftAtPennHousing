@@ -206,6 +206,7 @@ export type Database = {
           float_id: string;
           force_triggered_by: string | null;
           initiated_by: Database['public']['Enums']['float_initiated_by_enum'];
+          no_ack_at: string | null;
           source_assignment_ids: string[];
           status: Database['public']['Enums']['float_status_enum'];
           user_id: string;
@@ -219,6 +220,7 @@ export type Database = {
           float_id?: string;
           force_triggered_by?: string | null;
           initiated_by: Database['public']['Enums']['float_initiated_by_enum'];
+          no_ack_at?: string | null;
           source_assignment_ids: string[];
           status: Database['public']['Enums']['float_status_enum'];
           user_id: string;
@@ -232,6 +234,7 @@ export type Database = {
           float_id?: string;
           force_triggered_by?: string | null;
           initiated_by?: Database['public']['Enums']['float_initiated_by_enum'];
+          no_ack_at?: string | null;
           source_assignment_ids?: string[];
           status?: Database['public']['Enums']['float_status_enum'];
           user_id?: string;
@@ -1057,10 +1060,6 @@ export type Database = {
       is_hm_working_time: { Args: { p_at: string }; Returns: boolean };
       is_valid_block_headcounts: { Args: { p: Json }; Returns: boolean };
       is_valid_escalation_chain: { Args: { p: Json }; Returns: boolean };
-      name_array_contained_by_text_array: {
-        Args: { left_names: unknown[]; right_text: string[] };
-        Returns: boolean;
-      };
       permanent_openings_feed: {
         Args: { p_as_of?: string; p_house_id: string };
         Returns: {
@@ -1248,7 +1247,7 @@ export type Database = {
         | 'never_assigned'
         | 'expired_claim'
         | 'displaced_decliner';
-      value_type_enum: 'integer' | 'interval' | 'time_of_day' | 'enum';
+      value_type_enum: 'integer' | 'interval' | 'time_of_day' | 'enum' | 'uuid';
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -1423,7 +1422,7 @@ export const Constants = {
         'expired_claim',
         'displaced_decliner',
       ],
-      value_type_enum: ['integer', 'interval', 'time_of_day', 'enum'],
+      value_type_enum: ['integer', 'interval', 'time_of_day', 'enum', 'uuid'],
     },
   },
 } as const;

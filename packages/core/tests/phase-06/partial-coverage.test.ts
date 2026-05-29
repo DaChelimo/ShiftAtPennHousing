@@ -481,3 +481,61 @@ describe('fallback on subsequent iterations — "current uncovered run" shifts',
     expect(uncoveredBlockIds(gap, result)).toEqual([gap.blocks[7]!.blockId]);
   });
 });
+
+// ---------------------------------------------------------------------
+// (7) F-06-001 regression — a source must try EVERY uncovered run >= 2
+// before being abandoned, not just the largest.
+// ---------------------------------------------------------------------
+
+describe('multi-run termination (F-06-001)', () => {
+  it('covers a smaller uncovered run when the largest run has no eligible coverer', () => {
+    // Gap = 9 blocks. X covers the interior [b4,b5,b6]; Y covers the
+    // trailing [b7,b8] only. After X is floated, remaining uncovered =
+    // [b0..b3] (run of 4) and [b7,b8] (run of 2). The largest run
+    // ([b0..b3]) has no eligible coverer (Y covers none of it). The buggy
+    // behaviour broke out of the source and sent [b7,b8] to Allied; the
+    // fix tries the next-largest run and floats Y for [b7,b8].
+    const gap = makeGap(GAP_HOUSE, ANCHOR_19_00_EDT, 9);
+    const x = makeCandidate({
+      userId: 'X-interior',
+      homeHouseId: HARNWELL,
+      gap,
+      coversBlockIndices: [4, 5, 6],
+    });
+    const y = makeCandidate({
+      userId: 'Y-trailing',
+      homeHouseId: HARNWELL,
+      gap,
+      coversBlockIndices: [7, 8],
+    });
+
+    const result = runFloatLookup(
+      makeInput(gap, [
+        makeSourceRoster({
+          sourceHouseId: HARNWELL,
+          precedenceOrder: 1,
+          candidates: [x, y],
+          gap,
+          homogeneousHeadcount: 5,
+        }),
+      ]),
+    );
+
+    expect(assignmentByWorker(result, 'X-interior')!.blocks).toEqual([
+      gap.blocks[4]!.blockId,
+      gap.blocks[5]!.blockId,
+      gap.blocks[6]!.blockId,
+    ]);
+    expect(assignmentByWorker(result, 'Y-trailing')!.blocks).toEqual([
+      gap.blocks[7]!.blockId,
+      gap.blocks[8]!.blockId,
+    ]);
+    // [b0..b3] has no coverer → Allied.
+    expect(uncoveredBlockIds(gap, result)).toEqual([
+      gap.blocks[0]!.blockId,
+      gap.blocks[1]!.blockId,
+      gap.blocks[2]!.blockId,
+      gap.blocks[3]!.blockId,
+    ]);
+  });
+});

@@ -5,9 +5,8 @@ export const CORE_VERSION = '0.0.0';
 
 export * from './eligibility/index.js';
 export * from './eligibility/cross-house.js';
-export * from './escalation/index.js';
 export * from './float-lookup/index.js';
 export * from './hours/index.js';
 export * from './orchestrator/index.js';
-export * from './schedule-builder/phase1-grouping.js';
+export * from './scheduling/phase1Grouping.js';
 export * from './time/index.js';

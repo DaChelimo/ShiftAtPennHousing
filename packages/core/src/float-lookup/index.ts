@@ -2,8 +2,8 @@ import { getEligibleWorkersForSource } from './eligibility.js';
 import { normalizeInput, type NormalizedGap, type NormalizedWorker } from './normalize.js';
 import {
   coversEveryBlock,
+  getConsecutiveRuns,
   getLargestConsecutiveSpan,
-  getLargestUncoveredRun,
   getLeadingSpan,
 } from './spans.js';
 import { selectByTiebreaker } from './tiebreaker.js';
@@ -207,9 +207,12 @@ export function findFloaters(input: FloatLookupInput): FloatLookupResult {
 
   for (const source of sources) {
     while (remainingUncoveredBlocks.length > 0) {
-      const targetRun = getLargestUncoveredRun(remainingUncoveredBlocks, gap.blockIds);
+      // Consider every uncovered run >= the minimum chunk, largest first.
+      const candidateRuns = getConsecutiveRuns(remainingUncoveredBlocks, gap.blockIds)
+        .filter((run) => run.length >= MIN_FLOAT_CHUNK_BLOCKS)
+        .sort((left, right) => right.length - left.length);
 
-      if (targetRun.length < MIN_FLOAT_CHUNK_BLOCKS) {
+      if (candidateRuns.length === 0) {
         break;
       }
 
@@ -225,14 +228,26 @@ export function findFloaters(input: FloatLookupInput): FloatLookupResult {
       }
 
       const allowTrailingPartial = sourcesWithPriorSelection.has(source.houseId);
-      const selected = chooseCandidateForCurrentRun(
-        eligibleWorkers,
-        targetRun,
-        gap,
-        allowTrailingPartial,
-      );
 
-      if (selected === null || selected.span.length < MIN_FLOAT_CHUNK_BLOCKS) {
+      // F-06-001: try each uncovered run (largest first) before abandoning
+      // this source. A worker who cannot cover the largest run may still
+      // cover a smaller uncovered run; only give up on the source when no
+      // run >= 2 has any eligible worker.
+      let selected: CandidateSpan | null = null;
+      for (const targetRun of candidateRuns) {
+        const candidate = chooseCandidateForCurrentRun(
+          eligibleWorkers,
+          targetRun,
+          gap,
+          allowTrailingPartial,
+        );
+        if (candidate !== null && candidate.span.length >= MIN_FLOAT_CHUNK_BLOCKS) {
+          selected = candidate;
+          break;
+        }
+      }
+
+      if (selected === null) {
         break;
       }
 

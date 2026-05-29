@@ -8,6 +8,15 @@ export type Assignment = AssignmentForHours;
 
 export { checkClaimAgainstCap, type AssignmentForHours } from '../scheduling/hours.js';
 
+// D12: expose the §9.1 decomposition (the canonical, tested implementation in
+// scheduling/hours.ts) at the package root under a distinct name, so the full
+// HoursDecomposition is reachable without the bare-`computeWeeklyHours` name
+// collision. The scalar helper below remains for the simple total-hours case.
+export {
+  computeWeeklyHours as computeWeeklyHoursDecomposition,
+  type HoursDecomposition,
+} from '../scheduling/hours.js';
+
 export function computeWeeklyHours(assignments: Assignment[], weekStart: Date): number {
   return computeWeeklyHoursWithWeekRef(assignments, { weekStartAt: weekStart }).totalHours;
 }

@@ -205,9 +205,9 @@ export type Database = {
           expires_for_cleanup_at: string;
           float_id: string;
           force_triggered_by: string | null;
-          initiated_by: string;
+          initiated_by: Database['public']['Enums']['float_initiated_by_enum'];
           source_assignment_ids: string[];
-          status: string;
+          status: Database['public']['Enums']['float_status_enum'];
           user_id: string;
         };
         Insert: {
@@ -218,9 +218,9 @@ export type Database = {
           expires_for_cleanup_at: string;
           float_id?: string;
           force_triggered_by?: string | null;
-          initiated_by: string;
+          initiated_by: Database['public']['Enums']['float_initiated_by_enum'];
           source_assignment_ids: string[];
-          status: string;
+          status: Database['public']['Enums']['float_status_enum'];
           user_id: string;
         };
         Update: {
@@ -231,9 +231,9 @@ export type Database = {
           expires_for_cleanup_at?: string;
           float_id?: string;
           force_triggered_by?: string | null;
-          initiated_by?: string;
+          initiated_by?: Database['public']['Enums']['float_initiated_by_enum'];
           source_assignment_ids?: string[];
-          status?: string;
+          status?: Database['public']['Enums']['float_status_enum'];
           user_id?: string;
         };
         Relationships: [
@@ -258,7 +258,7 @@ export type Database = {
           destination_house_id: string;
           excluded_at: string;
           exclusion_id: string;
-          reason: string;
+          reason: Database['public']['Enums']['float_exclusion_reason_enum'];
           user_id: string;
           window_end_at: string;
           window_start_at: string;
@@ -267,7 +267,7 @@ export type Database = {
           destination_house_id: string;
           excluded_at?: string;
           exclusion_id?: string;
-          reason: string;
+          reason: Database['public']['Enums']['float_exclusion_reason_enum'];
           user_id: string;
           window_end_at: string;
           window_start_at: string;
@@ -276,7 +276,7 @@ export type Database = {
           destination_house_id?: string;
           excluded_at?: string;
           exclusion_id?: string;
-          reason?: string;
+          reason?: Database['public']['Enums']['float_exclusion_reason_enum'];
           user_id?: string;
           window_end_at?: string;
           window_start_at?: string;
@@ -399,7 +399,15 @@ export type Database = {
           hmod_user_id?: string;
           week_start_date?: string;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: 'hmod_rotor_hmod_user_id_fkey';
+            columns: ['hmod_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+        ];
       };
       houses: {
         Row: {
@@ -521,6 +529,49 @@ export type Database = {
           shift_start_bound?: string;
         };
         Relationships: [];
+      };
+      period_house_publications: {
+        Row: {
+          house_id: string;
+          period_id: string;
+          published_at: string;
+          published_by: string | null;
+        };
+        Insert: {
+          house_id: string;
+          period_id: string;
+          published_at?: string;
+          published_by?: string | null;
+        };
+        Update: {
+          house_id?: string;
+          period_id?: string;
+          published_at?: string;
+          published_by?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'period_house_publications_house_id_fkey';
+            columns: ['house_id'];
+            isOneToOne: false;
+            referencedRelation: 'houses';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'period_house_publications_period_id_fkey';
+            columns: ['period_id'];
+            isOneToOne: false;
+            referencedRelation: 'scheduling_periods';
+            referencedColumns: ['period_id'];
+          },
+          {
+            foreignKeyName: 'period_house_publications_published_by_fkey';
+            columns: ['published_by'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+        ];
       };
       period_targets: {
         Row: {
@@ -943,6 +994,10 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      acknowledge_float: {
+        Args: { p_float_id: string; p_now?: string; p_user_id: string };
+        Returns: Json;
+      };
       claim_hours_projection: {
         Args: { p_assignment_id: string; p_user_id: string };
         Returns: {
@@ -956,6 +1011,10 @@ export type Database = {
       claim_open_shift: {
         Args: { p_as_of: string; p_assignment_id: string; p_user_id: string };
         Returns: string;
+      };
+      decline_float: {
+        Args: { p_float_id: string; p_now?: string; p_user_id: string };
+        Returns: Json;
       };
       drop_shift: {
         Args: {
@@ -990,10 +1049,14 @@ export type Database = {
           blocks_inserted: number;
         }[];
       };
+      hmod_interval_start_date: { Args: { p_at: string }; Returns: string };
       is_assignment_claimable: {
         Args: { p_as_of: string; p_assignment_id: string };
         Returns: boolean;
       };
+      is_hm_working_time: { Args: { p_at: string }; Returns: boolean };
+      is_valid_block_headcounts: { Args: { p: Json }; Returns: boolean };
+      is_valid_escalation_chain: { Args: { p: Json }; Returns: boolean };
       name_array_contained_by_text_array: {
         Args: { left_names: unknown[]; right_text: string[] };
         Returns: boolean;
@@ -1011,16 +1074,66 @@ export type Database = {
         Args: { check_period_id: string };
         Returns: boolean;
       };
-      publish_schedule:
-        | { Args: { p_period_id: string }; Returns: number }
-        | {
-            Args: { p_period_id: string; p_published_by: string };
-            Returns: number;
-          };
-      publish_schedule_impl: {
-        Args: { p_period_id: string; p_published_by?: string };
+      process_broadcast_step: {
+        Args: {
+          p_block_id: string;
+          p_block_start_at: string;
+          p_house_id: string;
+          p_now: string;
+        };
+        Returns: Json;
+      };
+      process_float_lookup_assignment: {
+        Args: {
+          p_destination_assignment_ids: string[];
+          p_destination_house_id: string;
+          p_now: string;
+          p_retention_days?: number;
+          p_source_assignment_ids: string[];
+          p_source_house_id: string;
+          p_worker_id: string;
+        };
+        Returns: Json;
+      };
+      process_hmod_notify_allied_step: {
+        Args: {
+          p_block_id: string;
+          p_block_start_at: string;
+          p_house_id: string;
+          p_now: string;
+          p_reason?: string;
+        };
+        Returns: Json;
+      };
+      process_no_ack_float: {
+        Args: {
+          p_float_id: string;
+          p_lookahead_minutes?: number;
+          p_now: string;
+        };
+        Returns: Json;
+      };
+      publish_schedule: {
+        Args: {
+          p_house_id: string;
+          p_period_id: string;
+          p_published_by: string;
+        };
         Returns: number;
       };
+      resolve_hm_for_house: {
+        Args: { p_at: string; p_house_id: string };
+        Returns: string;
+      };
+      resolve_hm_for_user: {
+        Args: {
+          p_at: string;
+          p_interval_start_date?: string;
+          p_user_id: string;
+        };
+        Returns: string;
+      };
+      resolve_hmod_on_duty: { Args: { p_at: string }; Returns: string };
       send_preference_reminders: { Args: never; Returns: number };
       submit_preferences: {
         Args: {
@@ -1034,6 +1147,10 @@ export type Database = {
           preferences_upserted: number;
           target_upserted: number;
         }[];
+      };
+      user_can_build_schedule: {
+        Args: { check_house_id: string; check_user_id: string };
+        Returns: boolean;
       };
       user_can_select_user: {
         Args: { target_user_id: string; viewer_user_id: string };
@@ -1099,6 +1216,9 @@ export type Database = {
         | 'other';
       cap_enforcement_enum: 'soft' | 'hard';
       day_type_enum: 'weekday' | 'weekend';
+      float_exclusion_reason_enum: 'declined' | 'no_acknowledgment';
+      float_initiated_by_enum: 'automated' | 'force_triggered';
+      float_status_enum: 'pending' | 'acknowledged' | 'declined' | 'voided' | 'completed';
       hm_leave_status_enum: 'active' | 'cancelled_early';
       notification_type:
         | 'personal_shift'
@@ -1268,6 +1388,9 @@ export const Constants = {
       ],
       cap_enforcement_enum: ['soft', 'hard'],
       day_type_enum: ['weekday', 'weekend'],
+      float_exclusion_reason_enum: ['declined', 'no_acknowledgment'],
+      float_initiated_by_enum: ['automated', 'force_triggered'],
+      float_status_enum: ['pending', 'acknowledged', 'declined', 'voided', 'completed'],
       hm_leave_status_enum: ['active', 'cancelled_early'],
       notification_type: [
         'personal_shift',

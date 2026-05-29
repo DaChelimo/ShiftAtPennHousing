@@ -2,6 +2,12 @@
 
 This file is for human reference only. It tracks the 14-phase implementation roadmap.
 
+> **Source of truth:** the authoritative phase roadmap lives in `prompts/` (one
+> directory per phase). This table is a hand-maintained snapshot and may drift;
+> when in doubt, the `prompts/` phase directories are canonical. (Resolves
+> F-00-007 — the table is explicitly marked reference-only rather than rebuilt,
+> since `prompts/` is `.claudeignore`d and must not be read by coding agents.)
+
 | Phase | Name                 | Description                                                 |
 | ----- | -------------------- | ----------------------------------------------------------- |
 | 00    | Foundation           | Monorepo, Supabase init, Next.js, Compose Multiplatform, CI |

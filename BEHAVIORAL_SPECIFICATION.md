@@ -80,7 +80,7 @@ An SM's elevated permissions are scoped to their house only.
 
 ### 2.3 Housing Manager (HM) and Building Manager (BM)
 
-Every house has both a Housing Manager and a Building Manager. The BM is organizationally senior to the SM and exists primarily to cover for the HM during HM leave. Both HMs and BMs hold identical *administrative* powers, but their *worker* footprints differ:
+Every house has both a Housing Manager and a Building Manager. The BM is organizationally senior to the SM and exists primarily to cover for the HM during HM leave. Both HMs and BMs hold identical _administrative_ powers, but their _worker_ footprints differ:
 
 - **HMs can hold shift assignments.** An HM may work scheduled shifts at their home desk and pick up open shifts (in-house or cross-house, per the standard eligibility matrix). An HM is never automatically floated by the system and never receives broadcast notifications for open shifts at their house; the broadcast feature is intended for SWs/SMs, and HMs subscribe to neither. HMs may, of course, view the open-shifts feed manually and choose to pick up.
 - **BMs are admin-only.** A BM does not work shifts: they hold no scheduled assignments, cannot claim open shifts, cannot be floated, and do not appear in worker-eligibility lists for the schedule builder or the float lookup. The BM's role is supervisory and substitutional (covering for HM during leave).
@@ -104,17 +104,18 @@ The BM exists primarily to cover for the HM during HM leave (Section 2.6). On an
 
 ### 2.5 Housing Manager On Duty (HMOD)
 
-A single person — either an HM or BM from any of the 13 houses — serves as HMOD at any given time. HMOD duty rotates on a weekly cadence: each HMOD assignment runs from Monday 08:00 through the following Monday 07:59.
+A single person — either an HM or BM from any of the 13 houses — serves as HMOD at any given time. HMOD duty rotates on a weekly cadence: each HMOD assignment runs from Friday 08:00 (inclusive) through the following Friday 08:00 (exclusive). This places the weekend continuous interval (Friday 17:00 → Monday 08:00) — the heaviest HMOD duty — at the start of the duty week, so one HMOD owns a weekend plus the following four weekday evenings without a mid-weekend rotation.
 
 The HMOD rotor is planned by the HMs and BMs themselves at the start of each semester (fall, spring). The rotor is then in effect for that entire semester, including any short breaks and the winter break that fall within or between those semesters.
 
 The HMOD is on duty:
+
 - Monday through Friday from 17:00 (inclusive) through midnight.
 - Continuously from Friday 17:00 (inclusive) through Monday 08:00 (exclusive).
 
-**Academic-year scope of the rotor.** The HMOD rotor exists only for academic-year dates. The first rotor week of an academic year begins on the Monday 08:00 immediately preceding the first operating date of fall semester (or coincident with it if fall starts on a Monday). The last rotor entry of an academic year terminates at the end of the last operating day of spring semester, **truncated** so that no rotor interval extends into the summer non-operating period. Concretely: if spring ends on a Sunday, the final weekend interval (which began Friday 17:00) ends at Sunday 23:59 rather than continuing through Monday 08:00. Summer dates have no HMOD assignment at all; coverage during summer is handled entirely off-platform per Section 3.1.
+**Academic-year scope of the rotor.** The HMOD rotor exists only for academic-year dates. The first rotor week of an academic year begins on the Friday 08:00 that opens the week containing the first operating date of fall semester (the Friday 08:00 on, or immediately preceding, that date); any pre-semester days inside that first week carry no operating activity and need no coverage. The last rotor entry of an academic year is the Friday-anchored week containing the last operating day of spring semester, **truncated** so that no rotor interval extends into the summer non-operating period. Concretely: the final rotor interval ends at the end of the last spring operating day (e.g., Sunday 23:59) rather than continuing through the following Friday 08:00. Summer dates have no HMOD assignment at all; coverage during summer is handled entirely off-platform per Section 3.1.
 
-At exactly Monday 08:00, HM working hours begin and the HMOD's weekend duty ends. If a notification fires at exactly Monday 08:00, it is routed to the HM (HM time begins at the closed boundary). The HMOD's weekly assignment spans Monday 08:00 through the following Monday 07:59 for rotor-tracking purposes, but during the HM-hours window within that span the HMOD receives no operational notifications — HMs handle those.
+At exactly Monday 08:00, HM working hours begin and the HMOD's weekend duty ends. If a notification fires at exactly Monday 08:00, it is routed to the HM (HM time begins at the closed boundary). The HMOD's weekly assignment spans Friday 08:00 through the following Friday 07:59 for rotor-tracking purposes, but during the HM-hours windows within that span the HMOD receives no operational notifications — HMs handle those.
 
 The HMOD is the system's escape hatch. In a healthy operational week, the HMOD receives no notifications from the system because all coverage gaps are resolved by automated floating before they require human intervention. The HMOD is only contacted when:
 
@@ -130,7 +131,7 @@ An HM or BM may indicate one or more days of leave by selecting dates in the sys
 
 1. The system designates a replacement for the leave period. By default, the replacement is the same house's BM (if an HM is going on leave) or HM (if a BM is going on leave). The user may instead select any other HM or BM in the system as their replacement, in which case the user is responsible for verbally confirming the replacement's availability before submission.
 
-2. If the user being placed on leave is currently the HMOD-of-the-week (or scheduled to be during their leave dates), the replacement also assumes HMOD duty for those dates. Because HMOD runs from Monday 08:00 to the following Monday 07:59 and crosses weekends, an HM whose HMOD week is the leave period needs a replacement whose availability includes the weekend.
+2. If the user being placed on leave is currently the HMOD-of-the-week (or scheduled to be during their leave dates), the replacement also assumes HMOD duty for those dates. Because HMOD runs from Friday 08:00 to the following Friday 07:59 and includes the weekend at the start of the duty week, an HM whose HMOD week is the leave period needs a replacement whose availability includes the weekend.
 
    **HMOD interval transfer is start-date-based.** Date-based leave maps to time-based HMOD intervals by the rule: every HMOD on-duty interval whose **start moment** falls on a leave date transfers to the replacement. An overnight interval starting Tuesday 17:00 and extending into Wednesday morning belongs to Tuesday for transfer purposes; if the leave covers Wednesday only (not Tuesday), that overnight interval stays with the original HMOD. A weekend continuous interval (Friday 17:00 → Monday 08:00) belongs to Friday; if Friday is not in the leave dates, the entire weekend stays with the original HMOD even if some weekend days are.
 
@@ -140,7 +141,7 @@ An HM or BM may indicate one or more days of leave by selecting dates in the sys
 
 4. Layered/cascading leave is supported. Leave delegations form a directed graph: each leave record names exactly one immediate replacement. The system resolves the acting HM for any given (date, house) by walking forward through active leave records until it reaches someone not on leave for that date.
 
-   **Cycle prevention at selection time.** When an HM picks a replacement, the system computes their *incoming chain* — the set of all HMs/BMs whose active leave delegation currently resolves through the HM going on leave. These HMs are excluded from the replacement picker: selecting any of them would create a cycle. The project administrator is always a valid terminal selection and is never excluded.
+   **Cycle prevention at selection time.** When an HM picks a replacement, the system computes their _incoming chain_ — the set of all HMs/BMs whose active leave delegation currently resolves through the HM going on leave. These HMs are excluded from the replacement picker: selecting any of them would create a cycle. The project administrator is always a valid terminal selection and is never excluded.
 
    **Cycle prevention at submission time.** Because another HM may create a leave between picker-load and submit, the incoming-chain check is re-run inside the submission transaction. If the selected replacement is now in the incoming chain, the request is rejected and the user must re-select.
 
@@ -179,6 +180,7 @@ Summer (the period between the end of spring semester and the start of fall seme
 The system recognizes three profiles. Each profile defines a complete set of rules that govern every date assigned to it.
 
 **Regular School Year** (fall and spring semesters)
+
 - Shift bounds: 08:00 to 24:00.
 - Weekly hours cap: 20 hours, soft warning, overridable.
 - Scheduling mode: SM-built with worker preferences submitted in advance.
@@ -186,6 +188,7 @@ The system recognizes three profiles. Each profile defines a complete set of rul
 - Escalation chain: broadcast at T-3h, automated float lookup at T-2h, HMOD-then-Allied if float lookup fails.
 
 **Winter Break**
+
 - Shift bounds: 08:00 to 24:00.
 - Weekly hours cap: 40 hours, hard ceiling, not overridable.
 - Scheduling mode: claim-based (same workflow as short break — see Section 4.4).
@@ -195,6 +198,7 @@ The system recognizes three profiles. Each profile defines a complete set of rul
 During winter break, all houses other than Harnwell are completely inactive. SWs, SMs, HMs, and BMs of closed houses have no active responsibilities. Their accounts show no shifts, no UI for picking up shifts, no schedule-building tools, no preference submission, and no notifications. The single exception is that an HM or BM of a closed house may serve as HMOD on the rotor, in which case they are notified only for HMOD-relevant events at Harnwell.
 
 **Short Break** (Thanksgiving, fall break, spring break, spring fling, and other named multi-day breaks within a semester)
+
 - Shift bounds: 08:00 to 24:00.
 - Weekly hours cap depends on the specific break: 40 hours for Thanksgiving, fall break, and spring break (hard ceiling, not overridable); 20 hours for spring fling (soft, overridable). See Section 9.3 for the cap-modification mechanism.
 - Scheduling mode: claim-based, first-come-first-served. No SM-built schedule.
@@ -208,15 +212,18 @@ A date that falls within a short break has the short-break profile, regardless o
 Staffing patterns define how many workers each desk requires at each time of day. They are keyed by (profile, house) and resolved per day-type (weekday vs weekend). Patterns do not vary across individual weekdays; if a future requirement needs per-day-of-week granularity, the storage layer can be extended without changing the resolution model.
 
 **Regular School Year**
+
 - Harnwell: 2 workers, 08:00 to 24:00, every day.
 - Quad: 3 workers, 08:00 to 24:00, every day.
 - Each of the 11 single-staff houses: 1 worker, 08:00 to 24:00, every day.
 
 **Winter Break**
+
 - Harnwell: 1 worker, 08:00 to 24:00, every day.
 - All 12 other houses: closed, no shifts scheduled.
 
 **Short Break**
+
 - Harnwell: 2 workers, 08:00 to 24:00, every day.
 - Quad: 3 workers, 08:00 to 24:00, every day.
 - Each of the 11 single-staff houses: 1 worker, 08:00 to 24:00, every day.
@@ -375,6 +382,7 @@ The permanent openings feed is always visible to all SWs at the affected house, 
 A permanently-dropped slot's individual weekly occurrences still surface in the **weekly feed** as they cross the 30-day horizon, where they undergo standard escalation. The permanent openings feed exists in parallel so that workers can claim the entire remaining recurrence in one action rather than picking it up week-by-week.
 
 A slot is removed from the permanent openings feed when:
+
 - Another worker permanently picks it up (Section 8.4).
 - The operating profile ends. New profiles are scheduled fresh; permanent drops do not carry over.
 
@@ -389,7 +397,7 @@ Temporary drop rules:
 - A worker may drop a shift starting within 20 minutes of the current time. The system allows this but shows a warning popup informing the worker that this is short notice.
 - **Mid-shift drops are permitted.** A worker currently in a shift may drop any portion of the remaining time, including both the "I'm leaving now" case and the "I want to skip this future part of my shift" case. The rules:
   - **Drop granularity.** Drops must be in whole 30-minute chunks (minimum 30 min, then 60, 90, 120 min, etc.). The system always operates on 30-minute block boundaries — there is no sub-block representation.
-  - **Drop-from-now case.** If the worker is dropping from the current moment onward, the system rounds *down* to the most recent 30-minute boundary to determine the chunk start. A drop initiated at 17:51 of a shift ending at 19:00 produces a gap of 17:30–19:00. The worker forfeits credit for the 21 minutes they actually worked between 17:30 and 17:51; the system's atomic hours unit remains the 30-minute block, and partial credit is intentionally not tracked. This is the accepted cost of dropping mid-block.
+  - **Drop-from-now case.** If the worker is dropping from the current moment onward, the system rounds _down_ to the most recent 30-minute boundary to determine the chunk start. A drop initiated at 17:51 of a shift ending at 19:00 produces a gap of 17:30–19:00. The worker forfeits credit for the 21 minutes they actually worked between 17:30 and 17:51; the system's atomic hours unit remains the 30-minute block, and partial credit is intentionally not tracked. This is the accepted cost of dropping mid-block.
   - **Forward-future drop case.** If the worker is dropping a future portion of their current shift (not the current moment), they select the chunk explicitly. A worker on a 15:00–24:00 shift may at 15:21 drop the 18:00–20:00 chunk. The dropper continues working their other blocks; the dropped chunk is a future gap.
   - **Escalation timing follows standard rules based on the gap's start.** A mid-shift drop is not automatically immediate-escalation. The dropped chunk enters escalation as if it were any other open shift, anchored to the gap's start time:
     - **If gap start is more than 2 hours away** (e.g., the 15:00–24:00 shift dropping 18:00–20:00 at 15:21 — gap starts in 2h 39m), the chunk enters the weekly open-shifts feed and proceeds through the standard T-3h/T-2h chain.
@@ -412,11 +420,11 @@ A worker may claim any open shift at their home house, plus any open shift at a 
 
 **Cross-house pickup eligibility.** Pickup eligibility is governed by the Harnwell training constraint: only Harnwell-trained workers may staff the Harnwell desk. All other cross-house pickups are permitted. The matrix:
 
-| Source (worker's home house) | Can pick up at Harnwell? | Can pick up at Quad? | Can pick up at any 11 single-staff house? |
-|---|---|---|---|
-| Harnwell SW | YES (their home) | YES | YES |
-| Quad SW | NO (no Harnwell training) | YES (their home) | YES |
-| 11-single-staff-house SW | NO (no Harnwell training) | YES | YES (their own home and any other 11-house) |
+| Source (worker's home house) | Can pick up at Harnwell?  | Can pick up at Quad? | Can pick up at any 11 single-staff house?   |
+| ---------------------------- | ------------------------- | -------------------- | ------------------------------------------- |
+| Harnwell SW                  | YES (their home)          | YES                  | YES                                         |
+| Quad SW                      | NO (no Harnwell training) | YES (their home)     | YES                                         |
+| 11-single-staff-house SW     | NO (no Harnwell training) | YES                  | YES (their own home and any other 11-house) |
 
 This matrix is intentionally more permissive than the float direction rules (Section 1.2). Floating restricts 11-single-staff-house workers as sources because their departure would leave a single-staff desk unattended; cross-house pickup imposes no such restriction because the worker is acquiring an additional shift on top of (or independent of) their home schedule, not abandoning it. The only invariant carried over is the Harnwell training requirement.
 
@@ -510,10 +518,10 @@ A worker is eligible to be floated to a destination if all of the following hold
 - They are not already assigned to a float (acknowledged or pending) during the destination's time window.
 - They are not currently working a cross-house pickup during the destination's time window. A worker on a cross-house pickup at house X is treated as a worker at house X for headcount purposes but is not floatable from there.
 - They are not a Housing Manager or Building Manager (HMs may work shifts at their home desk but are never selected as floaters; BMs do not hold shift assignments at all — see Section 2.3 / 2.4).
-- They have not previously declined (or failed to acknowledge) a float at this same destination house whose time window **overlaps** the current gap's window. "Overlaps" means any block-level intersection, however small; full overlap is not required. Exclusions for declines at *different* destination houses or non-overlapping windows do not apply.
+- They have not previously declined (or failed to acknowledge) a float at this same destination house whose time window **overlaps** the current gap's window. "Overlaps" means any block-level intersection, however small; full overlap is not required. Exclusions for declines at _different_ destination houses or non-overlapping windows do not apply.
 - The worker is `is_active = true` (not fired or otherwise deactivated).
 
-**Hours cap is not checked at float assignment.** A floater works the same total hours they were already scheduled to work; the float relocates a portion of those hours from the home desk to the destination desk. A Quad worker scheduled 19:00–24:00 (5h) who is floated 21:00–22:00 to Lauder still works 5 hours total that day — 2h at Quad, 1h at Lauder, 2h at Quad again. Because floats are net-zero on weekly hours, neither the 20-hour soft cap nor the 40-hour hard cap is consulted during the float lookup or at float-acknowledgment time. (This is in contrast to claim, swap, and pickup operations, which *do* add hours and are subject to cap checks per Section 9.)
+**Hours cap is not checked at float assignment.** A floater works the same total hours they were already scheduled to work; the float relocates a portion of those hours from the home desk to the destination desk. A Quad worker scheduled 19:00–24:00 (5h) who is floated 21:00–22:00 to Lauder still works 5 hours total that day — 2h at Quad, 1h at Lauder, 2h at Quad again. Because floats are net-zero on weekly hours, neither the 20-hour soft cap nor the 40-hour hard cap is consulted during the float lookup or at float-acknowledgment time. (This is in contrast to claim, swap, and pickup operations, which _do_ add hours and are subject to cap checks per Section 9.)
 
 **Harnwell as a destination.** Because Harnwell training is required and no worker hired at a non-Harnwell house can be a source, the float lookup for a Harnwell vacancy returns no candidates. Harnwell coverage gaps therefore bypass the float lookup result and proceed directly to HMOD-for-Allied at T-2h. (Off-duty Harnwell workers may still claim the open shift via the weekly feed before T-2h.)
 
@@ -529,7 +537,7 @@ The system never assumes a single floater must cover the entire destination gap.
 
 4. **Minimum chunk size — non-negotiable.** Any individual floater's assigned span MUST be at least 2 consecutive 30-minute blocks (a full hour). If the largest consecutive coverage a worker can provide is only one 30-minute block, that block is not assigned to them and is left for Allied. This minimum applies to every selection, including those resulting from the tiebreaker rules in Section 6.3 and the partial-coverage fallback below.
 
-5. **Partial-coverage fallback.** If, within a source, no eligible worker can cover the full gap (or the current uncovered run), the algorithm accepts partial coverage: select the worker who can cover the *longest leading portion* of the gap starting from the gap's start, provided that portion is at least 2 blocks. If multiple workers tie on that portion, apply the tiebreaker chain (Section 6.3) to break the tie. Allied is procured for the uncovered tail. This is a fallback, not a tiebreaker — it only applies when no worker can cover the full largest-consecutive run.
+5. **Partial-coverage fallback.** If, within a source, no eligible worker can cover the full gap (or the current uncovered run), the algorithm accepts partial coverage: select the worker who can cover the _longest leading portion_ of the gap starting from the gap's start, provided that portion is at least 2 blocks. If multiple workers tie on that portion, apply the tiebreaker chain (Section 6.3) to break the tie. Allied is procured for the uncovered tail. This is a fallback, not a tiebreaker — it only applies when no worker can cover the full largest-consecutive run.
 
 6. **Allied fills the rest.** After Quad and Harnwell have been exhausted, any remaining uncovered blocks (including those that failed the minimum-chunk-size check) are escalated to HMOD for Allied procurement.
 
@@ -740,7 +748,6 @@ A worker who wants to claim a permanently-dropped recurring slot for the remaind
 1. The worker views the permanent openings feed for their home house (Tab 2 of the Shifts screen) or for an eligible non-home house (Tab 3 of the Shifts screen). They may also see a permanently-dropped occurrence in the weekly feed marked with the permanent-drop visual indicator — Section 11.
 2. The worker selects the slot. If they entered through the weekly feed, the system shows a popup offering two options: "pick up this week only" or "pick up permanently." If they entered through the permanent openings feed, only the permanent pickup flow is offered (a single-week temporary claim from this surface is handled by switching to the weekly feed entry for that week).
 3. If permanent is chosen, the system evaluates the pickup across all future occurrences of the slot within the current operating profile, applying these rules to each week:
-
    - **Time conflict check.** For each future week, the system checks whether any block in the recurring slot's occurrence overlaps with another shift the worker is already assigned to that week. For weeks with overlap, only the non-overlapping blocks are picked up; conflicting blocks are skipped for that specific week. If all blocks conflict for a given week, the entire week is skipped.
    - **Hours cap check.** For each future week, the system computes the worker's projected total hours after the non-conflicting blocks of that week's slot occurrence are added. If the projected total would exceed the applicable cap for that week, **the entire week is skipped from the permanent pickup, regardless of whether the cap is soft or hard.** Permanent pickup is treated more conservatively than one-off temporary claims: because a single user action commits to many weeks at once, silently crossing the soft cap across many weeks would be undesirable. The skip-if-exceeded rule applies uniformly to both 20-hour soft-cap weeks and 40-hour hard-cap weeks. (A worker who specifically wants to exceed soft cap on a given week may still pick up that week individually via the weekly open-shifts feed, where the standard soft-cap warning-with-override flow applies.)
 
@@ -800,6 +807,7 @@ Each calendar week has a single hours cap that applies to that week for all work
 The modification is instant and requires no approval. SMs cannot modify the cap; the authority is restricted to HMs and BMs.
 
 **Effect of a cap reduction on existing state.** When the cap is lowered mid-week:
+
 - Workers whose existing assignments already exceed the new cap are not retroactively unassigned. Their existing shifts stand.
 - Pending float assignments already assigned to over-cap workers (both acknowledged floats and floats that are assigned but not yet accepted by the worker) are honored and are not voided by the cap change.
 - New claims, swap acceptances, and new float assignments are blocked if they would push a worker over the new cap.
@@ -852,6 +860,7 @@ Notifications are routed by recipient role and urgency. The system does not deli
 ### 10.3 Information Content of Notifications
 
 A notification to the HM or HMOD about a coverage gap requiring Allied procurement contains:
+
 - The house needing coverage.
 - The time window of needed coverage.
 - The reason the system reached this step (e.g., "no floater found in Quad or Harnwell," or "floater [name] declined").
@@ -908,6 +917,7 @@ The system does not maintain a separate audit log of state changes. The calendar
 ## 13. Permissions Summary
 
 **Student Workers** can:
+
 - View their own schedule, the open-shifts feeds at their home house (both the weekly feed and the permanent openings feed), and the open-shifts feeds of any non-home house where they are pickup-eligible per the matrix in Section 5.3.
 - Submit preferences during scheduling windows (regular school year only).
 - Claim shifts during break claim phases (calendar picker) or via the open-shifts feed (after T-1d).
@@ -919,12 +929,14 @@ The system does not maintain a separate audit log of state changes. The calendar
 - Subscribe or unsubscribe to broadcast notifications.
 
 **Student Managers** can do everything an SW can do, plus, for their home house only:
+
 - Build the initial schedule (regular school year).
 - Override the live schedule, including temporary removal of a worker from a specific week's slot and permanent removal of a worker from a recurring slot for the rest of the operating profile. The manual override interface presents both options explicitly.
 - Initiate permanent shift swap requests.
 - Force-trigger a float lookup before T-2h.
 
 **Housing Managers (HM)** can do everything an SM can do for their home house, plus:
+
 - Override SM actions in their house, including permanent removal.
 - Override cross-house workers at their desk. Both the destination-house SM/HM (the house where the cross-house worker is assigned) and the source-house SM/HM (the worker's home house) may override or remove a cross-house worker's assignment. Both sides have authority; the last write wins.
 - Work scheduled shifts at their own desk and claim open shifts (in-house or cross-house per the standard eligibility matrix).
@@ -932,12 +944,14 @@ The system does not maintain a separate audit log of state changes. The calendar
 HMs are explicitly **excluded** from the float lookup eligibility pool and from broadcast notification subscriptions. They never receive system-assigned floats. The subscription toggle is not available to users holding the `hm` role; any existing subscription is revoked automatically at the moment of HM role assignment.
 
 **Building Managers (BM)** hold the same administrative powers as HMs (overrides, force-triggers, notifications, leave, HMOD eligibility) but are **admin-only as workers**:
+
 - BMs do not hold scheduled shifts.
 - BMs cannot claim open shifts, submit preferences, or be assigned via the schedule-builder.
 - BMs are excluded from the float lookup eligibility pool.
 - BMs are excluded from broadcast notifications.
 
 Both HMs and BMs can:
+
 - Receive escalation notifications during HM working hours (HM is the primary recipient; BM receives notifications only when HM is on leave and BM is the resolved replacement per Section 2.6).
 - Place Allied calls.
 - Set or end their own leave (and select a replacement).
@@ -965,7 +979,7 @@ The following parameters are system-wide configurable by the project administrat
 - **Shift swap expiry**: T-3h of the earlier shift.
 - **Minimum float chunk size**: 2 blocks (1 hour). Non-negotiable in the algorithm.
 - **HM working hours**: Monday-Friday 08:00 to 17:00.
-- **HMOD rotor cadence**: weekly, Monday 08:00 handoff.
+- **HMOD rotor cadence**: weekly, Friday 08:00 handoff.
 
 Once finalized via project committee feedback, the administrator may update these. All updates apply system-wide and take effect at the start of the next orchestrator tick. Individual users do not have direct control over these values except for the per-worker tweakable acknowledgment reminders (6h and 2h).
 
@@ -987,11 +1001,11 @@ The following decisions were confirmed during v2 drafting:
 
 1. **Force-trigger source-side gap behavior:** When a force-trigger creates a pending float and the source desk becomes understaffed, the source-side gap enters the source's open-shifts feed immediately.
 2. **Decline behavior:** When a worker declines (or fails to acknowledge by the T-5-pre-deadline trigger), the float is voided and the gap re-opens to the standard escalation pathway. The declining worker is excluded from re-consideration for that gap. The system does not run an immediate cascade.
-3. **Acknowledgment cadence anchor:** All reminder offsets (6h, 2h, 1h, 30m, 5m) are measured from the **T-2h acknowledgment deadline**, not from the float start time.
+3. **Acknowledgment cadence anchor:** All reminder offsets (6h, 2h, 1h, 30m, 5m) are measured from the **acknowledgment deadline**, not from the float start time. **[Errata]** This item originally said "T-2h deadline"; the canonical deadline (per §7.1, §4.4, Appendix B, and the implementation) is **T-10m before float start**. Read "acknowledgment deadline" as T-10m before float start.
 4. **Global cap modification authority:** HM/BM only; SMs cannot modify the weekly cap. Instant, no approval workflow.
 5. **Permanent swap rejection:** Replaces the prior unilateral-SM-execution model with an in-app accept-reject flow with 7-day expiry. The SM is excluded from the swap; the two workers approve directly.
 6. **Float-assignment auto-deletion:** Acceptable to lose acknowledgment timing data after 14 days; the calendar retains the float-shift record (which is the operationally relevant data).
-7. **HMOD rotor location:** Stored as a separate table keyed by Monday-of-week.
+7. **HMOD rotor location:** Stored as a separate table keyed by Friday-of-week (Friday 08:00 duty-week start).
 8. **Winter claim-phase checkpoints:** Same as short break (T-14d / T-3d / T-1d) for each date in the winter period.
 9. **"I'm back" attribution:** Past actions during the leave remain attributed to the replacement; the HM resumes from the moment of click forward.
 10. **Force-trigger granularity:** Spans are snapped to 30-minute block boundaries.

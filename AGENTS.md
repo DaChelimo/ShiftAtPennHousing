@@ -42,11 +42,14 @@ It supplements but does not replace BEHAVIORAL_SPECIFICATION.md and ARCHITECTURE
   Service-role bypasses all RLS (for Edge Functions and orchestrator).
 - Tests: pgTAP for DB-layer behavior, Vitest for TypeScript logic.
   Never skip a test because a behavior is "unlikely" — the spec is the truth.
-- Mobile: Compose Multiplatform targets Android + iOS. Platform-specific code uses
-  expect/actual declarations in src/androidMain and src/iosMain.
-  Both platforms ship together in every release.
-- Mobile scaffolding: always use the JetBrains GitHub template clone for new KMP modules.
-  Never use kmp.jetbrains.com or `android create` for KMP — the latter has no KMP template.
+- Mobile: an Android-first Jetpack Compose app at `apps/mobile/composeApp`
+  (single Gradle module `:composeApp`, package `com.pennhousing.shift`,
+  AGP 9 / Kotlin 2.x / Gradle version catalog). iOS / Compose Multiplatform is
+  deferred to the Phase-13 mobile work.
+- Mobile scaffolding: use the `android` CLI (skill: `android-cli`) — e.g.
+  `android create empty-activity` to scaffold/modernize Compose modules, and
+  `android studio version-lookup` for current artifact versions. Build with
+  `./gradlew :composeApp:assembleDebug` from `apps/mobile`.
 - Type generation: after any migration change, run:
   `supabase gen types typescript --local > packages/shared/src/database.types.ts`
 - Supabase MCP: configured in `.claude/settings.local.json` (gitignored). When active,

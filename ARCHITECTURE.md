@@ -54,7 +54,7 @@ Some rules are absolute and enforced as algorithmic invariants in code, in addit
 - **Minimum float chunk size.** The float lookup algorithm explicitly checks the minimum-chunk rule at every selection point, including each tiebreaker check.
 - **No-takeback rule for assigned floats.** Once assigned (pending or acknowledged), a float cannot be revoked by the system; the source-side gap is handled independently.
 
-The principle: configuration controls how the system *operates*; invariants control what it *cannot* do regardless of configuration.
+The principle: configuration controls how the system _operates_; invariants control what it _cannot_ do regardless of configuration.
 
 ### 1.6 Time Zone
 
@@ -85,6 +85,7 @@ operating_calendar
 Population is administrative: the SM/HM uses an admin UI to assign date ranges to profiles. The runtime queries individual dates.
 
 Example rows:
+
 ```
 2025-09-15  →  regular_school_year
 2025-11-27  →  short_break
@@ -116,6 +117,7 @@ operating_profiles
 ```
 
 Example: `regular_school_year`:
+
 - shift_start_bound: 08:00
 - shift_end_bound: 24:00
 - default_hours_cap: 20
@@ -126,6 +128,7 @@ Example: `regular_school_year`:
 - claim_phase fields: null
 
 Example: `winter_break`:
+
 - shift_start_bound: 08:00
 - shift_end_bound: 24:00
 - default_hours_cap: 40
@@ -138,6 +141,7 @@ Example: `winter_break`:
 - claim_phase_close_offset: -1d
 
 Example: `short_break`:
+
 - shift_start_bound: 08:00
 - shift_end_bound: 24:00
 - default_hours_cap: 40
@@ -164,6 +168,7 @@ staffing_patterns
 ```
 
 Example: `(regular_school_year, Harnwell, weekday)` expands to 30-minute block entries:
+
 ```json
 [
   {"block_start": "08:00", "headcount": 2},
@@ -174,10 +179,9 @@ Example: `(regular_school_year, Harnwell, weekday)` expands to 30-minute block e
 ```
 
 For compact storage, the table may use a compressed representation (a list of `{block_start, block_end, headcount}` ranges) that the application layer expands on read. The example above would compress to:
+
 ```json
-[
-  {"block_start": "08:00", "block_end": "24:00", "headcount": 2}
-]
+[{ "block_start": "08:00", "block_end": "24:00", "headcount": 2 }]
 ```
 
 The schema's time-banded headcount design (multiple ranges per row) is deliberately preserved even though all currently-supported profiles use a single flat band per house-day. This capability exists to accommodate future profiles (or a future revival of the summer profile) that may staff differently across time bands within a single day without requiring a schema migration.
@@ -199,6 +203,7 @@ float_routing
 ```
 
 For `regular_school_year` and `short_break`:
+
 - `(profile, Quad, every house except Harnwell, precedence 1)`
 - `(profile, Harnwell, every house including Quad, precedence 2)`
 
@@ -206,7 +211,7 @@ For `winter_break`, this table has zero rows.
 
 **Important:** The `float_routing` table is consulted as an ordering/precedence mechanism, but the float lookup algorithm also enforces the absolute rules of Section 1.2 of the behavioral spec independently. Even if a row were erroneously inserted with a single-staff house as source, the algorithm rejects it.
 
-**Scope clarification:** `float_routing` governs *floating only*. Cross-house *pickup* (Behavioral Spec Section 5.3) does not consult this table. Pickup eligibility is a single algorithmic rule (Harnwell training requirement) enforced in the claim and permanent-pickup handlers — no config table, no precedence ordering. A worker eligible to pick up at any non-home house sees the union of those houses' open-shifts feeds in their cross-house tab.
+**Scope clarification:** `float_routing` governs _floating only_. Cross-house _pickup_ (Behavioral Spec Section 5.3) does not consult this table. Pickup eligibility is a single algorithmic rule (Harnwell training requirement) enforced in the claim and permanent-pickup handlers — no config table, no precedence ordering. A worker eligible to pick up at any non-home house sees the union of those houses' open-shifts feeds in their cross-house tab.
 
 ### 2.5 Layer 5: Weekly Cap Overrides
 
@@ -229,17 +234,20 @@ A table defining who serves as HMOD for each weekly slot.
 
 ```
 hmod_rotor
-  week_start_date   (primary key; the Monday of the week, 08:00)
+  week_start_date   (primary key; the Friday of the duty week, 08:00)
   hmod_user_id      (foreign key to users; must hold hm or bm role)
 ```
 
-**Academic-year scope.** Rotor entries exist only for weeks whose Monday falls within an academic semester. The rotor table has no row for any week falling entirely in summer. The final rotor entry of a spring semester represents an interval that ends at the end of the last spring operating day, **not** the following Monday 08:00 (per Behavioral Spec Section 2.5 "Academic-year scope of the rotor"). The HMOD-resolution function must:
+The duty week runs Friday 08:00 (inclusive) → the following Friday 08:00 (exclusive). `resolve_hmod_on_duty(p_at)` snaps `p_at` (NY-local, minus 8h) back to the most recent Friday to find the rotor row.
+
+**Academic-year scope.** Rotor entries exist only for weeks whose Friday falls within an academic semester. The rotor table has no row for any week falling entirely in summer. The final rotor entry of a spring semester represents an interval that ends at the end of the last spring operating day, **not** the following Friday 08:00 (per Behavioral Spec Section 2.5 "Academic-year scope of the rotor"). The HMOD-resolution function must:
 
 1. Look up the rotor row for the current week.
 2. If no row exists (summer date), return "no HMOD on duty" — the runtime treats this as an operational error if it is invoked at all (the orchestrator does not run during summer because no operating_calendar rows exist).
-3. If a row exists, check whether the current moment falls within the rotor's effective interval. For the last rotor entry of a spring semester, the effective interval ends at the end of the last spring operating date (e.g., Sunday 23:59) rather than the following Monday 08:00. This truncation rule applies only to the spring-to-summer boundary; all other rotor entries run their full Monday-to-Monday week.
+3. If a row exists, check whether the current moment falls within the rotor's effective interval. For the last rotor entry of a spring semester, the effective interval ends at the end of the last spring operating date (e.g., Sunday 23:59) rather than the following Friday 08:00. This truncation rule applies only to the spring-to-summer boundary; all other rotor entries run their full Friday-to-Friday week.
 
 Populated by the HMs and BMs themselves before each semester. The HMOD on duty at any given time is determined by:
+
 1. Look up the rotor entry for the current week.
 2. Check whether the rotor's assigned HMOD is on leave (Section 2.7) **on the date the current HMOD interval starts** (not the current date). HMOD intervals are date-anchored to their start: an interval running Tuesday 17:00 → Wednesday 08:00 is attributed to Tuesday; the weekend interval Friday 17:00 → Monday 08:00 is attributed to Friday. If the rotor's HMOD is on leave on the interval's start date, look up their replacement.
 
@@ -275,7 +283,7 @@ This walk is implemented as a single recursive CTE. The delegation graph is kept
 
 **Cycle prevention at insertion.** Cycles are prevented structurally at insert/update time, not detected at resolution time. When an HM submits a new leave row:
 
-1. The server computes the *incoming chain*: all users whose active leave delegation currently resolves through the HM going on leave (walk all active leave rows and find chains that terminate at this HM).
+1. The server computes the _incoming chain_: all users whose active leave delegation currently resolves through the HM going on leave (walk all active leave rows and find chains that terminate at this HM).
 2. The submitted `replacement_user_id` must not appear in the incoming chain. If it does, the insert is rejected.
 3. This check runs inside a **serializable transaction** so that concurrent insertions cannot create a cycle between check-time and commit-time.
 
@@ -417,6 +425,7 @@ The single exception is the contact-lookup-from-shift-card surface (Behavioral S
 The behavioral spec mandates blocks as the atomic unit. The schema reflects this directly. Two implementation approaches are equivalent:
 
 **Approach A (recommended): Block-Per-Row.**
+
 ```
 shift_blocks
   block_id          (primary key)
@@ -522,6 +531,7 @@ swap_requests
 Like floats, swap operations identify specific seat-assignments (not blocks) so that multi-headcount blocks can be swapped unambiguously.
 
 Expiry policies:
+
 - `shift_swap`: T-3h of the earlier of the two block sets.
 - `float_swap`: 24 hours after the float end time.
 - `permanent_swap`: 7 days after `created_at`.
@@ -724,7 +734,7 @@ The orchestrator tracks `float_assignments` with `status = pending`. The no-ack 
 5. Resume the standard escalation chain for the destination blocks per Behavioral Spec Section 6.6 #7:
    - If T-3h has not yet been reached, the broadcast fires at T-3h normally.
    - If T-3h has passed but T-2h has not, broadcast is skipped and float lookup fires at T-2h with the decliner excluded.
-   - **If T-2h has already passed, the gap goes directly to HMOD-for-Allied.** In the no-ack case specifically, the deadline is at T-15m before float start, so T-2h is always already past at trigger time — the gap always goes directly to HMOD-for-Allied, regardless of whether the original float was automated or force-triggered. This is the only reliable path given 15 minutes of remaining lead time. If a worker happens to claim via the open-shifts feed in those 15 minutes (the gap is technically pickable until T-2h passes for that specific gap's escalation tracking — but in this case T-2h is already past, so the feed entry is unpickable for the *new* T-2h evaluation that the rolled-back chain produces), the claim resolves the gap. In practice, the 15-minute window is too short for claims, so Allied is the realistic outcome.
+   - **If T-2h has already passed, the gap goes directly to HMOD-for-Allied.** In the no-ack case specifically, the deadline is at T-15m before float start, so T-2h is always already past at trigger time — the gap always goes directly to HMOD-for-Allied, regardless of whether the original float was automated or force-triggered. This is the only reliable path given 15 minutes of remaining lead time. If a worker happens to claim via the open-shifts feed in those 15 minutes (the gap is technically pickable until T-2h passes for that specific gap's escalation tracking — but in this case T-2h is already past, so the feed entry is unpickable for the _new_ T-2h evaluation that the rolled-back chain produces), the claim resolves the gap. In practice, the 15-minute window is too short for claims, so Allied is the realistic outcome.
 
 The 15-minute pre-shift timing balances giving the floater a real acknowledgment window against the need for Allied dispatch lead time. The 5-minute pre-deadline offset is a system-wide configurable parameter.
 
@@ -805,13 +815,13 @@ A coverage gap consisting of (destination_house_id, list of contiguous block_ids
 3. **For each source house:**
 
    a. **Find eligible workers.** A worker is eligible if:
-      - They are at a permitted source house (enforced again as invariant).
-      - They are scheduled at this source house during any of the gap's blocks.
-      - Their departure would leave at least one worker remaining at the source desk for those blocks (the floor is one worker, not the staffing pattern's required headcount), accounting for any other workers in `pending_float_out` or `floated_out` status during that block.
-      - They are not already in an assigned float (`pending` or `acknowledged`) overlapping the gap window.
-      - They are not currently assigned to a cross-house pickup (`is_cross_house_pickup = true`) overlapping the gap window.
-      - They do not hold the `hm` or `bm` role.
-      - They have not previously declined a float whose window overlaps this gap at the same house (per the overlap-based exclusion in §3.8).
+   - They are at a permitted source house (enforced again as invariant).
+   - They are scheduled at this source house during any of the gap's blocks.
+   - Their departure would leave at least one worker remaining at the source desk for those blocks (the floor is one worker, not the staffing pattern's required headcount), accounting for any other workers in `pending_float_out` or `floated_out` status during that block.
+   - They are not already in an assigned float (`pending` or `acknowledged`) overlapping the gap window.
+   - They are not currently assigned to a cross-house pickup (`is_cross_house_pickup = true`) overlapping the gap window.
+   - They do not hold the `hm` or `bm` role.
+   - They have not previously declined a float whose window overlaps this gap at the same house (per the overlap-based exclusion in §3.8).
 
    b. **For each eligible worker, compute their largest consecutive coverage span within the remaining uncovered blocks.**
 
@@ -819,11 +829,11 @@ A coverage gap consisting of (destination_house_id, list of contiguous block_ids
 
    d. **Mark those blocks covered, remove the worker from the eligible pool, increment the per-block "tentatively-floating-out-from-source" counter, repeat** within the same source house until no more eligible workers can cover any remaining consecutive 2-block-or-longer runs.
 
-      The headcount-floor check in (a) reads the running tentative counter in addition to persisted `pending_float_out` / `floated_out` statuses. This guarantees that a single lookup pass cannot over-float a source by selecting more workers in one iteration than the source can spare. Example: Quad (required headcount 3, currently 3 workers on shift) → first floater tentatively selected → tentative counter = 1 → remaining floor = 3 − 1 = 2 workers available → second floater tentatively selected → tentative counter = 2 → remaining floor = 1 → third worker is ineligible (would drop Quad to zero, below the absolute floor of 1).
+   The headcount-floor check in (a) reads the running tentative counter in addition to persisted `pending_float_out` / `floated_out` statuses. This guarantees that a single lookup pass cannot over-float a source by selecting more workers in one iteration than the source can spare. Example: Quad (required headcount 3, currently 3 workers on shift) → first floater tentatively selected → tentative counter = 1 → remaining floor = 3 − 1 = 2 workers available → second floater tentatively selected → tentative counter = 2 → remaining floor = 1 → third worker is ineligible (would drop Quad to zero, below the absolute floor of 1).
 
-      The tentative counter is in-memory state during the single lookup invocation. It is materialized as `pending_float_out` rows on `shift_block_assignments` when the algorithm commits its result inside the enclosing transaction (§5.5 Edge Case: Mid-algorithm eligibility changes).
+   The tentative counter is in-memory state during the single lookup invocation. It is materialized as `pending_float_out` rows on `shift_block_assignments` when the algorithm commits its result inside the enclosing transaction (§5.5 Edge Case: Mid-algorithm eligibility changes).
 
-   e. **Partial-coverage fallback.** If no worker can cover the full largest-consecutive run, fall back to selecting the worker who covers the *longest leading portion* of the gap from the gap start, provided that portion is at least 2 blocks. Ties broken by §5.3. Allied procures the remaining tail.
+   e. **Partial-coverage fallback.** If no worker can cover the full largest-consecutive run, fall back to selecting the worker who covers the _longest leading portion_ of the gap from the gap start, provided that portion is at least 2 blocks. Ties broken by §5.3. Allied procures the remaining tail.
 
 4. **Advance to the next source house.** Once a source is exhausted, move to the next in precedence order and repeat step 3.
 
@@ -880,6 +890,7 @@ Per Section 4.5 of this document. Atomic: all source-side and destination-side u
 ### 6.4 Visibility
 
 Pending float assignments are visible on:
+
 - The destination house's calendar with "(Pending)" label.
 - The source house's calendar with "(Pending)" label.
 - The pending floater's personal calendar with "(Pending)" label.
@@ -999,10 +1010,10 @@ The slot_definition identifies blocks currently in `vacant` / `permanent_drop` s
    b. **Time conflict check:** For each block in the week's group, check whether the picking worker has any other shift block assignment for that same `block_id` (the worker can only occupy one position at a time per block). If a block conflicts, mark that block as `skip-conflict`.
 
    c. **Hours cap check:** Compute the picking worker's projected weekly hours for that calendar week:
-      - Start with their current assigned hours for that week (sum of all `shift_block_assignments` where user_id = picking_user, block_start_at is within the calendar week, status in valid worked categories). Float-out assignments do not change the total — they are hours-neutral per Behavioral Spec §6.1 — and are counted as the worker's hours regardless of where the work is physically performed.
-      - Add the non-conflicting blocks from this week's slot occurrence (0.5 hours per block).
-      - Resolve the effective cap for that week via `weekly_cap_overrides` (or profile default).
-      - If the projected hours > cap, mark all of this week's slot blocks as `skip-cap`. **This applies whether the cap is `hard` or `soft`** — permanent pickup is treated more conservatively than one-off temporary claims because the user is committing to many weeks in one action, and silently exceeding soft cap across many weeks is undesirable (Behavioral Spec §8.4.3). The worker can still pick up specific weeks individually via the weekly feed if they explicitly want to override soft cap on a per-week basis.
+   - Start with their current assigned hours for that week (sum of all `shift_block_assignments` where user_id = picking_user, block_start_at is within the calendar week, status in valid worked categories). Float-out assignments do not change the total — they are hours-neutral per Behavioral Spec §6.1 — and are counted as the worker's hours regardless of where the work is physically performed.
+   - Add the non-conflicting blocks from this week's slot occurrence (0.5 hours per block).
+   - Resolve the effective cap for that week via `weekly_cap_overrides` (or profile default).
+   - If the projected hours > cap, mark all of this week's slot blocks as `skip-cap`. **This applies whether the cap is `hard` or `soft`** — permanent pickup is treated more conservatively than one-off temporary claims because the user is committing to many weeks in one action, and silently exceeding soft cap across many weeks is undesirable (Behavioral Spec §8.4.3). The worker can still pick up specific weeks individually via the weekly feed if they explicitly want to override soft cap on a per-week basis.
 
    d. For blocks not marked skip, queue them for assignment.
 
@@ -1280,7 +1291,7 @@ operating_calendar ── profile_name → operating_profiles
                                        (escalation_chain, defaults, claim phase offsets)
 
 weekly_cap_overrides (per Monday-week)
-hmod_rotor (per Monday-week) → users
+hmod_rotor (per Friday-week) → users
 hm_leave → users (target), users (replacement)
 
 float_assignments ─── source_assignment_ids, destination_assignment_ids → shift_block_assignments
@@ -1300,30 +1311,30 @@ allied_procurements ── assignment_ids → shift_block_assignments
 
 Initial values for system-wide configurable parameters (per behavioral spec Section 14):
 
-| Parameter | Value |
-|-----------|-------|
-| Broadcast offset | -3h (before float start) |
-| Float lookup offset | -2h (before float start) |
-| HMOD notify (on float failure) offset | -2h (before float start) |
-| Acknowledgment deadline | -10m (before float start) — decoupled from float lookup |
-| No-ack trigger | -5m (before acknowledgment deadline = -15m before float start) |
-| Acknowledgment reminder #1 (HM/BM configurable per house) | -6h before acknowledgment deadline |
-| Acknowledgment reminder #2 (HM/BM configurable per house) | -2h before acknowledgment deadline |
-| Acknowledgment reminder #3 (mandatory) | -1h before acknowledgment deadline |
-| Acknowledgment reminder #4 (mandatory) | -30m before acknowledgment deadline |
-| Acknowledgment reminder #5 (mandatory) | -5m before acknowledgment deadline |
-| Claim phase open offset | -14d |
-| Claim phase alert offset | -3d |
-| Claim phase close offset | -1d |
-| Drop horizon | 30 days |
-| Block granularity | 30 minutes |
-| Float assignment retention | 14 days post-shift end |
-| Shift swap expiry | T-3h of earlier shift |
-| Float swap expiry | 24h after float end |
-| Permanent swap expiry | 7 days after creation |
-| Minimum float chunk size | 2 blocks (1 hour) — non-negotiable |
-| HM working hours | Mon-Fri 08:00 to 17:00 |
-| HMOD rotor cadence | Weekly, Monday 08:00 handoff |
+| Parameter                                                 | Value                                                          |
+| --------------------------------------------------------- | -------------------------------------------------------------- |
+| Broadcast offset                                          | -3h (before float start)                                       |
+| Float lookup offset                                       | -2h (before float start)                                       |
+| HMOD notify (on float failure) offset                     | -2h (before float start)                                       |
+| Acknowledgment deadline                                   | -10m (before float start) — decoupled from float lookup        |
+| No-ack trigger                                            | -5m (before acknowledgment deadline = -15m before float start) |
+| Acknowledgment reminder #1 (HM/BM configurable per house) | -6h before acknowledgment deadline                             |
+| Acknowledgment reminder #2 (HM/BM configurable per house) | -2h before acknowledgment deadline                             |
+| Acknowledgment reminder #3 (mandatory)                    | -1h before acknowledgment deadline                             |
+| Acknowledgment reminder #4 (mandatory)                    | -30m before acknowledgment deadline                            |
+| Acknowledgment reminder #5 (mandatory)                    | -5m before acknowledgment deadline                             |
+| Claim phase open offset                                   | -14d                                                           |
+| Claim phase alert offset                                  | -3d                                                            |
+| Claim phase close offset                                  | -1d                                                            |
+| Drop horizon                                              | 30 days                                                        |
+| Block granularity                                         | 30 minutes                                                     |
+| Float assignment retention                                | 14 days post-shift end                                         |
+| Shift swap expiry                                         | T-3h of earlier shift                                          |
+| Float swap expiry                                         | 24h after float end                                            |
+| Permanent swap expiry                                     | 7 days after creation                                          |
+| Minimum float chunk size                                  | 2 blocks (1 hour) — non-negotiable                             |
+| HM working hours                                          | Mon-Fri 08:00 to 17:00                                         |
+| HMOD rotor cadence                                        | Weekly, Friday 08:00 handoff                                   |
 
 All values are stored in a `system_config` table (one row per parameter) and may be updated by the project administrator. The application layer reads these on a short cache cycle (~1 minute, matching the orchestrator).
 
@@ -1335,11 +1346,11 @@ Mirrors Appendix A of the Behavioral Specification:
 
 1. Force-trigger source-side gap enters the open-shifts feed immediately (Section 4.5, 6.3).
 2. Decline (or T-5 no-show) voids the float and re-opens the gap to standard escalation; no immediate cascade. Declining worker excluded from re-consideration via per-gap exclusion list (Section 4.4).
-3. Acknowledgment reminders anchor to the T-2h **acknowledgment deadline**, not to the float start time.
+3. Acknowledgment reminders anchor to the **acknowledgment deadline**, not to the float start time. **[Errata]** Originally written "T-2h deadline"; the canonical deadline (§4.4 "no-ack trigger", and the implementation) is **T-10m before float start** (no-ack trigger fires at T-15m, i.e. 5m before the T-10m deadline).
 4. Global weekly cap modification authority restricted to HM/BM, instant, no approval workflow (Section 2.5).
 5. Permanent swap accept-reject flow is in-app, with 7-day expiry. SM is not the executor; the two affected workers approve directly (Section 3.5).
 6. Float assignment auto-deletion after 14 days. The calendar (via `shift_block_assignments` with `is_float` and `source_house_id` retained) preserves the operationally-relevant float-shift record (Section 3.4, 9.6).
-7. HMOD rotor stored as a dedicated table keyed by Monday-of-week (Section 2.6).
+7. HMOD rotor stored as a dedicated table keyed by Friday-of-week (Friday 08:00 duty-week start; Section 2.6).
 8. Winter break uses same claim-phase checkpoints as short break: T-14d / T-3d / T-1d (Section 2.2).
 9. "I'm back" attribution: prior actions during leave stay attributed to the replacement; HM resumes from the moment of click forward (Section 2.7).
 10. Force-trigger spans snapped to 30-minute blocks (Section 1.6).

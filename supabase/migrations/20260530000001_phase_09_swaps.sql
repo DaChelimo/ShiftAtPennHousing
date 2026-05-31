@@ -161,6 +161,47 @@ BEGIN
 END;
 $$;
 
+-- §8.1/§8.2 proactive invalidation. When a seat referenced by a PENDING swap is
+-- dropped (-> vacant) or floated out from under its owner (-> pending_float_out
+-- / floated_out) by ANY write path — temporary/permanent drop, automated or
+-- force-triggered float, no-ack void, decline-displace — the pending swap is
+-- silently voided. The Phase 5/7/8 float/drop RPCs predate swap_requests and
+-- never voided touching swaps; a single trigger on the shared seat table covers
+-- them all (current and future), with accept_swap's span-check as the backstop.
+--
+-- Keyed on a status TRANSITION into a "seat no longer cleanly owned" state, so
+-- accept_swap's / apply_permanent_swap's own user_id-only transfer (status
+-- unchanged) never self-voids the swap being accepted. 'floated_in' is
+-- deliberately excluded: it is the legitimate active-float state a float swap
+-- (§8.2) is built on, and a swap seat can only reach pending_float_in/floated_in
+-- by first passing through vacant (which already voids the swap here).
+CREATE OR REPLACE FUNCTION void_pending_swaps_for_vacated_seat()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NEW.status IS DISTINCT FROM OLD.status
+     AND NEW.status IN ('vacant', 'pending_float_out', 'floated_out') THEN
+    UPDATE swap_requests
+    SET status = 'voided'
+    WHERE status = 'pending'
+      AND (
+        initiator_assignment_ids @> ARRAY[NEW.assignment_id]
+        OR COALESCE(counterparty_assignment_ids, ARRAY[]::uuid[]) @> ARRAY[NEW.assignment_id]
+      );
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS shift_block_assignments_void_pending_swaps ON shift_block_assignments;
+CREATE TRIGGER shift_block_assignments_void_pending_swaps
+  AFTER UPDATE OF status ON shift_block_assignments
+  FOR EACH ROW
+  EXECUTE FUNCTION void_pending_swaps_for_vacated_seat();
+
 CREATE OR REPLACE FUNCTION swap_acceptance_ineligibility_reason(
   p_swap_id uuid
 )
@@ -314,19 +355,26 @@ BEGIN
     RETURN jsonb_build_object('accepted', false, 'reason', 'not_counterparty');
   END IF;
 
+  -- §8.1/§8.2 invalidation backstop: a span is still acceptable only if every
+  -- seat is in a swappable-OWNED state ('scheduled', 'claimed', or an active
+  -- 'floated_in' for float swaps). A seat that was dropped (-> vacant) or
+  -- floated out from under its owner (-> pending_float_out / floated_out) before
+  -- acceptance fails this count and silently voids the swap. (The
+  -- shift_block_assignments trigger normally voids such a swap proactively the
+  -- moment the seat changes; this is the defense-in-depth re-check at accept.)
   SELECT COUNT(*)::integer
     INTO v_initiator_count
   FROM shift_block_assignments
   WHERE assignment_id = ANY (v_swap.initiator_assignment_ids)
     AND user_id = v_swap.initiator_user_id
-    AND status NOT IN ('vacant', 'allied');
+    AND status IN ('scheduled', 'claimed', 'floated_in');
 
   SELECT COUNT(*)::integer
     INTO v_counterparty_count
   FROM shift_block_assignments
   WHERE assignment_id = ANY (v_swap.counterparty_assignment_ids)
     AND user_id = v_swap.counterparty_user_id
-    AND status NOT IN ('vacant', 'allied');
+    AND status IN ('scheduled', 'claimed', 'floated_in');
 
   IF v_initiator_count <> cardinality(v_swap.initiator_assignment_ids)
      OR v_counterparty_count <> cardinality(v_swap.counterparty_assignment_ids) THEN
@@ -441,10 +489,25 @@ BEGIN
     RETURN jsonb_build_object('accepted', false, 'reason', 'not_counterparty');
   END IF;
 
-  UPDATE shift_block_assignments
+  -- §8.3: permanent swaps apply ONLY to regular_school_year (SM-built) slots.
+  -- Short/winter break shifts are claim-based and individually owned, so they
+  -- have no recurring relationship to swap. Any affected assignment whose
+  -- operating date is not regular_school_year is silently skipped here — the
+  -- acceptance-time backstop that mirrors the `user_id = initiator` ownership
+  -- predicate and the create-swap pre-creation guard. A block with no
+  -- operating_calendar mapping fails the EXISTS check and is likewise skipped.
+  UPDATE shift_block_assignments AS target
   SET user_id = p_new_owner_user_id
-  WHERE assignment_id = ANY (p_affected_assignment_ids)
-    AND user_id = v_swap.initiator_user_id;
+  WHERE target.assignment_id = ANY (p_affected_assignment_ids)
+    AND target.user_id = v_swap.initiator_user_id
+    AND EXISTS (
+      SELECT 1
+      FROM shift_blocks sb
+      JOIN operating_calendar oc
+        ON oc.date = (sb.block_start_at AT TIME ZONE 'America/New_York')::date
+      WHERE sb.block_id = target.block_id
+        AND oc.profile_name = 'regular_school_year'
+    );
 
   GET DIAGNOSTICS v_transferred_count = ROW_COUNT;
 
@@ -459,9 +522,43 @@ BEGIN
 END;
 $$;
 
+-- Pre-creation guard helper for permanent swaps (BSpec §8.3). Returns the subset
+-- of the given assignments whose operating date is NOT regular_school_year —
+-- i.e. claim-based short/winter break shifts that cannot be permanently swapped
+-- (workers use a temporary shift swap for those). An empty result means every
+-- assignment is permanently swappable. Assignments that do not exist, or whose
+-- date has no operating_calendar mapping, are reported as outside (fail-closed),
+-- so create-swap rejects a permanent_swap it cannot confirm is regular-year.
+CREATE OR REPLACE FUNCTION assignments_outside_regular_school_year(
+  p_assignment_ids uuid[]
+)
+RETURNS uuid[]
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT COALESCE(
+    array_agg(candidate.assignment_id ORDER BY candidate.assignment_id),
+    ARRAY[]::uuid[]
+  )
+  FROM unnest(p_assignment_ids) AS candidate(assignment_id)
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM shift_block_assignments sba
+    JOIN shift_blocks sb
+      ON sb.block_id = sba.block_id
+    JOIN operating_calendar oc
+      ON oc.date = (sb.block_start_at AT TIME ZONE 'America/New_York')::date
+    WHERE sba.assignment_id = candidate.assignment_id
+      AND oc.profile_name = 'regular_school_year'
+  );
+$$;
+
 GRANT EXECUTE ON FUNCTION expire_pending_swaps(timestamptz) TO service_role;
 GRANT EXECUTE ON FUNCTION accept_swap(uuid, uuid, timestamptz) TO service_role;
 GRANT EXECUTE ON FUNCTION apply_permanent_swap(uuid, uuid, uuid[], timestamptz) TO service_role;
+GRANT EXECUTE ON FUNCTION assignments_outside_regular_school_year(uuid[]) TO service_role;
 
 DO $do$
 BEGIN

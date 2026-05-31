@@ -82,6 +82,21 @@ async function loadHomeHouseIds(
   return result;
 }
 
+async function loadShiftBlockMinutes(supabase: Supabase): Promise<number> {
+  const { data, error } = await supabase
+    .from('system_config')
+    .select('config_value')
+    .eq('config_key', 'shift_block_minutes')
+    .maybeSingle();
+
+  if (error !== null) {
+    throw error;
+  }
+
+  const parsed = data === null ? Number.NaN : Number.parseInt(String(data.config_value), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 30;
+}
+
 async function loadPendingSwaps(
   supabase: Supabase,
   userIds: string[],
@@ -109,11 +124,12 @@ async function loadPendingSwaps(
   }));
 }
 
-async function computeExpiresAt(
+function computeExpiresAt(
   swapType: SwapType,
   createdAt: Date,
   assignments: AssignmentSnapshot[],
-): Promise<Date> {
+  blockMinutes: number,
+): Date {
   if (swapType === 'permanent_swap') {
     return addHours(createdAt, 24 * 7);
   }
@@ -123,10 +139,15 @@ async function computeExpiresAt(
   );
 
   if (swapType === 'shift_swap') {
+    // T-3h of the earlier span (earliest block start across both spans).
     return addHours(new Date(Math.min(...starts)), -3);
   }
 
-  return addHours(addMinutes(new Date(Math.max(...starts)), 30), 24);
+  // float_swap: 24h after the LATEST span end-time. A block's end is its start
+  // plus the configured block duration (system_config.shift_block_minutes),
+  // read from config so this stays in lockstep with the calendar generator
+  // rather than hardcoding the 30-minute block width.
+  return addHours(addMinutes(new Date(Math.max(...starts)), blockMinutes), 24);
 }
 
 Deno.serve(
@@ -236,6 +257,25 @@ Deno.serve(
             409,
           );
         }
+      } else {
+        // Pre-creation guard (§8.3): permanent swaps apply ONLY to
+        // regular_school_year (SM-built) slots. Short/winter break shifts are
+        // claim-based and individually owned — they cannot be permanently
+        // swapped (workers use a temporary shift swap instead). The RPC backstop
+        // in apply_permanent_swap re-checks this at acceptance.
+        const { data: offending, error: guardError } = await auth.supabase.rpc(
+          'assignments_outside_regular_school_year',
+          { p_assignment_ids: initiatorAssignmentIds },
+        );
+        if (guardError !== null) {
+          return jsonResponse({ error: guardError.message }, 400);
+        }
+        if (Array.isArray(offending) && offending.length > 0) {
+          return jsonResponse(
+            { error: 'permanent_swap_break_profile', offending_assignment_ids: offending },
+            409,
+          );
+        }
       }
 
       const pendingSwaps = await loadPendingSwaps(auth.supabase, [auth.userId, counterpartyUserId]);
@@ -251,7 +291,9 @@ Deno.serve(
       }
 
       const createdAt = new Date();
-      const expiresAt = await computeExpiresAt(swapType, createdAt, assignments);
+      const blockMinutes =
+        swapType === 'float_swap' ? await loadShiftBlockMinutes(auth.supabase) : 30;
+      const expiresAt = computeExpiresAt(swapType, createdAt, assignments, blockMinutes);
       const { data, error } = await auth.supabase
         .from('swap_requests')
         .insert({

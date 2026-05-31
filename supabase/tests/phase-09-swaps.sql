@@ -42,7 +42,7 @@
 
 BEGIN;
 
-SELECT plan(55);
+SELECT plan(64);
 
 -- ============================================================
 -- 0. Fixture: users, roles, blocks, assignments.
@@ -104,7 +104,42 @@ VALUES
   ('09000002-0000-0000-0000-0000000000f2', 'house-05', current_setting('test.p09.anchor')::timestamptz + interval '210 minutes',1),
   ('09000002-0000-0000-0000-0000000000c1', 'house-05', current_setting('test.p09.anchor')::timestamptz + interval '1 day',      1),
   ('09000002-0000-0000-0000-0000000000c2', 'house-05', current_setting('test.p09.anchor')::timestamptz + interval '8 days',     1),
-  ('09000002-0000-0000-0000-0000000000c3', 'house-05', current_setting('test.p09.anchor')::timestamptz + interval '15 days',    1);
+  ('09000002-0000-0000-0000-0000000000c3', 'house-05', current_setting('test.p09.anchor')::timestamptz + interval '15 days',    1),
+  -- c4: a future, A1-owned recurring-slot week that falls on a BREAK-profile date
+  -- (mapped to winter_break below) — it must NOT be permanently swappable (§8.3).
+  ('09000002-0000-0000-0000-0000000000c4', 'house-05', current_setting('test.p09.anchor')::timestamptz + interval '22 days',    1);
+
+-- Operating-profile context so the permanent-swap regular_school_year guard has
+-- a calendar to read. Self-contained (no-op if seeded); mirrors phase-05-cap.sql.
+INSERT INTO public.operating_profiles
+  (profile_name, shift_start_bound, shift_end_bound, default_hours_cap,
+   default_cap_enforcement, scheduling_mode, float_enabled, escalation_chain,
+   claim_phase_open_offset, claim_phase_alert_offset, claim_phase_close_offset)
+VALUES
+  ('regular_school_year', '08:00', '00:00', 20, 'soft', 'sm_built',    true,  '[]'::jsonb,
+   NULL, NULL, NULL),
+  ('winter_break',        '08:00', '00:00', 40, 'hard', 'claim_based', false, '[]'::jsonb,
+   '-14 days'::interval, '-3 days'::interval, '-1 day'::interval)
+ON CONFLICT (profile_name) DO NOTHING;
+
+-- Map the NY-local dates spanned by the permanent-swap weeks to regular_school_year,
+-- then override the c4 week (anchor + 22d) to a break profile.
+INSERT INTO public.operating_calendar (date, profile_name)
+SELECT g::date, 'regular_school_year'
+FROM generate_series(
+  ((current_setting('test.p09.anchor')::timestamptz AT TIME ZONE 'America/New_York')::date - 1)::timestamp,
+  ((current_setting('test.p09.anchor')::timestamptz AT TIME ZONE 'America/New_York')::date + 25)::timestamp,
+  interval '1 day'
+) AS g
+ON CONFLICT (date) DO UPDATE SET profile_name = EXCLUDED.profile_name;
+
+INSERT INTO public.operating_calendar (date, profile_name)
+VALUES (
+  ((current_setting('test.p09.anchor')::timestamptz + interval '22 days')
+    AT TIME ZONE 'America/New_York')::date,
+  'winter_break'
+)
+ON CONFLICT (date) DO UPDATE SET profile_name = EXCLUDED.profile_name;
 
 INSERT INTO public.shift_block_assignments
   (assignment_id, block_id, user_id, status, vacancy_origin, is_float, source_house_id)
@@ -136,6 +171,9 @@ VALUES
   ('09000003-0000-0000-0000-0000000000c2', '09000002-0000-0000-0000-0000000000c2',
    '09000001-0000-0000-0000-000000000003', 'scheduled', 'none', false, NULL),
   ('09000003-0000-0000-0000-0000000000c3', '09000002-0000-0000-0000-0000000000c3',
+   '09000001-0000-0000-0000-000000000001', 'scheduled', 'none', false, NULL),
+  -- c4: A1 currently owns this week, but it falls on a break-profile date.
+  ('09000003-0000-0000-0000-0000000000c4', '09000002-0000-0000-0000-0000000000c4',
    '09000001-0000-0000-0000-000000000001', 'scheduled', 'none', false, NULL);
 
 -- Swap requests. Temporary/permanent acceptance swaps carry a far-future
@@ -182,6 +220,15 @@ VALUES
    '09000001-0000-0000-0000-000000000001', '09000001-0000-0000-0000-000000000002',
    ARRAY['09000003-0000-0000-0000-0000000000c1',
          '09000003-0000-0000-0000-0000000000c3']::uuid[],
+   NULL,
+   '{"house_id":"house-05","day_of_week":4,"block_start_local":"19:00"}'::jsonb,
+   'pending',
+   current_setting('test.p09.anchor')::timestamptz - interval '1 day',
+   current_setting('test.p09.anchor')::timestamptz + interval '100 days'),
+  -- F-break. permanent swap whose A1-owned week (c4) is on a break-profile date.
+  ('09000004-0000-0000-0000-0000000000a1', 'permanent_swap',
+   '09000001-0000-0000-0000-000000000001', '09000001-0000-0000-0000-000000000002',
+   ARRAY['09000003-0000-0000-0000-0000000000c4']::uuid[],
    NULL,
    '{"house_id":"house-05","day_of_week":4,"block_start_local":"19:00"}'::jsonb,
    'pending',
@@ -477,6 +524,8 @@ SELECT is(
 );
 
 -- D2. Silent invalidation (§8.1): A1 drops the initiator span before B1 accepts.
+--     The shift_block_assignments trigger voids the pending swap the instant the
+--     seat goes vacant; accept_swap then just confirms it is no longer pending.
 UPDATE public.shift_block_assignments
 SET user_id = NULL, status = 'vacant', vacancy_origin = 'temporary_drop'
 WHERE assignment_id = '09000003-0000-0000-0000-0000000000e1';
@@ -599,6 +648,114 @@ SELECT is(
   (SELECT status::text FROM public.swap_requests WHERE swap_id = '09000004-0000-0000-0000-0000000000a0'),
   'accepted',
   'permanent swap: the request is marked accepted after the bulk transfer'
+);
+
+-- F-break. The regular_school_year backstop (§8.3): apply_permanent_swap skips a
+-- week whose operating date is a break profile even when A1 still owns it —
+-- break shifts are claim-based and not permanently swappable.
+SELECT is(
+  (SELECT (public.apply_permanent_swap(
+     '09000004-0000-0000-0000-0000000000a1'::uuid,
+     '09000001-0000-0000-0000-000000000002'::uuid,
+     ARRAY['09000003-0000-0000-0000-0000000000c4']::uuid[],
+     current_setting('test.p09.anchor')::timestamptz)) ->> 'transferred_count'),
+  '0',
+  'permanent swap: a break-profile week is skipped by the regular_school_year backstop (§8.3)'
+);
+SELECT is(
+  (SELECT user_id FROM public.shift_block_assignments WHERE assignment_id = '09000003-0000-0000-0000-0000000000c4'),
+  '09000001-0000-0000-0000-000000000001'::uuid,
+  'permanent swap: the break-profile week stays with A1 (not transferred to B1)'
+);
+
+-- F-guard. assignments_outside_regular_school_year — the create-swap pre-creation
+-- guard helper: flags break-profile assignments, clears regular-year ones.
+SELECT has_function(
+  'public', 'assignments_outside_regular_school_year', ARRAY['uuid[]'],
+  'assignments_outside_regular_school_year(uuid[]) exists (permanent-swap creation guard, §8.3)'
+);
+SELECT is(
+  public.assignments_outside_regular_school_year(
+    ARRAY['09000003-0000-0000-0000-0000000000c1',
+          '09000003-0000-0000-0000-0000000000c4']::uuid[]),
+  ARRAY['09000003-0000-0000-0000-0000000000c4']::uuid[],
+  'creation guard flags the break-profile assignment (c4) and clears the regular one (c1)'
+);
+SELECT is(
+  public.assignments_outside_regular_school_year(
+    ARRAY['09000003-0000-0000-0000-0000000000c1',
+          '09000003-0000-0000-0000-0000000000c3']::uuid[]),
+  ARRAY[]::uuid[],
+  'creation guard returns empty when every assignment is regular_school_year'
+);
+
+-- ============================================================
+-- G. PROACTIVE SWAP INVALIDATION (§8.1/§8.2). A shift_block_assignments trigger
+--    silently voids a PENDING swap the moment one of its seats is dropped or
+--    floated out, regardless of which write path did it — closing the seam the
+--    Phase 5/7/8 float/drop RPCs never had (they predate swap_requests). The
+--    acknowledged float-OUT case below is the one accept_swap's old
+--    vacant/allied span-check missed.
+-- ============================================================
+
+-- G-fixture: a fresh pending shift swap (A1 [a2] <-> B1 [b2]).
+INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
+VALUES
+  ('09000002-0000-0000-0000-0000000000a2', 'house-05',
+   current_setting('test.p09.anchor')::timestamptz + interval '3 days', 1),
+  ('09000002-0000-0000-0000-0000000000b2', 'house-07',
+   current_setting('test.p09.anchor')::timestamptz + interval '3 days' + interval '30 minutes', 1);
+
+INSERT INTO public.shift_block_assignments
+  (assignment_id, block_id, user_id, status, vacancy_origin, is_float, source_house_id)
+VALUES
+  ('09000003-0000-0000-0000-0000000000a2', '09000002-0000-0000-0000-0000000000a2',
+   '09000001-0000-0000-0000-000000000001', 'scheduled', 'none', false, NULL),
+  ('09000003-0000-0000-0000-0000000000b2', '09000002-0000-0000-0000-0000000000b2',
+   '09000001-0000-0000-0000-000000000002', 'scheduled', 'none', false, NULL);
+
+INSERT INTO public.swap_requests
+  (swap_id, swap_type, initiator_user_id, counterparty_user_id,
+   initiator_assignment_ids, counterparty_assignment_ids, recurring_pattern, status,
+   created_at, expires_at)
+VALUES
+  ('09000004-0000-0000-0000-0000000000b0', 'shift_swap',
+   '09000001-0000-0000-0000-000000000001', '09000001-0000-0000-0000-000000000002',
+   ARRAY['09000003-0000-0000-0000-0000000000a2']::uuid[],
+   ARRAY['09000003-0000-0000-0000-0000000000b2']::uuid[],
+   NULL, 'pending',
+   current_setting('test.p09.anchor')::timestamptz - interval '1 day',
+   current_setting('test.p09.anchor')::timestamptz + interval '100 days');
+
+SELECT has_trigger(
+  'public', 'shift_block_assignments', 'shift_block_assignments_void_pending_swaps',
+  'the proactive swap-invalidation trigger exists on shift_block_assignments'
+);
+
+-- A1's swapped seat is floated OUT (an acknowledged automated float). No one
+-- touches the swap, yet it must be voided (§8.1) — the case the old
+-- vacant/allied span-check would have let slip through to a stale acceptance.
+UPDATE public.shift_block_assignments
+SET status = 'floated_out'
+WHERE assignment_id = '09000003-0000-0000-0000-0000000000a2';
+
+SELECT is(
+  (SELECT status::text FROM public.swap_requests WHERE swap_id = '09000004-0000-0000-0000-0000000000b0'),
+  'voided',
+  'proactive invalidation: floating a swapped seat OUT silently voids the pending swap (§8.1/§8.2)'
+);
+SELECT is(
+  (SELECT user_id FROM public.shift_block_assignments WHERE assignment_id = '09000003-0000-0000-0000-0000000000b2'),
+  '09000001-0000-0000-0000-000000000002'::uuid,
+  'proactive invalidation: the counterparty seat is untouched by the void'
+);
+SELECT is(
+  (SELECT (public.accept_swap(
+     '09000004-0000-0000-0000-0000000000b0'::uuid,
+     '09000001-0000-0000-0000-000000000002'::uuid,
+     current_setting('test.p09.anchor')::timestamptz)) ->> 'reason'),
+  'not_pending',
+  'proactive invalidation: the voided swap can no longer be accepted'
 );
 
 SELECT finish();

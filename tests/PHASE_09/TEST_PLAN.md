@@ -315,10 +315,14 @@ updating both the tests and this plan.
   the semester period) is the §8.4 permanent-drop machinery the permanent-swap
   Edge Function reuses to build the input.
 - **Proactive invalidation triggers.** §8.1 voids a pending swap the moment a
-  span is dropped or auto-floated. This phase tests the acceptance-time
-  backstop (`accept_swap` detects the stale span and voids); the proactive
-  drop/float-time trigger that voids touching swaps lands with the migration
-  alongside the drop/float write paths.
+  span is dropped or auto-floated. Originally this phase tested only the
+  acceptance-time backstop and deferred the proactive trigger. **Closed by the
+  Phase-8→9 readiness audit:** a `shift_block_assignments` AFTER-UPDATE trigger
+  (`void_pending_swaps_for_vacated_seat`) now voids any pending swap the instant
+  one of its seats transitions to `vacant` / `pending_float_out` / `floated_out`
+  — covering every Phase 5/7/8 drop/float write path at once. Tested in
+  `phase-09-swaps.sql` §G (the acknowledged-float-OUT case the old vacant/allied
+  span-check missed), with the tightened `accept_swap` span-check as backstop.
 - **Permanent-swap bidirectionality fixtures.** §8.3 exchanges BOTH recurring
   slots; the pgTAP exercises the load-bearing ownership-guarded transfer in one
   direction (the symmetric direction is identical logic over the counterparty's
@@ -346,6 +350,16 @@ The pure-function contracts in this plan were verified implementable: a scratch
 `packages/core/src/swaps/` implementation matching pinned decisions #1–#9
 turned all 41 Vitest cases green and type-checked clean (`tsc --noEmit`
 --strict), then was removed so the deliverable remains tests-only. The SQL
-contracts (#10–#14) are pinned by the 55 pgTAP assertions and the schema /
+contracts (#10–#14) are pinned by the 60 pgTAP assertions and the schema /
 RPC sketches above; the migration that satisfies them carries its own
 green-on-landing verification.
+
+**Post-audit addition (§8.3 break-profile enforcement).** The spec-adherence
+audit found the regular_school_year restriction was implemented only in the pure
+`scopePermanentSwapWeeks` partition, with no server-side enforcement. It is now
+enforced at both guard points, mirroring the eligibility two-guard pattern: a
+pre-creation guard in `create-swap` (via the `assignments_outside_regular_school_year`
+helper) rejects a permanent swap that names a break-profile slot, and an
+acceptance-time backstop in `apply_permanent_swap` skips any affected week whose
+operating date is not regular_school_year (alongside the existing
+`user_id = initiator` ownership predicate). Five pgTAP assertions cover both.

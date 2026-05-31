@@ -215,7 +215,7 @@ BEGIN
   ON CONFLICT (block_id, step_name) DO NOTHING;
 
   -- 6. Personal_shift notification so the worker can acknowledge/decline
-  --    (delivery is phase-09; this is the row only), mirroring the
+  --    (delivery is phase-12 notifications; this is the row only), mirroring the
   --    automated float-lookup assignment.
   INSERT INTO notifications (recipient_user_id, type, scheduled_for, payload)
   VALUES (

@@ -862,6 +862,60 @@ export type Database = {
           },
         ];
       };
+      swap_requests: {
+        Row: {
+          counterparty_assignment_ids: string[] | null;
+          counterparty_user_id: string;
+          created_at: string;
+          expires_at: string;
+          initiator_assignment_ids: string[];
+          initiator_user_id: string;
+          recurring_pattern: Json | null;
+          status: Database['public']['Enums']['swap_status_enum'];
+          swap_id: string;
+          swap_type: Database['public']['Enums']['swap_type_enum'];
+        };
+        Insert: {
+          counterparty_assignment_ids?: string[] | null;
+          counterparty_user_id: string;
+          created_at?: string;
+          expires_at: string;
+          initiator_assignment_ids: string[];
+          initiator_user_id: string;
+          recurring_pattern?: Json | null;
+          status?: Database['public']['Enums']['swap_status_enum'];
+          swap_id?: string;
+          swap_type: Database['public']['Enums']['swap_type_enum'];
+        };
+        Update: {
+          counterparty_assignment_ids?: string[] | null;
+          counterparty_user_id?: string;
+          created_at?: string;
+          expires_at?: string;
+          initiator_assignment_ids?: string[];
+          initiator_user_id?: string;
+          recurring_pattern?: Json | null;
+          status?: Database['public']['Enums']['swap_status_enum'];
+          swap_id?: string;
+          swap_type?: Database['public']['Enums']['swap_type_enum'];
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'swap_requests_counterparty_user_id_fkey';
+            columns: ['counterparty_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'swap_requests_initiator_user_id_fkey';
+            columns: ['initiator_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+        ];
+      };
       system_config: {
         Row: {
           config_key: string;
@@ -997,8 +1051,21 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      accept_swap: {
+        Args: { p_accepting_user_id: string; p_now?: string; p_swap_id: string };
+        Returns: Json;
+      };
       acknowledge_float: {
         Args: { p_float_id: string; p_now?: string; p_user_id: string };
+        Returns: Json;
+      };
+      apply_permanent_swap: {
+        Args: {
+          p_affected_assignment_ids: string[];
+          p_new_owner_user_id: string;
+          p_now?: string;
+          p_swap_id: string;
+        };
         Returns: Json;
       };
       claim_hours_projection: {
@@ -1037,6 +1104,20 @@ export type Database = {
           cap_enforcement: Database['public']['Enums']['cap_enforcement_enum'];
           hours_cap: number;
         }[];
+      };
+      expire_pending_swaps: { Args: { p_now: string }; Returns: number };
+      force_trigger_float: {
+        Args: {
+          p_destination_assignment_ids: string[];
+          p_destination_house_id: string;
+          p_initiator_user_id: string;
+          p_now?: string;
+          p_retention_days?: number;
+          p_source_assignment_ids: string[];
+          p_source_house_id: string;
+          p_worker_id: string;
+        };
+        Returns: Json;
       };
       generate_blocks_for_date: {
         Args: { target_date: string };
@@ -1147,6 +1228,10 @@ export type Database = {
           target_upserted: number;
         }[];
       };
+      swap_acceptance_ineligibility_reason: {
+        Args: { p_swap_id: string };
+        Returns: string;
+      };
       user_can_build_schedule: {
         Args: { check_house_id: string; check_user_id: string };
         Returns: boolean;
@@ -1239,6 +1324,8 @@ export type Database = {
         | 'pending_float_out'
         | 'allied'
         | 'vacant';
+      swap_status_enum: 'pending' | 'accepted' | 'rejected' | 'expired' | 'voided';
+      swap_type_enum: 'shift_swap' | 'float_swap' | 'permanent_swap';
       user_role_enum: 'sw' | 'sm' | 'hm' | 'bm';
       vacancy_origin_enum:
         | 'none'
@@ -1413,6 +1500,8 @@ export const Constants = {
         'allied',
         'vacant',
       ],
+      swap_status_enum: ['pending', 'accepted', 'rejected', 'expired', 'voided'],
+      swap_type_enum: ['shift_swap', 'float_swap', 'permanent_swap'],
       user_role_enum: ['sw', 'sm', 'hm', 'bm'],
       vacancy_origin_enum: [
         'none',

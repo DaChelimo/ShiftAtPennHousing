@@ -54,7 +54,7 @@
 
 BEGIN;
 
-SELECT plan(39);
+SELECT plan(46);
 
 -- ============================================================
 -- 0. Fixtures: users, the SM-of-house-05 role, the recurring-slot blocks, the
@@ -171,7 +171,14 @@ VALUES
    (current_setting('test.p10.anchor')::timestamptz + interval '7 days') - interval '2 hours', 1),
   -- E Harnwell: a harnwell 16:00 vacant+permanent_drop slot (training-gated).
   ('0a000002-0000-0000-0000-0000000000e1', 'harnwell',
-   (current_setting('test.p10.anchor')::timestamptz + interval '7 days') - interval '3 hours', 1);
+   (current_setting('test.p10.anchor')::timestamptz + interval '7 days') - interval '3 hours', 1),
+  -- E6 partial-pickup feed removal: a house-05 19:30 two-week slot. Both weeks are
+  -- dropped; w1 gets picked up and w2 is cap/conflict-skipped (19:30 <= the
+  -- fixture's 19:30 ceiling, so UTC-slice date == NY-local date).
+  ('0a000002-0000-0000-0000-0000000000f1', 'house-05',
+   current_setting('test.p10.anchor')::timestamptz + interval '7 days'  + interval '30 minutes', 1),
+  ('0a000002-0000-0000-0000-0000000000f2', 'house-05',
+   current_setting('test.p10.anchor')::timestamptz + interval '14 days' + interval '30 minutes', 1);
 
 INSERT INTO public.shift_block_assignments
   (assignment_id, block_id, user_id, status, vacancy_origin, is_float, source_house_id)
@@ -204,6 +211,11 @@ VALUES
    NULL, 'vacant', 'permanent_drop', false, NULL),
   -- E Harnwell: an already-dropped harnwell slot (vacant+permanent_drop).
   ('0a000003-0000-0000-0000-0000000000e1', '0a000002-0000-0000-0000-0000000000e1',
+   NULL, 'vacant', 'permanent_drop', false, NULL),
+  -- E6: the house-05 19:30 two-week dropped slot (both vacant+permanent_drop).
+  ('0a000003-0000-0000-0000-0000000000f1', '0a000002-0000-0000-0000-0000000000f1',
+   NULL, 'vacant', 'permanent_drop', false, NULL),
+  ('0a000003-0000-0000-0000-0000000000f2', '0a000002-0000-0000-0000-0000000000f2',
    NULL, 'vacant', 'permanent_drop', false, NULL);
 
 -- ============================================================
@@ -217,8 +229,8 @@ SELECT has_function(
 );
 SELECT has_function(
   'public', 'permanent_pickup_slot',
-  ARRAY['uuid', 'uuid[]'],
-  'permanent_pickup_slot(picking_user, block_ids[]) exists (ARCH §7.2)'
+  ARRAY['uuid', 'uuid[]', 'uuid[]'],
+  'permanent_pickup_slot(picking_user, assigned_block_ids[], skipped_block_ids[]) exists (ARCH §7.2)'
 );
 
 -- ============================================================
@@ -509,6 +521,61 @@ SELECT is(
   (SELECT status::text FROM public.shift_block_assignments WHERE assignment_id = '0a000003-0000-0000-0000-0000000000e1'),
   'vacant',
   'pickup: the rejected Harnwell slot is untouched (atomic — no partial write)'
+);
+
+-- E6. PARTIAL-PICKUP FEED REMOVAL (§8.4.3 / ARCH §7.2 step 8). A two-week dropped
+--     slot (house-05 19:30): PICKER takes w1 and the evaluator SKIPS w2 (cap or
+--     time conflict). The skip set is re-flagged OFF permanent_drop in the same
+--     transaction, so the slot leaves the permanent feed REGARDLESS of
+--     completeness and the skipped week routes to the weekly feed — it is NOT
+--     permanently re-pickable ("partial pickups are final"). This is the case the
+--     status-change-only E3 check cannot exercise: w2's ownership never changes,
+--     so before this fix it would have lingered in the permanent feed.
+SELECT set_config(
+  'test.p10.partial_result',
+  (public.permanent_pickup_slot(
+     '0a000001-0000-0000-0000-000000000003'::uuid,                        -- picker (house-05)
+     ARRAY['0a000002-0000-0000-0000-0000000000f1']::uuid[],               -- assigned: w1
+     ARRAY['0a000002-0000-0000-0000-0000000000f2']::uuid[]                -- skipped:  w2 (cap/conflict)
+   ))::text,
+  false
+);
+SELECT is(
+  current_setting('test.p10.partial_result')::jsonb ->> 'assigned_count',
+  '1',
+  'partial pickup: w1 (19:30) is assigned'
+);
+SELECT is(
+  current_setting('test.p10.partial_result')::jsonb ->> 'skipped_count',
+  '1',
+  'partial pickup: w2 (19:30) is re-flagged out of the permanent-drop vacancy'
+);
+SELECT is(
+  (SELECT status::text FROM public.shift_block_assignments WHERE assignment_id = '0a000003-0000-0000-0000-0000000000f1'),
+  'claimed',
+  'partial pickup: the assigned w1 is claimed'
+);
+SELECT is(
+  (SELECT status::text FROM public.shift_block_assignments WHERE assignment_id = '0a000003-0000-0000-0000-0000000000f2'),
+  'vacant',
+  'partial pickup: the skipped w2 stays vacant (still claimable via the weekly feed)'
+);
+SELECT is(
+  (SELECT vacancy_origin::text FROM public.shift_block_assignments WHERE assignment_id = '0a000003-0000-0000-0000-0000000000f2'),
+  'temporary_drop',
+  'partial pickup: the skipped w2 leaves permanent_drop -> temporary_drop (§8.4.3)'
+);
+SELECT is(
+  (SELECT count(*)::integer FROM public.permanent_openings_feed('house-05', current_setting('test.p10.anchor')::timestamptz)
+   WHERE block_start_time = '19:30'),
+  0,
+  'partial pickup: the 19:30 slot leaves the permanent feed REGARDLESS of completeness (§8.4.3 / ARCH §7.2.8)'
+);
+SELECT is(
+  (SELECT count(*)::integer FROM public.weekly_open_shifts_feed('house-05', current_setting('test.p10.anchor')::timestamptz)
+   WHERE block_id = '0a000002-0000-0000-0000-0000000000f2'),
+  1,
+  'partial pickup: the skipped w2 surfaces in the WEEKLY feed instead (§8.4.3)'
 );
 
 -- ============================================================

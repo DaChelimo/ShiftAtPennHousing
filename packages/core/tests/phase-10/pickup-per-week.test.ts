@@ -337,6 +337,10 @@ describe('multi-week confirmation summary', () => {
       ['2026-11-23', 'skipped', 'time_conflict'],
     ]);
     expect(result.assignedBlockIds).toEqual(['w1-b1', 'w2-b1']);
+    // The flattened skip set drives the SQL RPC's feed-removal pass: it carries
+    // the partial-week conflict block (w2-b2) AND both whole-week skips (w3-b1
+    // cap, w4-b1 conflict). All three must leave the permanent openings feed.
+    expect(result.skippedBlockIds).toEqual(['w2-b2', 'w3-b1', 'w4-b1']);
     expect(result).toMatchObject({
       totalWeeksInScope: 4,
       weeksFullyAssigned: 1,
@@ -435,6 +439,9 @@ describe('zero eligible weeks (§8.4.3 boundary)', () => {
     );
 
     expect(result.assignedBlockIds).toEqual([]);
+    // Nothing is picked up, so every block must be re-flagged out of the
+    // permanent feed (the slot leaves the feed even on a zero-assignment pickup).
+    expect(result.skippedBlockIds).toEqual(['b1', 'b2']);
     expect(result).toMatchObject({
       totalWeeksInScope: 2,
       weeksFullyAssigned: 0,
@@ -455,6 +462,7 @@ describe('empty week set', () => {
     expect(result).toEqual({
       weeks: [],
       assignedBlockIds: [],
+      skippedBlockIds: [],
       totalWeeksInScope: 0,
       weeksFullyAssigned: 0,
       weeksPartiallyAssigned: 0,

@@ -120,9 +120,14 @@ EXCEPTION
 END;
 $$;
 
+-- Signature changed in this phase (added p_skipped_block_ids); drop the prior
+-- 2-arg form so a re-applied migration leaves exactly one overload.
+DROP FUNCTION IF EXISTS permanent_pickup_slot(uuid, uuid[]);
+
 CREATE OR REPLACE FUNCTION permanent_pickup_slot(
   p_picking_user_id uuid,
-  p_block_ids uuid[]
+  p_assigned_block_ids uuid[],
+  p_skipped_block_ids uuid[] DEFAULT ARRAY[]::uuid[]
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -132,6 +137,7 @@ AS $$
 DECLARE
   v_home_house_id text;
   v_assigned_count integer;
+  v_skipped_count integer;
 BEGIN
   SELECT home_house_id
     INTO v_home_house_id
@@ -143,16 +149,24 @@ BEGIN
     RAISE EXCEPTION 'user_inactive';
   END IF;
 
+  -- Harnwell training invariant (AGENTS #1) guards every block this call
+  -- touches — both the seats being claimed and the seats being re-flagged.
   IF EXISTS (
     SELECT 1
     FROM shift_blocks sb
-    WHERE sb.block_id = ANY (COALESCE(p_block_ids, ARRAY[]::uuid[]))
+    WHERE sb.block_id = ANY (
+        COALESCE(p_assigned_block_ids, ARRAY[]::uuid[])
+        || COALESCE(p_skipped_block_ids, ARRAY[]::uuid[])
+      )
       AND sb.house_id = 'harnwell'
       AND v_home_house_id <> 'harnwell'
   ) THEN
     RAISE EXCEPTION 'harnwell_training_required';
   END IF;
 
+  -- Assigned weeks: claim them. Race-safe — only seats still in the
+  -- permanent-drop vacancy are taken, so a concurrent pickup/claim that already
+  -- grabbed a week is left intact (ARCH §7.2 step 6).
   UPDATE shift_block_assignments sba
   SET
     user_id = p_picking_user_id,
@@ -165,19 +179,40 @@ BEGIN
     END
   FROM shift_blocks sb
   WHERE sba.block_id = sb.block_id
-    AND sba.block_id = ANY (COALESCE(p_block_ids, ARRAY[]::uuid[]))
+    AND sba.block_id = ANY (COALESCE(p_assigned_block_ids, ARRAY[]::uuid[]))
     AND sba.status = 'vacant'
     AND sba.vacancy_origin = 'permanent_drop';
 
   GET DIAGNOSTICS v_assigned_count = ROW_COUNT;
-  RETURN jsonb_build_object('assigned_count', v_assigned_count);
+
+  -- Skipped weeks (hours-cap / time-conflict): re-flag them OFF permanent_drop
+  -- in the SAME transaction. They stay vacant (so weekly_open_shifts_feed still
+  -- surfaces them within the 30-day horizon and they undergo standard weekly
+  -- escalation), but leave permanent_openings_feed (which filters
+  -- vacancy_origin = 'permanent_drop') and can no longer be permanently
+  -- re-picked-up. This is the §8.4.3 / ARCH §7.2-step-8 guarantee: after any
+  -- pickup the slot leaves the permanent feed regardless of completeness, and
+  -- "partial pickups are final." Race-safe predicate leaves raced-away seats
+  -- (now claimed by someone else) untouched.
+  UPDATE shift_block_assignments sba
+  SET vacancy_origin = 'temporary_drop'
+  WHERE sba.block_id = ANY (COALESCE(p_skipped_block_ids, ARRAY[]::uuid[]))
+    AND sba.status = 'vacant'
+    AND sba.vacancy_origin = 'permanent_drop';
+
+  GET DIAGNOSTICS v_skipped_count = ROW_COUNT;
+
+  RETURN jsonb_build_object(
+    'assigned_count', v_assigned_count,
+    'skipped_count', v_skipped_count
+  );
 END;
 $$;
 
 REVOKE ALL ON FUNCTION permanent_drop_slot(uuid, text, integer, text[], timestamptz, uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION permanent_drop(uuid, text, integer, text[], timestamptz) FROM PUBLIC;
-REVOKE ALL ON FUNCTION permanent_pickup_slot(uuid, uuid[]) FROM PUBLIC;
+REVOKE ALL ON FUNCTION permanent_pickup_slot(uuid, uuid[], uuid[]) FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION permanent_drop_slot(uuid, text, integer, text[], timestamptz, uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION permanent_drop(uuid, text, integer, text[], timestamptz) TO service_role;
-GRANT EXECUTE ON FUNCTION permanent_pickup_slot(uuid, uuid[]) TO service_role;
+GRANT EXECUTE ON FUNCTION permanent_pickup_slot(uuid, uuid[], uuid[]) TO service_role;

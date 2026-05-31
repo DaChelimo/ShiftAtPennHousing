@@ -73,6 +73,11 @@ export function evaluatePermanentPickup(input: {
   return {
     weeks,
     assignedBlockIds: weeks.flatMap((week) => week.assignedBlockIds),
+    // Every occurrence the pickup does NOT take — whole-week cap/conflict skips
+    // AND the conflict-skipped blocks of partially-assigned weeks. These must
+    // leave the permanent openings feed and route to the weekly feed (§8.4.3:
+    // "partial pickups are final"); the SQL RPC re-flags them off permanent_drop.
+    skippedBlockIds: weeks.flatMap((week) => week.skippedBlockIds),
     totalWeeksInScope: weeks.length,
     weeksFullyAssigned: weeks.filter((week) => week.status === 'fully_assigned').length,
     weeksPartiallyAssigned: weeks.filter((week) => week.status === 'partially_assigned').length,

@@ -1176,7 +1176,11 @@ export type Database = {
         }[];
       };
       permanent_pickup_slot: {
-        Args: { p_block_ids: string[]; p_picking_user_id: string };
+        Args: {
+          p_assigned_block_ids: string[];
+          p_picking_user_id: string;
+          p_skipped_block_ids?: string[];
+        };
         Returns: Json;
       };
       preference_deadline_is_open: {

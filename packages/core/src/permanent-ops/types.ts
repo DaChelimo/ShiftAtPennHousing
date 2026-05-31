@@ -91,6 +91,7 @@ export type PickupWeekOutcome = {
 export type PermanentPickupResult = {
   weeks: PickupWeekOutcome[];
   assignedBlockIds: string[];
+  skippedBlockIds: string[];
   totalWeeksInScope: number;
   weeksFullyAssigned: number;
   weeksPartiallyAssigned: number;

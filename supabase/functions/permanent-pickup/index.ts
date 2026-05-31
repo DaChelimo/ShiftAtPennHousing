@@ -280,7 +280,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     const { data, error } = await auth.supabase.rpc('permanent_pickup_slot', {
       p_picking_user_id: auth.userId,
-      p_block_ids: scope.assignedBlockIds,
+      p_assigned_block_ids: scope.assignedBlockIds,
+      p_skipped_block_ids: scope.skippedBlockIds,
     });
     if (error !== null) {
       return jsonResponse({ error: error.message.trim().split(/\s+/)[0] }, 400);

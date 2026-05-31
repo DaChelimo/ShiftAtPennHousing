@@ -29,7 +29,8 @@
 -- WHAT THIS SUITE COVERS
 -- ----------------------
 --   A. Function existence — break_claim_phase, break_is_highlighted,
---      open_break_claim_calendar, break_claim_calendar_pool, claim_break_shift.
+--      open_break_claim_calendar, break_claim_calendar_pool, claim_break_shift,
+--      the break_optouts table, and worker_opted_out_of_break.
 --   B. PHASE BOUNDARIES anchored to start_date — pre_open / claim_window /
 --      open_feed transitions at NY-local midnight of (start − 14/3/1), the
 --      half-open [open, close) window, and the T-14d highlight.
@@ -53,6 +54,9 @@
 --      is rejected at the calendar-claim write point (invariant #1).
 --   I. CAP BY BREAK_TYPE — effective_weekly_cap is 40/hard for a Thanksgiving
 --      week and 20/soft for a spring-fling week (§3.2 / §9.3, batch_b-aware).
+--   J. ZERO-HOURS OPT-OUT — a per-(break,worker) break_optouts row, read via
+--      worker_opted_out_of_break, fills the T-3d-nag opt-out flag; per-break
+--      scoped (Thanksgiving opt-out ≠ spring-break opt-out).
 --
 -- TDD-RED: the phase-11 migration (break_claim_phase / break_is_highlighted /
 -- open_break_claim_calendar / break_claim_calendar_pool / claim_break_shift, plus
@@ -66,7 +70,7 @@
 
 BEGIN;
 
-SELECT plan(43);
+SELECT plan(48);
 
 -- ============================================================
 -- 0. Fixtures: house-05 workers, four break periods (Thanksgiving / spring break
@@ -224,6 +228,14 @@ SELECT has_function(
 SELECT has_function(
   'public', 'claim_break_shift', ARRAY['uuid', 'uuid', 'timestamptz'],
   'claim_break_shift(assignment, user, as_of) exists (§4.4 — FCFS calendar claim)'
+);
+SELECT has_table(
+  'public', 'break_optouts',
+  'break_optouts table exists (§4.4 zero-hours opt-out / ARCH §2.9)'
+);
+SELECT has_function(
+  'public', 'worker_opted_out_of_break', ARRAY['uuid', 'uuid'],
+  'worker_opted_out_of_break(user, break) exists (the T-3d-nag opt-out read)'
 );
 
 -- ============================================================
@@ -523,6 +535,41 @@ SELECT is(
      ('2026-04-13 18:00'::timestamp AT TIME ZONE 'America/New_York'))),
   'soft',
   'cap: the spring-fling cap is SOFT (overridable, §3.2)'
+);
+
+-- ============================================================
+-- J. ZERO-HOURS OPT-OUT (§4.4 / ARCH §2.9). The break analogue of the §4.1
+--    "no hours" button, stored per (break, worker) in break_optouts and read by
+--    the T-3d nag (via worker_opted_out_of_break) to fill the
+--    has_indicated_zero_hours flag the pure selectBreakClaimNagRecipients
+--    consumes. Per-break scoped; advisory only (never gates claiming).
+-- ============================================================
+
+-- WorkerC indicates zero hours for the Thanksgiving break.
+INSERT INTO public.break_optouts (break_id, user_id, opted_out_at)
+VALUES (
+  '0c000004-0000-0000-0000-0000000000a1',
+  '0c000001-0000-0000-0000-000000000003',
+  current_setting('test.p11.window_now')::timestamptz
+);
+
+SELECT is(
+  public.worker_opted_out_of_break(
+    '0c000001-0000-0000-0000-000000000003', '0c000004-0000-0000-0000-0000000000a1'),
+  true,
+  'opt-out: a worker who indicated zero hours reads as opted-out → suppresses the T-3d nag (§4.4)'
+);
+SELECT is(
+  public.worker_opted_out_of_break(
+    '0c000001-0000-0000-0000-000000000001', '0c000004-0000-0000-0000-0000000000a1'),
+  false,
+  'opt-out: a worker with no opt-out row is NOT opted-out (would be nagged if unclaimed, §4.4)'
+);
+SELECT is(
+  public.worker_opted_out_of_break(
+    '0c000001-0000-0000-0000-000000000003', '0c000004-0000-0000-0000-0000000000a2'),
+  false,
+  'opt-out: the opt-out is PER-BREAK — opting out of Thanksgiving does NOT opt out of spring break (§4.4)'
 );
 
 SELECT finish();

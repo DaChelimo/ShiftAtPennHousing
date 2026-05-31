@@ -256,6 +256,13 @@ describe('isBreakHighlighted (§4.4 — distinct calendar background from T-14d)
 // selectBreakClaimNagRecipients — the T-3d nag (§4.4). Alert workers who have
 // claimed NO shifts AND have not affirmatively indicated they want zero hours.
 // Workers with ≥1 claim, or who opted out of break hours, are NOT nagged.
+//
+// This is the PURE rule; it takes `hasIndicatedZeroHours` as an already-resolved
+// boolean. That flag is sourced per (break, worker) from the `break_optouts`
+// table (BSpec §4.4 "Indicating zero break hours"; ARCH §2.9) — the orchestrator
+// reads it via `worker_opted_out_of_break(user, break)` (pinned on the DB side in
+// supabase/tests/phase-11-break-transitions.sql §J) and `hasClaimedAnyShift` from
+// the worker's claimed break assignments, then calls this to pick recipients.
 // =====================================================================
 
 describe('selectBreakClaimNagRecipients (§4.4 — T-3d nag)', () => {

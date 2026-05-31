@@ -317,13 +317,15 @@ All time offsets in this section (T-14d, T-3d, T-1d) are measured from the **fir
 
 - **T-14 days through T-1 day (inclusive):** workers see empty shifts on the calendar for the break period and can claim shifts directly via the calendar picker. Claims are first-come-first-served. A worker who claims a shift owns it; they can drop it back into the unclaimed pool any time up until T-1 day. Dropped break shifts during this window return to the **calendar claim pool**, not to the open-shifts feed. The shift remains claimable by any worker via the calendar picker.
 
-- **T-3 days:** the system alerts workers who have not claimed any shifts and have not affirmatively indicated they want zero hours for the break.
+- **T-3 days:** the system alerts workers who have not claimed any shifts and have not affirmatively indicated they want zero hours for the break (see "Indicating zero break hours" below).
 
 - **T-1 day (exact moment T-1d):** the calendar picker for the **entire break period** closes simultaneously. Any shifts still unclaimed at this moment enter the **open-shifts feed** for normal processing. From this point onward:
   - Workers wanting to pick up a break shift must go through the open-shifts feed, not the calendar.
   - A worker who drops a previously-claimed break shift during the T-1d-to-T-2h window sends that shift into the open-shifts feed (not back into the calendar picker, which is now closed).
   - A worker who reclaimed a previously-dropped shift via the open-shifts feed may drop it again, and it returns to the feed.
   - Standard open-shifts mechanics apply: the shift becomes unpickable at T-2h (Section 5.3).
+
+**Indicating zero break hours.** A worker who wants no hours for a given break clicks a "no break hours" control on that break's calendar — the break analogue of the regular-year "no hours" button (Section 4.1), scoped to the specific break rather than to a semester. This records an opt-out for that worker and that break, which (a) suppresses the T-3d alert above and (b) signals that the worker is intentionally sitting the break out. The opt-out is **per break**: opting out of one break has no effect on any other break (a worker may sit out Thanksgiving yet want spring-break hours). It is **advisory** — it does not prevent the worker from later claiming a break shift via the calendar picker, or via the open-shifts feed after T-1d, if they change their mind (the same latitude Section 4.1 grants the regular-year opt-out worker); claiming during the window is itself sufficient to suppress the alert. The opt-out is stored in `break_optouts` (ARCHITECTURE.md §2.9).
 
 During the claim phase (T-14 to T-1 day inclusive), break shifts do not appear in the open-shifts feed to avoid cluttering it.
 

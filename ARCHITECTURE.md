@@ -331,6 +331,21 @@ Populated by an administrator at calendar setup time alongside `operating_calend
 - The default-cap computation in Behavioral Spec Section 9.3 distinguishes spring fling weeks by checking whether any date in the calendar week belongs to a `break_periods` row with `break_type = 'spring_fling'`.
 - `operating_profiles.claim_phase_*_offset` values still drive the offset durations; `break_periods.start_date` provides the anchor.
 
+**Companion table — `break_optouts`.** Records a worker's affirmative "no hours for this break" indication (Behavioral Spec §4.4) — the break analogue of the regular-year "no hours" preference (§4.1). Because break scheduling is claim-based and bypasses the `preferences` / `period_targets` tables entirely, the opt-out needs its own home; it cannot live on a `scheduling_periods`-scoped row.
+
+```
+break_optouts
+  break_id      (foreign key to break_periods, ON DELETE CASCADE)
+  user_id       (foreign key to users)
+  opted_out_at  (timestamp with time zone; when the worker indicated zero hours)
+  PRIMARY KEY (break_id, user_id)
+```
+
+- Scoped per `(break_id, user_id)` — opting out of one break says nothing about any other (a worker may sit out Thanksgiving but want spring-break hours).
+- Read by the T-3d nag job to fill the `has_indicated_zero_hours` flag that recipient selection consumes. The orchestrator snapshots it via `worker_opted_out_of_break(user_id, break_id)`; the recipient rule itself is the pure `selectBreakClaimNagRecipients` (a worker is nagged iff they have claimed nothing **and** have no opt-out row).
+- **Advisory only**: the opt-out suppresses the nag and signals intent; it does NOT gate claiming — a worker may opt out and later claim via the calendar picker (or the open-shifts feed after T-1d), exactly as §4.1 lets the regular-year opt-out worker pick up shifts.
+- Populated/cleared by the worker via the "no break hours" control; gets RLS (own-row write, plus the standard service-role bypass) in the same migration that creates it.
+
 ### 2.10 Layer 10: Scheduling Periods
 
 A table that names each SM-built scheduling period as a first-class entity. This gives the `period_targets` and `preferences` tables a concrete entity to foreign-key against, and provides the single place to store the preference submission deadline that the behavioral spec (Section 4.2) assigns to the SM.

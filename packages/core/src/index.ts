@@ -9,5 +9,6 @@ export * from './float-lookup/index.js';
 export * from './force-trigger/index.js';
 export * from './hours/index.js';
 export * from './orchestrator/index.js';
+export * from './permanent-ops/index.js';
 export * from './scheduling/phase1Grouping.js';
 export * from './time/index.js';

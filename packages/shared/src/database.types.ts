@@ -1068,6 +1068,10 @@ export type Database = {
         };
         Returns: Json;
       };
+      assignments_outside_regular_school_year: {
+        Args: { p_assignment_ids: string[] };
+        Returns: string[];
+      };
       claim_hours_projection: {
         Args: { p_assignment_id: string; p_user_id: string };
         Returns: {
@@ -1141,6 +1145,27 @@ export type Database = {
       is_hm_working_time: { Args: { p_at: string }; Returns: boolean };
       is_valid_block_headcounts: { Args: { p: Json }; Returns: boolean };
       is_valid_escalation_chain: { Args: { p: Json }; Returns: boolean };
+      permanent_drop: {
+        Args: {
+          drop_initiated_at: string;
+          dropping_user_id: string;
+          slot_block_start_times: string[];
+          slot_day_of_week: number;
+          slot_house_id: string;
+        };
+        Returns: number;
+      };
+      permanent_drop_slot: {
+        Args: {
+          p_block_start_locals: string[];
+          p_day_of_week: number;
+          p_drop_initiated_at: string;
+          p_dropping_user_id: string;
+          p_house_id: string;
+          p_operator_user_id?: string;
+        };
+        Returns: Json;
+      };
       permanent_openings_feed: {
         Args: { p_as_of?: string; p_house_id: string };
         Returns: {
@@ -1149,6 +1174,10 @@ export type Database = {
           house_id: string;
           weeks_remaining: number;
         }[];
+      };
+      permanent_pickup_slot: {
+        Args: { p_block_ids: string[]; p_picking_user_id: string };
+        Returns: Json;
       };
       preference_deadline_is_open: {
         Args: { check_period_id: string };

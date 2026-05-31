@@ -105,11 +105,45 @@ export type Database = {
           },
         ];
       };
+      break_optouts: {
+        Row: {
+          break_id: string;
+          opted_out_at: string;
+          user_id: string;
+        };
+        Insert: {
+          break_id: string;
+          opted_out_at?: string;
+          user_id: string;
+        };
+        Update: {
+          break_id?: string;
+          opted_out_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'break_optouts_break_id_fkey';
+            columns: ['break_id'];
+            isOneToOne: false;
+            referencedRelation: 'break_periods';
+            referencedColumns: ['break_id'];
+          },
+          {
+            foreignKeyName: 'break_optouts_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+        ];
+      };
       break_periods: {
         Row: {
           break_id: string;
           break_name: string;
           break_type: Database['public']['Enums']['break_type_enum'];
+          claim_pool_closed_at: string | null;
           end_date: string;
           profile_name: string;
           start_date: string;
@@ -118,6 +152,7 @@ export type Database = {
           break_id?: string;
           break_name: string;
           break_type: Database['public']['Enums']['break_type_enum'];
+          claim_pool_closed_at?: string | null;
           end_date: string;
           profile_name: string;
           start_date: string;
@@ -126,6 +161,7 @@ export type Database = {
           break_id?: string;
           break_name?: string;
           break_type?: Database['public']['Enums']['break_type_enum'];
+          claim_pool_closed_at?: string | null;
           end_date?: string;
           profile_name?: string;
           start_date?: string;
@@ -137,6 +173,32 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'operating_profiles';
             referencedColumns: ['profile_name'];
+          },
+        ];
+      };
+      break_phase_log: {
+        Row: {
+          break_id: string;
+          executed_at: string;
+          phase: string;
+        };
+        Insert: {
+          break_id: string;
+          executed_at?: string;
+          phase: string;
+        };
+        Update: {
+          break_id?: string;
+          executed_at?: string;
+          phase?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'break_phase_log_break_id_fkey';
+            columns: ['break_id'];
+            isOneToOne: false;
+            referencedRelation: 'break_periods';
+            referencedColumns: ['break_id'];
           },
         ];
       };
@@ -1072,6 +1134,38 @@ export type Database = {
         Args: { p_assignment_ids: string[] };
         Returns: string[];
       };
+      break_claim_calendar_pool: {
+        Args: { p_as_of?: string; p_house_id: string };
+        Returns: {
+          assignment_id: string;
+          block_id: string;
+          is_cross_house_pickup: boolean;
+          is_float: boolean;
+          parent_float_id: string | null;
+          source_house_id: string | null;
+          status: Database['public']['Enums']['shift_status_enum'];
+          user_id: string | null;
+          vacancy_origin: Database['public']['Enums']['vacancy_origin_enum'];
+        }[];
+        SetofOptions: {
+          from: '*';
+          to: 'shift_block_assignments';
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
+      break_claim_phase: {
+        Args: { p_as_of: string; p_break_id: string };
+        Returns: string;
+      };
+      break_is_highlighted: {
+        Args: { p_as_of: string; p_break_id: string };
+        Returns: boolean;
+      };
+      claim_break_shift: {
+        Args: { p_as_of: string; p_assignment_id: string; p_user_id: string };
+        Returns: string;
+      };
       claim_hours_projection: {
         Args: { p_assignment_id: string; p_user_id: string };
         Returns: {
@@ -1086,6 +1180,8 @@ export type Database = {
         Args: { p_as_of: string; p_assignment_id: string; p_user_id: string };
         Returns: string;
       };
+      clear_break_period: { Args: { p_break_id: string }; Returns: number };
+      close_break_claim_pool: { Args: { p_break_id: string }; Returns: number };
       decline_float: {
         Args: { p_float_id: string; p_now?: string; p_user_id: string };
         Returns: Json;
@@ -1109,6 +1205,7 @@ export type Database = {
           hours_cap: number;
         }[];
       };
+      execute_due_break_transitions: { Args: never; Returns: number };
       expire_pending_swaps: { Args: { p_now: string }; Returns: number };
       force_trigger_float: {
         Args: {
@@ -1145,6 +1242,10 @@ export type Database = {
       is_hm_working_time: { Args: { p_at: string }; Returns: boolean };
       is_valid_block_headcounts: { Args: { p: Json }; Returns: boolean };
       is_valid_escalation_chain: { Args: { p: Json }; Returns: boolean };
+      open_break_claim_calendar: {
+        Args: { p_break_id: string; p_house_id: string };
+        Returns: number;
+      };
       permanent_drop: {
         Args: {
           drop_initiated_at: string;
@@ -1247,6 +1348,7 @@ export type Database = {
         Returns: string;
       };
       resolve_hmod_on_duty: { Args: { p_at: string }; Returns: string };
+      send_break_nag: { Args: { p_break_id: string }; Returns: number };
       send_preference_reminders: { Args: never; Returns: number };
       submit_preferences: {
         Args: {
@@ -1320,6 +1422,10 @@ export type Database = {
           isOneToOne: false;
           isSetofReturn: true;
         };
+      };
+      worker_opted_out_of_break: {
+        Args: { p_break_id: string; p_user_id: string };
+        Returns: boolean;
       };
     };
     Enums: {

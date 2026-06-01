@@ -106,6 +106,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // pg_net dispatch is asynchronous. Re-check the queue at execution time so a
   // float acknowledged after cron enqueues this request does not receive a stale
   // reminder.
+  //
+  // Delivery is intentionally AT-LEAST-ONCE. The once-a-minute deliver_pending_
+  // notifications cron may enqueue a still-in-flight notification again; the
+  // re-check below plus deliver_notification's idempotent delivered_at stamp bound
+  // the effect, but a notification whose dispatch straddles a minute boundary can
+  // be pushed twice. We do NOT stamp delivered_at before sending: §10.1 personal
+  // notifications are mandatory and cannot be silenced, so a rare duplicate push is
+  // strictly preferable to the lost-delivery risk of marking-then-failing-to-send.
   const { data: pendingNotification, error: pendingError } = await supabase
     .rpc('pending_notification_deliveries', { p_now: new Date().toISOString() })
     .eq('notification_id', notificationId)
@@ -136,6 +144,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
     attemptedTokens = (data ?? []) as PushToken[];
 
+    // Platform routing is intentionally NOT branched here. notification_push_targets
+    // returns every device token for the user (both 'android' and 'ios' rows), and
+    // Firebase Admin routes Android tokens via FCM and iOS tokens via APNs through
+    // this single Messaging API. This requires iOS clients to register their Firebase
+    // FCM registration token (not a raw APNs device token) — the standard Firebase
+    // iOS integration (see AGENTS.md Phase-12 note).
     if (attemptedTokens.length > 0) {
       const messaging = firebaseMessaging();
       for (const batch of chunk(attemptedTokens, TOKEN_BATCH_SIZE)) {

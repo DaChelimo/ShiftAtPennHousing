@@ -620,7 +620,7 @@ When a float is assigned to a worker (whether through automated lookup or force-
 
 If the worker has not acknowledged or declined, the system sends escalating reminders before the deadline at: **6 hours, 2 hours, 1 hour, 30 minutes, and 5 minutes** before the deadline (corresponding to 6h10m, 2h10m, 1h10m, 40m, and 15m before float start).
 
-- The 6-hour and 2-hour reminders are configurable by HMs/BMs or the project administrator on a per-house basis, not by individual workers. Changes to these offsets take effect for float assignments created after the change; existing float assignments retain the cadence that was in effect when they were assigned.
+- The 6-hour and 2-hour reminders are configurable by HMs/BMs or the project administrator on a per-house basis, not by individual workers. Configuring a reminder has two independent controls: it may be **turned off entirely** for the house (suppressed), or its **offset adjusted** to fire earlier or later than the -6h/-2h default. Leaving the offset unset is not the same as turning the reminder off — an enabled reminder with no custom offset fires at the default time. Changes take effect for float assignments created after the change; existing float assignments retain the cadence that was in effect when they were assigned.
 - The 1-hour, 30-minute, and 5-minute reminders are mandatory and cannot be modified.
 
 If the float was assigned with less than 6 hours of lead time before the deadline, the cadence starts at whichever interval is next reached. For a float assigned exactly at T-2h, only the 1h, 30m, and 5m reminders fire (the 6h and 2h reminders are already in the past).

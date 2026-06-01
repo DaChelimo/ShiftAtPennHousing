@@ -180,4 +180,21 @@ iOS framework and the iosApp.
   `pending_notification_deliveries` before sending so a float acknowledged after
   enqueue is still suppressed. Deployed environments must configure the Postgres
   settings `app.supabase_url` / `app.service_role_key` and the Edge Function secret
-  `FIREBASE_SERVICE_ACCOUNT_JSON`. Firebase routes both FCM and APNs device tokens.
+  `FIREBASE_SERVICE_ACCOUNT_JSON`. Firebase routes both FCM and APNs device tokens
+  (iOS clients must register their Firebase FCM registration token, not a raw APNs
+  token; `dispatch-push` does not branch on `push_tokens.platform`).
+- [Phase 12] BOTH float-assignment paths must snapshot the ack-reminder cadence
+  (BSpec §7.1: reminders fire "whether through automated lookup or force-trigger").
+  The cadence logic lives in ONE helper, `snapshot_float_ack_reminders`
+  (20260601000002), called by `process_float_lookup_assignment` AND
+  `force_trigger_float`. Do not re-inline it — the force-trigger path originally
+  omitted it (audit gap). Cadence semantics (ARCH §2.8): a NULL `reminder_6h_offset`
+  /`reminder_2h_offset` means the SYSTEM DEFAULT (-6h/-2h), **not** suppression;
+  suppression is the separate `reminder_6h_enabled`/`reminder_2h_enabled = false`
+  flag. null offset != suppressed.
+- [Phase 12] Push delivery is intentionally AT-LEAST-ONCE. The once-a-minute
+  `deliver_pending_notifications` cron can re-enqueue an in-flight notification; the
+  `dispatch-push` re-check + idempotent `deliver_notification` bound it, but a
+  dispatch straddling a minute boundary may push twice. Do NOT "fix" this by stamping
+  `delivered_at` before sending — §10.1 personal notifications are mandatory, so a
+  rare duplicate is preferable to a lost push.

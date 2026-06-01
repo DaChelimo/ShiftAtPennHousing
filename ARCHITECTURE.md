@@ -295,14 +295,23 @@ The selection UI excludes incoming-chain members from the picker as a UX guard. 
 
 ### 2.8 Layer 8: Acknowledgment Cadence Configuration
 
-A per-house table tracking HM/BM-configured offsets for the 6h and 2h reminders. These are not per-worker preferences; they are house-level settings controlled by HMs, BMs, or the project administrator. The 1h, 30m, and 5m reminders are mandatory and not configurable.
+A per-house table tracking the HM/BM-configured 6h and 2h reminders. These are not per-worker preferences; they are house-level settings controlled by HMs, BMs, or the project administrator. The 1h, 30m, and 5m reminders are mandatory and not configurable (they are not stored here).
+
+Each configurable reminder is governed by **two independent fields**: an `_enabled` flag that controls **whether** the reminder fires at all, and an `_offset` that controls **when** it fires. These are distinct concerns — do not conflate them:
+
+- **Suppression is the `_enabled` flag.** Set `reminder_6h_enabled = false` to turn the 6h reminder off entirely for the house. The offset is irrelevant when disabled.
+- **A null `_offset` is NOT suppression** — it means "use the system default" (-6h / -2h before the ack deadline). A reminder with `enabled = true` and a null offset still fires, at the default time.
 
 ```
 ack_cadence_config
   house_id              (primary key; foreign key to houses)
+  reminder_6h_enabled   (boolean, not null, default true; false = the 6h reminder
+                         is suppressed entirely for this house)
   reminder_6h_offset    (interval; null = system default of -6h before ack deadline;
-                         alternate value = configured offset; "disabled" = suppressed)
-  reminder_2h_offset    (interval; same semantics)
+                         a value = the configured offset. null never means suppressed;
+                         suppression is reminder_6h_enabled = false)
+  reminder_2h_enabled   (boolean, not null, default true; same semantics as 6h)
+  reminder_2h_offset    (interval; same semantics as reminder_6h_offset, default -2h)
   modified_by           (foreign key to users; last HM/BM who changed this)
   modified_at           (timestamp)
 ```

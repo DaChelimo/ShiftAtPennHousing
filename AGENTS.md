@@ -175,3 +175,9 @@ iOS framework and the iosApp.
   policies use `user_can_build_schedule` (sm/hm/bm). Admin over PEOPLE
   (`users` / `user_roles`) and preference/period-target WRITES stay hm/bm-only
   (`user_has_house_admin_role`). Do not collapse the two helpers.
+- [Phase 12] Notification delivery is asynchronous: `deliver_pending_notifications`
+  enqueues `dispatch-push` calls through pg_net, and the Edge Function re-checks
+  `pending_notification_deliveries` before sending so a float acknowledged after
+  enqueue is still suppressed. Deployed environments must configure the Postgres
+  settings `app.supabase_url` / `app.service_role_key` and the Edge Function secret
+  `FIREBASE_SERVICE_ACCOUNT_JSON`. Firebase routes both FCM and APNs device tokens.

@@ -756,6 +756,41 @@ export type Database = {
           },
         ];
       };
+      push_tokens: {
+        Row: {
+          created_at: string;
+          device_token: string;
+          last_used_at: string | null;
+          platform: string;
+          push_token_id: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          device_token: string;
+          last_used_at?: string | null;
+          platform: string;
+          push_token_id?: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          device_token?: string;
+          last_used_at?: string | null;
+          platform?: string;
+          push_token_id?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'push_tokens_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+        ];
+      };
       scheduling_periods: {
         Row: {
           end_date: string;
@@ -1182,10 +1217,16 @@ export type Database = {
       };
       clear_break_period: { Args: { p_break_id: string }; Returns: number };
       close_break_claim_pool: { Args: { p_break_id: string }; Returns: number };
+      craft_hm_leave_mailto: { Args: { p_leave_id: string }; Returns: string };
       decline_float: {
         Args: { p_float_id: string; p_now?: string; p_user_id: string };
         Returns: Json;
       };
+      deliver_notification: {
+        Args: { p_notification_id: string; p_now: string };
+        Returns: boolean;
+      };
+      deliver_pending_notifications: { Args: never; Returns: number };
       drop_shift: {
         Args: {
           p_as_of?: string;
@@ -1242,9 +1283,53 @@ export type Database = {
       is_hm_working_time: { Args: { p_at: string }; Returns: boolean };
       is_valid_block_headcounts: { Args: { p: Json }; Returns: boolean };
       is_valid_escalation_chain: { Args: { p: Json }; Returns: boolean };
+      mark_notification_read: {
+        Args: { p_notification_id: string; p_now: string; p_user_id: string };
+        Returns: boolean;
+      };
+      notification_is_pushable: {
+        Args: { p_type: Database['public']['Enums']['notification_type'] };
+        Returns: boolean;
+      };
+      notification_push_targets: {
+        Args: { p_user_id: string };
+        Returns: {
+          created_at: string;
+          device_token: string;
+          last_used_at: string | null;
+          platform: string;
+          push_token_id: string;
+          user_id: string;
+        }[];
+        SetofOptions: {
+          from: '*';
+          to: 'push_tokens';
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
       open_break_claim_calendar: {
         Args: { p_break_id: string; p_house_id: string };
         Returns: number;
+      };
+      pending_notification_deliveries: {
+        Args: { p_now: string };
+        Returns: {
+          acknowledged_at: string | null;
+          created_at: string;
+          delivered_at: string | null;
+          notification_id: string;
+          payload: Json;
+          recipient_user_id: string;
+          scheduled_for: string | null;
+          type: Database['public']['Enums']['notification_type'];
+        }[];
+        SetofOptions: {
+          from: '*';
+          to: 'notifications';
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
       };
       permanent_drop: {
         Args: {
@@ -1365,6 +1450,10 @@ export type Database = {
       };
       swap_acceptance_ineligibility_reason: {
         Args: { p_swap_id: string };
+        Returns: string;
+      };
+      url_encode_mailto_component: {
+        Args: { p_value: string };
         Returns: string;
       };
       user_can_build_schedule: {

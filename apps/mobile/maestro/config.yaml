@@ -1,0 +1,11 @@
+# Maestro workspace config for the Shift@PennHousing worker-app E2E flows.
+# `maestro test apps/mobile/maestro/` runs every flow in the order below.
+flows:
+  - "0*.yaml"
+executionOrder:
+  continueOnFailure: false
+  flowsOrder:
+    - 01-view-my-shifts
+    - 02-claim-shift
+    - 03-drop-shift
+    - 04-acknowledge-float

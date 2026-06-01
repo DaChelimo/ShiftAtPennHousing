@@ -1,0 +1,47 @@
+# Phase 13a E2E — §5.6 Shifts screen: the three-tab structure.
+#
+# Runs on BOTH the Android emulator and the iOS simulator (Maestro). TDD-RED: the
+# worker UI is not built yet, so every selector here is a CONTRACT the Compose
+# (`Modifier.testTag`) and SwiftUI (`.accessibilityIdentifier`) screens must expose.
+# The visible-text assertions use the exact §5.6 tab titles.
+appId: com.pennhousing.shift
+---
+- launchApp:
+    clearState: true
+- assertVisible:
+    id: "shifts_screen"
+
+# All three tabs are present (§5.6).
+- assertVisible:
+    id: "tab_my_shifts"
+- assertVisible: "My Shifts"
+- assertVisible:
+    id: "tab_open_home"
+- assertVisible: "Open Shifts in My House"
+- assertVisible:
+    id: "tab_open_other"
+- assertVisible: "Open Shifts in Other Houses"
+
+# Tab 1 (My Shifts) is the default and shows its three subsections, top to bottom:
+# picked-up, then dropped, then their (scheduled) shifts (§5.6 Tab 1).
+- assertVisible:
+    id: "section_picked_up"
+- assertVisible:
+    id: "section_dropped"
+- assertVisible:
+    id: "section_scheduled"
+
+# Tab 2 — the home-house weekly feed + permanent openings (§5.6 Tab 2 / §5.1).
+- tapOn:
+    id: "tab_open_home"
+- assertVisible:
+    id: "home_weekly_feed"
+- assertVisible:
+    id: "home_permanent_feed"
+
+# Tab 3 — cross-house feeds grouped by house, OR the empty state when no eligible
+# cross-house feed exists (e.g. winter break, §5.6).
+- tapOn:
+    id: "tab_open_other"
+- assertVisible:
+    id: "other_houses_tab"

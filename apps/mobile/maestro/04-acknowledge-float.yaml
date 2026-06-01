@@ -1,0 +1,32 @@
+# Phase 13a E2E — §7.1/§7.2 acknowledge a float from the ack/decline modal.
+#
+# Android emulator + iOS simulator (Maestro). TDD-RED: selectors are the UI contract.
+appId: com.pennhousing.shift
+---
+- launchApp:
+    clearState: true
+
+# A pending float surfaces the ack/decline modal (§7). If it is not auto-presented
+# on launch, open it from the updates tab.
+- runFlow:
+    when:
+      notVisible:
+        id: "ack_modal"
+    commands:
+      - tapOn:
+          id: "tab_updates"
+      - tapOn:
+          id: "pending_float_notification"
+
+- assertVisible:
+    id: "ack_modal"
+- assertVisible:
+    id: "ack_button"
+- assertVisible:
+    id: "decline_button"
+
+# Acknowledging before the T-10m deadline reaches the success state (§7.1).
+- tapOn:
+    id: "ack_button"
+- assertVisible:
+    id: "ack_success"

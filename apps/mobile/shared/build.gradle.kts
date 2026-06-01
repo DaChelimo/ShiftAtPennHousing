@@ -40,6 +40,9 @@ kotlin {
     sourceSets {
         all {
             languageSettings.optIn("kotlin.experimental.ExperimentalObjCName")
+            // kotlin.time.Instant is the modern instant type (kotlinx.datetime.Instant
+            // is deprecated in 0.7.x); it is still @ExperimentalTime in Kotlin 2.2.x.
+            languageSettings.optIn("kotlin.time.ExperimentalTime")
         }
         commonMain {
             dependencies {

@@ -1,0 +1,41 @@
+# Phase 13a E2E — §5.2 drop a shift; it then appears in the Dropped subsection (§5.6 #2).
+#
+# Android emulator + iOS simulator (Maestro). TDD-RED: selectors are the UI contract.
+appId: com.pennhousing.shift
+---
+- launchApp:
+    clearState: true
+- tapOn:
+    id: "tab_my_shifts"
+- assertVisible:
+    id: "section_scheduled"
+
+# Tapping a shift opens the drop-type popup: occurrence vs permanent (§5.2).
+- tapOn:
+    id: "scheduled_shift_card"
+- assertVisible:
+    id: "drop_options_sheet"
+- assertVisible: "Drop this occurrence"
+- assertVisible: "Drop permanently"
+- tapOn:
+    id: "drop_occurrence_option"
+
+# Dropping a shift starting within 20 minutes warns before confirming (§5.2).
+# Acknowledge the short-notice warning if it appears.
+- runFlow:
+    when:
+      visible:
+        id: "drop_short_notice_warning"
+    commands:
+      - tapOn:
+          id: "drop_short_notice_continue"
+
+- tapOn:
+    id: "drop_confirm_button"
+
+# The dropped shift leaves "their shifts" and shows under My Shifts → Dropped while
+# it is still open (§5.6 #2).
+- assertVisible:
+    id: "section_dropped"
+- assertVisible:
+    id: "dropped_shift_card"

@@ -1,0 +1,39 @@
+# Phase 13a E2E — §5.3 claim an open shift; it then appears in My Shifts (§5.6 #1).
+#
+# Android emulator + iOS simulator (Maestro). TDD-RED: selectors are the UI contract.
+appId: com.pennhousing.shift
+---
+- launchApp:
+    clearState: true
+
+# Open the home-house feed and pick the first claimable open shift. The claim
+# affordance is absent/disabled once the shift is past its T-2h cutoff (§5.4).
+- tapOn:
+    id: "tab_open_home"
+- assertVisible:
+    id: "open_shift_card"
+- tapOn:
+    id: "claim_button"
+
+# A claim that would push the worker over the 20h soft cap warns first, but is
+# permitted (§5.3). Confirm through the warning if it is shown.
+- runFlow:
+    when:
+      visible:
+        id: "soft_cap_warning_modal"
+    commands:
+      - tapOn:
+          id: "soft_cap_confirm_button"
+
+- tapOn:
+    id: "claim_confirm_button"
+- assertVisible:
+    id: "claim_success"
+
+# The claimed shift now appears under My Shifts → Picked-up (§5.6 #1).
+- tapOn:
+    id: "tab_my_shifts"
+- assertVisible:
+    id: "section_picked_up"
+- assertVisible:
+    id: "picked_up_shift_card"

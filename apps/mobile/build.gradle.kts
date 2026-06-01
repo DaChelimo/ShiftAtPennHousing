@@ -9,6 +9,9 @@ plugins {
     alias(libs.plugins.compose.compiler) apply false
     alias(libs.plugins.skie) apply false
     alias(libs.plugins.spotless) apply false
+    // On the classpath for :androidApp to apply conditionally (only when
+    // google-services.json is present); not applied at the root.
+    alias(libs.plugins.googleServices) apply false
 }
 
 subprojects {

@@ -23,3 +23,11 @@ iosApp/**/xcuserdata/
 iosApp/**/*.xcuserstate
 iosApp/**/DerivedData/
 iosApp/Pods/
+
+# Firebase per-environment config (project keys; not committed — see iosApp/README.md
+# and the AGENTS "deployers configure Firebase" convention). Drop your own copies in:
+#   androidApp/google-services.json   iosApp/iosApp/GoogleService-Info.plist
+google-services.json
+**/google-services.json
+GoogleService-Info.plist
+**/GoogleService-Info.plist

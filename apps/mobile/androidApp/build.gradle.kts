@@ -6,6 +6,16 @@ plugins {
     alias(libs.plugins.compose.compiler)
 }
 
+// Firebase: apply Google Services only when google-services.json is present, so
+// fresh clones / CI without the (gitignored, per-environment) file still build.
+// With the file present it generates the google_app_id resources FCM needs and
+// FirebaseApp auto-initializes; without it, token acquisition no-ops (guarded).
+if (file("google-services.json").exists()) {
+    apply(plugin = libs.plugins.googleServices.get().pluginId)
+} else {
+    logger.warn("⚠ :androidApp — google-services.json not found; skipping Google Services plugin (FCM disabled).")
+}
+
 android {
     namespace = "com.pennhousing.shift"
     compileSdk = 36
@@ -71,13 +81,9 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)
 
-    // Firebase Cloud Messaging — FCM token + push receipt (deliverable #6).
-    // NOTE: no google-services.json is committed, so the Google Services Gradle
-    // plugin is intentionally NOT applied here; firebase-messaging still compiles.
-    // To enable real delivery, a deployer drops in google-services.json and adds:
-    //   plugins { id("com.google.gms.google-services") }   (+ the classpath in settings)
-    // (mirrors the phase-12 "deployers configure Firebase" convention). Until then
-    // token acquisition is guarded and simply no-ops.
+    // Firebase Cloud Messaging — FCM token + push receipt (deliverable #6). The
+    // Google Services plugin is applied conditionally above (only when
+    // google-services.json is present); firebase-messaging compiles either way.
     implementation(libs.firebase.messaging)
 
     testImplementation(libs.junit)

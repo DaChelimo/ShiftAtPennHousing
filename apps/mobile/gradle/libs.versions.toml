@@ -15,6 +15,7 @@ kotlinxSerializationJson = "1.9.0"
 ktor = "3.0.3"
 supabase = "3.1.1"
 firebaseMessaging = "24.1.0"
+googleServices = "4.4.2"
 material3 = "1.4.0"
 skie = "0.10.8"
 spotless = "8.1.0"
@@ -72,3 +73,4 @@ kotlinxSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", versi
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 skie = { id = "co.touchlab.skie", version.ref = "skie" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+googleServices = { id = "com.google.gms.google-services", version.ref = "googleServices" }

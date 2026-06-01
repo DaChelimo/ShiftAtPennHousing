@@ -251,3 +251,149 @@ INSERT INTO system_config (config_key, config_value, value_type) VALUES
   ('hm_working_hours_end',           '17:00', 'time_of_day'),
   ('no_ack_trigger_offset_minutes',  '5',     'integer'),
   ('ack_deadline_offset_minutes',    '10',    'integer');
+
+-- ============================================================
+-- Phase 13b — Admin web app E2E fixtures (Playwright)
+-- Source of truth: apps/web/e2e/{helpers.ts,README.md} (the SEED contract) and
+-- tests/PHASE_13b/TEST_PLAN.md. House under test: Quad (multi-staff, non-Harnwell —
+-- no training constraint to confound grouping). Build week Monday 2026-02-02 (regular
+-- school year, EST). Preference window closed; period unpublished (published_at NULL).
+--
+-- This block seeds the auth users (password `test-Password-123` for everyone), the
+-- public.users + roles, the period, four Quad blocks (10:00–11:30), the worker
+-- preferences + period targets, the incoming-chain leave row, and the
+-- project-administrator config. Idempotent against a fresh `supabase db reset`.
+-- ============================================================
+
+-- --- Auth users (GoTrue). Empty-string token columns avoid GoTrue NULL-scan errors. ---
+INSERT INTO auth.users (
+  instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+  created_at, updated_at, raw_app_meta_data, raw_user_meta_data,
+  confirmation_token, recovery_token, email_change_token_new, email_change
+)
+SELECT
+  '00000000-0000-0000-0000-000000000000',
+  v.id::uuid,
+  'authenticated',
+  'authenticated',
+  v.email,
+  extensions.crypt('test-Password-123', extensions.gen_salt('bf')),
+  now(), now(), now(),
+  '{"provider":"email","providers":["email"]}'::jsonb,
+  '{}'::jsonb,
+  '', '', '', ''
+FROM (VALUES
+  ('a0000000-0000-4000-8000-000000000001', 'sm.quad@pennhousing.test'),
+  ('a0000000-0000-4000-8000-000000000002', 'alice.quad@pennhousing.test'),
+  ('a0000000-0000-4000-8000-000000000003', 'ben.quad@pennhousing.test'),
+  ('a0000000-0000-4000-8000-000000000004', 'cara.quad@pennhousing.test'),
+  ('a0000000-0000-4000-8000-000000000005', 'dana.quad@pennhousing.test'),
+  ('a0000000-0000-4000-8000-000000000006', 'erin.quad@pennhousing.test'),
+  ('a0000000-0000-4000-8000-000000000007', 'fred.quad@pennhousing.test'),
+  ('a0000000-0000-4000-8000-000000000008', 'hm.quad@pennhousing.test'),
+  ('a0000000-0000-4000-8000-000000000009', 'bm.quad@pennhousing.test'),
+  ('a0000000-0000-4000-8000-00000000000a', 'hm.incoming@pennhousing.test'),
+  ('a0000000-0000-4000-8000-00000000000b', 'admin@pennhousing.test')
+) AS v(id, email);
+
+-- --- Auth identities (email provider) for each seeded user. ---
+-- auth.identities.email is a GENERATED column (derived from identity_data->>'email'); omit it.
+INSERT INTO auth.identities (provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
+SELECT u.id::text, u.id, jsonb_build_object('sub', u.id::text, 'email', u.email), 'email', now(), now(), now()
+FROM auth.users u
+WHERE u.email LIKE '%@pennhousing.test';
+
+-- --- App users (public.users). FK → auth.users. ---
+INSERT INTO users (user_id, name, email, home_house_id, is_active) VALUES
+  ('a0000000-0000-4000-8000-000000000001', 'Sam Quad',              'sm.quad@pennhousing.test',     'quad',     true),
+  ('a0000000-0000-4000-8000-000000000002', 'Alice Quad',            'alice.quad@pennhousing.test',  'quad',     true),
+  ('a0000000-0000-4000-8000-000000000003', 'Ben Quad',              'ben.quad@pennhousing.test',    'quad',     true),
+  ('a0000000-0000-4000-8000-000000000004', 'Cara Quad',             'cara.quad@pennhousing.test',   'quad',     true),
+  ('a0000000-0000-4000-8000-000000000005', 'Dana Quad',             'dana.quad@pennhousing.test',   'quad',     true),
+  ('a0000000-0000-4000-8000-000000000006', 'Erin Quad',             'erin.quad@pennhousing.test',   'quad',     true),
+  ('a0000000-0000-4000-8000-000000000007', 'Fred Quad',             'fred.quad@pennhousing.test',   'quad',     true),
+  ('a0000000-0000-4000-8000-000000000008', 'Hana Quad',             'hm.quad@pennhousing.test',     'quad',     true),
+  ('a0000000-0000-4000-8000-000000000009', 'Bea Quad',              'bm.quad@pennhousing.test',     'quad',     true),
+  ('a0000000-0000-4000-8000-00000000000a', 'Ingrid Incoming',       'hm.incoming@pennhousing.test', 'house-03', true),
+  ('a0000000-0000-4000-8000-00000000000b', 'Project Administrator', 'admin@pennhousing.test',       'quad',     true);
+
+-- --- Roles. SW workers (no scope); SM/HM/BM scoped to their house. Admin has no role
+-- (the project administrator is identified solely via system_config, BSpec §2.6). ---
+INSERT INTO user_roles (user_id, role, scope_house_id) VALUES
+  ('a0000000-0000-4000-8000-000000000001', 'sm', 'quad'),
+  ('a0000000-0000-4000-8000-000000000002', 'sw', NULL),
+  ('a0000000-0000-4000-8000-000000000003', 'sw', NULL),
+  ('a0000000-0000-4000-8000-000000000004', 'sw', NULL),
+  ('a0000000-0000-4000-8000-000000000005', 'sw', NULL),
+  ('a0000000-0000-4000-8000-000000000006', 'sw', NULL),
+  ('a0000000-0000-4000-8000-000000000007', 'sw', NULL),
+  ('a0000000-0000-4000-8000-000000000008', 'hm', 'quad'),
+  ('a0000000-0000-4000-8000-000000000009', 'bm', 'quad'),
+  ('a0000000-0000-4000-8000-00000000000a', 'hm', 'house-03');
+
+-- --- Scheduling period covering the build week (regular school year, unpublished). ---
+-- A future preference_deadline lets the preference rows below insert (the submission-
+-- window trigger blocks inserts past the deadline); we close the window afterward.
+INSERT INTO scheduling_periods (period_id, period_name, profile_name, start_date, end_date, preference_deadline, published_at) VALUES
+  ('c0000000-0000-4000-8000-000000000001', 'Spring 2026', 'regular_school_year', '2026-01-12', '2026-05-01', '2099-12-31 23:59:59-05', NULL);
+
+-- --- Quad blocks for 2026-02-02 at 10:00 / 10:30 / 11:00 / 11:30 NY (EST, -05:00).
+-- required_headcount 3 = Quad's staffing pattern. ---
+INSERT INTO shift_blocks (block_id, house_id, block_start_at, required_headcount) VALUES
+  ('b0000000-0000-4000-8000-000000001000', 'quad', '2026-02-02 10:00:00-05', 3),
+  ('b0000000-0000-4000-8000-000000001030', 'quad', '2026-02-02 10:30:00-05', 3),
+  ('b0000000-0000-4000-8000-000000001100', 'quad', '2026-02-02 11:00:00-05', 3),
+  ('b0000000-0000-4000-8000-000000001130', 'quad', '2026-02-02 11:30:00-05', 3);
+
+-- --- Worker preferences for the four blocks (period_id, user_id, block_id, status).
+--   Alice  → 10:00 preferred, rest available   ⇒ PREFERRED group
+--   Ben    → all four available                ⇒ AVAILABLE group
+--   Cara   → 10:00 cannot, rest available       ⇒ BLOCKED (cannot @10:00)
+--   Erin   → all four available (target 1h)     ⇒ AVAILABLE; a 2h span over-targets
+--   Dana / Fred → no rows                        ⇒ Phase-2 roster only ---
+INSERT INTO preferences (user_id, block_id, period_id, status) VALUES
+  -- Alice
+  ('a0000000-0000-4000-8000-000000000002', 'b0000000-0000-4000-8000-000000001000', 'c0000000-0000-4000-8000-000000000001', 'preferred'),
+  ('a0000000-0000-4000-8000-000000000002', 'b0000000-0000-4000-8000-000000001030', 'c0000000-0000-4000-8000-000000000001', 'available'),
+  ('a0000000-0000-4000-8000-000000000002', 'b0000000-0000-4000-8000-000000001100', 'c0000000-0000-4000-8000-000000000001', 'available'),
+  ('a0000000-0000-4000-8000-000000000002', 'b0000000-0000-4000-8000-000000001130', 'c0000000-0000-4000-8000-000000000001', 'available'),
+  -- Ben
+  ('a0000000-0000-4000-8000-000000000003', 'b0000000-0000-4000-8000-000000001000', 'c0000000-0000-4000-8000-000000000001', 'available'),
+  ('a0000000-0000-4000-8000-000000000003', 'b0000000-0000-4000-8000-000000001030', 'c0000000-0000-4000-8000-000000000001', 'available'),
+  ('a0000000-0000-4000-8000-000000000003', 'b0000000-0000-4000-8000-000000001100', 'c0000000-0000-4000-8000-000000000001', 'available'),
+  ('a0000000-0000-4000-8000-000000000003', 'b0000000-0000-4000-8000-000000001130', 'c0000000-0000-4000-8000-000000000001', 'available'),
+  -- Cara
+  ('a0000000-0000-4000-8000-000000000004', 'b0000000-0000-4000-8000-000000001000', 'c0000000-0000-4000-8000-000000000001', 'cannot'),
+  ('a0000000-0000-4000-8000-000000000004', 'b0000000-0000-4000-8000-000000001030', 'c0000000-0000-4000-8000-000000000001', 'available'),
+  ('a0000000-0000-4000-8000-000000000004', 'b0000000-0000-4000-8000-000000001100', 'c0000000-0000-4000-8000-000000000001', 'available'),
+  ('a0000000-0000-4000-8000-000000000004', 'b0000000-0000-4000-8000-000000001130', 'c0000000-0000-4000-8000-000000000001', 'available'),
+  -- Erin
+  ('a0000000-0000-4000-8000-000000000006', 'b0000000-0000-4000-8000-000000001000', 'c0000000-0000-4000-8000-000000000001', 'available'),
+  ('a0000000-0000-4000-8000-000000000006', 'b0000000-0000-4000-8000-000000001030', 'c0000000-0000-4000-8000-000000000001', 'available'),
+  ('a0000000-0000-4000-8000-000000000006', 'b0000000-0000-4000-8000-000000001100', 'c0000000-0000-4000-8000-000000000001', 'available'),
+  ('a0000000-0000-4000-8000-000000000006', 'b0000000-0000-4000-8000-000000001130', 'c0000000-0000-4000-8000-000000000001', 'available');
+
+-- --- Period targets. Dana has NO row (fully unsubmitted). Fred opted out (no hours). ---
+INSERT INTO period_targets (user_id, period_id, target_hours, opted_out) VALUES
+  ('a0000000-0000-4000-8000-000000000002', 'c0000000-0000-4000-8000-000000000001', 20, false), -- Alice
+  ('a0000000-0000-4000-8000-000000000003', 'c0000000-0000-4000-8000-000000000001', 20, false), -- Ben
+  ('a0000000-0000-4000-8000-000000000004', 'c0000000-0000-4000-8000-000000000001', 20, false), -- Cara
+  ('a0000000-0000-4000-8000-000000000006', 'c0000000-0000-4000-8000-000000000001',  1, false), -- Erin (1h target)
+  ('a0000000-0000-4000-8000-000000000007', 'c0000000-0000-4000-8000-000000000001',  0, true);  -- Fred (opted out)
+
+-- --- Incoming-chain leave: Ingrid's ACTIVE leave names Hana (hm.quad) as replacement,
+-- so Hana is in Ingrid's forward chain ⇒ Ingrid is in Hana's incoming chain ⇒ excluded
+-- from Hana's replacement picker (cycle prevention, BSpec §2.6). ---
+INSERT INTO hm_leave (leave_id, user_id, start_date, end_date, replacement_user_id, status) VALUES
+  ('d0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-00000000000a',
+   '2026-02-01', '2026-02-28', 'a0000000-0000-4000-8000-000000000008', 'active');
+
+-- --- Project administrator: the always-valid terminal replacement (BSpec §2.6). ---
+INSERT INTO system_config (config_key, config_value, value_type) VALUES
+  ('project_administrator_user_id', 'a0000000-0000-4000-8000-00000000000b', 'uuid');
+
+-- --- Close the preference window now that the fixtures are loaded (prefs locked,
+-- the realistic builder state — the submitted-but-locked period the SM builds against). ---
+UPDATE scheduling_periods
+SET preference_deadline = '2026-01-30 23:59:59-05'
+WHERE period_id = 'c0000000-0000-4000-8000-000000000001';

@@ -1,6 +1,6 @@
 import type { PreferenceRecord, PreferenceStatus } from '@shift/core';
 
-import { createClient } from '../supabase/server';
+import { createServiceClient } from '../supabase/server';
 
 const NY = 'America/New_York';
 
@@ -82,8 +82,16 @@ export type BuilderData = {
 // the house roster, submitted preferences + period targets, and any existing draft
 // assignments. The pure card view-model (@shift/core) is assembled client-side from
 // this snapshot — the web is a thin wrapper (AGENTS Conventions).
+//
+// Uses the service client: the SM builds schedules (BSpec §2.2) and so needs the worker
+// ROSTER (names + roles), but people-admin RLS on `users`/`user_roles` is HM/BM-only by
+// design (phase-07 note: "Admin over PEOPLE stays hm/bm-only" — an SM can read
+// preferences/blocks via `user_can_build_schedule` but not other people's user rows).
+// The caller (`/schedule-builder`) gates on `canBuildSchedule` + scopes to the admin's
+// own house, so this server-side snapshot read is authorized — the same pattern as the
+// leave/rotor reads and the phase-07 orchestrator's state snapshot.
 export async function getBuilderData(houseId: string): Promise<BuilderData> {
-  const supabase = await createClient();
+  const supabase = createServiceClient();
 
   // 1. Roster: active student workers whose home house is this house.
   const { data: roleRows } = await supabase.from('user_roles').select('user_id').eq('role', 'sw');

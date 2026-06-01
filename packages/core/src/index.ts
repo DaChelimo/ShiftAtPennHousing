@@ -14,4 +14,5 @@ export * from './notifications/index.js';
 export * from './orchestrator/index.js';
 export * from './permanent-ops/index.js';
 export * from './scheduling/phase1Grouping.js';
+export * from './scheduling/scheduleBuilderCard.js';
 export * from './time/index.js';

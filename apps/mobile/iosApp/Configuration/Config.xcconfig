@@ -3,3 +3,8 @@
 APP_NAME = Shift PennHousing
 BUNDLE_ID = com.pennhousing.shift
 TEAM_ID =
+
+// Supabase config surfaced into Info.plist (read by AppDelegate). Leave empty for
+// the DemoData build; set per-environment (or via an untracked override xcconfig).
+SUPABASE_URL =
+SUPABASE_ANON_KEY =

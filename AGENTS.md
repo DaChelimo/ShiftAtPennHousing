@@ -198,3 +198,46 @@ iOS framework and the iosApp.
   dispatch straddling a minute boundary may push twice. Do NOT "fix" this by stamping
   `delivered_at` before sending — §10.1 personal notifications are mandatory, so a
   rare duplicate is preferable to a lost push.
+- [Phase 13a] `@Volatile` in `commonMain` MUST be `kotlin.concurrent.Volatile`
+  (import it explicitly). The bare `@Volatile` resolves to `kotlin.jvm.Volatile`,
+  which compiles on the Android/JVM target but is an `Unresolved reference` on
+  Kotlin/Native — so `:shared:testAndroidHostTest` + `:androidApp:assembleDebug`
+  stay green while iOS silently breaks. Always validate shared changes with
+  `:shared:compileKotlinIosSimulatorArm64` (fast) before assuming KMP-clean; the
+  full `:shared:linkDebugFrameworkIosSimulatorArm64` additionally exercises SKIE's
+  Swift export (~50s).
+- [Phase 13a] The worker app's pure decision surface
+  (`shared/src/commonMain/.../{model,shifts,ack}` + the two thin `viewmodel`
+  StateFlow wrappers) is the ONLY tested surface (45 kotlin.test cases on the JVM
+  host). Everything else — the Supabase client (`network/`), the `data/`
+  repository (Postgrest + Realtime), the `platform/` expect/actual hooks, the
+  Compose/SwiftUI screens — is the data/UI layer the test plan scopes out, the
+  mobile analogue of the Edge/HTTP layer phases 07–12 excluded. The ViewModels take
+  a snapshot + injected `now`; never read a clock inside the tested logic. `claim`
+  on `ShiftsScreenViewModel` is an optimistic local move like `drop`/`reclaim`
+  (the server write is out of scope) — added for the demo/Maestro UI, not tested.
+- [Phase 13a] Firebase is a DEPLOY-TIME config, not committed (mirrors phase-12's
+  "deployers configure Firebase"). Android: `firebase-messaging` is a normal dep
+  and compiles, but the `com.google.gms.google-services` plugin is intentionally
+  NOT applied (no `google-services.json`), so `assembleDebug` is green; FCM-token
+  acquisition is wrapped in `runCatching` and no-ops without a default FirebaseApp.
+  iOS: `AppDelegate` guards Firebase with `#if canImport(FirebaseMessaging)` so the
+  app builds before the SPM package is added. Both POST the _FCM_ token (iOS derives
+  it from APNs via Firebase) to `register-push-token`, platform `"android"`/`"ios"`.
+- [Phase 13a] supabase-kt is pinned via its BOM (`io.github.jan-tennert.supabase:bom`
+  3.1.1) with ktor 3.0.3 engines per platform (OkHttp `androidMain`, Darwin
+  `iosMain`); the shared push POST uses a no-arg Ktor `HttpClient()` that resolves
+  its engine from the classpath. The Realtime subscription deliberately carries NO
+  server-side user filter — RLS scopes rows to the authed worker, and any change
+  triggers a refetch ("no manual refresh"); this also dodges the version-variable
+  `postgresChangeFlow` filter DSL. App config reaches `commonMain` via the
+  `AppConfig` holder (Android `BuildConfig` → it; iOS `Info.plist` → it), NOT a
+  `BuildConfig` reference inside `commonMain`.
+- [Phase 13a] The Maestro selector contract (`apps/mobile/maestro/README.md`) is
+  load-bearing: the My-Shifts section CONTAINERS (`section_picked_up` /
+  `_dropped` / `_scheduled`) must always render (with an empty-state placeholder)
+  so `01-view-my-shifts` passes when a section is empty, and a 4th **Updates** tab
+  (`tab_updates` → `pending_float_notification`) surfaces the float so
+  `04-acknowledge-float` can open the ack modal without it auto-covering the screen
+  on every launch. Maestro runs against a real emulator/simulator — not verifiable
+  from the JVM host; run it manually per the verification checklist.

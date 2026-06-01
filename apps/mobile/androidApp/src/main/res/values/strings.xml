@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Shift PennHousing</string>
+    <string name="default_notification_channel_id">shift_floats</string>
+    <string name="default_notification_channel_name">Shift updates</string>
 </resources>

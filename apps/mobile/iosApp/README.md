@@ -40,8 +40,45 @@ new-project flow, then drop these `iosApp/iosApp/*.swift` files in.
 Requires Xcode + command-line tools. The framework `baseName` is `Shared`
 (see `shared/build.gradle.kts`).
 
-## Wiring the shared ViewModel (next step)
-`shared` exposes `MainViewModel` (an `androidx.lifecycle.ViewModel` with a
-`StateFlow<MainUiState>`), exported to the framework. SKIE makes the `StateFlow`
-observable in SwiftUI — see the Fruitties sample's `Observing`/
-`ViewModelStoreOwnerProvider` helpers for the canonical pattern.
+## Phase 13a — worker Shifts screen
+
+The SwiftUI worker app lives in these target sources (add all to the Xcode app
+target — *File ▸ Add Files*):
+
+| File                            | Role                                                                 |
+| ------------------------------- | -------------------------------------------------------------------- |
+| `iOSApp.swift`                  | `@main`; installs `AppDelegate`; hosts `ShiftsRootView`.             |
+| `ContentView.swift`             | `ShiftsRootView` — the §5.6 three-tab screen + Updates tab.          |
+| `FloatAcknowledgmentView.swift` | The §7 float ack/decline modal.                                      |
+| `AppDelegate.swift`             | Notification authorization, APNs registration, FCM-token forwarding. |
+
+All decision logic is in the shared `ShiftsScreenViewModel` / `AckDeclineViewModel`
+(exported to the `Shared` framework). SKIE exposes their `StateFlow<…UiState>` so
+the `@MainActor` `ObservableObject` wrappers (`ShiftsObservable` / `AckObservable`)
+can `for await` the state into a `@Published` property. `DemoFactory` builds the
+demo ViewModels so Swift never constructs a `kotlin.time.Instant`.
+
+The screens expose the `accessibilityIdentifier`s in `apps/mobile/maestro/README.md`
+so the **same** Maestro flows run on the simulator.
+
+## Push notifications (deliverable #6)
+
+1. **Add the Firebase SDK via SPM** (*File ▸ Add Package Dependencies*):
+   `https://github.com/firebase/firebase-ios-sdk` → add **FirebaseMessaging**
+   (pulls **FirebaseCore**). `AppDelegate` guards Firebase with `#if canImport(...)`,
+   so the app builds before the package is added — only FCM-token forwarding is
+   gated until then.
+2. **Add `GoogleService-Info.plist`** (from the Firebase console) to the target.
+3. **Enable capabilities** on the target: **Push Notifications** and
+   **Background Modes ▸ Remote notifications** (`Info.plist` already declares the
+   `remote-notification` background mode). The APNs entitlement is added with the
+   Push Notifications capability.
+4. iOS registers the **Firebase FCM token** (not the raw APNs token) with
+   `register-push-token`, platform `"ios"` — Firebase routes APNs (AGENTS phase-12).
+
+## Supabase config
+
+`Configuration/Config.xcconfig` defines `SUPABASE_URL` / `SUPABASE_ANON_KEY`,
+surfaced into `Info.plist` and read by `AppDelegate` into the shared `AppConfig`
+(the iOS analogue of Android `BuildConfig`). Empty by default → the app runs on
+`DemoData` with no backend.

@@ -48,10 +48,19 @@ kotlin {
             dependencies {
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.serialization.core)
+                implementation(libs.kotlinx.serialization.json)
                 implementation(libs.kotlinx.datetime)
                 // api + export so the shared ViewModel base is visible in Swift.
                 api(libs.androidx.lifecycle.viewmodel)
                 implementation(libs.skie.annotations)
+                // Supabase-kt — shared DB client (Auth + Postgrest + Realtime), one
+                // version pinned via the BOM. The data layer (network/, data/) is the
+                // mobile analogue of the Edge/HTTP layer scoped out of the test plan.
+                implementation(project.dependencies.platform(libs.supabase.bom))
+                implementation(libs.supabase.postgrest)
+                implementation(libs.supabase.auth)
+                implementation(libs.supabase.realtime)
+                implementation(libs.ktor.client.core)
             }
         }
         commonTest {
@@ -62,12 +71,14 @@ kotlin {
         }
         androidMain {
             dependencies {
-                // Android-only deps go here (e.g. an OkHttp Ktor engine, later).
+                // Ktor engine for the Supabase client on Android.
+                implementation(libs.ktor.client.okhttp)
             }
         }
         iosMain {
             dependencies {
-                // iOS-only deps go here (e.g. a Darwin Ktor engine, later).
+                // Ktor engine for the Supabase client on iOS (Darwin/NSURLSession).
+                implementation(libs.ktor.client.darwin)
             }
         }
     }

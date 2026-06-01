@@ -11,6 +11,10 @@ androidx-lifecycle = "2.9.4"
 kotlinx-coroutines = "1.10.2"
 kotlinxDatetime = "0.7.1-0.6.x-compat"
 kotlinxSerializationCore = "1.9.0"
+kotlinxSerializationJson = "1.9.0"
+ktor = "3.0.3"
+supabase = "3.1.1"
+firebaseMessaging = "24.1.0"
 material3 = "1.4.0"
 skie = "0.10.8"
 spotless = "8.1.0"
@@ -25,8 +29,20 @@ androidx-espresso = "3.7.0"
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinxDatetime" }
 kotlinx-serialization-core = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core", version.ref = "kotlinxSerializationCore" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 androidx-lifecycle-viewmodel = { module = "androidx.lifecycle:lifecycle-viewmodel", version.ref = "androidx-lifecycle" }
 skie-annotations = { module = "co.touchlab.skie:configuration-annotations", version.ref = "skie" }
+# --- Supabase-kt (commonMain client: Auth + Postgrest + Realtime) ---
+supabase-bom = { module = "io.github.jan-tennert.supabase:bom", version.ref = "supabase" }
+supabase-postgrest = { module = "io.github.jan-tennert.supabase:postgrest-kt" }
+supabase-auth = { module = "io.github.jan-tennert.supabase:auth-kt" }
+supabase-realtime = { module = "io.github.jan-tennert.supabase:realtime-kt" }
+# Ktor client engines (platform-specific): OkHttp on Android, Darwin on iOS.
+ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
+ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
+ktor-client-darwin = { module = "io.ktor:ktor-client-darwin", version.ref = "ktor" }
+# --- Firebase Cloud Messaging (Android; routes APNs for iOS too, per phase-12) ---
+firebase-messaging = { module = "com.google.firebase:firebase-messaging", version.ref = "firebaseMessaging" }
 # --- shared (commonTest) ---
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }

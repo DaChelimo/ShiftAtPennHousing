@@ -2,9 +2,9 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const TIMEZONE = 'America/New_York';
 const LOOKAHEAD_MINUTES = 3 * 60 + 5;
-const NO_ACK_LOOKAHEAD_MINUTES = 15;
-const BLOCK_MINUTES = 30;
-const FLOAT_RETENTION_DAYS = 14;
+const DEFAULT_NO_ACK_LOOKAHEAD_MINUTES = 15;
+const DEFAULT_BLOCK_MINUTES = 30;
+const DEFAULT_FLOAT_RETENTION_DAYS = 14;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -13,6 +13,19 @@ const corsHeaders = {
 };
 
 type Supabase = ReturnType<typeof createClient>;
+type RuntimeConfig = {
+  blockMinutes: number;
+  floatRetentionDays: number;
+  noAckLookaheadMinutes: number;
+};
+type TickSummary = {
+  tickedAt: string;
+  blocksScanned: number;
+  stepsFired: number;
+  floatsVoided: number;
+  swapsExpired: number;
+  errors: string[];
+};
 type StepStatus = 'fired' | 'completed_via_force_trigger' | 'rolled_back';
 type StepStatusMap = Record<string, StepStatus>;
 type ChainStep = {
@@ -82,6 +95,37 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 function addMinutes(date: Date, minutes: number): Date {
   return new Date(date.getTime() + minutes * 60 * 1000);
+}
+
+function parsePositiveInteger(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+async function loadRuntimeConfig(supabase: Supabase): Promise<RuntimeConfig> {
+  const { data, error } = await supabase
+    .from('system_config')
+    .select('config_key, config_value')
+    .in('config_key', [
+      'shift_block_minutes',
+      'float_retention_days',
+      'ack_deadline_offset_minutes',
+      'no_ack_trigger_offset_minutes',
+    ]);
+  if (error !== null) throw error;
+
+  const values = new Map((data ?? []).map((row) => [row.config_key, row.config_value]));
+  const ackDeadlineMinutes = parsePositiveInteger(values.get('ack_deadline_offset_minutes'), 10);
+  const noAckTriggerMinutes = parsePositiveInteger(values.get('no_ack_trigger_offset_minutes'), 5);
+  return {
+    blockMinutes: parsePositiveInteger(values.get('shift_block_minutes'), DEFAULT_BLOCK_MINUTES),
+    floatRetentionDays: parsePositiveInteger(
+      values.get('float_retention_days'),
+      DEFAULT_FLOAT_RETENTION_DAYS,
+    ),
+    noAckLookaheadMinutes:
+      ackDeadlineMinutes + noAckTriggerMinutes || DEFAULT_NO_ACK_LOOKAHEAD_MINUTES,
+  };
 }
 
 function nestedOne<T>(value: T | T[] | null | undefined): T | null {
@@ -358,6 +402,7 @@ async function hmodNotifyAlliedStep(
 async function loadVacantGap(
   supabase: Supabase,
   block: VacantAssignment,
+  blockMinutes: number,
 ): Promise<Array<VacantAssignment>> {
   const windowEnd = addMinutes(block.blockStartAt, 4 * 60).toISOString();
   const { data, error } = await supabase
@@ -402,7 +447,7 @@ async function loadVacantGap(
       break;
     }
     gap.push(row);
-    expectedStart += BLOCK_MINUTES * 60 * 1000;
+    expectedStart += blockMinutes * 60 * 1000;
   }
 
   return gap;
@@ -412,8 +457,9 @@ async function buildFloatLookupSnapshot(
   supabase: Supabase,
   block: VacantAssignment,
   profileName: string,
+  blockMinutes: number,
 ): Promise<FloatLookupSnapshot> {
-  const gapRows = await loadVacantGap(supabase, block);
+  const gapRows = await loadVacantGap(supabase, block, blockMinutes);
   const gapBlocks = gapRows.map((row) => ({
     blockId: row.blockId,
     blockStartAt: row.blockStartAt,
@@ -422,7 +468,7 @@ async function buildFloatLookupSnapshot(
     gapRows.map((row) => [row.blockId, row.assignmentId]),
   );
   const gapStart = gapBlocks[0]?.blockStartAt ?? block.blockStartAt;
-  const gapEnd = addMinutes(gapBlocks.at(-1)?.blockStartAt ?? block.blockStartAt, BLOCK_MINUTES);
+  const gapEnd = addMinutes(gapBlocks.at(-1)?.blockStartAt ?? block.blockStartAt, blockMinutes);
 
   const { data: routes, error: routesError } = await supabase
     .from('float_routing')
@@ -561,7 +607,7 @@ async function buildFloatLookupSnapshot(
           isActive: user.is_active,
           coveredGapBlockIds: sortedBlocks.map((gapBlock) => gapBlock.blockId),
           shiftStartAt: sortedBlocks[0]!.blockStartAt,
-          shiftEndAt: addMinutes(sortedBlocks.at(-1)!.blockStartAt, BLOCK_MINUTES),
+          shiftEndAt: addMinutes(sortedBlocks.at(-1)!.blockStartAt, blockMinutes),
           hasConflictingFloat: floatConflictUserIds.has(userId),
           hasConflictingCrossHousePickup: crossHousePickupConflictUserIds.has(userId),
         },
@@ -608,8 +654,14 @@ async function floatLookupStep(
   block: VacantAssignment,
   profileName: string,
   firedAt: Date,
+  config: RuntimeConfig,
 ): Promise<'float_assigned' | 'no_float'> {
-  const snapshot = await buildFloatLookupSnapshot(supabase, block, profileName);
+  const snapshot = await buildFloatLookupSnapshot(
+    supabase,
+    block,
+    profileName,
+    config.blockMinutes,
+  );
   const result = await findFloaters(snapshot.input);
 
   if (result.assignments.length === 0) {
@@ -650,7 +702,7 @@ async function floatLookupStep(
         p_destination_assignment_ids: destinationAssignmentIds,
         p_destination_house_id: block.houseId,
         p_now: firedAt.toISOString(),
-        p_retention_days: FLOAT_RETENTION_DAYS,
+        p_retention_days: config.floatRetentionDays,
       },
     );
     if (assignmentError !== null) {
@@ -715,6 +767,7 @@ async function fireStep(params: {
   profileName: string;
   stepName: string;
   firedAt: Date;
+  config: RuntimeConfig;
 }): Promise<'float_assigned' | 'no_float' | 'done' | 'skipped'> {
   switch (params.stepName) {
     case 'broadcast': {
@@ -727,6 +780,7 @@ async function fireStep(params: {
         params.block,
         params.profileName,
         params.firedAt,
+        params.config,
       );
     case 'hmod_notify_allied': {
       const claimed = await hmodNotifyAlliedStep(params.supabase, params.block, params.firedAt);
@@ -737,7 +791,11 @@ async function fireStep(params: {
   }
 }
 
-async function processVacantBlocks(supabase: Supabase, now: Date): Promise<number> {
+async function processVacantBlocks(
+  supabase: Supabase,
+  now: Date,
+  config: RuntimeConfig,
+): Promise<{ blocksScanned: number; stepsFired: number }> {
   const { data, error } = await supabase
     .from('shift_block_assignments')
     .select('assignment_id, block_id, shift_blocks!inner(block_start_at, house_id)')
@@ -805,6 +863,7 @@ async function processVacantBlocks(supabase: Supabase, now: Date): Promise<numbe
         profileName: profile.profileName,
         stepName: step.stepName,
         firedAt: now,
+        config,
       });
 
       if (outcome === 'skipped') {
@@ -827,7 +886,7 @@ async function processVacantBlocks(supabase: Supabase, now: Date): Promise<numbe
     }
   }
 
-  return fired;
+  return { blocksScanned: data?.length ?? 0, stepsFired: fired };
 }
 
 async function loadAssignmentBlocks(
@@ -882,7 +941,11 @@ type NoAckRpcResult = {
   reason?: string;
 };
 
-async function processNoAckFloats(supabase: Supabase, now: Date): Promise<number> {
+async function processNoAckFloats(
+  supabase: Supabase,
+  now: Date,
+  config: RuntimeConfig,
+): Promise<number> {
   // Pre-filter pending floats by lookahead so the RPC only runs for
   // floats within the no-ack window. The RPC also re-validates this
   // under FOR UPDATE as defense-in-depth.
@@ -908,7 +971,7 @@ async function processNoAckFloats(supabase: Supabase, now: Date): Promise<number
     }
 
     const earliestStart = Math.min(...destinationRows.map((row) => row.blockStartAt.getTime()));
-    if (earliestStart > addMinutes(now, NO_ACK_LOOKAHEAD_MINUTES).getTime()) {
+    if (earliestStart > addMinutes(now, config.noAckLookaheadMinutes).getTime()) {
       continue;
     }
 
@@ -921,7 +984,7 @@ async function processNoAckFloats(supabase: Supabase, now: Date): Promise<number
     const { data: rpcResult, error: rpcError } = await supabase.rpc('process_no_ack_float', {
       p_float_id: floatRow.float_id,
       p_now: now.toISOString(),
-      p_lookahead_minutes: NO_ACK_LOOKAHEAD_MINUTES,
+      p_lookahead_minutes: config.noAckLookaheadMinutes,
     });
     if (rpcError !== null) {
       throw rpcError;
@@ -958,6 +1021,26 @@ async function expirePendingSwaps(supabase: Supabase, now: Date): Promise<number
   return data?.length ?? 0;
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function recordHealth(supabase: Supabase, summary: TickSummary): Promise<void> {
+  const { error } = await supabase.from('orchestrator_health').upsert(
+    {
+      singleton: true,
+      last_tick_at: summary.tickedAt,
+      blocks_scanned: summary.blocksScanned,
+      steps_fired: summary.stepsFired,
+      floats_voided: summary.floatsVoided,
+      swaps_expired: summary.swapsExpired,
+      errors: summary.errors,
+    },
+    { onConflict: 'singleton' },
+  );
+  if (error !== null) throw error;
+}
+
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders });
@@ -986,17 +1069,57 @@ Deno.serve(async (req: Request): Promise<Response> => {
   });
 
   const now = new Date();
-  const [stepsFired, floatsVoided, swapsExpired] = await Promise.all([
-    processVacantBlocks(supabase, now),
-    processNoAckFloats(supabase, now),
+  const summary: TickSummary = {
+    tickedAt: now.toISOString(),
+    blocksScanned: 0,
+    stepsFired: 0,
+    floatsVoided: 0,
+    swapsExpired: 0,
+    errors: [],
+  };
+
+  let runtimeConfig: RuntimeConfig = {
+    blockMinutes: DEFAULT_BLOCK_MINUTES,
+    floatRetentionDays: DEFAULT_FLOAT_RETENTION_DAYS,
+    noAckLookaheadMinutes: DEFAULT_NO_ACK_LOOKAHEAD_MINUTES,
+  };
+  try {
+    runtimeConfig = await loadRuntimeConfig(supabase);
+  } catch (error) {
+    summary.errors.push(`system_config: ${errorMessage(error)}`);
+  }
+
+  const [vacantResult, noAckResult, swapsResult] = await Promise.allSettled([
+    processVacantBlocks(supabase, now, runtimeConfig),
+    processNoAckFloats(supabase, now, runtimeConfig),
     expirePendingSwaps(supabase, now),
   ]);
+  if (vacantResult.status === 'fulfilled') {
+    summary.blocksScanned = vacantResult.value.blocksScanned;
+    summary.stepsFired = vacantResult.value.stepsFired;
+  } else {
+    summary.errors.push(`vacant_blocks: ${errorMessage(vacantResult.reason)}`);
+  }
+  if (noAckResult.status === 'fulfilled') {
+    summary.floatsVoided = noAckResult.value;
+  } else {
+    summary.errors.push(`no_ack_floats: ${errorMessage(noAckResult.reason)}`);
+  }
+  if (swapsResult.status === 'fulfilled') {
+    summary.swapsExpired = swapsResult.value;
+  } else {
+    summary.errors.push(`pending_swaps: ${errorMessage(swapsResult.reason)}`);
+  }
 
-  return jsonResponse({
-    ok: true,
-    stepsFired,
-    floatsVoided,
-    swapsExpired,
-    tickedAt: now.toISOString(),
-  });
+  try {
+    await recordHealth(supabase, summary);
+  } catch (error) {
+    summary.errors.push(`health_record: ${errorMessage(error)}`);
+  }
+  console.log(JSON.stringify({ event: 'orchestrator_tick', ...summary }));
+
+  return jsonResponse(
+    { ok: summary.errors.length === 0, ...summary },
+    summary.errors.length ? 500 : 200,
+  );
 });

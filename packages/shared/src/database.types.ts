@@ -595,6 +595,36 @@ export type Database = {
         };
         Relationships: [];
       };
+      orchestrator_health: {
+        Row: {
+          blocks_scanned: number;
+          errors: string[];
+          floats_voided: number;
+          last_tick_at: string;
+          singleton: boolean;
+          steps_fired: number;
+          swaps_expired: number;
+        };
+        Insert: {
+          blocks_scanned?: number;
+          errors?: string[];
+          floats_voided?: number;
+          last_tick_at: string;
+          singleton?: boolean;
+          steps_fired?: number;
+          swaps_expired?: number;
+        };
+        Update: {
+          blocks_scanned?: number;
+          errors?: string[];
+          floats_voided?: number;
+          last_tick_at?: string;
+          singleton?: boolean;
+          steps_fired?: number;
+          swaps_expired?: number;
+        };
+        Relationships: [];
+      };
       period_house_publications: {
         Row: {
           house_id: string;
@@ -1038,7 +1068,15 @@ export type Database = {
           notes?: string | null;
           value_type?: Database['public']['Enums']['value_type_enum'];
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: 'system_config_modified_by_fkey';
+            columns: ['modified_by'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+        ];
       };
       user_roles: {
         Row: {
@@ -1117,6 +1155,7 @@ export type Database = {
           hours_cap: number;
           modified_at: string;
           modified_by: string | null;
+          notes: string | null;
           week_start_date: string;
         };
         Insert: {
@@ -1124,6 +1163,7 @@ export type Database = {
           hours_cap: number;
           modified_at?: string;
           modified_by?: string | null;
+          notes?: string | null;
           week_start_date: string;
         };
         Update: {
@@ -1131,6 +1171,7 @@ export type Database = {
           hours_cap?: number;
           modified_at?: string;
           modified_by?: string | null;
+          notes?: string | null;
           week_start_date?: string;
         };
         Relationships: [
@@ -1281,6 +1322,10 @@ export type Database = {
         Returns: boolean;
       };
       is_hm_working_time: { Args: { p_at: string }; Returns: boolean };
+      is_project_administrator: {
+        Args: { check_user_id: string };
+        Returns: boolean;
+      };
       is_valid_block_headcounts: { Args: { p: Json }; Returns: boolean };
       is_valid_escalation_chain: { Args: { p: Json }; Returns: boolean };
       mark_notification_read: {

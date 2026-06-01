@@ -5,6 +5,7 @@ export const CORE_VERSION = '0.0.0';
 
 export * from './break-claim/index.js';
 export * from './break-phases/index.js';
+export * from './cap-modification/index.js';
 export * from './eligibility/index.js';
 export * from './eligibility/cross-house.js';
 export * from './float-lookup/index.js';

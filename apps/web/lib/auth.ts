@@ -54,6 +54,9 @@ export function isHouseAdmin(user: SessionUser | null): boolean {
   return !!user && user.roles.some((r) => r.role === 'hm' || r.role === 'bm');
 }
 
+// §9.3: cap modification is campus-wide HM/BM authority, not house-scoped.
+export const canModifyWeeklyCap = isHouseAdmin;
+
 // The house this admin administers (first sm/hm/bm scope). Falls back to home house.
 export function adminHouseId(user: SessionUser): string {
   const scoped = user.roles.find(

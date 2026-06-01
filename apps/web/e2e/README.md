@@ -120,3 +120,26 @@ blocks, plus `period_targets`:
 
 The leave mailto recipients are the Quad SWs' emails (Alice…Fred), so the generated
 `href` contains e.g. `alice.quad@pennhousing.test`.
+
+## Phase 14 — System-wide hours-cap modification (§9.3) — route `/admin/hours-cap`
+
+`cap-modification.spec.ts` is **TDD-first / RED**: the cap-modifier admin screen
+does not exist yet. HMs/BMs may set any calendar week to 20-soft or 40-hard; the
+change is global across all 13 houses, instant, and audit-trailed (ARCH §3.10).
+SMs and SWs are blocked. Pinned decisions: `tests/PHASE_14/TEST_PLAN.md`.
+
+| testid                                                                | Meaning                                                                     |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `cap-modifier`                                                        | The cap-modifier page container (visible only to HM/BM).                    |
+| `cap-unauthorized`                                                    | Shown to non-HM/BM (an SM or SW) instead of the modifier.                   |
+| `cap-week`                                                            | Target-week input (`<input type="date">`, the week's Monday, `YYYY-MM-DD`). |
+| `cap-value-20` / `cap-value-40`                                       | The cap selector (20-soft / 40-hard).                                       |
+| `cap-notes`                                                           | Audit notes field (ARCH §3.10 `notes` column).                              |
+| `cap-submit`                                                          | Apply the modification (instant, no approval).                              |
+| `cap-global-notice`                                                   | The "applies to all 13 houses" indicator (§9.3 global scope).               |
+| `cap-success`                                                         | Post-submit confirmation.                                                   |
+| `cap-audit-modified-by` / `cap-audit-modified-at` / `cap-audit-notes` | Audit-trail readback of the saved `weekly_cap_overrides` row.               |
+
+Reuses the phase-13b SEED fixtures: `hmQuad`/`bmQuad` (authorized), `smQuad` + `alice`
+(blocked). Target week is `SEED.date` (2026-02-02, a Monday in the regular school
+year → default 20-soft; the HM/BM flows raise it to 40-hard).

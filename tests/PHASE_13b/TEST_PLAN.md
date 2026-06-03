@@ -233,11 +233,14 @@ already-assigned week is rejected.
   body (`craft_hm_leave_mailto`) are **phase-07/12** (SQL). Phase-13b wires them to the
   web UI; the E2E pins the picker exclusion (selection-time cycle prevention) and the
   surfaced `mailto:` href, not the SQL.
-- **Submission-time cycle prevention + cascading/depth-limit resolution.** The re-run of
-  the incoming-chain check inside the submit transaction (§2.6), layered leave, the
-  depth-10 config-error path, and HMOD-interval transfer on leave are server-transaction
-  / resolution concerns (a new TS helper or SQL in the follow-up), exercised at the
-  DB/Edge layer — not by these UI flows.
+- **Submission-time cycle prevention + "I'm back" side effects** are now IMPLEMENTED
+  in SQL (migration `20260601000003`: `submit_hm_leave` re-runs the incoming-chain check
+  inside the insert transaction; `end_hm_leave_early` cancels + notifies the released
+  replacement and returns the back-from-leave mailto; `craft_hm_return_mailto`) and
+  covered by pgTAP (`supabase/tests/phase-13b-leave-submit-and-return.sql`), not by these
+  UI flows. **Still deferred:** layered/cascading leave resolution, the depth-10
+  config-error path, and HMOD-interval transfer on leave (§2.6 #2/#4) — resolution
+  concerns for a follow-up phase.
 - **Harnwell training constraint (invariant #1).** Enforced in `packages/core/eligibility`
   - RLS and already tested; the builder fixtures deliberately use Quad to keep grouping
     assertions clean (D10).

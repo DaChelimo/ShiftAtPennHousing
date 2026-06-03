@@ -164,6 +164,20 @@ export function HmLeaveForm({
 
 function ImBackButton({ leaveId }: { leaveId: string }) {
   const [busy, setBusy] = useState(false);
+  const [returnMailto, setReturnMailto] = useState<string | null>(null);
+
+  if (returnMailto !== null) {
+    return (
+      <a
+        data-testid="leave-return-mailto"
+        href={returnMailto}
+        className="rounded-md border border-green-300 bg-green-50 px-3 py-1.5 text-sm font-medium text-green-900 underline"
+      >
+        Open &ldquo;back from leave&rdquo; email
+      </a>
+    );
+  }
+
   return (
     <button
       type="button"
@@ -171,8 +185,9 @@ function ImBackButton({ leaveId }: { leaveId: string }) {
       disabled={busy}
       onClick={async () => {
         setBusy(true);
-        await returnFromLeave({ leaveId });
+        const res = await returnFromLeave({ leaveId });
         setBusy(false);
+        if (res.ok && res.data.mailtoUrl !== null) setReturnMailto(res.data.mailtoUrl);
       }}
       className="rounded-md border border-black/15 px-3 py-1.5 text-sm font-medium hover:bg-black/5 disabled:opacity-50 dark:border-white/15"
     >

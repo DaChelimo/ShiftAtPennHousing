@@ -1259,6 +1259,7 @@ export type Database = {
       clear_break_period: { Args: { p_break_id: string }; Returns: number };
       close_break_claim_pool: { Args: { p_break_id: string }; Returns: number };
       craft_hm_leave_mailto: { Args: { p_leave_id: string }; Returns: string };
+      craft_hm_return_mailto: { Args: { p_leave_id: string }; Returns: string };
       decline_float: {
         Args: { p_float_id: string; p_now?: string; p_user_id: string };
         Returns: Json;
@@ -1286,6 +1287,10 @@ export type Database = {
           cap_enforcement: Database['public']['Enums']['cap_enforcement_enum'];
           hours_cap: number;
         }[];
+      };
+      end_hm_leave_early: {
+        Args: { p_leave_id: string; p_now: string; p_user_id: string };
+        Returns: string;
       };
       execute_due_break_transitions: { Args: never; Returns: number };
       expire_pending_swaps: { Args: { p_now: string }; Returns: number };
@@ -1480,6 +1485,25 @@ export type Database = {
       resolve_hmod_on_duty: { Args: { p_at: string }; Returns: string };
       send_break_nag: { Args: { p_break_id: string }; Returns: number };
       send_preference_reminders: { Args: never; Returns: number };
+      snapshot_float_ack_reminders: {
+        Args: {
+          p_destination_assignment_ids: string[];
+          p_destination_house_id: string;
+          p_float_id: string;
+          p_now: string;
+          p_worker_id: string;
+        };
+        Returns: number;
+      };
+      submit_hm_leave: {
+        Args: {
+          p_end_date: string;
+          p_replacement_user_id?: string;
+          p_start_date: string;
+          p_user_id: string;
+        };
+        Returns: string;
+      };
       submit_preferences: {
         Args: {
           p_opted_out?: boolean;

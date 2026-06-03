@@ -40,8 +40,11 @@ async function craftLeaveMailto(leaveId: string): Promise<string | null> {
   return (data as string | null) ?? null;
 }
 
-// §2.6: only an HM/BM may submit leave. Creates the active hm_leave row, then returns
-// the pre-filled mailto for the SW-notification email.
+// §2.6: only an HM/BM may submit leave. Creates the active hm_leave row via the
+// `submit_hm_leave` RPC — which re-runs the incoming-chain (cycle) check inside the
+// insert transaction (the picker's selection-time exclusion is not enough; another HM
+// may create a leave between picker-load and submit) — then returns the pre-filled
+// mailto for the SW-notification email.
 export async function submitLeave(input: {
   startDate: string;
   endDate: string;
@@ -51,38 +54,38 @@ export async function submitLeave(input: {
   if (!isHouseAdmin(me)) return { ok: false, error: 'Only an HM or BM may submit leave.' };
 
   const svc = createServiceClient();
-  const { data, error } = await svc
-    .from('hm_leave')
-    .insert({
-      user_id: me!.userId,
-      start_date: input.startDate,
-      end_date: input.endDate,
-      replacement_user_id: input.replacementUserId,
-      status: 'active',
-    })
-    .select('leave_id')
-    .single();
+  const { data, error } = await svc.rpc('submit_hm_leave', {
+    p_user_id: me!.userId,
+    p_start_date: input.startDate,
+    p_end_date: input.endDate,
+    // null → omit so the SQL DEFAULT NULL applies (project-administrator terminal, §2.6).
+    ...(input.replacementUserId !== null ? { p_replacement_user_id: input.replacementUserId } : {}),
+  });
   if (error !== null) return { ok: false, error: error.message };
+  const leaveId = data as string;
 
-  const mailtoUrl = await craftLeaveMailto(data.leave_id);
+  const mailtoUrl = await craftLeaveMailto(leaveId);
   revalidatePath('/admin/leave');
-  return { ok: true, data: { leaveId: data.leave_id, mailtoUrl } };
+  return { ok: true, data: { leaveId, mailtoUrl } };
 }
 
-// §2.6 "I'm back": end an active leave early.
-export async function returnFromLeave(input: { leaveId: string }): Promise<ActionResult> {
+// §2.6 #6 "I'm back": end an active leave early. The `end_hm_leave_early` RPC flips the
+// leave to cancelled_early (+ cancelled_at), notifies the current replacement in-app that
+// they are no longer covering, and returns the "back from leave" SW-notification mailto.
+export async function returnFromLeave(input: {
+  leaveId: string;
+}): Promise<ActionResult<{ mailtoUrl: string | null }>> {
   const me = await getSessionUser();
   if (!isHouseAdmin(me)) return { ok: false, error: 'Only an HM or BM may end leave.' };
 
   const svc = createServiceClient();
-  const { error } = await svc
-    .from('hm_leave')
-    .update({ status: 'cancelled_early', cancelled_at: new Date().toISOString() })
-    .eq('leave_id', input.leaveId)
-    .eq('user_id', me!.userId)
-    .eq('status', 'active');
+  const { data, error } = await svc.rpc('end_hm_leave_early', {
+    p_leave_id: input.leaveId,
+    p_user_id: me!.userId,
+    p_now: new Date().toISOString(),
+  });
   if (error !== null) return { ok: false, error: error.message };
 
   revalidatePath('/admin/leave');
-  return { ok: true, data: undefined };
+  return { ok: true, data: { mailtoUrl: (data as string | null) ?? null } };
 }

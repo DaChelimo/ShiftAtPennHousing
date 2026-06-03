@@ -28,6 +28,15 @@ BEGIN;
 
 SELECT plan(12);
 
+-- The shared seed (supabase/seed.sql) makes "Ingrid Incoming" (a0000000-…-000a) an hm for
+-- house-03. resolve_hm_for_house has no ORDER BY, so it can return her instead of this
+-- suite's own house-03 HM fixture. Remove that seeded role (rolled back at the end) so the
+-- fixture HM is the sole house-03 HM.
+DELETE FROM public.user_roles
+  WHERE user_id = 'a0000000-0000-4000-8000-00000000000a'
+    AND role = 'hm'
+    AND scope_house_id = 'house-03';
+
 -- ============================================================
 -- 0. Fixture: an HM at one house + an HMOD on the rotor for a known
 --    Monday-of-week. We anchor at a Wednesday inside HM hours so the

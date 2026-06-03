@@ -10,6 +10,11 @@ BEGIN;
 
 SELECT plan(4);
 
+-- The shared seed (supabase/seed.sql) configures a project_administrator_user_id for the
+-- phase-13b web E2E fixtures. This suite exercises the terminal-UNSET path first and then
+-- sets its own terminal, so remove the seeded row here (the transaction rolls back at the end).
+DELETE FROM public.system_config WHERE config_key = 'project_administrator_user_id';
+
 -- A weekend (Saturday) moment forces the HMOD branch; with NO hmod_rotor row and
 -- NO HM for house-03, both resolve to NULL -> the project-admin fallback applies.
 SELECT set_config('test.adt.mon', date_trunc('week', DATE '2031-09-15')::text, false);

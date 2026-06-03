@@ -64,6 +64,27 @@ SELECT has_function('public', 'generate_blocks_for_date',
 -- A single-staff house headcount 1 → 32 assignments.
 -- ============================================================
 
+-- The shared seed (supabase/seed.sql) pre-inserts 4 Quad blocks on 2026-02-02 for the
+-- phase-13b web E2E fixtures, each carrying seeded preferences under the (closed) Spring-2026
+-- period. generate_blocks_for_date skips those blocks (ON CONFLICT DO NOTHING), leaving them
+-- seat-less and breaking the clean-slate counts asserted below. Clear the whole day first; the
+-- submission-window trigger gates preference DELETEs (ARCH §2.6 / seed.sql:397), so reopen the
+-- period's deadline. Everything here rolls back, so supabase/seed.sql is untouched.
+UPDATE public.scheduling_periods
+  SET preference_deadline = '2099-12-31 23:59:59-05'
+  WHERE period_id = 'c0000000-0000-4000-8000-000000000001';
+DELETE FROM public.shift_block_assignments a USING public.shift_blocks b
+  WHERE a.block_id = b.block_id
+    AND b.block_start_at >= '2026-02-02 00:00 America/New_York'::timestamptz
+    AND b.block_start_at <  '2026-02-03 00:00 America/New_York'::timestamptz;
+DELETE FROM public.preferences p USING public.shift_blocks b
+  WHERE p.block_id = b.block_id
+    AND b.block_start_at >= '2026-02-02 00:00 America/New_York'::timestamptz
+    AND b.block_start_at <  '2026-02-03 00:00 America/New_York'::timestamptz;
+DELETE FROM public.shift_blocks
+  WHERE block_start_at >= '2026-02-02 00:00 America/New_York'::timestamptz
+    AND block_start_at <  '2026-02-03 00:00 America/New_York'::timestamptz;
+
 SELECT generate_blocks_for_date('2026-02-02');
 
 SELECT is(

@@ -52,7 +52,10 @@ VALUES
    'regular_school_year', '2026-09-01', '2026-12-15',
    (now() + interval '7 days'), NULL),
   ('00000000-0000-0000-0000-000000000011', 'Closed Period',
-   'regular_school_year', '2026-01-15', '2026-05-15',
+   -- Dates deliberately outside the shared seed's Spring-2026 period
+   -- (2026-01-12..2026-05-01) to avoid the scheduling_periods_no_overlap exclusion;
+   -- only the already-passed preference_deadline matters for the assertions below.
+   'regular_school_year', '2026-06-01', '2026-08-15',
    (now() - interval '1 day'), NULL),
   ('00000000-0000-0000-0000-000000000012', 'Null-deadline Period',
    'regular_school_year', '2027-01-15', '2027-05-15',

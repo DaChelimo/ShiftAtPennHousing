@@ -5,25 +5,26 @@ result; record decisions/deviations. This is what a fresh session reads to know 
 
 ## Chunks
 
-| Chunk                           | Status         | Green-gate result                                                                                                                                                                                                                                                                                                                                   | Session date | Notes / deviations                                                                                                                                                                                                                                                                                                                                                             |
-| ------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **S0** Plan + appendix          | ✅ done        | `PLAN.md` + `STATUS.md` written; facts verified against migrations & generated types                                                                                                                                                                                                                                                                | 2026-06-03   | Corrected an explore mis-read: `supabase/tests/` has **27 pgTAP files** (not empty); Playwright green/red is **unresolved** — S1 settles it empirically.                                                                                                                                                                                                                       |
-| **S1** Verify baseline          | ✅ done        | `scripts/verify-all.sh` runs to completion; 5 graded layers recorded. **L1 Static ✅ · L2 Vitest ✅ (25 files/561) · L3 Web build ✅ · L4 pgTAP ✅ now 27/27 (997 tests) — was 🔴 4 files/8 subtests at S1, since fixed · L5 Playwright ✅ (15/15)**. See "S1 results" below for per-failure triage + the fix.                                      | 2026-06-03   | Playwright **GREEN** (config/README "TDD-RED" headers are stale). pgTAP red = pre-existing seed contamination from 7439585 (not a regression); **since FIXED** — 4 pgTAP tests made seed-robust. Mobile L6–8 skipped (optional).                                                                                                                                               |
-| **S2** Seed + allocator         | ✅ done        | `pnpm e2e:lifecycle:seed` seeds OK; `:seed:check` → **8/8 green**. Non-destructive proof `bash scripts/verify-all.sh` → **OVERALL PASS** (Static ✅ 8 · Vitest ✅ 25/561 · web build ✅ · **pgTAP ✅ 27/997** · Playwright ✅ 15/15).                                                                                                               | 2026-06-03   | 46 `e…` SWs across 13 houses + 4 admins (1 all-house BM builder, 3 HMs); 2912 blocks; 1376 scheduled / 2208 vacant (= 3584 seats); `published_at` flipped. Toolchain: `tsx`+`pg` at root; `tests/` not a workspace pkg. See "S2 results".                                                                                                                                      |
-| **S3** Harness + happy path     | ✅ done        | `pnpm e2e:lifecycle` → **5 files / 16 tests green** (01-publish 4 · 02-claim 4 · 03-drop-temporary 3 · 04-drop-permanent 2 · 05-cross-house-pickup 3). Idempotent re-run → 16/16. Clean `db reset`+run → 16/16. Non-destructive: `verify-all` **OVERALL PASS** (Static·Vitest 25/561·web build·pgTAP 27/997·Playwright 15/15) + seed-check **8/8**. | 2026-06-03   | pg + per-test `BEGIN…ROLLBACK` isolation (re-runnable w/o reset). Confirmed `claim_open_shift(uuid,uuid,timestamptz)`. **Deviation:** added an all-house e… SM to `roster.ts` (scenario 4 needs an SM recipient). **Gotcha for S4:** seed skips already-published houses → a foreign Quad publish leaves Quad unallocated; globalSetup now guards this. See "S3 results".      |
-| **S4** Float / ack / escalation | ✅ done        | `pnpm e2e:lifecycle` → **12 files / 34 tests green** (01–05 S3 + **06 4 · 07 2 · 08 2 · 09 2 · 10 2 · 11 1 · 12 5** = 18 new). Clean `db reset`+run → 34/34 (all houses allocated). Non-destructive: `verify-all` **OVERALL PASS** (Static·Vitest 25/561·web build·pgTAP 27/997·Playwright 15/15) + seed-check **8/8**.                             | 2026-06-03   | `float-lookup-bridge.ts` replicates `orchestrator-tick`'s snapshot→`findFloaters`→`process_float_lookup_assignment` via raw `pg`. No migrations / no edits to existing harness files. Traps confirmed: reminder type is `ack_reminder` (kind `float_ack_reminder`); no-ack dest = `temporary_drop` (NOT displaced — that's the force-trigger source branch). See "S4 results". |
-| **S5** Swaps + reliability      | ⬜ not started | —                                                                                                                                                                                                                                                                                                                                                   | —            | dep: **S3** (S4 for float-swap). Scenarios 13–14 + no-takeback.                                                                                                                                                                                                                                                                                                                |
+| Chunk                           | Status  | Green-gate result                                                                                                                                                                                                                                                                                                                                   | Session date | Notes / deviations                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **S0** Plan + appendix          | ✅ done | `PLAN.md` + `STATUS.md` written; facts verified against migrations & generated types                                                                                                                                                                                                                                                                | 2026-06-03   | Corrected an explore mis-read: `supabase/tests/` has **27 pgTAP files** (not empty); Playwright green/red is **unresolved** — S1 settles it empirically.                                                                                                                                                                                                                       |
+| **S1** Verify baseline          | ✅ done | `scripts/verify-all.sh` runs to completion; 5 graded layers recorded. **L1 Static ✅ · L2 Vitest ✅ (25 files/561) · L3 Web build ✅ · L4 pgTAP ✅ now 27/27 (997 tests) — was 🔴 4 files/8 subtests at S1, since fixed · L5 Playwright ✅ (15/15)**. See "S1 results" below for per-failure triage + the fix.                                      | 2026-06-03   | Playwright **GREEN** (config/README "TDD-RED" headers are stale). pgTAP red = pre-existing seed contamination from 7439585 (not a regression); **since FIXED** — 4 pgTAP tests made seed-robust. Mobile L6–8 skipped (optional).                                                                                                                                               |
+| **S2** Seed + allocator         | ✅ done | `pnpm e2e:lifecycle:seed` seeds OK; `:seed:check` → **8/8 green**. Non-destructive proof `bash scripts/verify-all.sh` → **OVERALL PASS** (Static ✅ 8 · Vitest ✅ 25/561 · web build ✅ · **pgTAP ✅ 27/997** · Playwright ✅ 15/15).                                                                                                               | 2026-06-03   | 46 `e…` SWs across 13 houses + 4 admins (1 all-house BM builder, 3 HMs); 2912 blocks; 1376 scheduled / 2208 vacant (= 3584 seats); `published_at` flipped. Toolchain: `tsx`+`pg` at root; `tests/` not a workspace pkg. See "S2 results".                                                                                                                                      |
+| **S3** Harness + happy path     | ✅ done | `pnpm e2e:lifecycle` → **5 files / 16 tests green** (01-publish 4 · 02-claim 4 · 03-drop-temporary 3 · 04-drop-permanent 2 · 05-cross-house-pickup 3). Idempotent re-run → 16/16. Clean `db reset`+run → 16/16. Non-destructive: `verify-all` **OVERALL PASS** (Static·Vitest 25/561·web build·pgTAP 27/997·Playwright 15/15) + seed-check **8/8**. | 2026-06-03   | pg + per-test `BEGIN…ROLLBACK` isolation (re-runnable w/o reset). Confirmed `claim_open_shift(uuid,uuid,timestamptz)`. **Deviation:** added an all-house e… SM to `roster.ts` (scenario 4 needs an SM recipient). **Gotcha for S4:** seed skips already-published houses → a foreign Quad publish leaves Quad unallocated; globalSetup now guards this. See "S3 results".      |
+| **S4** Float / ack / escalation | ✅ done | `pnpm e2e:lifecycle` → **12 files / 34 tests green** (01–05 S3 + **06 4 · 07 2 · 08 2 · 09 2 · 10 2 · 11 1 · 12 5** = 18 new). Clean `db reset`+run → 34/34 (all houses allocated). Non-destructive: `verify-all` **OVERALL PASS** (Static·Vitest 25/561·web build·pgTAP 27/997·Playwright 15/15) + seed-check **8/8**.                             | 2026-06-03   | `float-lookup-bridge.ts` replicates `orchestrator-tick`'s snapshot→`findFloaters`→`process_float_lookup_assignment` via raw `pg`. No migrations / no edits to existing harness files. Traps confirmed: reminder type is `ack_reminder` (kind `float_ack_reminder`); no-ack dest = `temporary_drop` (NOT displaced — that's the force-trigger source branch). See "S4 results". |
+| **S5** Swaps + reliability      | ✅ done | `pnpm e2e:lifecycle` → **14 files / 47 tests green** (01–12 prior + **13-swaps 8 · 14-reliability 5** = 13 new). Clean `db reset`+run → 47/47 (all houses allocated). Non-destructive: `verify-all` **OVERALL PASS** (Static·Vitest 25/561·web build·pgTAP 27/997·Playwright 15/15) + seed-check **8/8**.                                           | 2026-06-03   | New files only — `swap-bridge.ts` + `13-swaps` + `14-reliability`; **no migrations, no edits to existing harness files**. Swap creation replicated via `createSwap` (mirrors create-swap's per-type `expires_at`); acceptance/expiry are pure RPCs. Trap: **house-12/13 are seed-thinned** (no daily ≥4 runs) — use house-08/09/11 with `workerWithRun`. See "S5 results".     |
 
 Legend: ⬜ not started · 🟡 in progress · ✅ done · 🔴 blocked
 
 ## Next action
 
-**Start S5 (swaps + fault-tolerance / reliability).** S3 + S4 are done; S5 is the last unblocked
-chunk (dep: S3; uses S4 float state for the float-swap case). Add `13-swaps.test.ts` (shift / float /
-permanent swaps; expiry; `swap_acceptance_ineligibility_reason`) and `14-reliability.test.ts`
-(no-takeback: a re-tick does NOT revoke a pending/ack'd float; idempotency: re-deliver / re-run a step
-→ identical end state; DST: `generate_blocks_for_date('2026-03-08')` yields exactly 32 blocks/house
-with EDT-anchored `block_start_at`). Exit gate: `pnpm e2e:lifecycle` passes **all** of `01`–`14`.
+**PROGRAM COMPLETE — all chunks S0–S5 are ✅.** `pnpm e2e:lifecycle` now drives the full shift
+lifecycle end-to-end (**14 files / 47 tests**): publish → claim → temp/permanent drop → cross-house
+pickup → automated + force-trigger float → reminder cadence → ack / no-ack / decline → HMOD escalation
+→ swaps (shift / float / permanent + expiry + acceptance-ineligibility) → reliability (no-takeback,
+idempotency, DST). **No open chunks remain — there is no next action.** Canonical entry point:
+**`supabase db reset && pnpm e2e:lifecycle`** (clean reset → all 13 e… houses allocated; `globalSetup`
+asserts it). The reuse notes below remain valid for any future extension.
 
 **Reuse the S3+S4 harness** (all in `tests/e2e-lifecycle/`):
 
@@ -42,6 +43,11 @@ source/destinationAssignmentIds}` — **use this to set up the float-swap case**
   `manufactureFloatGap` (vacate a single-staff dest seat over a Quad-staffed ≥2 window),
   `consecutiveVacant` (Harnwell no-float gaps), `floatTimes(db, S)` (deadline + 5 reminder instants +
   no-ack threshold, all computed in Postgres).
+- `swap-bridge.ts` (**new in S5**) — `createSwap(db, {swapType, initiator, counterparty,
+initiatorAssignmentIds, counterpartyAssignmentIds?})` replicates the `create-swap` INSERT (per-type
+  `expires_at` computed in Postgres); acceptance (`accept_swap` / `apply_permanent_swap`) and expiry
+  (`expire_pending_swaps`) are pure RPCs called directly. `tsShift(db, ts, '+'|'-', interval)` for
+  DST-safe offsets around a block start.
 - `roster.ts` — exports `WORKERS`, `BUILDER`, `HMS`, `SM`, `PROJECT_ADMIN_ID`, `PERIOD_ID`.
 - `globalSetup.ts` — verifies stack + idempotent seed + asserts baseline (published, scheduled, **all
   houses allocated**).
@@ -58,6 +64,55 @@ allocated); `globalSetup` asserts every house is allocated and fails with this h
 
 Each new session: follow `PLAN.md` §0, do exactly one chunk, verify its exit gate, update this
 ledger, stop.
+
+## S5 results — swaps + reliability (2026-06-03) · PROGRAM COMPLETE
+
+Deliverables (all new under `tests/e2e-lifecycle/`): `swap-bridge.ts` + scenario files `13-swaps` /
+`14-reliability`. **No migrations; no edits to any existing harness file** (`client` / `helpers` /
+`roster` / `seed` / `globalSetup` / `float-lookup-bridge` untouched) — non-destructive by construction,
+mirroring S4.
+
+**Exit gate — `pnpm e2e:lifecycle` → 14 files / 47 tests green** (01–12 = 34 prior + **13 new**):
+
+| File                     | Tests | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------ | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `13-swaps.test.ts`       | 8     | §4-13: shift swap (atomic ownership exchange); float swap (reassigns `float_assignments.user_id`, dest seats stay `is_float`, desk seats to former floater, **dest SM notified** `corrected_floater_user_id`); permanent swap (`apply_permanent_swap` transfers only initiator-owned regular-year seats, foreign seat skipped, `transferred_count`); expiry (`expire_pending_swaps` flips + idempotent; accept-after-expiry → `not_pending`); **ineligibility** `harnwell_training_required` / `single_staff_cannot_float` / `block_in_pending_float` (asserted on `swap_acceptance_ineligibility_reason` AND via `accept_swap`, no partial writes) |
+| `14-reliability.test.ts` | 5     | §4-14: **no-takeback** — an _acknowledged_ float survives a past-deadline `process_no_ack_float` (`not_pending`, legs intact); a _pending_ float survives an early tick (`outside_lookahead`). **idempotency** — re-running `process_no_ack_float` at the same instant ⇒ one void / one exclusion / one `hmod_urgent` (no dupes); `deliver_notification` / `mark_notification_read` stamp exactly once. **DST** — 2026-03-08 carries exactly **32 EDT-anchored blocks/house** (08:00 NY = 12:00 UTC, not 13:00), contiguous 30-min steps; `generate_blocks_for_date('2026-03-08')` is a stable no-op (0 inserted)                                   |
+
+**Reliability proofs:** clean `supabase db reset` → `pnpm e2e:lifecycle` → **47/47** (globalSetup seeds
+from scratch, all 13 houses allocated, 1376 scheduled). Re-run without reset → 47/47 (per-test
+`BEGIN…ROLLBACK`). **Non-destructive proof:** `bash scripts/verify-all.sh` → **OVERALL PASS** (Static ✅ ·
+Vitest ✅ 25/561 · web build ✅ · pgTAP ✅ 27/997 · Playwright ✅ 15/15) + `e2e:lifecycle:seed:check` → **8/8**.
+
+Design notes / decisions:
+
+- **Swap creation replicated, not driven through the Edge layer.** `swap-bridge.ts` `createSwap`
+  INSERTs the `swap_requests` row with the same per-type `expires_at` anchors as `create-swap`'s
+  `computeExpiresAt` (shift = earliest span start −3h; float = latest span end +24h; permanent =
+  created_at +7d), computed in Postgres. Acceptance (`accept_swap` / `apply_permanent_swap`), expiry
+  (`expire_pending_swaps`), and the ineligibility helper are pure RPCs called directly with injected
+  `p_now` — exactly mirroring how S4 bypassed `orchestrator-tick`. No migration changes.
+- **Valid swap constructions mirror the phase-09 pgTAP fixtures** (`supabase/tests/phase-09-swaps.sql`):
+  the float swap rides on an **acknowledged** float (dest `floated_in`, `is_float`) between two Quad
+  workers (Q1↔Q2), so the receiver's home (quad) clears `single_staff_cannot_float`; the
+  ineligibility cases use a Harnwell↔non-Harnwell shift swap, a Quad-float → single-staff-home float
+  swap, and a swap touching a still-`pending_float_in` seat.
+- **Seed-thinning trap (new for S5):** `house-12` / `house-13` are deliberately thinned in S2 (max 2
+  shifts) and may have **no daily ≥4-block run** on a given date — `workerWithRun(db,'house-12',…)`
+  throws "no worker with a run". Use the fully-staffed single-staff houses (house-08/09/11) or Quad/
+  Harnwell for `workerWithRun`. (First 13-swaps draft used house-12 and failed; fixed to house-08/09/11.)
+- **`accept_swap` exchanges `user_id` only (status unchanged), so the proactive-void trigger
+  (`void_pending_swaps_for_vacated_seat`, keyed on a status transition into vacant/floated_out) does
+  NOT self-void the swap being accepted** — confirmed: the float/shift swap successes accept cleanly.
+- **DST tested non-destructively.** `preferences` + `draft_block_assignments` carry **NO ACTION** FKs to
+  `shift_blocks` (and preference DELETEs are deadline-gated), so a from-scratch regen of the 2026-03-08
+  day in-tx is fragile. Instead the test asserts the generator's _actual_ seeded output (32 EDT-anchored,
+  contiguous blocks/house) and that `generate_blocks_for_date` re-runs to **0 inserted** — proving the
+  DST-day set is exactly the 32/house the DST-correct generator produced.
+- **`seed:check` flake (environmental, not a regression):** one `pnpm e2e:lifecycle:seed:check` run
+  raised `42P01` from a transient `supabase status -o env` hiccup during a pooler restart at session
+  start; re-ran clean → **8/8**. The DB and `localStackEnv()` resolution were verified healthy
+  (DB_URL = direct `127.0.0.1:54322`, all tables present).
 
 ## S2 results — realistic seed + allocator (2026-06-03)
 
@@ -331,6 +386,18 @@ changed). `supabase test db` is now **27/27 files / 997 tests green**, and Playw
   HMOD rung is exercised by inserting ONE rotor row whose `week_start_date` is computed with the
   resolver's own formula, so it matches any chosen `p_now`. Harnwell has exactly one HM → the HM rung is
   unambiguous. All four outcomes (HM / HMOD / project-admin / unset-warning) asserted.
+- 2026-06-03 (S5) — **Swap creation replicated in `swap-bridge.ts`, not driven via the Edge layer.**
+  `createSwap` INSERTs the `swap_requests` row with the same per-type `expires_at` as `create-swap`'s
+  `computeExpiresAt` (shift = earliest −3h; float = latest +24h; permanent = created_at +7d), computed
+  in Postgres; acceptance/expiry/ineligibility are pure RPCs with injected `p_now` — mirroring S4's
+  `orchestrator-tick` bypass. No migrations; constructions mirror the phase-09 pgTAP fixtures.
+- 2026-06-03 (S5) — **DST verified on the generator's real output, not a from-scratch regen.**
+  `preferences`/`draft_block_assignments` hold NO-ACTION FKs to `shift_blocks` (+ deadline-gated pref
+  DELETEs), so destructively regenerating 2026-03-08 in-tx is fragile; instead assert the seeded set is
+  32 EDT-anchored (08:00 NY = 12:00 UTC) contiguous blocks/house and that `generate_blocks_for_date`
+  re-runs to 0 inserted — equivalent proof that the DST-correct generator produced exactly that set.
+- 2026-06-03 (S5) — **PROGRAM COMPLETE.** All chunks S0–S5 ✅; `pnpm e2e:lifecycle` = 14 files / 47 tests
+  green; full non-destructive suite green. Canonical entry point: `supabase db reset && pnpm e2e:lifecycle`.
 
 ## Blockers
 

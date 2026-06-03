@@ -5,51 +5,56 @@ result; record decisions/deviations. This is what a fresh session reads to know 
 
 ## Chunks
 
-| Chunk                           | Status         | Green-gate result                                                                                                                                                                                                                                                                                                                                   | Session date | Notes / deviations                                                                                                                                                                                                                                                                                                                                                        |
-| ------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **S0** Plan + appendix          | ✅ done        | `PLAN.md` + `STATUS.md` written; facts verified against migrations & generated types                                                                                                                                                                                                                                                                | 2026-06-03   | Corrected an explore mis-read: `supabase/tests/` has **27 pgTAP files** (not empty); Playwright green/red is **unresolved** — S1 settles it empirically.                                                                                                                                                                                                                  |
-| **S1** Verify baseline          | ✅ done        | `scripts/verify-all.sh` runs to completion; 5 graded layers recorded. **L1 Static ✅ · L2 Vitest ✅ (25 files/561) · L3 Web build ✅ · L4 pgTAP ✅ now 27/27 (997 tests) — was 🔴 4 files/8 subtests at S1, since fixed · L5 Playwright ✅ (15/15)**. See "S1 results" below for per-failure triage + the fix.                                      | 2026-06-03   | Playwright **GREEN** (config/README "TDD-RED" headers are stale). pgTAP red = pre-existing seed contamination from 7439585 (not a regression); **since FIXED** — 4 pgTAP tests made seed-robust. Mobile L6–8 skipped (optional).                                                                                                                                          |
-| **S2** Seed + allocator         | ✅ done        | `pnpm e2e:lifecycle:seed` seeds OK; `:seed:check` → **8/8 green**. Non-destructive proof `bash scripts/verify-all.sh` → **OVERALL PASS** (Static ✅ 8 · Vitest ✅ 25/561 · web build ✅ · **pgTAP ✅ 27/997** · Playwright ✅ 15/15).                                                                                                               | 2026-06-03   | 46 `e…` SWs across 13 houses + 4 admins (1 all-house BM builder, 3 HMs); 2912 blocks; 1376 scheduled / 2208 vacant (= 3584 seats); `published_at` flipped. Toolchain: `tsx`+`pg` at root; `tests/` not a workspace pkg. See "S2 results".                                                                                                                                 |
-| **S3** Harness + happy path     | ✅ done        | `pnpm e2e:lifecycle` → **5 files / 16 tests green** (01-publish 4 · 02-claim 4 · 03-drop-temporary 3 · 04-drop-permanent 2 · 05-cross-house-pickup 3). Idempotent re-run → 16/16. Clean `db reset`+run → 16/16. Non-destructive: `verify-all` **OVERALL PASS** (Static·Vitest 25/561·web build·pgTAP 27/997·Playwright 15/15) + seed-check **8/8**. | 2026-06-03   | pg + per-test `BEGIN…ROLLBACK` isolation (re-runnable w/o reset). Confirmed `claim_open_shift(uuid,uuid,timestamptz)`. **Deviation:** added an all-house e… SM to `roster.ts` (scenario 4 needs an SM recipient). **Gotcha for S4:** seed skips already-published houses → a foreign Quad publish leaves Quad unallocated; globalSetup now guards this. See "S3 results". |
-| **S4** Float / ack / escalation | ⬜ not started | —                                                                                                                                                                                                                                                                                                                                                   | —            | dep: **S3**. Scenarios 6–12 + invariants.                                                                                                                                                                                                                                                                                                                                 |
-| **S5** Swaps + reliability      | ⬜ not started | —                                                                                                                                                                                                                                                                                                                                                   | —            | dep: **S3** (S4 for float-swap). Scenarios 13–14 + no-takeback.                                                                                                                                                                                                                                                                                                           |
+| Chunk                           | Status         | Green-gate result                                                                                                                                                                                                                                                                                                                                   | Session date | Notes / deviations                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **S0** Plan + appendix          | ✅ done        | `PLAN.md` + `STATUS.md` written; facts verified against migrations & generated types                                                                                                                                                                                                                                                                | 2026-06-03   | Corrected an explore mis-read: `supabase/tests/` has **27 pgTAP files** (not empty); Playwright green/red is **unresolved** — S1 settles it empirically.                                                                                                                                                                                                                       |
+| **S1** Verify baseline          | ✅ done        | `scripts/verify-all.sh` runs to completion; 5 graded layers recorded. **L1 Static ✅ · L2 Vitest ✅ (25 files/561) · L3 Web build ✅ · L4 pgTAP ✅ now 27/27 (997 tests) — was 🔴 4 files/8 subtests at S1, since fixed · L5 Playwright ✅ (15/15)**. See "S1 results" below for per-failure triage + the fix.                                      | 2026-06-03   | Playwright **GREEN** (config/README "TDD-RED" headers are stale). pgTAP red = pre-existing seed contamination from 7439585 (not a regression); **since FIXED** — 4 pgTAP tests made seed-robust. Mobile L6–8 skipped (optional).                                                                                                                                               |
+| **S2** Seed + allocator         | ✅ done        | `pnpm e2e:lifecycle:seed` seeds OK; `:seed:check` → **8/8 green**. Non-destructive proof `bash scripts/verify-all.sh` → **OVERALL PASS** (Static ✅ 8 · Vitest ✅ 25/561 · web build ✅ · **pgTAP ✅ 27/997** · Playwright ✅ 15/15).                                                                                                               | 2026-06-03   | 46 `e…` SWs across 13 houses + 4 admins (1 all-house BM builder, 3 HMs); 2912 blocks; 1376 scheduled / 2208 vacant (= 3584 seats); `published_at` flipped. Toolchain: `tsx`+`pg` at root; `tests/` not a workspace pkg. See "S2 results".                                                                                                                                      |
+| **S3** Harness + happy path     | ✅ done        | `pnpm e2e:lifecycle` → **5 files / 16 tests green** (01-publish 4 · 02-claim 4 · 03-drop-temporary 3 · 04-drop-permanent 2 · 05-cross-house-pickup 3). Idempotent re-run → 16/16. Clean `db reset`+run → 16/16. Non-destructive: `verify-all` **OVERALL PASS** (Static·Vitest 25/561·web build·pgTAP 27/997·Playwright 15/15) + seed-check **8/8**. | 2026-06-03   | pg + per-test `BEGIN…ROLLBACK` isolation (re-runnable w/o reset). Confirmed `claim_open_shift(uuid,uuid,timestamptz)`. **Deviation:** added an all-house e… SM to `roster.ts` (scenario 4 needs an SM recipient). **Gotcha for S4:** seed skips already-published houses → a foreign Quad publish leaves Quad unallocated; globalSetup now guards this. See "S3 results".      |
+| **S4** Float / ack / escalation | ✅ done        | `pnpm e2e:lifecycle` → **12 files / 34 tests green** (01–05 S3 + **06 4 · 07 2 · 08 2 · 09 2 · 10 2 · 11 1 · 12 5** = 18 new). Clean `db reset`+run → 34/34 (all houses allocated). Non-destructive: `verify-all` **OVERALL PASS** (Static·Vitest 25/561·web build·pgTAP 27/997·Playwright 15/15) + seed-check **8/8**.                             | 2026-06-03   | `float-lookup-bridge.ts` replicates `orchestrator-tick`'s snapshot→`findFloaters`→`process_float_lookup_assignment` via raw `pg`. No migrations / no edits to existing harness files. Traps confirmed: reminder type is `ack_reminder` (kind `float_ack_reminder`); no-ack dest = `temporary_drop` (NOT displaced — that's the force-trigger source branch). See "S4 results". |
+| **S5** Swaps + reliability      | ⬜ not started | —                                                                                                                                                                                                                                                                                                                                                   | —            | dep: **S3** (S4 for float-swap). Scenarios 13–14 + no-takeback.                                                                                                                                                                                                                                                                                                                |
 
 Legend: ⬜ not started · 🟡 in progress · ✅ done · 🔴 blocked
 
 ## Next action
 
-**Start S4 (float / reminders / ack-no-ack-decline / force-trigger / HMOD).** S3 is done; S4 is the
-next unblocked chunk (dep: S3). Add scenario files `06-float-automated`…`12-hmod-pin-vs-transfer`
-to the **existing** harness and a `float-lookup-bridge.ts` that snapshots DB state into the
-`packages/core` float-lookup input (model after `supabase/functions/orchestrator-tick/index.ts`).
-Exit gate: `pnpm e2e:lifecycle` passes `01`–`12`.
+**Start S5 (swaps + fault-tolerance / reliability).** S3 + S4 are done; S5 is the last unblocked
+chunk (dep: S3; uses S4 float state for the float-swap case). Add `13-swaps.test.ts` (shift / float /
+permanent swaps; expiry; `swap_acceptance_ineligibility_reason`) and `14-reliability.test.ts`
+(no-takeback: a re-tick does NOT revoke a pending/ack'd float; idempotency: re-deliver / re-run a step
+→ identical end state; DST: `generate_blocks_for_date('2026-03-08')` yields exactly 32 blocks/house
+with EDT-anchored `block_start_at`). Exit gate: `pnpm e2e:lifecycle` passes **all** of `01`–`14`.
 
-**Reuse the S3 harness** (all in `tests/e2e-lifecycle/`):
+**Reuse the S3+S4 harness** (all in `tests/e2e-lifecycle/`):
 
 - `client.ts` — `inTx(fn)` runs a test in `BEGIN…ROLLBACK` (pg superuser, isolated, re-runnable).
-  `serviceClient()` + `asUser(email)` (supabase-js) are ready & smoke-tested — use them for S4's
-  **RLS-visibility** assertions ("destination SM sees inbound floats", PLAN §2.6 #7). A supabase-js
-  call can't join an `inTx` tx → visibility tests operate on committed rows (own setup/teardown).
-- `helpers.ts` — `anchors(blockStartAt)` gives DST-safe `{S, dayBefore, tMinus2h, tMinus20m,
-tMinus10m}` (compute any other offset in Postgres, never JS); `workerWithRun`, `scheduledRun`,
-  `vacantAt`/`anyVacant`, `freeHomeWorker`, `getAssignment(s)`, `permanentDropSeats`,
-  `assignmentsForBlocks`, `notificationsFor`, `effectiveCap`, `expectRpcErrorTx` (savepoint-based:
-  asserts a raised RPC AND keeps the tx usable for non-mutation checks), `expectAll`.
-- `roster.ts` — now also exports `SM` (one e… Site Manager scoped to **all 13 houses**,
-  `e.sm@pennhousing.test`). For per-house SM scoping tests, add a house-scoped SM if needed.
-- `globalSetup.ts` — verifies stack + runs the idempotent seed + asserts the baseline (published,
-  scheduled, **all houses allocated**).
+  `serviceClient()` + `asUser(email)` (supabase-js, on committed rows) are ready for RLS-visibility
+  assertions if S5 needs them (a supabase-js call can't join an `inTx` tx).
+- `helpers.ts` — `anchors(blockStartAt)` (DST-safe `{S, dayBefore, tMinus2h, tMinus20m, tMinus10m}`;
+  compute any other offset in Postgres, never JS), `workerWithRun`, `scheduledRun`,
+  `vacantAt`/`anyVacant`, `freeHomeWorker`, `getAssignment(s)`, `assignmentsForBlocks`,
+  `permanentDropSeats`, `notificationsFor`, `effectiveCap`, `expectRpcErrorTx`, `expectAll`.
+- `float-lookup-bridge.ts` (**new in S4**) — `planFloat(db, dest, gap)` snapshots DB → pure
+  `findFloaters`; `applyPlan(db, plan, pNow)` writes via `process_float_lookup_assignment`;
+  `setupAutomatedFloat(db, {dest, date, pNow?})` is the one-call "create a pending automated float"
+  (pNow defaults to S−1 day so all 5 reminders are future) returning `{floatId, floater, gap, S,
+source/destinationAssignmentIds}` — **use this to set up the float-swap case**. Also
+  `manufactureFloatGap` (vacate a single-staff dest seat over a Quad-staffed ≥2 window),
+  `consecutiveVacant` (Harnwell no-float gaps), `floatTimes(db, S)` (deadline + 5 reminder instants +
+  no-ack threshold, all computed in Postgres).
+- `roster.ts` — exports `WORKERS`, `BUILDER`, `HMS`, `SM`, `PROJECT_ADMIN_ID`, `PERIOD_ID`.
+- `globalSetup.ts` — verifies stack + idempotent seed + asserts baseline (published, scheduled, **all
+  houses allocated**).
 
-S4 timeline math is in PLAN §2.5 (anchor on a destination float block start S). Quad→single-staff
-float routing is live; **Quad must be allocated** — globalSetup now fails loudly if any house is
-unallocated (see the gotcha below). Float RPC sigs are in PLAN §2.3 (authoritative migrations
-flagged). pgTAP is fully green (27/997); Playwright 15/15 — "still passes" means all-green.
+Swap RPC sigs are in PLAN §2.3; swap **creation** is the `create-swap` Edge Function (POST) — replicate
+its `swap_requests` INSERT in the harness (read `supabase/functions/create-swap/index.ts` +
+`_shared/swap-http.ts`) rather than driving the Edge layer, mirroring how S4 bypassed `orchestrator-tick`.
+DST week is the build week (2026-03-08 is the spring-forward).
 
-**Gotcha S4 (and any chunk) must respect:** `pnpm e2e:lifecycle:seed` SKIPS already-published
-houses (idempotent re-run guard). If a `schedule-builder` Playwright run published **Quad** on the
-shared local DB, the seed skips Quad → Quad is unallocated → no float sources for S4. The canonical
-entry point is **`supabase db reset && pnpm e2e:lifecycle`** (a clean reset → all 13 e… houses
-allocated). `globalSetup` now asserts every house is allocated and fails with this hint if not.
+**Gotcha S5 (and any chunk) must respect:** `pnpm e2e:lifecycle:seed` SKIPS already-published houses.
+A foreign Quad publish (Playwright `schedule-builder`) leaves Quad unallocated → no float sources. The
+canonical entry point is **`supabase db reset && pnpm e2e:lifecycle`** (clean reset → all 13 e… houses
+allocated); `globalSetup` asserts every house is allocated and fails with this hint if not.
 
 Each new session: follow `PLAN.md` §0, do exactly one chunk, verify its exit gate, update this
 ledger, stop.
@@ -141,6 +146,62 @@ Design notes / deviations:
   publish (Playwright `schedule-builder`) leaves Quad unallocated. Invisible to S3, fatal to S4
   (Quad is the float source). `globalSetup` now asserts every house is allocated and fails with
   `supabase db reset && pnpm e2e:lifecycle:seed` guidance.
+
+## S4 results — float / ack / escalation (2026-06-03)
+
+Deliverables (all new under `tests/e2e-lifecycle/`): `float-lookup-bridge.ts` + scenario files
+`06-float-automated` / `07-reminder-cadence` / `08-ack` / `09-no-ack` / `10-decline` /
+`11-force-trigger` / `12-hmod-pin-vs-transfer`. **No migrations; no edits to any existing harness file**
+(`client/helpers/roster/seed/globalSetup` untouched) — so the chunk is non-destructive by construction.
+
+**Exit gate — `pnpm e2e:lifecycle` → 12 files / 34 tests green:**
+
+| File                              | Tests | Covers                                                                                                                                                                                                                                                                                                         |
+| --------------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `06-float-automated.test.ts`      | 4     | §4-6: bridge picks a Quad floater → `process_float_lookup_assignment` sets dest `pending_float_in` / source `pending_float_out` / float `pending`+`automated` / `personal_shift`; **6a** Quad↛Harnwell (short-circuit, 0 assignments), **6b** single-staff never a source, **6c** over-cap worker still floats |
+| `07-reminder-cadence.test.ts`     | 2     | §4-7: 5 `ack_reminder` rows at deadline−{6h,2h,1h,30m,5m} (deadline = S−10m); assigning at deadline−2h skips the 2 past-due offsets                                                                                                                                                                            |
+| `08-ack.test.ts`                  | 2     | §4-8: `acknowledge_float` → dest `floated_in` / source `floated_out` / `acknowledged`; the float's reminders drop from `pending_notification_deliveries` (rows still stored); re-ack = `not_pending`                                                                                                           |
+| `09-no-ack.test.ts`               | 2     | §4-9: `process_no_ack_float`(p_now=S−15m) → `voided` + exclusion `no_acknowledgment` + dest `vacant`/**`temporary_drop`** + source restored + `hmod_urgent` (reason `float_no_acknowledgment`); outside-lookahead = no-op                                                                                      |
+| `10-decline.test.ts`              | 2     | §4-10: automated decline → source **restored** to `scheduled`; force-trigger decline w/ a filled source comp-gap → source `vacant`/**`displaced_decliner`**; both exclude `declined`                                                                                                                           |
+| `11-force-trigger.test.ts`        | 1     | §4-11: `force_trigger_float` → `pending`+`force_triggered`+`force_triggered_by`; source comp gap materialised + **surfaces in `weekly_open_shifts_feed`**; `personal_shift` w/ `initiated_by`                                                                                                                  |
+| `12-hmod-pin-vs-transfer.test.ts` | 5     | §4-12: HMOD chain HM→HMOD→project-admin (all 3 rungs exercised); **12a** project-admin terminal present + unset path RAISE WARNING (claimed, no recipient, no notif, no crash); transfer = lookup-finds-other                                                                                                  |
+
+**Reliability proofs:** clean `supabase db reset` → `pnpm e2e:lifecycle` → **34/34** (globalSetup seeds
+from scratch, all 13 houses allocated, 1376 scheduled). Re-run without reset → 34/34 (per-test
+`BEGIN…ROLLBACK`). **Non-destructive proof:** `bash scripts/verify-all.sh` → **OVERALL PASS** (Static ✅ ·
+Vitest ✅ 25/561 · web build ✅ · pgTAP ✅ 27/997 · Playwright ✅ 15/15) + `e2e:lifecycle:seed:check` → **8/8**.
+
+Design notes / decisions:
+
+- **The bridge replicates `orchestrator-tick`, not the Edge Function.** `float-lookup-bridge.ts`
+  re-implements `buildFloatLookupSnapshot` in raw `pg` SQL (window + profile via Postgres, source
+  rosters from `float_routing`, conflict flags, exclusions), then imports the **pure** `findFloaters`
+  from `packages/core/src/float-lookup/index.js` (the `.js`→`.ts` Vite resolution the green phase-06
+  Vitest already relies on) and writes each assignment with `process_float_lookup_assignment` — so a
+  scenario drives the exact decision the orchestrator makes, deterministically, in-tx, with injected
+  `p_now`. The bridge picks the same Quad floater the algorithm would; tests assert on the algorithm
+  output + the RPC's writes.
+- **Gap manufacturing is deterministic.** Quad is staffed at 3 across the morning templates every
+  build-week day (96 build-week blocks have ≥2 Quad), so `manufactureFloatGap` reliably finds a
+  Quad-staffed ≥2 window and vacates one single-staff destination seat to form a 2-block gap. Harnwell
+  no-float gaps use `consecutiveVacant`.
+- **PLAN §2.4/§2.5 trap confirmed:** the reminder **notification type is `ack_reminder`**; the string
+  `float_ack_reminder` is the payload `kind`, not the enum. Asserted on type + `payload->>'kind'`.
+- **PLAN §4 wording corrected against the code (§2.6 #8):** scenario 9 says dest →
+  "displaced_decliner", but `process_no_ack_float` sets the **destination** to `vacant`/`temporary_drop`;
+  `displaced_decliner` is the force-trigger **source** branch (when the materialised comp gap was
+  filled). The decline restore-vs-displace split (scenario 10) is likewise: the **automated** path
+  always restores the source to `scheduled`; `displaced_decliner` only arises on the force-trigger path
+  with a filled comp seat. Both arms tested.
+- **HMOD recipient chain exercised in full.** `is_hm_working_time` = Mon–Fri 08:00–16:59 NY. HM rung:
+  Harnwell (single HM `e.hm.harnwell`) at a working-hours block + working `p_now`. HMOD rung: insert one
+  `hmod_rotor` row whose `week_start_date` is computed with the resolver's **own** formula (so it matches
+  any chosen instant) → `resolve_hmod_on_duty` returns `e.hm.quad` at an evening `p_now`. Project-admin
+  rung: evening `p_now`, no rotor → terminal `a…000b`. Unset: `DELETE` the config → `RAISE WARNING`,
+  `claimed:true`, recipient NULL, **no** `hmod_urgent`, no crash. The empty `hmod_rotor` + no-HM
+  single-staff houses make the project-admin fall-through the default for single-staff destinations.
+- **6c (cap not checked):** loaded the chosen floater well past the 20h soft cap via direct claims on
+  later build-week days (window stays clean) → still selected by the lookup AND assigned by the RPC.
 
 ## S1 results — verification baseline (2026-06-03)
 
@@ -253,6 +314,23 @@ changed). `supabase test db` is now **27/27 files / 997 tests green**, and Playw
   baseline INCLUDING "every house allocated" — catching the seed's skip-already-published-house guard
   colliding with a foreign Quad publish (which would silently starve S4 of float sources). Canonical
   entry point documented as `supabase db reset && pnpm e2e:lifecycle`.
+- 2026-06-03 (S4) — **Bridge replicates `orchestrator-tick`, not the Edge Function.**
+  `float-lookup-bridge.ts` snapshots DB state in raw `pg` SQL (mirroring `buildFloatLookupSnapshot`),
+  imports the pure `findFloaters` from `packages/core` (the `.js`→`.ts` Vite resolution phase-06 Vitest
+  uses), and writes via `process_float_lookup_assignment` — same decision the deployed orchestrator
+  makes, but deterministic + in-tx + injected `p_now` (PLAN §2.5). No migration changes.
+- 2026-06-03 (S4) — **Reminder type = `ack_reminder`** (payload `kind = float_ack_reminder`); PLAN
+  §2.4/§2.5's "float_ack_reminder" is the kind, not the enum. Verified against the live enum before
+  asserting.
+- 2026-06-03 (S4) — **Trusted the code over the PLAN §4 labels (§2.6 #8).** No-ack sets the
+  **destination** to `temporary_drop` (not displaced_decliner); `displaced_decliner` is the
+  force-trigger **source** branch when its materialised comp gap is filled. Decline: automated path
+  always restores the source to `scheduled`; displaced arises only on the force-trigger path.
+- 2026-06-03 (S4) — **HMOD chain made deterministic.** `hmod_rotor` is empty in the seed (so
+  `resolve_hmod_on_duty` → NULL → project-admin terminal `a…000b` for single-staff/evening cases). The
+  HMOD rung is exercised by inserting ONE rotor row whose `week_start_date` is computed with the
+  resolver's own formula, so it matches any chosen `p_now`. Harnwell has exactly one HM → the HM rung is
+  unambiguous. All four outcomes (HM / HMOD / project-admin / unset-warning) asserted.
 
 ## Blockers
 

@@ -165,34 +165,41 @@ struct ShiftsRootView: View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("This week").font(.headline)
-                ForEach(model.state.homeOpen.weekly, id: \.id) { openCard($0, claimable: true) }
+                ForEach(model.state.homeOpen.weekly, id: \.id) { openCard($0, allowsClaim: true) }
             }
             .accessibilityIdentifier("home_weekly_feed")
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("Permanent openings").font(.headline)
-                ForEach(model.state.homeOpen.permanentOpenings, id: \.id) { openCard($0, claimable: true) }
+                ForEach(model.state.homeOpen.permanentOpenings, id: \.id) { openCard($0, allowsClaim: true) }
             }
             .accessibilityIdentifier("home_permanent_feed")
         }
         .padding()
     }
 
-    private func openCard(_ shift: OpenShift, claimable: Bool) -> some View {
-        HStack {
+    private func openCard(_ shift: OpenShift, allowsClaim: Bool) -> some View {
+        let claimable = model.vm.claimable(shift: shift)
+        return HStack {
             VStack(alignment: .leading) {
                 Text(shift.house.name).fontWeight(.semibold)
                 Text("\(String(describing: shift.start)) – \(String(describing: shift.end))").font(.caption)
                 if let weeks = shift.weeksRemaining {
                     Text("\(weeks) weeks remaining").font(.caption)
                 }
+                // §5.4: the shift stays VISIBLE past T-2h; only the claim action is gated.
+                if allowsClaim && !claimable {
+                    Text("Unpickable (past T-2h)").font(.caption)
+                }
             }
             Spacer()
-            if model.vm.claimable(shift: shift) {
+            // Tab 2 (home) shows the Claim affordance, DISABLED past T-2h — never
+            // hidden (§5.4 / §5.6). Tab 3 (cross-house) is browse-only this phase,
+            // matching the Compose `CrossHouseCard`, so it shows no claim button.
+            if allowsClaim {
                 Button("Claim") { claimTarget = shift }
+                    .disabled(!claimable)
                     .accessibilityIdentifier("claim_button")
-            } else {
-                Text("Unpickable").font(.caption)
             }
         }
         .padding(10)
@@ -211,8 +218,8 @@ struct ShiftsRootView: View {
                 ForEach(model.state.otherHouses.groups, id: \.house.id) { group in
                     VStack(alignment: .leading, spacing: 6) {
                         Text(group.house.name).font(.headline)
-                        ForEach(group.weekly, id: \.id) { openCard($0, claimable: false) }
-                        ForEach(group.permanentOpenings, id: \.id) { openCard($0, claimable: false) }
+                        ForEach(group.weekly, id: \.id) { openCard($0, allowsClaim: false) }
+                        ForEach(group.permanentOpenings, id: \.id) { openCard($0, allowsClaim: false) }
                         Divider()
                     }
                 }

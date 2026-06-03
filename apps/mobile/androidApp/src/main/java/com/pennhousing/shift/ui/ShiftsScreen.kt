@@ -314,12 +314,18 @@ private fun OpenShiftCard(
                 Text(shift.house.name, fontWeight = FontWeight.SemiBold)
                 Text("${shift.start} – ${shift.end}", style = MaterialTheme.typography.bodySmall)
                 shift.weeksRemaining?.let { Text("$it weeks remaining", style = MaterialTheme.typography.bodySmall) }
+                // §5.4: the shift stays VISIBLE past T-2h; only the claim action is gated.
+                if (!claimable) {
+                    Text("Unpickable (past T-2h)", style = MaterialTheme.typography.bodySmall)
+                }
             }
-            if (claimable) {
-                Button(onClick = onClaim, modifier = Modifier.testTag("claim_button")) { Text("Claim") }
-            } else {
-                Text("Unpickable")
-            }
+            // §5.4 / §5.6: the Claim button is DISABLED past T-2h — never hidden, so
+            // the worker still sees the shift and that it is no longer claimable.
+            Button(
+                onClick = onClaim,
+                enabled = claimable,
+                modifier = Modifier.testTag("claim_button"),
+            ) { Text("Claim") }
         }
     }
 }

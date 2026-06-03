@@ -303,8 +303,12 @@ async function main(): Promise<void> {
     console.log(
       `  workers .............. ${WORKERS.length} (e… SWs across ${HOUSES.length} houses)`,
     );
+    const adminsWithRole = (role: string): number =>
+      ADMINS.filter((a) => a.roles.some((r) => r.role === role)).length;
     console.log(
-      `  admins ............... ${ADMINS.length} (1 BM builder · ${ADMINS.length - 1} HMs)`,
+      `  admins ............... ${ADMINS.length} (${adminsWithRole('bm')} BM · ${adminsWithRole(
+        'hm',
+      )} HM · ${adminsWithRole('sm')} SM)`,
     );
     console.log(`  build week ........... ${BUILD_WEEK_START} … ${BUILD_WEEK_END}`);
     console.log(

@@ -12,6 +12,7 @@ export interface StackEnv {
   dbUrl: string;
   apiUrl: string;
   serviceKey: string;
+  anonKey: string;
 }
 
 const LOCAL_DB = 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
@@ -35,5 +36,6 @@ export function localStackEnv(): StackEnv {
     dbUrl: process.env.E2E_DB_URL ?? parsed.DB_URL ?? LOCAL_DB,
     apiUrl: process.env.E2E_API_URL ?? parsed.API_URL ?? LOCAL_API,
     serviceKey: process.env.E2E_SERVICE_KEY ?? parsed.SECRET_KEY ?? parsed.SERVICE_ROLE_KEY ?? '',
+    anonKey: process.env.E2E_ANON_KEY ?? parsed.ANON_KEY ?? parsed.PUBLISHABLE_KEY ?? '',
   };
 }

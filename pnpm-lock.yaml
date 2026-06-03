@@ -7,6 +7,9 @@ settings:
 importers:
   .:
     devDependencies:
+      '@supabase/supabase-js':
+        specifier: ^2.106.2
+        version: 2.106.2
       '@types/pg':
         specifier: ^8.20.0
         version: 8.20.0
@@ -46,6 +49,9 @@ importers:
       typescript:
         specifier: ^5.4.5
         version: 5.9.3
+      vitest:
+        specifier: ^1.6.0
+        version: 1.6.1(@types/node@20.19.41)(lightningcss@1.32.0)
 
   apps/web:
     dependencies:

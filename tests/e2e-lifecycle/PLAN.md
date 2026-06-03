@@ -156,6 +156,8 @@ S − 15m     no-ack fires         (deadline − no_ack_trigger_offset_minutes=5
 6. **Service role bypasses RLS.** Use it for setup/teardown and most assertions. To test _visibility_ rules (e.g. "the destination SM sees inbound floats"), make a second client authed as that user (anon key + sign-in) — note this only where a scenario asserts visibility.
 7. **Hard invariants to assert (negative paths)** — AGENTS.md §Hard Invariants: only `home_house='harnwell'` workers staff Harnwell (any mechanism); single-staff (headcount-1) houses are never float **sources**; Quad never floats **to** Harnwell; once a float is `pending`/`acknowledged` no automated path revokes it (no-takeback) — only manual override; hours cap is **not** checked on float.
 8. **Redefined functions**: assert behavior against the **latest** definition (the migration column in §2.3), not the first.
+9. **(S3) Seed skips already-published houses.** The seed's re-run guard skips any house already in `period_house_publications`, so a foreign publish that beat it — most likely a `schedule-builder` Playwright run publishing **Quad** on the shared local DB — leaves that house **unallocated** (build-week blocks all vacant). Invisible to S3, fatal to S4 (Quad is THE float source). Canonical entry point: **`supabase db reset && pnpm e2e:lifecycle`** (clean reset → all 13 e… houses allocated, 1376 scheduled). The S3 harness `globalSetup` asserts "every house allocated" and fails loudly otherwise.
+10. **(S3) Harnwell is headcount 2.** A per-block op that vacates one worker (e.g. `permanent_drop_slot`) leaves the co-worker's seat on the same block scheduled — assert on the specific affected seats, not all seats on the block (S3's `permanentDropSeats` helper).
 
 ---
 

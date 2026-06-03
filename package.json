@@ -15,11 +15,13 @@
     "type-check": "turbo run type-check",
     "e2e:lifecycle:seed": "tsx tests/e2e-lifecycle/seed.ts",
     "e2e:lifecycle:seed:check": "tsx tests/e2e-lifecycle/checks/seed-check.ts",
+    "e2e:lifecycle": "vitest run --config tests/e2e-lifecycle/vitest.config.ts",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\" --ignore-path .gitignore",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\" --ignore-path .gitignore",
     "prepare": "husky"
   },
   "devDependencies": {
+    "@supabase/supabase-js": "^2.106.2",
     "@types/pg": "^8.20.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
@@ -32,7 +34,8 @@
     "prettier": "^3.2.5",
     "tsx": "^4.22.4",
     "turbo": "^2.0.0",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
   },
   "lint-staged": {
     "*.{ts,tsx}": [

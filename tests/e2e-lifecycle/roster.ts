@@ -72,7 +72,7 @@ export interface Worker {
 }
 
 export interface AdminRole {
-  role: 'hm' | 'bm';
+  role: 'hm' | 'bm' | 'sm';
   scope: string;
 }
 
@@ -150,7 +150,21 @@ export const HMS: Admin[] = [
   },
 ];
 
-export const ADMINS: Admin[] = [BUILDER, ...HMS];
+// A single Site Manager scoped to EVERY house (mirrors BUILDER's all-house pattern; user_roles'
+// PK is (user_id, role, scope_house_id), so one SM may hold 13 scope rows). SMs are the
+// recipients of `sm_permanent_drop_alert` (scenario 4) and, in S4, see inbound floats + the live
+// house schedule for their house (PLAN §2.6 #7). Added by S3 — S2's roster was HM/BM only. The
+// seeded a… `sm.quad` fixture is left untouched; SM-notification scenarios use a non-quad house so
+// this e… SM is the sole recipient there.
+export const SM: Admin = {
+  userId: eid(5, 0xaaaa),
+  name: 'E2E Site Manager',
+  email: 'e.sm@pennhousing.test',
+  homeHouse: 'quad',
+  roles: HOUSES.map((h) => ({ role: 'sm' as const, scope: h })),
+};
+
+export const ADMINS: Admin[] = [BUILDER, ...HMS, SM];
 
 const inRange = (value: number, lo: number, hi: number): boolean => value >= lo && value <= hi;
 

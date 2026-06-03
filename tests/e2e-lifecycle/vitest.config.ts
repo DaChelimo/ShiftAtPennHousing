@@ -22,6 +22,6 @@ export default defineConfig({
     pool: 'forks',
     poolOptions: { forks: { singleFork: true } },
     testTimeout: 60_000,
-    hookTimeout: 180_000, // globalSetup applies the seed
+    hookTimeout: 300_000, // globalSetup seeds, and may `supabase db reset` once to self-heal a dirty baseline
   },
 });

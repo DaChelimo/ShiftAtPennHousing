@@ -183,7 +183,6 @@ export async function getBuilderData(houseId: string): Promise<BuilderData> {
     blockId: p.block_id,
     status: p.status as PreferenceStatus,
   }));
-  const submittedUserIds = [...new Set(preferences.map((p) => p.userId))];
 
   // 5. Period targets.
   const { data: targetRows } = await supabase
@@ -195,6 +194,15 @@ export async function getBuilderData(houseId: string): Promise<BuilderData> {
   for (const t of targetRows ?? []) {
     targets[t.user_id] = { targetHours: t.target_hours, optedOut: t.opted_out };
   }
+
+  // The Phase-1 pool is everyone who SUBMITTED — any preference row OR any
+  // period_targets row (incl. a "no hours" opt-out). Workers with neither are
+  // "none / unspecified" (§4.2) and appear only in the Phase-2 full roster. A
+  // submitted worker with no preference for a span block lands in `blocked`
+  // (missing) per phase1Grouping — not assignable in Phase 1, matching §4.1.
+  const submittedUserIds = [
+    ...new Set([...preferences.map((p) => p.userId), ...Object.keys(targets)]),
+  ];
 
   // 6. Existing draft assignments for the week.
   const { data: draftRows } = await supabase

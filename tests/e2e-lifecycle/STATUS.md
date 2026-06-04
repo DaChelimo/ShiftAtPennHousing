@@ -26,6 +26,15 @@ idempotency, DST). **No open chunks remain — there is no next action.** Canoni
 **`supabase db reset && pnpm e2e:lifecycle`** (clean reset → all 13 e… houses allocated; `globalSetup`
 asserts it). The reuse notes below remain valid for any future extension.
 
+**Fresh-session re-verification (2026-06-03).** A later §0 bootstrap session found no open chunk and,
+rather than fabricate one, independently re-ran the program's final exit gate to confirm the ledger is
+honest (not just self-reported): `pnpm e2e:lifecycle` → **14 files / 47 tests green** (16.4s).
+`globalSetup` reported the baseline unchanged — 46 e… SWs / 13 houses, 1376 scheduled / 2208 vacant,
+**all houses allocated**, seed a no-op (+0 blocks, 13 already published). Side-note for future sessions:
+the `supabase_pooler` service was stopped at session start, yet `supabase status -o env` still resolved
+all four keys, so the harness env path is robust to a stopped pooler. No code or harness changes were
+needed; only this note was added.
+
 **Reuse the S3+S4 harness** (all in `tests/e2e-lifecycle/`):
 
 - `client.ts` — `inTx(fn)` runs a test in `BEGIN…ROLLBACK` (pg superuser, isolated, re-runnable).

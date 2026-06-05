@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug-only overlay: allow cleartext HTTP so the emulator can reach the local
+  Supabase stack at http://10.0.2.2:54321. Android blocks cleartext by default
+  (API 28+). Merged into the debug variant only — the release/main manifest is
+  untouched, so production keeps HTTPS-only.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application
+        android:usesCleartextTraffic="true"
+        tools:ignore="UnusedAttribute" />
+
+</manifest>

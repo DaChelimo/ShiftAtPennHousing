@@ -28,13 +28,15 @@ BEGIN;
 
 SELECT plan(12);
 
--- The shared seed (supabase/seed.sql) makes "Ingrid Incoming" (a0000000-…-000a) an hm for
--- house-03. resolve_hm_for_house has no ORDER BY, so it can return her instead of this
--- suite's own house-03 HM fixture. Remove that seeded role (rolled back at the end) so the
--- fixture HM is the sole house-03 HM.
+-- The shared seed (supabase/seed.sql) registers more than one hm for house-03: both
+-- "Ingrid Incoming" (a0000000-…-000a) and the e2e-lifecycle fixture "E2E HM House-03"
+-- (e0000000-…-aaaa00000004). resolve_hm_for_house loops the house's hm roles with NO
+-- ORDER BY and returns the first that resolves, so any seeded house-03 hm can be returned
+-- ahead of this suite's own fixture HM — making the HM-recipient assertions below pass or
+-- fail by physical scan order. Remove ALL pre-existing house-03 hm roles (rolled back at
+-- the end) so the fixture HM inserted below is the sole house-03 hm.
 DELETE FROM public.user_roles
-  WHERE user_id = 'a0000000-0000-4000-8000-00000000000a'
-    AND role = 'hm'
+  WHERE role = 'hm'
     AND scope_house_id = 'house-03';
 
 -- ============================================================

@@ -413,6 +413,14 @@ INSERT INTO scheduling_periods (period_id, period_name, profile_name, start_date
   -- submission-window trigger (the deadline is irrelevant to the override e2e).
   ('c0000000-0000-4000-8000-000000000002', 'Summer 2026', 'regular_school_year', '2026-06-01', '2026-08-01', '2099-12-31 23:59:59-04', '2026-06-01 00:00:00-04');
 
+-- Operating-calendar for the e2e week (regular_school_year, float_enabled=true) so the
+-- S2 force-trigger EF resolves the float profile and runs the lookup. Without it,
+-- loadProfileForBlock → null → the force-trigger gate returns float_not_enabled (gated).
+INSERT INTO operating_calendar (date, profile_name)
+SELECT d::date, 'regular_school_year'
+FROM generate_series('2026-06-08'::date, '2026-06-14'::date, interval '1 day') AS d
+ON CONFLICT (date) DO NOTHING;
+
 -- Quad blocks for Mon 2026-06-08 at 10:00 / 10:30 NY (EDT, -04:00); headcount 3.
 INSERT INTO shift_blocks (block_id, house_id, block_start_at, required_headcount) VALUES
   ('b0000000-0000-4000-8000-000000060800', 'quad', '2026-06-08 10:00:00-04', 3),

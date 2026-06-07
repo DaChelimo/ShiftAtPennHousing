@@ -33,6 +33,7 @@ export type CoverageGap = {
   tMinus: string;
   reason: string;
   floater: { name: string; fromHouse: string; ack: 'pending' } | null;
+  blockIds: string[]; // the DB block_ids the gap's window spans (force-trigger input)
   weekKey: string; // for the "view on calendar" link
 };
 
@@ -185,7 +186,12 @@ export async function getCoverageData(
   }
 
   // ---- weekly gaps: vacant (non-permanent) + pending_float_in + allied, ≤30d ----
-  type Atom = { esc: EscalationStep; floaterId: string | null; floaterHome: string | null };
+  type Atom = {
+    esc: EscalationStep;
+    floaterId: string | null;
+    floaterHome: string | null;
+    blockId: string;
+  };
   // day → blockIndex → atoms (one per open seat)
   const perDay = new Map<string, Map<number, Atom[]>>();
   // day → blockIndex → permanent-drop seat count
@@ -215,6 +221,7 @@ export async function getCoverageData(
       esc,
       floaterId,
       floaterHome,
+      blockId: a.block_id,
     });
   }
 
@@ -236,6 +243,7 @@ export async function getCoverageData(
         let j = i;
         while (j + 1 < items.length && items[j + 1]!.block === items[j]!.block + 1) j++;
         const head = items[i]!.atom;
+        const blockIds = items.slice(i, j + 1).map((it) => it.atom.blockId);
         const floater =
           head.floaterId !== null
             ? {
@@ -257,6 +265,7 @@ export async function getCoverageData(
           tMinus: ESC_META[head.esc].tMinus,
           reason: ESC_META[head.esc].reason,
           floater,
+          blockIds,
           weekKey: mondayKey(dateKey),
         });
         i = j + 1;

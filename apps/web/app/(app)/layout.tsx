@@ -49,6 +49,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
   if (isHouseAdmin(user)) {
     nav.push({
+      href: '/admin/people',
+      label: 'People',
+      testId: 'nav-admin-people',
+      icon: 'people',
+      group: 'Manage',
+    });
+    nav.push({
       href: '/admin/leave',
       label: 'Leave',
       testId: 'nav-admin-leave',

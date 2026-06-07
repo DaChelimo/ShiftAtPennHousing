@@ -303,4 +303,5 @@ enum ShiftIcons {
     static let warning = "exclamationmark.triangle"
     static let info = "info.circle"
     static let phone = "phone"
+    static let building = "building.2"
 }

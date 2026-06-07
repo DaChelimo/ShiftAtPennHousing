@@ -9,18 +9,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -42,16 +41,20 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pennhousing.shift.shared.data.ToastNotification
 import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.model.OpenShift
 import com.pennhousing.shift.shared.shifts.ClaimCapVerdict
+import com.pennhousing.shift.shared.shifts.ClaimMeter
 import com.pennhousing.shift.shared.shifts.HomeOpenShiftsTab
 import com.pennhousing.shift.shared.shifts.MyShiftCardState
 import com.pennhousing.shift.shared.shifts.MyShiftsTab
+import com.pennhousing.shift.shared.shifts.OpenShiftCardState
+import com.pennhousing.shift.shared.shifts.OpenShiftRow
 import com.pennhousing.shift.shared.shifts.OtherHousesTab
+import com.pennhousing.shift.shared.shifts.claimMeter
+import com.pennhousing.shift.shared.shifts.hoursBetween
 import com.pennhousing.shift.shared.shifts.toRow
 import com.pennhousing.shift.shared.shifts.weeklyHoursSummary
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
@@ -60,7 +63,9 @@ import com.pennhousing.shift.shared.viewmodel.ShiftsTab
 import com.pennhousing.shift.ui.kit.BannerTone
 import com.pennhousing.shift.ui.kit.ButtonSize
 import com.pennhousing.shift.ui.kit.ButtonVariant
+import com.pennhousing.shift.ui.kit.EmptyState
 import com.pennhousing.shift.ui.kit.HouseBadge
+import com.pennhousing.shift.ui.kit.SectionHeader
 import com.pennhousing.shift.ui.kit.ShiftBanner
 import com.pennhousing.shift.ui.kit.ShiftBottomSheet
 import com.pennhousing.shift.ui.kit.ShiftButton
@@ -68,6 +73,8 @@ import com.pennhousing.shift.ui.kit.ShiftCard
 import com.pennhousing.shift.ui.kit.ShiftIcons
 import com.pennhousing.shift.ui.kit.ShiftSection
 import com.pennhousing.shift.ui.kit.ShiftState
+import com.pennhousing.shift.ui.kit.ShiftToast
+import com.pennhousing.shift.ui.kit.ToastTone
 import com.pennhousing.shift.ui.theme.ShiftTheme
 
 private const val TAB_MY = 0
@@ -102,14 +109,18 @@ fun ShiftsApp(
             Column(Modifier.fillMaxSize().padding(padding)) {
                 toast?.let { NotificationToast(it) }
                 if (claimSuccess) {
-                    Text(
-                        "Shift claimed ✓",
+                    // §5.6 #1 — the sheet dismisses on confirm (so the tab bar stays
+                    // reachable for the Maestro flow); this top success toast carries
+                    // the `claim_success` selector and the "now in My Shifts" feedback.
+                    ShiftToast(
+                        message = "Claimed — it's now in My Shifts",
                         modifier =
                             Modifier
                                 .fillMaxWidth()
-                                .padding(12.dp)
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
                                 .testTag("claim_success"),
-                        fontWeight = FontWeight.SemiBold,
+                        tone = ToastTone.Success,
+                        icon = ShiftIcons.Check,
                     )
                 }
 
@@ -141,7 +152,14 @@ fun ShiftsApp(
                             breakProfile = breakProfile,
                             onClaimed = { claimSuccess = true },
                         )
-                    TAB_OTHER -> OtherHousesTabContent(state.otherHouses)
+                    TAB_OTHER ->
+                        OtherHousesTabContent(
+                            tab = state.otherHouses,
+                            vm = shiftsVm,
+                            currentWeeklyHours = currentWeeklyHours,
+                            breakProfile = breakProfile,
+                            onClaimed = { claimSuccess = true },
+                        )
                     TAB_UPDATES ->
                         UpdatesTabContent(
                             destinationHouse = ackVm.uiState.value.destinationHouse.name,
@@ -331,30 +349,42 @@ private fun HomeOpenTabContent(
 ) {
     var claimTarget by remember { mutableStateOf<OpenShift?>(null) }
 
-    LazyColumn(Modifier.fillMaxSize().padding(12.dp)) {
+    LazyColumn(
+        Modifier.fillMaxSize().background(ShiftTheme.colors.bg),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(22.dp),
+    ) {
         item {
-            Column(Modifier.fillMaxWidth().testTag("home_weekly_feed")) {
-                Text("This week", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                if (tab.weekly.isEmpty()) Text("No open shifts.")
-                tab.weekly.forEach { OpenShiftCard(it, vm) { claimTarget = it } }
+            ShiftSection(
+                title = "Weekly open shifts",
+                isEmpty = tab.weekly.isEmpty(),
+                modifier = Modifier.testTag("home_weekly_feed"),
+                count = tab.weekly.size,
+                emptyText = "No open shifts in your house this week.",
+            ) {
+                ShiftCardColumn { tab.weekly.forEach { OpenFeedCard(it, vm) { claimTarget = it } } }
             }
         }
         item {
-            Column(Modifier.fillMaxWidth().padding(top = 8.dp).testTag("home_permanent_feed")) {
-                Text("Permanent openings", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                if (tab.permanentOpenings.isEmpty()) Text("None.")
-                tab.permanentOpenings.forEach { OpenShiftCard(it, vm) { claimTarget = it } }
+            ShiftSection(
+                title = "Permanent openings",
+                isEmpty = tab.permanentOpenings.isEmpty(),
+                modifier = Modifier.testTag("home_permanent_feed"),
+                count = tab.permanentOpenings.size,
+                emptyText = "No permanent openings right now.",
+            ) {
+                ShiftCardColumn { tab.permanentOpenings.forEach { OpenFeedCard(it, vm) { claimTarget = it } } }
             }
         }
     }
 
     claimTarget?.let { shift ->
-        ClaimFlowDialog(
+        ClaimSheet(
             shift = shift,
             vm = vm,
             currentWeeklyHours = currentWeeklyHours,
             breakProfile = breakProfile,
-            onClaimed = {
+            onConfirmed = {
                 vm.claim(shift)
                 onClaimed()
             },
@@ -363,81 +393,213 @@ private fun HomeOpenTabContent(
     }
 }
 
+/**
+ * One open-shift feed card, driven by the shared
+ * [com.pennhousing.shift.shared.shifts.toRow]: OPEN → Claim (filled), PERMANENT →
+ * Pick up (tonal), UNPICKABLE → no action + "Locked" meta (§5.4 keeps the gap
+ * visible past T-2h, withholding only the action). The card root + the action carry
+ * the `open_shift_card` / `claim_button` selectors.
+ */
 @Composable
-private fun OpenShiftCard(
+private fun OpenFeedCard(
     shift: OpenShift,
     vm: ShiftsScreenViewModel,
     onClaim: () -> Unit,
 ) {
     val claimable = vm.claimable(shift)
-    Card(Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag("open_shift_card")) {
-        Row(
-            Modifier.fillMaxWidth().padding(12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column {
-                Text(shift.house.name, fontWeight = FontWeight.SemiBold)
-                Text("${shift.start} – ${shift.end}", style = MaterialTheme.typography.bodySmall)
-                shift.weeksRemaining?.let { Text("$it weeks remaining", style = MaterialTheme.typography.bodySmall) }
-                // §5.4: the shift stays VISIBLE past T-2h; only the claim action is gated.
-                if (!claimable) {
-                    Text("Unpickable (past T-2h)", style = MaterialTheme.typography.bodySmall)
+    val row = remember(shift, claimable) { shift.toRow(claimable) }
+    ShiftCard(
+        state = row.state.toKitState(),
+        houseInitial = row.houseInitial,
+        timeLabel = row.timeLabel,
+        modifier = Modifier.testTag("open_shift_card"),
+        eyebrow = row.dayLabel,
+        houseName = row.houseName,
+        durationLabel = row.durationLabel,
+        meta = row.meta,
+        action =
+            row.actionLabel?.let { label ->
+                {
+                    ShiftButton(
+                        label,
+                        onClaim,
+                        modifier = Modifier.testTag("claim_button"),
+                        variant = if (row.state == OpenShiftCardState.PERMANENT) ButtonVariant.Tonal else ButtonVariant.Filled,
+                        size = ButtonSize.Sm,
+                    )
                 }
-            }
-            // §5.4 / §5.6: the Claim button is DISABLED past T-2h — never hidden, so
-            // the worker still sees the shift and that it is no longer claimable.
-            Button(
-                onClick = onClaim,
-                enabled = claimable,
-                modifier = Modifier.testTag("claim_button"),
-            ) { Text("Claim") }
-        }
-    }
+            },
+    )
 }
 
+private fun OpenShiftCardState.toKitState(): ShiftState =
+    when (this) {
+        OpenShiftCardState.OPEN -> ShiftState.OPEN
+        OpenShiftCardState.UNPICKABLE -> ShiftState.UNPICKABLE
+        OpenShiftCardState.PERMANENT -> ShiftState.PERMANENT
+    }
+
+// ===================================================================
+// Claim flow (§5.3 / §5.4) — the design `ClaimSheet`.
+// ===================================================================
+
+/**
+ * The claim / pick-up sheet (worker-app.html `ClaimSheet`): a shift summary, the
+ * "this brings your week to Xh of Yh" hours meter, and the §5.3 cap gating. A
+ * soft-cap claim is a two-step confirm (warning banner → "Claim anyway" →
+ * `claim_confirm_button`) so the Maestro `soft_cap_*` contract holds; a break
+ * hard-cap claim disables the confirm. On confirm the sheet dismisses and the
+ * screen shows the `claim_success` toast — the picked-up shift is already in My
+ * Shifts (the optimistic [ShiftsScreenViewModel.claim], decision #13).
+ */
 @Composable
-private fun ClaimFlowDialog(
+private fun ClaimSheet(
     shift: OpenShift,
     vm: ShiftsScreenViewModel,
     currentWeeklyHours: Double,
     breakProfile: Boolean,
-    onClaimed: () -> Unit,
+    onConfirmed: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val c = ShiftTheme.colors
+    val claimable = vm.claimable(shift)
+    val row = remember(shift, claimable) { shift.toRow(claimable) }
+    val permanent = row.state == OpenShiftCardState.PERMANENT
+    val meter =
+        remember(shift, currentWeeklyHours, breakProfile) {
+            claimMeter(currentWeeklyHours, hoursBetween(shift.start, shift.end), breakProfile)
+        }
+    val overHard = meter.verdict == ClaimCapVerdict.HARD_CAP_BLOCKED
+    val overSoft = meter.verdict == ClaimCapVerdict.SOFT_CAP_WARNING
     var warningAccepted by remember { mutableStateOf(false) }
-    val verdict = vm.claimCap(shift, currentWeeklyHours, breakProfile)
 
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(shape = MaterialTheme.shapes.large, tonalElevation = 6.dp) {
-            Column(Modifier.padding(20.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Claim ${shift.house.name} shift", style = MaterialTheme.typography.titleLarge)
-                Text("${shift.start} – ${shift.end}")
+    ShiftBottomSheet(onDismiss = onDismiss, title = if (permanent) "Pick up permanently" else "Claim shift") {
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            // Shift summary — badge + mono time + house · duration · day.
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                HouseBadge(
+                    row.houseInitial,
+                    if (permanent) c.permanent.tint else c.surfaceVar,
+                    if (permanent) c.permanent.deep else c.ink,
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(row.timeLabel, style = ShiftTheme.type.monoTimeHero.copy(fontSize = 20.sp), color = c.ink)
+                    Text("${row.houseName} · ${row.durationLabel} · ${row.dayLabel}", color = c.sec, fontSize = 13.5.sp)
+                }
+            }
 
-                when {
-                    verdict == ClaimCapVerdict.HARD_CAP_BLOCKED ->
-                        Column {
-                            Text("This claim is over the 40-hour break cap and is blocked (§5.3).")
-                            OutlinedButton(onClick = onDismiss) { Text("Close") }
-                        }
-                    verdict == ClaimCapVerdict.SOFT_CAP_WARNING && !warningAccepted ->
-                        Column(Modifier.testTag("soft_cap_warning_modal"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("This claim puts you over the 20-hour cap. It is allowed (§5.3).")
-                            Button(
-                                onClick = { warningAccepted = true },
-                                modifier = Modifier.testTag("soft_cap_confirm_button"),
-                            ) { Text("Claim anyway") }
-                        }
-                    else ->
-                        Button(
-                            onClick = {
-                                onClaimed()
-                                onDismiss()
-                            },
-                            modifier = Modifier.testTag("claim_confirm_button"),
-                        ) { Text("Confirm claim") }
+            if (permanent) PermanentRecurringNote(row)
+
+            ClaimHoursMeter(meter)
+
+            if (overSoft) {
+                ShiftBanner(
+                    title = "Puts you over the 20h soft cap",
+                    body = "Allowed this period, but your manager sees the overage.",
+                    tone = BannerTone.Warning,
+                    modifier = Modifier.testTag("soft_cap_warning_modal"),
+                )
+            }
+            if (overHard) {
+                ShiftBanner(
+                    title = "Over the 40h limit — can't claim",
+                    body = "Break-period hard cap. Drop another shift first.",
+                    tone = BannerTone.Error,
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ShiftButton("Cancel", onDismiss, modifier = Modifier.weight(1f), variant = ButtonVariant.Outlined)
+                if (overSoft && !warningAccepted) {
+                    ShiftButton(
+                        "Claim anyway",
+                        onClick = { warningAccepted = true },
+                        modifier = Modifier.weight(1f).testTag("soft_cap_confirm_button"),
+                    )
+                } else {
+                    ShiftButton(
+                        if (permanent) "Confirm pickup" else "Claim shift",
+                        onClick = {
+                            onConfirmed()
+                            onDismiss()
+                        },
+                        modifier = Modifier.weight(1f).testTag("claim_confirm_button"),
+                        enabled = !overHard,
+                    )
                 }
             }
         }
+    }
+}
+
+/** The "this brings your week to {after}h of {cap}h" meter + progress bar (§5.3 caps). */
+@Composable
+private fun ClaimHoursMeter(meter: ClaimMeter) {
+    val c = ShiftTheme.colors
+    val overHard = meter.verdict == ClaimCapVerdict.HARD_CAP_BLOCKED
+    val overSoft = meter.verdict == ClaimCapVerdict.SOFT_CAP_WARNING
+    val emphasis =
+        when {
+            overHard -> c.danger.accent
+            overSoft -> c.pending
+            else -> c.ink
+        }
+    val barColor = if (overHard) {
+        c.danger.accent
+    } else if (overSoft) {
+        c.pending
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("This brings your week to", color = c.sec, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Text(
+                "${meter.afterLabel} of ${meter.capLabel}",
+                style = ShiftTheme.type.monoTime.copy(fontSize = 13.sp, fontWeight = FontWeight.SemiBold),
+                color = emphasis,
+            )
+        }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .clip(RoundedCornerShape(50))
+                .background(c.surfaceVar),
+        ) {
+            // Where you are now (ghost), then where this claim takes you (colored).
+            Box(
+                Modifier
+                    .fillMaxWidth(meter.currentFraction.toFloat())
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(50))
+                    .background(c.ink.copy(alpha = 0.22f)),
+            )
+            Box(
+                Modifier
+                    .fillMaxWidth(meter.afterFraction.toFloat())
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(50))
+                    .background(barColor),
+            )
+        }
+    }
+}
+
+/** The recurring-slot note shown when picking up a permanent opening (design `ClaimSheet`). */
+@Composable
+private fun PermanentRecurringNote(row: OpenShiftRow) {
+    val c = ShiftTheme.colors
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(c.permanent.tint)
+            .padding(horizontal = 13.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Text("Recurring · ${row.dayLabel} · ${row.timeLabel}", color = c.permanent.deep, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        row.meta?.let { Text("Repeats weekly — $it.", color = c.sec, fontSize = 12.5.sp) }
     }
 }
 
@@ -446,33 +608,56 @@ private fun ClaimFlowDialog(
 // ===================================================================
 
 @Composable
-private fun OtherHousesTabContent(tab: OtherHousesTab) {
-    LazyColumn(Modifier.fillMaxSize().padding(12.dp).testTag("other_houses_tab")) {
+private fun OtherHousesTabContent(
+    tab: OtherHousesTab,
+    vm: ShiftsScreenViewModel,
+    currentWeeklyHours: Double,
+    breakProfile: Boolean,
+    onClaimed: () -> Unit,
+) {
+    var claimTarget by remember { mutableStateOf<OpenShift?>(null) }
+
+    LazyColumn(
+        Modifier.fillMaxSize().background(ShiftTheme.colors.bg).testTag("other_houses_tab"),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(22.dp),
+    ) {
         if (tab.isEmpty) {
-            item { Text("No cross-house shifts available (e.g. during winter break).") }
+            // §5.6 / decision #6 — no eligible cross-house feed (e.g. winter break).
+            item {
+                EmptyState(
+                    title = "No eligible shifts elsewhere",
+                    icon = ShiftIcons.Building,
+                    body = "No open shifts at houses you can pick up at right now. Common during winter break.",
+                )
+            }
         } else {
             tab.groups.forEach { group ->
                 item {
-                    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                        Text(group.house.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        group.weekly.forEach { CrossHouseCard(it) }
-                        group.permanentOpenings.forEach { CrossHouseCard(it) }
-                        HorizontalDivider(Modifier.padding(top = 6.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SectionHeader(group.house.name, count = group.weekly.size + group.permanentOpenings.size)
+                        ShiftCardColumn {
+                            group.weekly.forEach { OpenFeedCard(it, vm) { claimTarget = it } }
+                            group.permanentOpenings.forEach { OpenFeedCard(it, vm) { claimTarget = it } }
+                        }
                     }
                 }
             }
         }
     }
-}
 
-@Composable
-private fun CrossHouseCard(shift: OpenShift) {
-    Card(Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag("open_shift_card")) {
-        Column(Modifier.padding(12.dp)) {
-            Text(shift.house.name, fontWeight = FontWeight.SemiBold)
-            Text("${shift.start} – ${shift.end}", style = MaterialTheme.typography.bodySmall)
-            shift.weeksRemaining?.let { Text("$it weeks remaining", style = MaterialTheme.typography.bodySmall) }
-        }
+    claimTarget?.let { shift ->
+        ClaimSheet(
+            shift = shift,
+            vm = vm,
+            currentWeeklyHours = currentWeeklyHours,
+            breakProfile = breakProfile,
+            onConfirmed = {
+                vm.claim(shift)
+                onClaimed()
+            },
+            onDismiss = { claimTarget = null },
+        )
     }
 }
 

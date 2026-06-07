@@ -276,4 +276,27 @@ object ShiftIcons {
             arcTo(2.5f, 2.5f, 0f, false, true, 7f, 4.5f)
             close()
         }
+
+    /** Building — a desk/house elsewhere (the cross-house empty state). */
+    val Building: ImageVector =
+        stroked("Building") {
+            moveTo(6f, 20.5f)
+            lineTo(6f, 4.5f)
+            lineTo(15f, 4.5f)
+            lineTo(15f, 20.5f)
+            moveTo(4f, 20.5f)
+            lineTo(20f, 20.5f)
+            moveTo(9f, 8f)
+            lineTo(9.01f, 8f)
+            moveTo(12f, 8f)
+            lineTo(12.01f, 8f)
+            moveTo(9f, 12f)
+            lineTo(9.01f, 12f)
+            moveTo(12f, 12f)
+            lineTo(12.01f, 12f)
+            moveTo(9f, 20.5f)
+            lineTo(9f, 16.5f)
+            lineTo(12f, 16.5f)
+            lineTo(12f, 20.5f)
+        }
 }

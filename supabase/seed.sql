@@ -397,3 +397,37 @@ INSERT INTO system_config (config_key, config_value, value_type) VALUES
 UPDATE scheduling_periods
 SET preference_deadline = '2026-01-30 23:59:59-05'
 WHERE period_id = 'c0000000-0000-4000-8000-000000000001';
+
+-- =====================================================================
+-- S1 admin-override e2e fixtures (web-remediation, audit #1).
+-- The live calendar renders any shift_blocks + assignment rows for a house/week
+-- (no published_at gate, no operating_calendar join — see lib/data/calendar.ts),
+-- so the override flows (assign / reassign / remove + advisory confirm) need a
+-- Quad week (Mon 2026-06-08, EDT) holding a Cara-occupied seat AND vacant
+-- "open shift" seats, plus Fred opted-out so assigning Fred trips the advisory.
+-- A SEPARATE Summer period (no overlap with Spring) carries Fred's opt-out; it
+-- does not disturb the unpublished Spring period the builder/preferences specs use.
+-- =====================================================================
+INSERT INTO scheduling_periods (period_id, period_name, profile_name, start_date, end_date, preference_deadline, published_at) VALUES
+  -- Future preference_deadline so the period_targets insert below passes the
+  -- submission-window trigger (the deadline is irrelevant to the override e2e).
+  ('c0000000-0000-4000-8000-000000000002', 'Summer 2026', 'regular_school_year', '2026-06-01', '2026-08-01', '2099-12-31 23:59:59-04', '2026-06-01 00:00:00-04');
+
+-- Quad blocks for Mon 2026-06-08 at 10:00 / 10:30 NY (EDT, -04:00); headcount 3.
+INSERT INTO shift_blocks (block_id, house_id, block_start_at, required_headcount) VALUES
+  ('b0000000-0000-4000-8000-000000060800', 'quad', '2026-06-08 10:00:00-04', 3),
+  ('b0000000-0000-4000-8000-000000060830', 'quad', '2026-06-08 10:30:00-04', 3);
+
+-- 10:00 block: Cara (overrideIncumbent) on seat 1 → reassign/remove target; seats
+-- 2-3 vacant → "open shift" assign targets. 10:30 block: all vacant.
+INSERT INTO shift_block_assignments (assignment_id, block_id, user_id, status, vacancy_origin, is_float, source_house_id) VALUES
+  ('e0000000-0000-4000-8000-000000060801', 'b0000000-0000-4000-8000-000000060800', 'a0000000-0000-4000-8000-000000000004', 'scheduled', 'none', false, NULL),
+  ('e0000000-0000-4000-8000-000000060802', 'b0000000-0000-4000-8000-000000060800', NULL, 'vacant', 'never_assigned', false, NULL),
+  ('e0000000-0000-4000-8000-000000060803', 'b0000000-0000-4000-8000-000000060800', NULL, 'vacant', 'never_assigned', false, NULL),
+  ('e0000000-0000-4000-8000-000000060831', 'b0000000-0000-4000-8000-000000060830', NULL, 'vacant', 'never_assigned', false, NULL),
+  ('e0000000-0000-4000-8000-000000060832', 'b0000000-0000-4000-8000-000000060830', NULL, 'vacant', 'never_assigned', false, NULL),
+  ('e0000000-0000-4000-8000-000000060833', 'b0000000-0000-4000-8000-000000060830', NULL, 'vacant', 'never_assigned', false, NULL);
+
+-- Fred (overrideAdvisoryWorker) opted out for the Summer period → opted_out advisory.
+INSERT INTO period_targets (user_id, period_id, target_hours, opted_out) VALUES
+  ('a0000000-0000-4000-8000-000000000007', 'c0000000-0000-4000-8000-000000000002', 0, true);

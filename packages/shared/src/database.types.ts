@@ -71,6 +71,13 @@ export type Database = {
             referencedRelation: 'users';
             referencedColumns: ['user_id'];
           },
+          {
+            foreignKeyName: 'ack_cadence_config_modified_by_fkey';
+            columns: ['modified_by'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
         ];
       };
       block_step_status: {
@@ -135,6 +142,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'users';
             referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'break_optouts_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
           },
         ];
       };
@@ -243,6 +257,13 @@ export type Database = {
             referencedColumns: ['user_id'];
           },
           {
+            foreignKeyName: 'draft_block_assignments_created_by_fkey';
+            columns: ['created_by'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
+          {
             foreignKeyName: 'draft_block_assignments_period_id_fkey';
             columns: ['period_id'];
             isOneToOne: false;
@@ -255,6 +276,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'users';
             referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'draft_block_assignments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
           },
         ];
       };
@@ -310,11 +338,25 @@ export type Database = {
             referencedColumns: ['user_id'];
           },
           {
+            foreignKeyName: 'float_assignments_force_triggered_by_fkey';
+            columns: ['force_triggered_by'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
+          {
             foreignKeyName: 'float_assignments_user_id_fkey';
             columns: ['user_id'];
             isOneToOne: false;
             referencedRelation: 'users';
             referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'float_assignments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
           },
         ];
       };
@@ -360,6 +402,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'users';
             referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'float_exclusions_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
           },
         ];
       };
@@ -443,11 +492,25 @@ export type Database = {
             referencedColumns: ['user_id'];
           },
           {
+            foreignKeyName: 'hm_leave_replacement_user_id_fkey';
+            columns: ['replacement_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
+          {
             foreignKeyName: 'hm_leave_user_id_fkey';
             columns: ['user_id'];
             isOneToOne: false;
             referencedRelation: 'users';
             referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'hm_leave_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
           },
         ];
       };
@@ -471,6 +534,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'users';
             referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'hmod_rotor_hmod_user_id_fkey';
+            columns: ['hmod_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
           },
         ];
       };
@@ -527,6 +597,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'users';
             referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'notifications_recipient_user_id_fkey';
+            columns: ['recipient_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
           },
         ];
       };
@@ -666,6 +743,13 @@ export type Database = {
             referencedRelation: 'users';
             referencedColumns: ['user_id'];
           },
+          {
+            foreignKeyName: 'period_house_publications_published_by_fkey';
+            columns: ['published_by'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
         ];
       };
       period_targets: {
@@ -701,6 +785,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'users';
             referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'period_targets_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
           },
         ];
       };
@@ -740,6 +831,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'users';
             referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'preference_reminder_sends_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
           },
         ];
       };
@@ -784,6 +882,13 @@ export type Database = {
             referencedRelation: 'users';
             referencedColumns: ['user_id'];
           },
+          {
+            foreignKeyName: 'preferences_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
         ];
       };
       push_tokens: {
@@ -818,6 +923,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'users';
             referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'push_tokens_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
           },
         ];
       };
@@ -921,6 +1033,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'users';
             referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'shift_block_assignments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
           },
         ];
       };
@@ -1035,11 +1154,25 @@ export type Database = {
             referencedColumns: ['user_id'];
           },
           {
+            foreignKeyName: 'swap_requests_counterparty_user_id_fkey';
+            columns: ['counterparty_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
+          {
             foreignKeyName: 'swap_requests_initiator_user_id_fkey';
             columns: ['initiator_user_id'];
             isOneToOne: false;
             referencedRelation: 'users';
             referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'swap_requests_initiator_user_id_fkey';
+            columns: ['initiator_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
           },
         ];
       };
@@ -1076,6 +1209,13 @@ export type Database = {
             referencedRelation: 'users';
             referencedColumns: ['user_id'];
           },
+          {
+            foreignKeyName: 'system_config_modified_by_fkey';
+            columns: ['modified_by'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
         ];
       };
       user_roles: {
@@ -1108,6 +1248,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'users';
             referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'user_roles_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
           },
         ];
       };
@@ -1182,11 +1329,77 @@ export type Database = {
             referencedRelation: 'users';
             referencedColumns: ['user_id'];
           },
+          {
+            foreignKeyName: 'weekly_cap_overrides_modified_by_fkey';
+            columns: ['modified_by'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
         ];
       };
     };
     Views: {
-      [_ in never]: never;
+      worker_my_shifts: {
+        Row: {
+          break_shift: boolean | null;
+          cross_house: boolean | null;
+          dropped_still_open: boolean | null;
+          end_at: string | null;
+          house_id: string | null;
+          house_name: string | null;
+          id: string | null;
+          kind: string | null;
+          pending: boolean | null;
+          start_at: string | null;
+          user_id: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'shift_block_assignments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'shift_block_assignments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
+          {
+            foreignKeyName: 'shift_blocks_house_id_fkey';
+            columns: ['house_id'];
+            isOneToOne: false;
+            referencedRelation: 'houses';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      worker_open_shifts: {
+        Row: {
+          eligible_user_id: string | null;
+          end_at: string | null;
+          feed: string | null;
+          home_house: boolean | null;
+          house_id: string | null;
+          house_name: string | null;
+          id: string | null;
+          start_at: string | null;
+          weeks_remaining: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'shift_blocks_house_id_fkey';
+            columns: ['house_id'];
+            isOneToOne: false;
+            referencedRelation: 'houses';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
     };
     Functions: {
       accept_swap: {
@@ -1195,6 +1408,34 @@ export type Database = {
       };
       acknowledge_float: {
         Args: { p_float_id: string; p_now?: string; p_user_id: string };
+        Returns: Json;
+      };
+      admin_assign_worker: {
+        Args: {
+          p_block_ids: string[];
+          p_now: string;
+          p_operator_user_id: string;
+          p_override_advisories: boolean;
+          p_scope: string;
+          p_user_id: string;
+        };
+        Returns: Json;
+      };
+      admin_override_cap_assessment: {
+        Args: { p_block_ids: string[]; p_user_id: string };
+        Returns: {
+          over_hard: boolean;
+          over_soft: boolean;
+        }[];
+      };
+      admin_remove_worker: {
+        Args: {
+          p_block_ids: string[];
+          p_now: string;
+          p_operator_user_id: string;
+          p_scope: string;
+          p_user_id: string;
+        };
         Returns: Json;
       };
       apply_permanent_swap: {

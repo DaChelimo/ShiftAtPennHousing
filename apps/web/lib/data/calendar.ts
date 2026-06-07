@@ -48,6 +48,12 @@ export type CalShift = {
   workerRole: string | null;
   homeHouse: string | null; // for float-in / cross-house pickup
   escalationStep: EscalationStep | null; // for gaps / pending
+  // The real DB block UUIDs backing this coalesced card — the unit the admin
+  // override RPCs (admin_assign_worker / admin_remove_worker) act on. `id` above
+  // is a synthetic span key; these are the load-bearing identifiers (S1).
+  blockIds: string[];
+  startAtIso: string; // first block's start (ISO timestamptz)
+  dateKey: string; // the card's NY date (YYYY-MM-DD)
 };
 
 export type CalendarDay = {
@@ -56,6 +62,15 @@ export type CalendarDay = {
   date: string; // e.g. "Feb 2"
   dateKey: string; // YYYY-MM-DD (NY)
   isToday: boolean;
+};
+
+// Same-house roster for the inline-override worker picker (S1). Filtered to this
+// house's home workers (so a Harnwell calendar naturally offers only Harnwell-home
+// workers — training satisfied by construction, TEST_PLAN D8) and to active users.
+export type AssignableWorker = {
+  userId: string;
+  name: string;
+  isActive: boolean;
 };
 
 export type CalendarModel = {
@@ -69,6 +84,7 @@ export type CalendarModel = {
   lanes: number;
   shifts: CalShift[];
   hasBlocks: boolean;
+  assignableWorkers: AssignableWorker[];
 };
 
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -141,13 +157,20 @@ type Atom = {
   userId: string | null;
   homeHouse: string | null;
   escalationStep: EscalationStep | null;
+  blockId: string; // the DB block UUID this atom sits on
+  startAtIso: string; // that block's start (ISO)
 };
 
 // DB assignment → the desk-presence atom shown on the HOUSE calendar. Returns null
 // for rows that do not represent presence/vacancy at THIS desk (floated_out /
 // pending_float_out — that worker is staffing elsewhere; their seat shows as the
 // covering float-in or a vacant block).
-function toAtom(a: AssignmentRow, escalationStep: EscalationStep | null): Atom | null {
+function toAtom(
+  a: AssignmentRow,
+  escalationStep: EscalationStep | null,
+  startAtIso: string,
+): Atom | null {
+  const id = { blockId: a.block_id, startAtIso };
   switch (a.status) {
     case 'vacant':
       return {
@@ -155,15 +178,17 @@ function toAtom(a: AssignmentRow, escalationStep: EscalationStep | null): Atom |
         userId: null,
         homeHouse: null,
         escalationStep,
+        ...id,
       };
     case 'allied':
-      return { state: 'allied', userId: null, homeHouse: null, escalationStep };
+      return { state: 'allied', userId: null, homeHouse: null, escalationStep, ...id };
     case 'floated_in':
       return {
         state: 'floatin',
         userId: a.user_id,
         homeHouse: a.source_house_id,
         escalationStep: null,
+        ...id,
       };
     case 'pending_float_in':
       return {
@@ -171,6 +196,7 @@ function toAtom(a: AssignmentRow, escalationStep: EscalationStep | null): Atom |
         userId: a.user_id,
         homeHouse: a.source_house_id,
         escalationStep,
+        ...id,
       };
     case 'scheduled':
     case 'claimed':
@@ -180,9 +206,16 @@ function toAtom(a: AssignmentRow, escalationStep: EscalationStep | null): Atom |
           userId: a.user_id,
           homeHouse: a.source_house_id,
           escalationStep: null,
+          ...id,
         };
       }
-      return { state: 'scheduled', userId: a.user_id, homeHouse: null, escalationStep: null };
+      return {
+        state: 'scheduled',
+        userId: a.user_id,
+        homeHouse: null,
+        escalationStep: null,
+        ...id,
+      };
     default:
       return null; // floated_out / pending_float_out
   }
@@ -224,11 +257,9 @@ export function buildShifts(
 
     // Worker spans: coalesce consecutive blocks with the same worker + state.
     const byWorker = new Map<string, { block: number; atom: Atom }[]>();
-    // Anonymous (gap / perm-gap / allied) seats counted per block, per state.
-    const anonCount = new Map<
-      CalState,
-      Map<number, { count: number; step: EscalationStep | null }>
-    >();
+    // Anonymous (gap / perm-gap / allied) seats per block, per state — the atom
+    // list (not just a count) so each peeled track keeps a real DB block id.
+    const anonByState = new Map<CalState, Map<number, Atom[]>>();
 
     for (const [blockIndex, atoms] of byBlock) {
       for (const atom of atoms) {
@@ -237,9 +268,8 @@ export function buildShifts(
           (byWorker.get(key) ?? byWorker.set(key, []).get(key)!).push({ block: blockIndex, atom });
         } else {
           const perState =
-            anonCount.get(atom.state) ?? anonCount.set(atom.state, new Map()).get(atom.state)!;
-          const cur = perState.get(blockIndex) ?? { count: 0, step: atom.escalationStep };
-          perState.set(blockIndex, { count: cur.count + 1, step: cur.step ?? atom.escalationStep });
+            anonByState.get(atom.state) ?? anonByState.set(atom.state, new Map()).get(atom.state)!;
+          (perState.get(blockIndex) ?? perState.set(blockIndex, []).get(blockIndex)!).push(atom);
         }
       }
     }
@@ -252,6 +282,7 @@ export function buildShifts(
         let j = i;
         while (j + 1 < items.length && items[j + 1]!.block === items[j]!.block + 1) j++;
         const head = items[i]!.atom;
+        const members = items.slice(i, j + 1).map((it) => it.atom);
         spans.push({
           id: `${dayIndex}-w-${head.userId}-${items[i]!.block}`,
           dayIndex,
@@ -264,24 +295,29 @@ export function buildShifts(
           workerRole: null,
           homeHouse: head.homeHouse,
           escalationStep: null,
+          blockIds: members.map((m) => m.blockId),
+          startAtIso: head.startAtIso,
+          dateKey: nyDate(head.startAtIso),
         });
         i = j + 1;
       }
     }
 
     // Anonymous seat tracks: for each state, peel off tracks so c_b seats at block b
-    // become c_b stacked spans, coalescing consecutive blocks per track.
-    for (const [state, perBlock] of anonCount) {
-      const maxCount = Math.max(...[...perBlock.values()].map((v) => v.count), 0);
+    // become c_b stacked spans, coalescing consecutive blocks per track. Track `t`
+    // takes the t-th atom at each block, so each card carries its own DB block ids.
+    for (const [state, perBlock] of anonByState) {
+      const maxCount = Math.max(...[...perBlock.values()].map((v) => v.length), 0);
       for (let track = 0; track < maxCount; track++) {
         const blocks = [...perBlock.entries()]
-          .filter(([, v]) => v.count > track)
-          .map(([b, v]) => ({ b, step: v.step }))
+          .filter(([, atoms]) => atoms.length > track)
+          .map(([b, atoms]) => ({ b, atom: atoms[track]! }))
           .sort((a, b) => a.b - b.b);
         let i = 0;
         while (i < blocks.length) {
           let j = i;
           while (j + 1 < blocks.length && blocks[j + 1]!.b === blocks[j]!.b + 1) j++;
+          const members = blocks.slice(i, j + 1).map((x) => x.atom);
           spans.push({
             id: `${dayIndex}-${state}-${track}-${blocks[i]!.b}`,
             dayIndex,
@@ -293,7 +329,10 @@ export function buildShifts(
             workerPhone: null,
             workerRole: null,
             homeHouse: null,
-            escalationStep: blocks[i]!.step,
+            blockIds: members.map((m) => m.blockId),
+            startAtIso: members[0]!.startAtIso,
+            dateKey: nyDate(members[0]!.startAtIso),
+            escalationStep: members[0]!.escalationStep,
           });
           i = j + 1;
         }
@@ -338,6 +377,7 @@ export async function getHouseCalendar(
     lanes: 1,
     shifts: [],
     hasBlocks: false,
+    assignableWorkers: [],
   };
 
   // House name.
@@ -347,6 +387,18 @@ export async function getHouseCalendar(
     .eq('id', houseId)
     .maybeSingle();
   if (house) base.houseName = house.name;
+
+  // Same-house roster for the inline-override picker (S1). Mirrors people.ts's
+  // home_house_id-scoped read; the override RPC rejects a cross-house target, so
+  // the picker is filtered to this house (Harnwell ⇒ only Harnwell-home, D8).
+  const { data: rosterRows } = await supabase
+    .from('users')
+    .select('user_id, name, is_active')
+    .eq('home_house_id', houseId)
+    .order('name');
+  base.assignableWorkers = (rosterRows ?? [])
+    .filter((u) => u.is_active)
+    .map((u) => ({ userId: u.user_id, name: u.name, isActive: u.is_active }));
 
   // Blocks for the house in (a generous UTC envelope around) the NY week, then
   // filter precisely by NY date to avoid DST edge math.
@@ -364,14 +416,14 @@ export async function getHouseCalendar(
   });
   if (weekBlocks.length === 0) return base;
 
-  const blockMeta = new Map<string, { dayIndex: number; blockIndex: number }>();
+  const blockMeta = new Map<string, { dayIndex: number; blockIndex: number; startAtIso: string }>();
   let maxHeadcount = 1;
   for (const b of weekBlocks) {
     const dateKey = nyDate(b.block_start_at);
     const dayIndex = days.findIndex((d) => d.dateKey === dateKey);
     const blockIndex = Math.round((nyMinutes(b.block_start_at) - DAY_START_MIN) / 30);
     if (dayIndex < 0 || blockIndex < 0 || blockIndex >= BLOCKS_PER_DAY) continue;
-    blockMeta.set(b.block_id, { dayIndex, blockIndex });
+    blockMeta.set(b.block_id, { dayIndex, blockIndex, startAtIso: b.block_start_at });
     maxHeadcount = Math.max(maxHeadcount, b.required_headcount);
   }
   const blockIds = [...blockMeta.keys()];
@@ -424,7 +476,7 @@ export async function getHouseCalendar(
   for (const a of assignments) {
     const meta = blockMeta.get(a.block_id);
     if (!meta) continue;
-    const atom = toAtom(a, stepByBlock.get(a.block_id) ?? null);
+    const atom = toAtom(a, stepByBlock.get(a.block_id) ?? null, meta.startAtIso);
     if (!atom) continue;
     const byBlock =
       perDay.get(meta.dayIndex) ?? perDay.set(meta.dayIndex, new Map()).get(meta.dayIndex)!;

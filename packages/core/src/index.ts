@@ -3,6 +3,7 @@
 
 export const CORE_VERSION = '0.0.0';
 
+export * from './admin-override/index.js';
 export * from './break-claim/index.js';
 export * from './break-phases/index.js';
 export * from './cap-modification/index.js';

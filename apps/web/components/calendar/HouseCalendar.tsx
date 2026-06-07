@@ -424,7 +424,12 @@ export function HouseCalendar({
           shift={selected}
           houseName={model.houseName}
           dayLabel={`${model.days[selected.dayIndex]!.label} ${model.days[selected.dayIndex]!.date}`}
+          assignableWorkers={model.assignableWorkers}
           onClose={() => setSelected(null)}
+          onApplied={() => {
+            setSelected(null);
+            router.refresh();
+          }}
         />
       )}
     </div>

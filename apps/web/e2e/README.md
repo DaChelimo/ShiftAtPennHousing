@@ -143,3 +143,42 @@ SMs and SWs are blocked. Pinned decisions: `tests/PHASE_14/TEST_PLAN.md`.
 Reuses the phase-13b SEED fixtures: `hmQuad`/`bmQuad` (authorized), `smQuad` + `alice`
 (blocked). Target week is `SEED.date` (2026-02-02, a Monday in the regular school
 year → default 20-soft; the HM/BM flows raise it to 40-hard).
+
+## S1 — Live-calendar admin override (web-remediation, audit #1) — route `/calendar`
+
+`admin-override.spec.ts` is **TDD-first / RED**: the shift detail panel still shows
+the disabled "Read-only in this build" notice instead of a live worker-picker, so
+each flow fails at its first missing `override-*` selector. An HM/SM may **assign /
+reassign / remove** a worker on a published block, **this-week vs permanent**, with
+a **soft-constraint confirm**. Behavioral source: `BEHAVIORAL_SPECIFICATION.md` §4.3
+(Phase-3 post-publish override) + §11.1. Pinned decisions + the full contract:
+`docs/web-remediation/sessions/S1/TEST_PLAN.md`. The pure validator is unit-pinned
+in `packages/core/tests/s1-admin-override/admin-override.test.ts`; the authoritative
+RPC behavior in `supabase/tests/s1-admin-override.sql`. Seed is **Quad-only** — the
+Harnwell-training + cross-house rejections are pgTAP-only.
+
+| testid                                                   | Meaning                                                                                            |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `override-section`                                       | The override section in the shift detail panel (replaces the read-only notice; sm/hm/bm of house). |
+| `override-worker-select`                                 | The worker-picker (block-house roster; `<select>` with worker names as option labels).             |
+| `override-scope-week` / `override-scope-permanent`       | The This-week / Permanent scope toggle (checkable controls).                                       |
+| `override-submit`                                        | Assign / reassign the chosen worker.                                                               |
+| `override-remove`                                        | Remove the worker from an occupied seat.                                                           |
+| `override-advisory-confirm` / `override-advisory-accept` | The advisory-confirm modal (cannot / opted-out / over-soft-cap / over-target) + its accept.        |
+| `override-success`                                       | Post-write confirmation.                                                                           |
+
+A card's detail panel is opened by clicking the card (`role=dialog` named "Shift
+detail"); cards are selected by their visible text — a worker's name for an occupied
+seat, or "Open shift" for a vacant/gap card (no new per-card testid is required).
+
+**S1 seed contract.** The live calendar renders cards only from **published** Quad
+blocks that have `shift_block_assignments` rows. The S1 seed must therefore publish
+a Quad week — Monday **`SEED.overrideWeek` (2026-06-08)** — holding at minimum:
+
+- a **vacant** Quad seat (renders an "Open shift" card) → assign / scope / advisory targets;
+- an **occupied** Quad seat staffed by **`SEED.overrideIncumbent` (Cara Quad)** → reassign / remove targets.
+
+`SEED.overrideAdvisoryWorker` (**Fred Quad**, opted-out) triggers the advisory-confirm
+modal when assigned. Reuses the phase-13b Quad actors (`hmQuad`/`smQuad` authorized,
+`alice` an SW who cannot reach the manager calendar). Re-seed (`supabase db reset`)
+between runs.

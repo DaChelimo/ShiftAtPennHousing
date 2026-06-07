@@ -59,6 +59,19 @@ export const SEED = {
   // Quad HM goes on leave; Quad BM is the DEFAULT replacement (BEH §2.6 #1).
   hmQuad: { email: 'hm.quad@pennhousing.test', name: 'Hana Quad' } as SeedUser,
   bmQuad: { email: 'bm.quad@pennhousing.test', name: 'Bea Quad' } as SeedUser,
+
+  // --- S1 admin-override actors (web-remediation, audit #1) ---
+  // The override flows run on the LIVE calendar, which renders cards only from
+  // PUBLISHED Quad blocks that have assignment rows. The S1 seed must publish a
+  // Quad week (Monday `overrideWeek`) holding BOTH a vacant seat (an "Open shift"
+  // card) and an occupied seat staffed by `overrideIncumbent`, so assign /
+  // reassign / remove all have a target. `overrideAdvisoryWorker` is a Quad SW who
+  // triggers an advisory when assigned (opted-out / over-soft-cap that week), so
+  // the advisory-confirm modal appears. The actors reuse the phase-13b Quad SWs:
+  // Cara (incumbent) and Fred (opted-out → advisory). See e2e/README.md (S1).
+  overrideWeek: '2026-06-08', // a Monday; the S1 seed publishes Quad cards for it
+  overrideIncumbent: { email: 'cara.quad@pennhousing.test', name: 'Cara Quad' } as SeedUser,
+  overrideAdvisoryWorker: { email: 'fred.quad@pennhousing.test', name: 'Fred Quad' } as SeedUser,
   // An HM at another house whose ACTIVE leave delegation currently resolves THROUGH
   // hmQuad (i.e. hmQuad is in this HM's forward chain) → this HM is in hmQuad's
   // *incoming chain* and MUST be excluded from hmQuad's replacement picker (BEH §2.6

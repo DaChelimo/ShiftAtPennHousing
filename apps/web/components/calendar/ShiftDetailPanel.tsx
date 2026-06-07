@@ -1,14 +1,21 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
-import type { CalShift } from '../../lib/data/calendar';
+import {
+  assignWorker,
+  removeWorker,
+  type AssignAdvisory,
+  type OverrideScope,
+} from '../../lib/actions/override';
+import type { AssignableWorker, CalShift } from '../../lib/data/calendar';
 import {
   Avatar,
   Button,
   EscalationChip,
   Icon,
   IconButton,
+  Modal,
   Notification,
   PickupDot,
   Tag,
@@ -30,20 +37,24 @@ function prettifyHouse(id: string): string {
   return id.charAt(0).toUpperCase() + id.slice(1);
 }
 
-// Read-only shift detail / contact panel (design screen 04). Shows the shift,
-// the staffing worker's contact (Call via tel:), and escalation context. The
-// inline-OVERRIDE write the design shows is surfaced as a flagged, disabled
-// section — it needs an override RPC that does not exist (DESIGN_TOKENS.md §6).
+// Shift detail / contact panel (design screen 04). Shows the shift, the staffing
+// worker's contact (Call via tel:), escalation context, and the live inline
+// override (S1 — assign / reassign / remove, this-week vs permanent). `onApplied`
+// re-fetches the calendar after a successful override; `onClose` just dismisses.
 export function ShiftDetailPanel({
   shift,
   houseName,
   dayLabel,
+  assignableWorkers,
   onClose,
+  onApplied,
 }: {
   shift: CalShift;
   houseName: string;
   dayLabel: string;
+  assignableWorkers: AssignableWorker[];
   onClose: () => void;
+  onApplied: () => void;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -141,30 +152,218 @@ export function ShiftDetailPanel({
             </div>
           )}
 
-          {/* Inline override — design shows reassign / remove / force-trigger here,
-              but there is no override RPC (DESIGN_TOKENS.md §6). Flagged + disabled. */}
-          <div className="detail-override">
-            <div className="t-label" style={{ marginBottom: 8 }}>
-              Inline override
-            </div>
-            <Notification kind="info" title="Read-only in this build">
-              Changing the live schedule (reassign / remove / force-trigger, this-week vs permanent)
-              needs an override RPC that does not exist yet — flagged in DESIGN_TOKENS.md §6, not
-              fabricated here.
-            </Notification>
-            <div className="col gap-2" style={{ marginTop: 12 }}>
-              <Button kind="secondary" icon="edit" disabled>
-                {shift.workerName ? 'Reassign / add coverage' : 'Assign a worker'}
-              </Button>
-              {isGap && (
-                <Button kind="tertiary" icon="swap" disabled>
-                  Force-trigger float lookup
-                </Button>
-              )}
-            </div>
-          </div>
+          {/* Inline override (S1) — live assign / reassign / remove on this block,
+              this-week vs permanent, with a soft-advisory confirm. Authoritative
+              enforcement is the admin_assign_worker / admin_remove_worker RPC. */}
+          <OverrideSection
+            shift={shift}
+            assignableWorkers={assignableWorkers}
+            onApplied={onApplied}
+          />
         </div>
       </aside>
     </>
+  );
+}
+
+const ADVISORY_LABEL: Record<string, string> = {
+  cannot: 'This worker marked “cannot work” for this shift.',
+  opted_out: 'This worker opted out of hours this period.',
+  soft_cap: 'This assignment exceeds the worker’s soft (20h) weekly cap.',
+  over_target: 'This assignment exceeds the worker’s target hours.',
+};
+
+// Live inline-override controls: worker picker + this-week/permanent scope +
+// submit, an advisory-confirm modal (soft constraints), and a remove button on an
+// occupied seat. Hard blocks / unauthorized are surfaced inline from the RPC.
+function OverrideSection({
+  shift,
+  assignableWorkers,
+  onApplied,
+}: {
+  shift: CalShift;
+  assignableWorkers: AssignableWorker[];
+  onApplied: () => void;
+}) {
+  const occupied = shift.userId !== null;
+  const [workerId, setWorkerId] = useState<string | null>(shift.userId);
+  const [scope, setScope] = useState<OverrideScope>('this_week');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<AssignAdvisory[] | null>(null);
+
+  const options = assignableWorkers.map((w) => ({ value: w.userId, label: w.name }));
+
+  async function doAssign(overrideAdvisories: boolean) {
+    if (workerId === null) {
+      setError('Pick a worker first.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setSuccess(null);
+    const res = await assignWorker({
+      blockIds: shift.blockIds,
+      userId: workerId,
+      scope,
+      overrideAdvisories,
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setConfirm(null);
+      setError(res.error);
+      return;
+    }
+    if (res.data.needsConfirm) {
+      setConfirm(res.data.advisories);
+      return;
+    }
+    setConfirm(null);
+    setSuccess(occupied ? 'Reassigned' : 'Assigned');
+    // Let the success flash render, then re-fetch the calendar grid so the card
+    // reflects the write (the server action already revalidated /calendar).
+    setTimeout(onApplied, 700);
+  }
+
+  async function doRemove() {
+    if (shift.userId === null) return;
+    setBusy(true);
+    setError(null);
+    setSuccess(null);
+    const res = await removeWorker({
+      blockIds: shift.blockIds,
+      userId: shift.userId,
+      scope,
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    setSuccess('Removed');
+    setTimeout(onApplied, 700);
+  }
+
+  return (
+    <div className="detail-override" data-testid="override-section">
+      <div className="t-label" style={{ marginBottom: 10 }}>
+        Inline override
+      </div>
+
+      <div className="col gap-3">
+        <label className="field">
+          <span className="t-label">Worker</span>
+          <select
+            data-testid="override-worker-select"
+            className="input select"
+            value={workerId ?? ''}
+            onChange={(e) => setWorkerId(e.target.value === '' ? null : e.target.value)}
+          >
+            <option value="" disabled>
+              Select a worker…
+            </option>
+            {options.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="col gap-1">
+          <span className="t-label">Apply to</span>
+          <div className="seg" role="radiogroup" aria-label="Override scope">
+            <button
+              type="button"
+              role="radio"
+              data-testid="override-scope-week"
+              className={`seg-btn ${scope === 'this_week' ? 'is-on' : ''}`.trim()}
+              aria-checked={scope === 'this_week'}
+              onClick={() => setScope('this_week')}
+            >
+              This week
+            </button>
+            <button
+              type="button"
+              role="radio"
+              data-testid="override-scope-permanent"
+              className={`seg-btn ${scope === 'permanent' ? 'is-on' : ''}`.trim()}
+              aria-checked={scope === 'permanent'}
+              onClick={() => setScope('permanent')}
+            >
+              Permanent
+            </button>
+          </div>
+        </div>
+
+        {error !== null && (
+          <Notification kind="error" title="Could not apply" testId="override-error">
+            {error}
+          </Notification>
+        )}
+        {success !== null && (
+          <Notification kind="success" title={success} testId="override-success">
+            The live schedule has been updated.
+          </Notification>
+        )}
+
+        <div className="row gap-2 wrap">
+          <Button
+            kind="primary"
+            icon={occupied ? 'edit' : 'add'}
+            data-testid="override-submit"
+            disabled={busy || workerId === null}
+            onClick={() => doAssign(false)}
+          >
+            {occupied ? 'Reassign' : 'Assign'}
+          </Button>
+          {occupied && (
+            <Button
+              kind="danger"
+              icon="trash"
+              data-testid="override-remove"
+              disabled={busy}
+              onClick={doRemove}
+            >
+              Remove
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {confirm !== null && (
+        <Modal
+          testId="override-advisory-confirm"
+          eyebrow="Soft constraint"
+          title="Confirm override"
+          onClose={() => setConfirm(null)}
+          footer={
+            <>
+              <Button kind="secondary" onClick={() => setConfirm(null)} disabled={busy}>
+                Cancel
+              </Button>
+              <Button
+                kind="primary"
+                data-testid="override-advisory-accept"
+                disabled={busy}
+                onClick={() => doAssign(true)}
+              >
+                Assign anyway
+              </Button>
+            </>
+          }
+        >
+          <p style={{ marginBottom: 12 }}>This assignment trips a soft constraint:</p>
+          <ul className="col gap-2" style={{ margin: 0, paddingLeft: 18 }}>
+            {confirm.map((a) => (
+              <li key={a.kind} className="t-body">
+                {ADVISORY_LABEL[a.kind] ?? a.kind}
+              </li>
+            ))}
+          </ul>
+        </Modal>
+      )}
+    </div>
   );
 }

@@ -5,6 +5,8 @@ import com.pennhousing.shift.shared.model.House
 import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.model.OpenFeed
 import com.pennhousing.shift.shared.model.OpenShift
+import com.pennhousing.shift.shared.notifications.NotificationItem
+import com.pennhousing.shift.shared.notifications.categoryForType
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.realtime.PostgresAction
@@ -80,6 +82,20 @@ class WorkerShiftsRepository(
             changes.collect { emit(fetchWorkerWeek(userId)) }
         }
 
+    /**
+     * The worker's notification history for the Updates feed (§10.1). A plain SELECT
+     * over the worker's own `notifications` rows (RLS-scoped); the pure
+     * `buildUpdatesFeed` groups them. `urgent`/`floatId` are left unset — the live
+     * pending-float linkage is a separate query (see the `AckDeclineViewModel` TODO),
+     * so today the urgent entry comes from the demo/ack path, not this list.
+     */
+    suspend fun fetchNotifications(userId: String): List<NotificationItem> =
+        supabase
+            .from(TABLE_NOTIFICATIONS)
+            .select { filter { eq("recipient_user_id", userId) } }
+            .decodeList<NotificationWireRow>()
+            .map { it.toModel() }
+
     /** Live new-notification stream for the top-of-screen toast (§10.1, deliverable #7). */
     fun observeNotifications(userId: String): Flow<ToastNotification> =
         flow {
@@ -97,6 +113,7 @@ class WorkerShiftsRepository(
     private companion object {
         const val VIEW_MY_SHIFTS = "worker_my_shifts"
         const val VIEW_OPEN_SHIFTS = "worker_open_shifts"
+        const val TABLE_NOTIFICATIONS = "notifications"
     }
 }
 
@@ -159,6 +176,25 @@ private fun parseAssignmentKind(raw: String): AssignmentKind =
         "float_out" -> AssignmentKind.FLOAT_OUT
         else -> AssignmentKind.SCHEDULED
     }
+
+@Serializable
+internal data class NotificationWireRow(
+    @SerialName("notification_id") val id: String,
+    val type: String,
+    val payload: JsonObject = JsonObject(emptyMap()),
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("acknowledged_at") val acknowledgedAt: String? = null,
+)
+
+private fun NotificationWireRow.toModel(): NotificationItem =
+    NotificationItem(
+        id = id,
+        category = categoryForType(type),
+        title = payload["title"]?.jsonPrimitive?.content ?: "Notification",
+        body = payload["body"]?.jsonPrimitive?.content ?: payload["message"]?.jsonPrimitive?.content ?: "",
+        createdAt = Instant.parse(createdAt),
+        unread = acknowledgedAt == null,
+    )
 
 private fun JsonObject.toToast(): ToastNotification? {
     val title = this["title"]?.jsonPrimitive?.content ?: return null

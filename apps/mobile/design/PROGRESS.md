@@ -98,6 +98,36 @@ the design's "from Updates" sheet hero (worker-app.html `FloatAckSheet` / `Float
 - **Selectors preserved:** `ack_modal`, `ack_button`, `decline_button`, `ack_success`,
   `ack_deadline_passed` (+ the unchanged `tab_updates` / `pending_float_notification` entry).
 
+### Screen 4 — Updates (notifications feed + pending-float entry) — **latest**
+
+Reskinned the Updates tab on **both** platforms. Was a single stub card; now the design feed
+(worker-app.html `UpdatesScreen` / `UpdateRow`): Today / Earlier groups of notification rows,
+where the urgent float-assignment row IS the pending-float entry that opens the ack hero (Screen 3).
+
+- **DATA-AVAILABILITY CHECK (the feed is NEW):** ✅ the `notifications` table exists
+  (`recipient_user_id`, `type` notification_type enum, `payload` jsonb, `created_at`,
+  `acknowledged_at`) with RLS "users can select own notifications" → a read-only feed is buildable
+  over existing data. ⚠️ **No worker UPDATE policy** → "mark all read" / mark-read is NOT
+  worker-writable (would need an RPC that doesn't exist) — **OMITTED**, not fabricated; unread dots
+  are read-only (from `acknowledged_at`). ⚠️ `type` is generic for `personal_shift` (the
+  float-vs-removed split lives in the payload) → `categoryForType` is best-effort; the live
+  pending-float linkage stays the existing `AckDeclineViewModel` TODO.
+- **Shared (`:shared`, tested — 10 new kotlin.test):** `notifications/Notifications.kt` —
+  `NotificationCategory`, `NotificationItem`/`NotificationRow`, `categoryForType`,
+  `buildUpdatesFeed(items, now)` (Today/Earlier, newest-first, NY-anchored `notificationTimeLabel`
+  = "HH:mm" today / "Mon" earlier), `UpdatesFeed.{isEmpty,unreadCount}`. Thin
+  `UpdatesViewModel(notifications, now)` (snapshot wrapper, no actions). `DemoData.notifications`
+  + `DemoFactory.updatesViewModel`; repository **wiring** `WorkerShiftsRepository.fetchNotifications`
+  (SELECT own `notifications`, untested data layer) for the live path.
+- **Compose (`ShiftsScreen.kt` + `MainActivity.kt`) + SwiftUI (`ContentView.swift`):** Today/Earlier
+  `SectionHeader`s + rows — a 38dp category icon box (type→kit icon + state colour), title + 7px
+  unread dot, body, mono time; urgent (float) rows get a float-tint card + 4px left accent + an
+  "Action needed" tag and carry `pending_float_notification` → open the ack hero. Empty →
+  `EmptyState` (bell, "You're all caught up"). `updatesVm` threaded through `ShiftsApp` (Android) /
+  built in `ShiftsRootView` (iOS). No kit additions.
+- **Selectors:** `tab_updates` + `pending_float_notification` preserved (the urgent float row);
+  Maestro 04 (tap `tab_updates` → `pending_float_notification` → `ack_modal`) still holds.
+
 ## Decisions & deviations — Open Shifts (Screen 2)
 
 - **Navigation:** kept the existing 4-tab scrollable row (My Shifts / Open in My House /
@@ -133,14 +163,14 @@ the design's "from Updates" sheet hero (worker-app.html `FloatAckSheet` / `Float
 
 ## Verification
 
-- JVM/KMP gate: **all four green** (shared tests incl. Screen-2's 16 + Screen-3's 8 new,
-  `assembleDebug`, iOS compile, SKIE framework link). The only link warning is the
-  pre-existing Ktor `description` rename, unrelated.
+- JVM/KMP gate: **all four green** (shared tests incl. Screen-2's 16 + Screen-3's 8 +
+  Screen-4's 10 new, `assembleDebug`, iOS compile, SKIE framework link). The only link
+  warning is the pre-existing Ktor `description` rename, unrelated.
 - **Manual (not the JVM gate):** Maestro `01-view-my-shifts`, `02-claim-shift`,
-  `04-acknowledge-float` on a real emulator/simulator; Xcode build of `iosApp` (SwiftUI
-  isn't gated by Gradle); an emulator render to eyeball against `worker-app.html`. SwiftUI
-  was hand-verified against the kit signatures + SKIE patterns used by the (working)
-  existing screens.
+  `04-acknowledge-float` (the last now reaches `pending_float_notification` via the new feed)
+  on a real emulator/simulator; Xcode build of `iosApp` (SwiftUI isn't gated by Gradle); an
+  emulator render to eyeball against `worker-app.html`. SwiftUI was hand-verified against the
+  kit signatures + SKIE patterns used by the (working) existing screens.
 
 ## Housekeeping
 
@@ -153,9 +183,9 @@ the design's "from Updates" sheet hero (worker-app.html `FloatAckSheet` / `Float
 
 ## Next
 
-- Done so far: foundation + My Shifts (existing) + Open Shifts/Claim (existing) + **Float
-  Acknowledgment (existing)**. Remaining per `DESIGN_TOKENS.md` §6 are mostly **New (✦)**
-  screens — Preferences submission, Break claim, Personal calendar, Settings/Profile —
-  each of which needs the **data-availability check first** (and screens 10/11 "who's
-  working" + desk/floater phone are ⛔ blocked: no backend). Next screen is user-directed
-  in the same conversation.
+- Done so far: foundation + My Shifts + Open Shifts/Claim + Float Acknowledgment + **Updates
+  (notifications feed + pending-float entry)** — all bound to existing data. Remaining per
+  `DESIGN_TOKENS.md` §6 are the **New (✦)** screens — Preferences submission, Break claim,
+  Personal calendar, Settings/Profile — each needing the **data-availability check first**
+  (and screens 10/11 "who's working" + desk/floater phone are ⛔ blocked: no backend). Next
+  screen is user-directed in the same conversation.

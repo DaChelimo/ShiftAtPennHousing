@@ -15,9 +15,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryScrollableTabRow
@@ -45,6 +45,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pennhousing.shift.shared.data.ToastNotification
 import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.model.OpenShift
+import com.pennhousing.shift.shared.notifications.NotificationCategory
+import com.pennhousing.shift.shared.notifications.NotificationRow
+import com.pennhousing.shift.shared.notifications.UpdatesFeed
 import com.pennhousing.shift.shared.shifts.ClaimCapVerdict
 import com.pennhousing.shift.shared.shifts.ClaimMeter
 import com.pennhousing.shift.shared.shifts.HomeOpenShiftsTab
@@ -60,6 +63,7 @@ import com.pennhousing.shift.shared.shifts.weeklyHoursSummary
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
 import com.pennhousing.shift.shared.viewmodel.ShiftsScreenViewModel
 import com.pennhousing.shift.shared.viewmodel.ShiftsTab
+import com.pennhousing.shift.shared.viewmodel.UpdatesViewModel
 import com.pennhousing.shift.ui.kit.BannerTone
 import com.pennhousing.shift.ui.kit.ButtonSize
 import com.pennhousing.shift.ui.kit.ButtonVariant
@@ -95,12 +99,14 @@ private const val TAB_UPDATES = 3
 fun ShiftsApp(
     shiftsVm: ShiftsScreenViewModel,
     ackVm: AckDeclineViewModel,
+    updatesVm: UpdatesViewModel,
     currentWeeklyHours: Double,
     breakProfile: Boolean = false,
     toast: ToastNotification? = null,
 ) {
     ShiftTheme {
         val state by shiftsVm.uiState.collectAsStateWithLifecycle()
+        val updatesState by updatesVm.uiState.collectAsStateWithLifecycle()
         var selectedIndex by remember { mutableIntStateOf(TAB_MY) }
         var showAckModal by remember { mutableStateOf(false) }
         var claimSuccess by remember { mutableStateOf(false) }
@@ -162,8 +168,8 @@ fun ShiftsApp(
                         )
                     TAB_UPDATES ->
                         UpdatesTabContent(
-                            destinationHouse = ackVm.uiState.value.destinationHouse.name,
-                            onOpen = { showAckModal = true },
+                            feed = updatesState.feed,
+                            onOpenAck = { showAckModal = true },
                         )
                 }
             }
@@ -662,30 +668,132 @@ private fun OtherHousesTabContent(
 }
 
 // ===================================================================
-// Updates tab — where a pending float surfaces (§7 / Maestro 04).
+// Updates tab — §10.1 notifications feed + the §7 pending-float entry (Maestro 04).
 // ===================================================================
 
+/**
+ * The Updates feed (worker-app.html `UpdatesScreen`): Today / Earlier groups of
+ * notification rows (shared, tested [com.pennhousing.shift.shared.notifications.buildUpdatesFeed]).
+ * The urgent float-assignment row carries the `pending_float_notification` selector and
+ * opens the ack hero. Empty → "You're all caught up". (No "mark all read" — workers
+ * have no UPDATE policy on `notifications`; the unread dots are read-only.)
+ */
 @Composable
 private fun UpdatesTabContent(
-    destinationHouse: String,
-    onOpen: () -> Unit,
+    feed: UpdatesFeed,
+    onOpenAck: () -> Unit,
 ) {
-    LazyColumn(Modifier.fillMaxSize().padding(12.dp)) {
-        item {
-            Card(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .clickable(onClick = onOpen)
-                        .testTag("pending_float_notification"),
-            ) {
-                Column(Modifier.padding(12.dp)) {
-                    Text("Float assigned — action needed", fontWeight = FontWeight.SemiBold)
-                    Text("You have been floated to $destinationHouse. Tap to acknowledge or decline.")
-                }
-            }
+    if (feed.isEmpty) {
+        Column(Modifier.fillMaxSize().background(ShiftTheme.colors.bg).padding(top = 40.dp)) {
+            EmptyState(
+                title = "You're all caught up",
+                icon = ShiftIcons.Bell,
+                body = "No new notifications. Float assignments and reminders show up here.",
+            )
         }
+        return
+    }
+    LazyColumn(
+        Modifier.fillMaxSize().background(ShiftTheme.colors.bg),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(22.dp),
+    ) {
+        if (feed.today.isNotEmpty()) {
+            item { NotificationGroup("Today", feed.today, onOpenAck) }
+        }
+        if (feed.earlier.isNotEmpty()) {
+            item { NotificationGroup("Earlier", feed.earlier, onOpenAck) }
+        }
+    }
+}
+
+@Composable
+private fun NotificationGroup(
+    title: String,
+    rows: List<NotificationRow>,
+    onOpenAck: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SectionHeader(title)
+        rows.forEach { NotificationCard(it, onOpenAck) }
+    }
+}
+
+/** One Updates row (worker-app.html `UpdateRow`). Urgent → float-tint card + left accent + "Action needed". */
+@Composable
+private fun NotificationCard(
+    row: NotificationRow,
+    onOpenAck: () -> Unit,
+) {
+    val c = ShiftTheme.colors
+    val (icon, accent) =
+        when (row.category) {
+            NotificationCategory.FLOAT -> ShiftIcons.FloatOut to c.floatOut.accent
+            NotificationCategory.REMINDER -> ShiftIcons.Warning to c.pending
+            NotificationCategory.SHIFT_REMOVED -> ShiftIcons.ArrowDown to c.sec
+            NotificationCategory.PERMANENT -> ShiftIcons.Refresh to c.permanent.accent
+            NotificationCategory.PREFERENCES -> ShiftIcons.CheckCircle to c.success.accent
+            NotificationCategory.SWAP -> ShiftIcons.Refresh to c.floatIn.accent
+            NotificationCategory.INFO -> ShiftIcons.Bell to c.pickupDot
+        }
+    val shape = RoundedCornerShape(14.dp)
+    var box = Modifier.fillMaxWidth().clip(shape).background(if (row.urgent) c.floatSoft else c.surface)
+    box = if (row.urgent) box else box.border(1.dp, c.divider, shape)
+    if (row.opensAck) box = box.clickable(onClick = onOpenAck).testTag("pending_float_notification")
+
+    Box(box) {
+        if (row.urgent) {
+            Box(
+                Modifier
+                    .align(Alignment.CenterStart)
+                    .width(4.dp)
+                    .fillMaxHeight()
+                    .background(c.floatOut.accent),
+            )
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                Modifier.size(38.dp).clip(RoundedCornerShape(10.dp)).background(accent.copy(alpha = 0.10f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(19.dp))
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Text(
+                        row.title,
+                        modifier = Modifier.weight(1f, fill = false),
+                        color = c.ink,
+                        fontSize = 14.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    if (row.unread) Box(Modifier.size(7.dp).clip(RoundedCornerShape(50)).background(c.pickupDot))
+                }
+                if (row.urgent) ActionNeededTag()
+                Text(row.body, color = c.sec, fontSize = 13.sp, lineHeight = 18.sp)
+            }
+            Text(row.timeLabel, style = ShiftTheme.type.monoId.copy(fontSize = 11.5.sp), color = c.ter)
+        }
+    }
+}
+
+/** The "Action needed" pill on an urgent (float) update — color + icon + text. */
+@Composable
+private fun ActionNeededTag() {
+    val c = ShiftTheme.colors
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(50))
+            .background(c.floatOut.badge)
+            .padding(start = 6.dp, top = 3.dp, end = 8.dp, bottom = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(ShiftIcons.Warning, contentDescription = null, tint = c.floatOut.deep, modifier = Modifier.size(13.dp))
+        Text("Action needed", color = c.floatOut.deep, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 

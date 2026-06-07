@@ -7,8 +7,11 @@ import com.pennhousing.shift.shared.model.House
 import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.model.OpenFeed
 import com.pennhousing.shift.shared.model.OpenShift
+import com.pennhousing.shift.shared.notifications.NotificationCategory
+import com.pennhousing.shift.shared.notifications.NotificationItem
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
 
 /**
@@ -58,4 +61,56 @@ object DemoData {
     }
 
     fun pendingFloat(now: Instant): FloatAck = FloatAck(floatId = "float-demo", destinationHouse = quad, floatStart = now + 2.hours)
+
+    /**
+     * A deterministic Updates feed: the urgent pending-float entry (its `floatId`
+     * matches [pendingFloat], so the row opens the same ack hero) + a reminder +
+     * a manager removal (Today), then a permanent release + a preferences confirmation
+     * (Earlier). Times hang off `now` so the grouping stays stable across launches.
+     */
+    fun notifications(now: Instant): List<NotificationItem> =
+        listOf(
+            NotificationItem(
+                id = "n-float",
+                category = NotificationCategory.FLOAT,
+                title = "Float assignment — Quad",
+                body = "Cover Quad today. Acknowledge before the T-10m deadline.",
+                createdAt = now - 2.minutes,
+                unread = true,
+                urgent = true,
+                floatId = "float-demo",
+            ),
+            NotificationItem(
+                id = "n-reminder",
+                category = NotificationCategory.REMINDER,
+                title = "Reminder · float starts soon",
+                body = "Acknowledge your Quad float.",
+                createdAt = now - 15.minutes,
+                unread = true,
+            ),
+            NotificationItem(
+                id = "n-removed",
+                category = NotificationCategory.SHIFT_REMOVED,
+                title = "Shift removed by manager",
+                body = "Your Fri 12:30–14:00 was removed.",
+                createdAt = now - 3.hours,
+                unread = false,
+            ),
+            NotificationItem(
+                id = "n-permanent",
+                category = NotificationCategory.PERMANENT,
+                title = "Permanent slot released",
+                body = "Your Wed 16:00–18:00 is now a permanent opening.",
+                createdAt = now - 3.days,
+                unread = false,
+            ),
+            NotificationItem(
+                id = "n-prefs",
+                category = NotificationCategory.PREFERENCES,
+                title = "Preferences received",
+                body = "Next week's preferences submitted.",
+                createdAt = now - 3.days - 2.hours,
+                unread = false,
+            ),
+        )
 }

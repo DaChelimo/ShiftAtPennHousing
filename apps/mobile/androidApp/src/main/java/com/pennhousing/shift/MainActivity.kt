@@ -35,6 +35,7 @@ import com.pennhousing.shift.shared.platform.AppConfig
 import com.pennhousing.shift.shared.samples.DemoData
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
 import com.pennhousing.shift.shared.viewmodel.ShiftsScreenViewModel
+import com.pennhousing.shift.shared.viewmodel.UpdatesViewModel
 import com.pennhousing.shift.ui.LoginRoute
 import com.pennhousing.shift.ui.ShiftsApp
 import com.pennhousing.shift.ui.kit.SkeletonShiftCard
@@ -96,9 +97,11 @@ private fun DemoRoot() {
     val pendingFloat = remember(now) { DemoData.pendingFloat(now) }
     val shiftsVm = remember { ShiftsScreenViewModel(snapshot.myShifts, snapshot.openShifts, now) }
     val ackVm = remember { AckDeclineViewModel(pendingFloat, now) }
+    val updatesVm = remember { UpdatesViewModel(DemoData.notifications(now), now) }
     ShiftsApp(
         shiftsVm = shiftsVm,
         ackVm = ackVm,
+        updatesVm = updatesVm,
         currentWeeklyHours = DemoData.DEMO_WEEKLY_HOURS,
     )
 }
@@ -171,9 +174,11 @@ private fun LiveShiftsRoot(
             // Rebuild the ViewModel whenever a fresh snapshot arrives (e.g. a float at T-2h).
             val shiftsVm = remember(snapshot) { ShiftsScreenViewModel(snapshot.myShifts, snapshot.openShifts, now) }
             val ackVm = remember { AckDeclineViewModel(DemoData.pendingFloat(now), now) }
+            val updatesVm = remember { UpdatesViewModel(DemoData.notifications(now), now) }
             ShiftsApp(
                 shiftsVm = shiftsVm,
                 ackVm = ackVm,
+                updatesVm = updatesVm,
                 currentWeeklyHours = DemoData.DEMO_WEEKLY_HOURS,
             )
         }

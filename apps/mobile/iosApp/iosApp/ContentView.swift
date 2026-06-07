@@ -34,6 +34,8 @@ private enum Tab: Int { case mine, home, other, updates }
 struct ShiftsRootView: View {
     @StateObject private var model = ShiftsObservable(vm: DemoFactory.shared.shiftsViewModel())
     private let ackVm = DemoFactory.shared.ackViewModel()
+    private let updatesVm = DemoFactory.shared.updatesViewModel()
+    @Environment(\.colorScheme) private var scheme
 
     @State private var tab: Tab = .mine
     @State private var dropTarget: MyShift?
@@ -279,25 +281,96 @@ struct ShiftsRootView: View {
         .accessibilityIdentifier("other_houses_tab")
     }
 
-    // MARK: Updates — pending floats
+    // MARK: Updates — §10.1 notifications feed + the §7 pending-float entry
 
     private var updates: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Button(action: { showAck = true }) {
-                VStack(alignment: .leading) {
-                    Text("Float assigned — action needed").fontWeight(.semibold)
-                    Text("You have been floated to \(ackVm.uiState.value.destinationHouse.name). Tap to acknowledge or decline.")
-                        .font(.caption)
+        let feed = updatesVm.uiState.value.feed
+        return Group {
+            if feed.isEmpty {
+                EmptyState(
+                    title: "You're all caught up",
+                    systemIcon: ShiftIcons.bell,
+                    bodyText: "No new notifications. Float assignments and reminders show up here."
+                )
+                .padding(.top, 40)
+            } else {
+                VStack(alignment: .leading, spacing: 22) {
+                    if !feed.today.isEmpty { notificationGroup("Today", feed.today) }
+                    if !feed.earlier.isEmpty { notificationGroup("Earlier", feed.earlier) }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-                .background(Color(.secondarySystemBackground))
-                .cornerRadius(8)
+                .padding(16)
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("pending_float_notification")
         }
-        .padding()
+    }
+
+    private func notificationGroup(_ title: String, _ rows: [NotificationRow]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHeader(title: title)
+            ForEach(rows, id: \.id) { notificationCard($0) }
+        }
+    }
+
+    /// One Updates row (worker-app.html `UpdateRow`); the urgent float row opens the ack hero.
+    @ViewBuilder
+    private func notificationCard(_ row: NotificationRow) -> some View {
+        if row.opensAck {
+            Button(action: { showAck = true }) { notificationCardBody(row) }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("pending_float_notification")
+        } else {
+            notificationCardBody(row)
+        }
+    }
+
+    private func notificationCardBody(_ row: NotificationRow) -> some View {
+        let c = ShiftColors.resolve(scheme)
+        let (icon, accent) = notificationVisual(row.category, c)
+        return HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous).fill(accent.opacity(0.10)).frame(width: 38, height: 38)
+                Image(systemName: icon).font(.system(size: 19)).foregroundColor(accent)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 7) {
+                    Text(row.title).font(ShiftFont.sans(14.5, .semibold)).foregroundColor(c.ink)
+                    if row.unread { Circle().fill(c.pickupDot).frame(width: 7, height: 7) }
+                    Spacer(minLength: 0)
+                }
+                if row.urgent { actionNeededTag(c) }
+                Text(row.body).font(ShiftFont.sans(13)).foregroundColor(c.sec).fixedSize(horizontal: false, vertical: true)
+            }
+            Text(row.timeLabel).font(ShiftType.monoId).monospacedDigit().foregroundColor(c.ter)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 13)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(row.urgent ? c.floatSoft : c.surface)
+        .overlay(alignment: .leading) { if row.urgent { Rectangle().fill(c.floatOut.accent).frame(width: 4) } }
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(row.urgent ? Color.clear : c.divider, lineWidth: 1))
+    }
+
+    private func notificationVisual(_ category: NotificationCategory, _ c: ShiftColors) -> (String, Color) {
+        switch category {
+        case .float: return (ShiftIcons.floatOut, c.floatOut.accent)
+        case .reminder: return (ShiftIcons.warning, c.pending)
+        case .shiftRemoved: return (ShiftIcons.dropped, c.sec)
+        case .permanent: return (ShiftIcons.refresh, c.permanent.accent)
+        case .preferences: return (ShiftIcons.checkCircle, c.success.accent)
+        case .swap: return (ShiftIcons.refresh, c.floatIn.accent)
+        case .info: return (ShiftIcons.bell, c.pickupDot)
+        default: return (ShiftIcons.bell, c.pickupDot)
+        }
+    }
+
+    private func actionNeededTag(_ c: ShiftColors) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: ShiftIcons.warning).font(.system(size: 11, weight: .semibold))
+            Text("Action needed").font(ShiftFont.sans(12, .semibold))
+        }
+        .padding(EdgeInsets(top: 3, leading: 6, bottom: 3, trailing: 8))
+        .foregroundColor(c.floatOut.deep)
+        .background(c.floatOut.badge)
+        .clipShape(Capsule())
     }
 }
 

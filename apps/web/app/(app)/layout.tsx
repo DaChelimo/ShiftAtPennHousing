@@ -15,9 +15,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   const nav: NavItem[] = [
-    { href: '/', label: 'Dashboard', testId: 'nav-home', icon: 'calendar', group: 'Operate' },
+    { href: '/', label: 'Dashboard', testId: 'nav-home', icon: 'doc', group: 'Operate' },
   ];
   if (canBuildSchedule(user)) {
+    nav.push({
+      href: '/calendar',
+      label: 'Live calendar',
+      testId: 'nav-calendar',
+      icon: 'calendar',
+      group: 'Operate',
+    });
     nav.push({
       href: '/schedule-builder',
       label: 'Schedule builder',
@@ -27,15 +34,51 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     });
   }
   if (isHouseAdmin(user)) {
-    nav.push({ href: '/admin/leave', label: 'Leave', testId: 'nav-admin-leave', icon: 'power', group: 'Manage' });
-    nav.push({ href: '/admin/rotor', label: 'HMOD rotor', testId: 'nav-admin-rotor', icon: 'swap', group: 'Manage' });
-    nav.push({ href: '/admin/cap', label: 'Weekly cap', testId: 'nav-admin-cap', icon: 'hours', group: 'Manage' });
-    nav.push({ href: '/admin/health', label: 'Health', testId: 'nav-admin-health', icon: 'shield', group: 'System' });
+    nav.push({
+      href: '/admin/leave',
+      label: 'Leave',
+      testId: 'nav-admin-leave',
+      icon: 'power',
+      group: 'Manage',
+    });
+    nav.push({
+      href: '/admin/rotor',
+      label: 'HMOD rotor',
+      testId: 'nav-admin-rotor',
+      icon: 'swap',
+      group: 'Manage',
+    });
+    nav.push({
+      href: '/admin/cap',
+      label: 'Weekly cap',
+      testId: 'nav-admin-cap',
+      icon: 'hours',
+      group: 'Manage',
+    });
+    nav.push({
+      href: '/admin/health',
+      label: 'Health',
+      testId: 'nav-admin-health',
+      icon: 'shield',
+      group: 'System',
+    });
   }
   if (await isProjectAdministrator(user.userId)) {
-    nav.push({ href: '/admin/config', label: 'Config', testId: 'nav-admin-config', icon: 'settings', group: 'System' });
+    nav.push({
+      href: '/admin/config',
+      label: 'Config',
+      testId: 'nav-admin-config',
+      icon: 'settings',
+      group: 'System',
+    });
     if (!isHouseAdmin(user)) {
-      nav.push({ href: '/admin/health', label: 'Health', testId: 'nav-admin-health', icon: 'shield', group: 'System' });
+      nav.push({
+        href: '/admin/health',
+        label: 'Health',
+        testId: 'nav-admin-health',
+        icon: 'shield',
+        group: 'System',
+      });
     }
   }
   nav.push({

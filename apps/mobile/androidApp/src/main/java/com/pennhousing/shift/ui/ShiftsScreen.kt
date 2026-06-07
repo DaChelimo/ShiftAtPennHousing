@@ -66,7 +66,9 @@ import com.pennhousing.shift.shared.shifts.hoursBetween
 import com.pennhousing.shift.shared.shifts.toRow
 import com.pennhousing.shift.shared.shifts.weeklyHoursSummary
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
+import com.pennhousing.shift.shared.viewmodel.BreakClaimViewModel
 import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
+import com.pennhousing.shift.shared.viewmodel.PreferencesViewModel
 import com.pennhousing.shift.shared.viewmodel.ShiftsScreenViewModel
 import com.pennhousing.shift.shared.viewmodel.ShiftsTab
 import com.pennhousing.shift.shared.viewmodel.UpdatesViewModel
@@ -92,6 +94,8 @@ private const val TAB_HOME = 1
 private const val TAB_OTHER = 2
 private const val TAB_CALENDAR = 3
 private const val TAB_UPDATES = 4
+private const val TAB_PREFS = 5
+private const val TAB_BREAK = 6
 
 /**
  * Phase 13a — the worker's Shifts screen (BEHAVIORAL_SPECIFICATION.md §5.6).
@@ -108,6 +112,8 @@ fun ShiftsApp(
     ackVm: AckDeclineViewModel,
     updatesVm: UpdatesViewModel,
     calendarVm: CalendarViewModel,
+    preferencesVm: PreferencesViewModel,
+    breakClaimVm: BreakClaimViewModel,
     currentWeeklyHours: Double,
     breakProfile: Boolean = false,
     toast: ToastNotification? = null,
@@ -157,6 +163,12 @@ fun ShiftsApp(
                     SpecTab("Updates", "tab_updates", selectedIndex == TAB_UPDATES) {
                         selectedIndex = TAB_UPDATES
                     }
+                    SpecTab("Preferences", "tab_preferences", selectedIndex == TAB_PREFS) {
+                        selectedIndex = TAB_PREFS
+                    }
+                    SpecTab("Break shifts", "tab_break", selectedIndex == TAB_BREAK) {
+                        selectedIndex = TAB_BREAK
+                    }
                 }
 
                 when (selectedIndex) {
@@ -183,6 +195,8 @@ fun ShiftsApp(
                             feed = updatesState.feed,
                             onOpenAck = { showAckModal = true },
                         )
+                    TAB_PREFS -> PreferencesTabContent(preferencesVm)
+                    TAB_BREAK -> BreakClaimTabContent(breakClaimVm)
                 }
             }
         }

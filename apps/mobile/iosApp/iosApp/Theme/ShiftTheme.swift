@@ -304,4 +304,6 @@ enum ShiftIcons {
     static let info = "info.circle"
     static let phone = "phone"
     static let building = "building.2"
+    static let heart = "heart"
+    static let ban = "nosign"
 }

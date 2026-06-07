@@ -159,6 +159,82 @@ current-week `MyShift` snapshot — the same data the Shifts screen renders.
   (no arbitrary-week data); loading + error live in the data layer (the VM is a snapshot) — the
   kit's `SkeletonShiftCard` / error `EmptyState` are ready for when it wires.
 
+### Screen 6 — Preferences painting ✦ · Break claim picker ✦ — **this session**
+
+Two NEW (✦) screens, built over EXISTING data only on **both** platforms. Added as two
+scrollable tabs (Preferences, Break shifts) after Updates — nav was not restructured (same
+decision as Calendar); all existing selectors preserved.
+
+**DATA-AVAILABILITY CHECK (done before building — nothing fabricated):**
+
+- _Preferences:_ ✅ `preferences` (own rows R/W via RLS — one row per 30-min block, status
+  `preference_status_enum` {preferred/available/cannot/none}), `period_targets` (own row:
+  `target_hours` + `opted_out`, R/W), `shift_blocks` (authenticated read), and the
+  `submit-preferences` Edge Function → `submit_preferences` RPC (deadline + cap enforced
+  server-side). ⚠️ **`scheduling_periods` has NO authenticated SELECT** → a worker can read
+  neither the active `period_id` nor `preference_deadline`. So the period label + deadline +
+  read-only gating are **caller-supplied** (the demo provides them); a live wiring needs a
+  worker-readable period/EF — NOT invented. Reminder cadence is the server's 5/3/1-day, not
+  the design's −24h/−2h.
+- _Break claim:_ ✅ claimable break shifts surface via `worker_open_shifts` in the break's
+  `open_feed` phase; a worker's already-claimed break shifts come from `worker_my_shifts`
+  (its `break_shift` flag) — both readable, so the list + live 40h meter bind to real data.
+  Claiming = `break-claim` EF; dropping reuses the generic `drop-shift` EF (no break-specific
+  drop RPC — confirmed). ⚠️ `break_periods` has no authenticated SELECT → break name /
+  "only Harnwell open" copy is **caller-supplied**. ⚠️ The "drop until T-1d" cutoff is **NOT
+  enforced** anywhere in the backend → shown as descriptive meta only, never gated.
+
+**Shared (`:shared`, tested — 24 new kotlin.test, all green):**
+
+- `preferences/Preferences.kt`: `PrefBrush {AVAILABLE,PREFERRED,CANNOT}` (+ `dbStatus`,
+  `PREF_BRUSH_ORDER`), `PreferencePeriod` snapshot (+ `PrefBlock`, `PreferenceGrid.paint`),
+  `buildPrefWeekStrip` (Mon–Sun, "painted" dot), `buildPrefDay` (time labels + tri-state +
+  `PrefDaySummary` counts), `buildTargetMeter` + `clampTarget` (0..cap, step 2),
+  `buildPreferenceBanner` (editable/read-only), `buildSubmitPayload` (flattens the grid to the
+  EF's `{block_id,status}[]` + target + opted_out). NY-anchored; clock-free.
+- `breakclaim/BreakClaim.kt`: `BreakShift`, `BreakClaimSnapshot`, `buildBreakHoursMeter`
+  (40h HARD cap, `atCap`), `BreakShift.toRow` (Claim/Drop + T-1d meta), `buildBreakClaimList`
+  (start-sorted rows + summed claimed hours). Reuses `shifts/` formatters + `BREAK_HOURS_CAP`.
+- Thin `PreferencesViewModel` (brush/grid/target/opt-out editing; optimistic-local `submit`
+  → read-only) and `BreakClaimViewModel` (claimed-id set; optimistic-local `claim`/`drop`),
+  both [CalendarViewModel]-shaped snapshots. `DemoData.preferencePeriod` / `DemoData.breakClaim`
+  + `DemoFactory.preferencesViewModel()` / `breakClaimViewModel()`.
+
+**Compose (`androidApp/.../ui/PreferencesScreen.kt` + `BreakClaimScreen.kt`):** Preferences =
+context eyebrow + deadline `ShiftBanner` + Mon–Sun strip + the target stepper card (±2,
+progress bar, "no hours" tick) + the Available/Preferred/Cannot brush selector + the 2-col
+tap-to-paint grid + bottom Submit (→ read-only success banner); opted-out → ban `EmptyState`.
+Break = profile eyebrow + golden FCFS info card + 40h meter + `SectionHeader` + canonical
+BREAK `ShiftCard`s (Claim filled / Drop destructive) + coffee `EmptyState` + auto-dismissing
+"claimed" toast. Tabs/VMs threaded through `ShiftsApp` + `MainActivity` (demo + live roots).
+
+**SwiftUI (`iosApp/iosApp/PreferencesView.swift` + `BreakClaimView.swift`):** the same,
+idiomatically — `PreferencesObservable` / `BreakClaimObservable` (observe the StateFlow since
+brush/grid/claimed mutate), `LazyVGrid` paint grid, `GeometryReader` meters, native checkbox.
+The tab bar became horizontally scrollable to fit 7 tabs.
+
+**New shared component:** two kit icons — `Heart` (Preferred) + `Ban` (Cannot) — on Compose
+(`ShiftIcons.kt`) and iOS (`ShiftIcons.heart`=`heart`, `.ban`=`nosign`). Nothing else added.
+
+**Selectors added** (to the README contract): `tab_preferences`, `preferences_screen`,
+`pref_week_strip`, `pref_day_cell`, `pref_target_stepper`/`_increment`/`_decrement`,
+`pref_no_hours_toggle`, `pref_brush_available`/`_preferred`/`_cannot`, `pref_block_grid`,
+`pref_block_cell`, `submit_preferences_button`; `tab_break`, `break_claim_screen`,
+`break_hours_meter`, `break_shift_card`, `break_claim_button`, `break_drop_button`,
+`break_claim_success`. New flows `05-submit-preferences.yaml` + `06-claim-break.yaml`
+(device-only; not the JVM gate). Existing flows unaffected (tabs found by id).
+
+**Data flags / not-built (no backend invented):**
+- Preferences live path is gated on **period discovery + deadline** (scheduling_periods not
+  worker-readable) → screen runs on the demo period; the EF submit + the read of the active
+  period are the data-layer TODO. Drag-to-paint is **tap-to-paint** here (no shared drag logic).
+- Break: break name/profile + the open-house set are caller-supplied; **T-1d drop is not
+  enforced** (descriptive only); the live cap meter is computed from the snapshot (the EF also
+  returns current/projected hours).
+- Writes (paint→submit, claim, drop) are **optimistic-local** in the VMs — same as the Shifts
+  screen's claim/drop ("server write out of scope"); the exact EFs to wire are documented in
+  the module headers.
+
 ## Decisions & deviations — Open Shifts (Screen 2)
 
 - **Navigation:** kept the existing 4-tab scrollable row (My Shifts / Open in My House /
@@ -215,7 +291,9 @@ current-week `MyShift` snapshot — the same data the Shifts screen renders.
 ## Next
 
 - Done so far: foundation + My Shifts + Open Shifts/Claim + Float Acknowledgment + Updates +
-  **Personal Calendar ✦** — all bound to existing data. Remaining per `DESIGN_TOKENS.md` §6 are
-  the **New (✦)** screens — Preferences submission, Break claim, Settings/Profile — each needing
-  the **data-availability check first** (and screens 10/11 "who's working" + desk/floater phone
-  are ⛔ blocked: no backend). Next screen is user-directed in the same conversation.
+  **Personal Calendar ✦** + **Preferences painting ✦ + Break claim picker ✦** — all bound to
+  existing data. Remaining per `DESIGN_TOKENS.md` §6: the last **New (✦)** screen —
+  **Settings / Profile** (identity + `broadcast_subscribed` toggle + sign out + theme; ⚠️ no
+  per-category notification toggles, no profile view — see §6 blockers). Screens 10/11
+  ("who's working" + Call desk/floater) stay ⛔ **blocked** (no house-roster view, no desk/
+  worker phone exposure) — do not build without new backend. Next screen is user-directed.

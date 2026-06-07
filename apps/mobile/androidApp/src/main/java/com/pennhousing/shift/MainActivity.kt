@@ -34,7 +34,9 @@ import com.pennhousing.shift.shared.data.WorkerSnapshot
 import com.pennhousing.shift.shared.platform.AppConfig
 import com.pennhousing.shift.shared.samples.DemoData
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
+import com.pennhousing.shift.shared.viewmodel.BreakClaimViewModel
 import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
+import com.pennhousing.shift.shared.viewmodel.PreferencesViewModel
 import com.pennhousing.shift.shared.viewmodel.ShiftsScreenViewModel
 import com.pennhousing.shift.shared.viewmodel.UpdatesViewModel
 import com.pennhousing.shift.ui.LoginRoute
@@ -100,11 +102,15 @@ private fun DemoRoot() {
     val ackVm = remember { AckDeclineViewModel(pendingFloat, now) }
     val updatesVm = remember { UpdatesViewModel(DemoData.notifications(now), now) }
     val calendarVm = remember { CalendarViewModel(snapshot.myShifts, now) }
+    val preferencesVm = remember { PreferencesViewModel(DemoData.preferencePeriod(now)) }
+    val breakClaimVm = remember { BreakClaimViewModel(DemoData.breakClaim(now)) }
     ShiftsApp(
         shiftsVm = shiftsVm,
         ackVm = ackVm,
         updatesVm = updatesVm,
         calendarVm = calendarVm,
+        preferencesVm = preferencesVm,
+        breakClaimVm = breakClaimVm,
         currentWeeklyHours = DemoData.DEMO_WEEKLY_HOURS,
     )
 }
@@ -179,11 +185,17 @@ private fun LiveShiftsRoot(
             val ackVm = remember { AckDeclineViewModel(DemoData.pendingFloat(now), now) }
             val updatesVm = remember { UpdatesViewModel(DemoData.notifications(now), now) }
             val calendarVm = remember(snapshot) { CalendarViewModel(snapshot.myShifts, now) }
+            // Preferences + Break-claim run on the demo snapshot until their data layer
+            // wires (scheduling_periods deadline / break-period name are not worker-readable).
+            val preferencesVm = remember { PreferencesViewModel(DemoData.preferencePeriod(now)) }
+            val breakClaimVm = remember { BreakClaimViewModel(DemoData.breakClaim(now)) }
             ShiftsApp(
                 shiftsVm = shiftsVm,
                 ackVm = ackVm,
                 updatesVm = updatesVm,
                 calendarVm = calendarVm,
+                preferencesVm = preferencesVm,
+                breakClaimVm = breakClaimVm,
                 currentWeeklyHours = DemoData.DEMO_WEEKLY_HOURS,
             )
         }

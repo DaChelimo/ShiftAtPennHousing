@@ -1,5 +1,7 @@
 package com.pennhousing.shift.shared.samples
 
+import com.pennhousing.shift.shared.breakclaim.BreakClaimSnapshot
+import com.pennhousing.shift.shared.breakclaim.BreakShift
 import com.pennhousing.shift.shared.data.WorkerSnapshot
 import com.pennhousing.shift.shared.model.AssignmentKind
 import com.pennhousing.shift.shared.model.FloatAck
@@ -9,6 +11,19 @@ import com.pennhousing.shift.shared.model.OpenFeed
 import com.pennhousing.shift.shared.model.OpenShift
 import com.pennhousing.shift.shared.notifications.NotificationCategory
 import com.pennhousing.shift.shared.notifications.NotificationItem
+import com.pennhousing.shift.shared.preferences.PrefBlock
+import com.pennhousing.shift.shared.preferences.PrefBrush
+import com.pennhousing.shift.shared.preferences.PreferencePeriod
+import com.pennhousing.shift.shared.shifts.MONTH_SHORT
+import com.pennhousing.shift.shared.shifts.NEW_YORK
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.LocalTime
+import kotlinx.datetime.minus
+import kotlinx.datetime.plus
+import kotlinx.datetime.toInstant
+import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
@@ -113,4 +128,81 @@ object DemoData {
                 unread = false,
             ),
         )
+
+    // ── Preference submission + Break claim (the NEW ✦ screens) ──────────────────
+
+    private const val DAYS_IN_WEEK = 7
+    private const val PREF_BLOCKS_PER_DAY = 32 // 08:00 → 24:00 in 30-min steps
+
+    /** Monday of the week AFTER [now]'s week, NY-anchored — the prefs/break demo anchor. */
+    private fun nextWeekMonday(now: Instant): LocalDate {
+        val today = now.toLocalDateTime(NEW_YORK).date
+        return today.minus(today.dayOfWeek.ordinal, DateTimeUnit.DAY).plus(DAYS_IN_WEEK, DateTimeUnit.DAY)
+    }
+
+    /** An Instant at NY-local [hour]:[minute] on [date] (one conversion per day; DST-safe within a day). */
+    private fun nyInstant(
+        date: LocalDate,
+        hour: Int,
+        minute: Int,
+    ): Instant = LocalDateTime(date, LocalTime(hour, minute)).toInstant(NEW_YORK)
+
+    /**
+     * A not-yet-submitted preference period for next week: 7 days × 32 blocks
+     * (08:00–24:00), Wednesday pre-painted (mirrors worker-app.html) so the grid +
+     * the strip "painted" dot show on launch. The period label + deadline are
+     * caller-supplied copy — `scheduling_periods` is not worker-readable (flagged).
+     */
+    fun preferencePeriod(now: Instant): PreferencePeriod {
+        val monday = nextWeekMonday(now)
+        val days =
+            (0 until DAYS_IN_WEEK).map { d ->
+                val dayStart = nyInstant(monday.plus(d, DateTimeUnit.DAY), 8, 0)
+                (0 until PREF_BLOCKS_PER_DAY).map { i ->
+                    PrefBlock(blockId = "d$d-b$i", start = dayStart + (i * 30).minutes)
+                }
+            }
+        // Wednesday (index 2): 08:00–10:00 Cannot, 12:00–14:00 + 16:00–19:00 Preferred.
+        val wednesday = mutableMapOf<String, PrefBrush>()
+        (0..3).forEach { wednesday["d2-b$it"] = PrefBrush.CANNOT }
+        (8..11).forEach { wednesday["d2-b$it"] = PrefBrush.PREFERRED }
+        (16..21).forEach { wednesday["d2-b$it"] = PrefBrush.PREFERRED }
+        return PreferencePeriod(
+            periodId = "period-demo",
+            periodLabel = "Week of ${MONTH_SHORT[monday.month.ordinal]} ${monday.day}",
+            deadlineLabel = "Due Fri 17:00",
+            submitted = false,
+            weekStart = monday,
+            days = days,
+            initialStatuses = wednesday,
+            targetHours = 16,
+            optedOut = false,
+        )
+    }
+
+    /**
+     * A demo Winter-Break pool: 4 claimable Harnwell shifts (08–12, 12–16, 16–20,
+     * 20–24) on next week's Monday, none yet claimed → all show "Claim", meter 0h/40h.
+     * Break name/profile copy is caller-supplied (`break_periods` is not worker-readable
+     * — flagged); the T-1d drop cutoff is descriptive (the backend does not enforce it).
+     */
+    fun breakClaim(now: Instant): BreakClaimSnapshot {
+        val day = nextWeekMonday(now)
+        fun slot(
+            n: Int,
+            startHour: Int,
+        ) = BreakShift(
+            id = "bk-$n",
+            house = harnwell,
+            start = nyInstant(day, startHour, 0),
+            end = nyInstant(day, startHour, 0) + 4.hours,
+        )
+        return BreakClaimSnapshot(
+            profileContext = "WINTER BREAK PROFILE",
+            infoTitle = "Winter break — only Harnwell open",
+            infoBody = "First-come, first-served · 40h hard cap · drop back to the pool until T-1d.",
+            shifts = listOf(slot(1, 8), slot(2, 12), slot(3, 16), slot(4, 20)),
+            initiallyClaimedIds = emptySet(),
+        )
+    }
 }

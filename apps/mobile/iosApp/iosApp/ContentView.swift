@@ -49,11 +49,13 @@ final class CalendarObservable: ObservableObject {
     deinit { task?.cancel() }
 }
 
-private enum Tab: Int { case mine, home, other, calendar, updates }
+private enum Tab: Int { case mine, home, other, calendar, updates, preferences, breakShifts }
 
 struct ShiftsRootView: View {
     @StateObject private var model = ShiftsObservable(vm: DemoFactory.shared.shiftsViewModel())
     @StateObject private var calendarModel = CalendarObservable(vm: DemoFactory.shared.calendarViewModel())
+    @StateObject private var prefsModel = PreferencesObservable(vm: DemoFactory.shared.preferencesViewModel())
+    @StateObject private var breakModel = BreakClaimObservable(vm: DemoFactory.shared.breakClaimViewModel())
     private let ackVm = DemoFactory.shared.ackViewModel()
     private let updatesVm = DemoFactory.shared.updatesViewModel()
     @Environment(\.colorScheme) private var scheme
@@ -86,6 +88,8 @@ struct ShiftsRootView: View {
                 case .other: otherHouses
                 case .calendar: calendarTab
                 case .updates: updates
+                case .preferences: PreferencesScreen(model: prefsModel)
+                case .breakShifts: BreakClaimScreen(model: breakModel)
                 }
             }
         }
@@ -103,12 +107,17 @@ struct ShiftsRootView: View {
     // MARK: tabs
 
     private var tabBar: some View {
-        HStack(spacing: 0) {
-            tabButton("My Shifts", "tab_my_shifts", .mine)
-            tabButton("Open Shifts in My House", "tab_open_home", .home)
-            tabButton("Open Shifts in Other Houses", "tab_open_other", .other)
-            tabButton("Calendar", "tab_calendar", .calendar)
-            tabButton("Updates", "tab_updates", .updates)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 4) {
+                tabButton("My Shifts", "tab_my_shifts", .mine)
+                tabButton("Open · My House", "tab_open_home", .home)
+                tabButton("Open · Other", "tab_open_other", .other)
+                tabButton("Calendar", "tab_calendar", .calendar)
+                tabButton("Updates", "tab_updates", .updates)
+                tabButton("Preferences", "tab_preferences", .preferences)
+                tabButton("Break shifts", "tab_break", .breakShifts)
+            }
+            .padding(.horizontal, 12)
         }
         .padding(.vertical, 6)
     }
@@ -120,15 +129,14 @@ struct ShiftsRootView: View {
             case .mine: model.vm.selectTab(tab: .myShifts)
             case .home: model.vm.selectTab(tab: .openHome)
             case .other: model.vm.selectTab(tab: .openOther)
-            case .calendar: break
-            case .updates: break
+            case .calendar, .updates, .preferences, .breakShifts: break
             }
         }) {
             Text(title)
-                .font(.caption)
+                .font(.subheadline)
                 .fontWeight(tab == which ? .bold : .regular)
-                .frame(maxWidth: .infinity)
-                .multilineTextAlignment(.center)
+                .foregroundColor(tab == which ? ShiftColors.resolve(scheme).blue : ShiftColors.resolve(scheme).sec)
+                .padding(.horizontal, 10).padding(.vertical, 4)
         }
         .accessibilityIdentifier(id)
     }

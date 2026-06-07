@@ -277,6 +277,25 @@ object ShiftIcons {
             close()
         }
 
+    /** Preferred — heart (the preference brush). */
+    val Heart: ImageVector =
+        stroked("Heart") {
+            moveTo(12f, 19.5f)
+            curveTo(12f, 19.5f, 4f, 14.5f, 4f, 9f)
+            arcTo(3.8f, 3.8f, 0f, false, true, 12f, 7.3f)
+            arcTo(3.8f, 3.8f, 0f, false, true, 20f, 9f)
+            curveTo(20f, 14.5f, 12f, 19.5f, 12f, 19.5f)
+            close()
+        }
+
+    /** Cannot — prohibited (the unavailable brush): circle + diagonal slash. */
+    val Ban: ImageVector =
+        stroked("Ban") {
+            circle(12f, 12f, 8f)
+            moveTo(6.3f, 6.3f)
+            lineTo(17.7f, 17.7f)
+        }
+
     /** Building — a desk/house elsewhere (the cross-house empty state). */
     val Building: ImageVector =
         stroked("Building") {

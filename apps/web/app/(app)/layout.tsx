@@ -32,6 +32,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       icon: 'grid',
       group: 'Operate',
     });
+    nav.push({
+      href: '/coverage',
+      label: 'Coverage',
+      testId: 'nav-coverage',
+      icon: 'shield',
+      group: 'Operate',
+    });
+    nav.push({
+      href: '/inbox',
+      label: 'Action inbox',
+      testId: 'nav-inbox',
+      icon: 'inbox',
+      group: 'Operate',
+    });
   }
   if (isHouseAdmin(user)) {
     nav.push({

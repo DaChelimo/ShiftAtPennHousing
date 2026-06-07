@@ -1,0 +1,101 @@
+/* ============================================================
+   inbox.css — Action inbox / notifications (screen 07).
+   Screen-local; consumes the locked foundation tokens.
+   ============================================================ */
+
+.inbox-group-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--st-danger);
+  margin: 8px 0;
+}
+.inbox-group-label.muted {
+  color: var(--text-secondary);
+}
+.inbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.inbox-item {
+  display: flex;
+  gap: 14px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  transition: box-shadow var(--motion);
+}
+.inbox-item.is-urgent {
+  border-left: 3px solid var(--st-danger);
+}
+.inbox-item:hover {
+  box-shadow: var(--shadow-1);
+}
+.inbox-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 99px;
+  background: var(--surface-3);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.inbox-icon.urgent {
+  background: var(--st-danger-bg);
+  color: var(--st-danger);
+}
+.inbox-main {
+  flex: 1;
+  min-width: 0;
+}
+.inbox-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.unread-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  background: var(--brand);
+  flex-shrink: 0;
+}
+.inbox-fields {
+  display: flex;
+  gap: 24px;
+  margin: 10px 0 8px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+}
+.inbox-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.inbox-field b {
+  font-size: 13px;
+}
+.inbox-reason {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.inbox-dismiss {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 0 8px;
+  margin-left: auto;
+}
+.inbox-dismiss:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

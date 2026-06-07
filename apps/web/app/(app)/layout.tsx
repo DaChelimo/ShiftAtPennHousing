@@ -33,6 +33,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       group: 'Operate',
     });
     nav.push({
+      href: '/admin/preferences',
+      label: 'Preferences',
+      testId: 'nav-admin-preferences',
+      icon: 'check',
+      group: 'Operate',
+    });
+    nav.push({
       href: '/coverage',
       label: 'Coverage',
       testId: 'nav-coverage',

@@ -40,6 +40,7 @@ import com.pennhousing.shift.shared.shifts.OtherHousesTab
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
 import com.pennhousing.shift.shared.viewmodel.ShiftsScreenViewModel
 import com.pennhousing.shift.shared.viewmodel.ShiftsTab
+import com.pennhousing.shift.ui.theme.ShiftTheme
 
 private const val TAB_MY = 0
 private const val TAB_HOME = 1
@@ -63,7 +64,7 @@ fun ShiftsApp(
     breakProfile: Boolean = false,
     toast: ToastNotification? = null,
 ) {
-    MaterialTheme {
+    ShiftTheme {
         val state by shiftsVm.uiState.collectAsStateWithLifecycle()
         var selectedIndex by remember { mutableIntStateOf(TAB_MY) }
         var showAckModal by remember { mutableStateOf(false) }

@@ -31,6 +31,7 @@ import com.pennhousing.shift.shared.auth.LoginEvent
 import com.pennhousing.shift.shared.auth.LoginPhase
 import com.pennhousing.shift.shared.auth.LoginReducer
 import com.pennhousing.shift.shared.auth.LoginUiState
+import com.pennhousing.shift.ui.theme.ShiftTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -117,7 +118,7 @@ fun LoginScreen(
     state: LoginUiState,
     onEvent: (LoginEvent) -> Unit,
 ) {
-    MaterialTheme {
+    ShiftTheme {
         Scaffold(modifier = Modifier.fillMaxSize().testTag("login_screen")) { padding ->
             Column(
                 modifier =

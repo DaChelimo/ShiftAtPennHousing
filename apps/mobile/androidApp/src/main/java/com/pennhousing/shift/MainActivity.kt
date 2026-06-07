@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,6 +39,7 @@ import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
 import com.pennhousing.shift.shared.viewmodel.ShiftsScreenViewModel
 import com.pennhousing.shift.ui.LoginRoute
 import com.pennhousing.shift.ui.ShiftsApp
+import com.pennhousing.shift.ui.theme.ShiftTheme
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -183,7 +183,7 @@ private fun LiveShiftsRoot(
 
 @Composable
 private fun LoadingScreen() {
-    MaterialTheme {
+    ShiftTheme {
         Scaffold(modifier = Modifier.fillMaxSize().testTag("loading_screen")) { padding ->
             Column(
                 modifier = Modifier.fillMaxSize().padding(padding),
@@ -201,5 +201,7 @@ private fun LoadingScreen() {
 private sealed interface RestoreResult {
     data object Loading : RestoreResult
 
-    data class Loaded(val session: AuthSession?) : RestoreResult
+    data class Loaded(
+        val session: AuthSession?,
+    ) : RestoreResult
 }

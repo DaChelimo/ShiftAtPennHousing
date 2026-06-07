@@ -61,6 +61,27 @@ demo ViewModels so Swift never constructs a `kotlin.time.Instant`.
 The screens expose the `accessibilityIdentifier`s in `apps/mobile/maestro/README.md`
 so the **same** Maestro flows run on the simulator.
 
+## Reskin foundation (Theme + Kit + fonts)
+
+The visual foundation (design-token theme + shared component kit) lives in:
+
+| Path | Role |
+| ---- | ---- |
+| `iosApp/iosApp/Theme/ShiftTheme.swift` | Color tokens (light/dark), IBM Plex type ramp (Dynamic Type), spacing/radii/motion, SF-Symbol icon map. |
+| `iosApp/iosApp/Kit/ShiftComponents.swift` | Buttons, shift-state pills + legend, the canonical Shift Card + atoms, open-shift card. |
+| `iosApp/iosApp/Kit/ShiftRowsControls.swift` | Section header/container, key-value row, segmented control, toggle, bottom sheet + confirm. |
+| `iosApp/iosApp/Kit/ShiftChromeFeedback.swift` | Large-title header, `TabView` tab bar, icon button, avatar, toast, banner, countdown, badge, empty state, skeleton. |
+| `iosApp/iosApp/Kit/ShiftGallery.swift` | `#Preview` catalog of the whole kit (light + dark) — not shipped. |
+| `iosApp/iosApp/Fonts/IBMPlex*.ttf` | Bundled IBM Plex Sans/Mono weights (OFL-1.1, see `Fonts/OFL.txt`). |
+
+Add all of `Theme/`, `Kit/`, and the `Fonts/*.ttf` to the app target (*File ▸ Add
+Files*). `Info.plist` already declares `UIAppFonts` for the seven weights; until the
+`.ttf` are added to the target the theme falls back to **SF Pro** (graceful). The
+foundation reconciles the `--tk-*` tokens from `apps/mobile/design/worker-app.html`
+— canonical reference: `apps/mobile/design/DESIGN_TOKENS.md`. Feature screens are
+reskinned in a later step; `ContentView.swift` / `FloatAcknowledgmentView.swift` are
+unchanged by the foundation.
+
 ## Push notifications (deliverable #6)
 
 1. **Add the Firebase SDK via SPM** (*File ▸ Add Package Dependencies*):

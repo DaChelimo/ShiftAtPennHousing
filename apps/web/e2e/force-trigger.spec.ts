@@ -140,16 +140,12 @@ test.describe('Coverage force-trigger float (§6.6) — confirm + result', () =>
     await expect(page.getByTestId('force-trigger-confirm')).toBeVisible();
   });
 
-  // SKIPPED (environment, not a code defect): the live force-trigger EF round-trip can't
-  // run on the local host. The edge-runtime worker fails to boot because the EF dynamically
-  // imports packages/core *source* (`src/.../index.ts` → `export * from './types.js'`), which
-  // Deno can't resolve (.js specifier → .ts file). This is systemic to every
-  // packages/core-importing EF (same pattern as orchestrator-tick, which the lifecycle e2e
-  // bridges in TS). Re-enable once the EF→core import is Deno-resolvable (import map / a built
-  // dist that also deploys). The web wiring up TO the EF call is covered by the passing tests
-  // above; the EF's float lookup + Allied fallback are covered by packages/core findFloaters +
-  // phase-08 force_trigger_float pgTAP + the summarizer Vitest.
-  test.skip('accepting the confirm invokes the lookup and shows a result (routed to HMOD for Allied — no eligible floater seeded)', async ({
+  // Live force-trigger EF round-trip. Requires the edge runtime to serve the function, which
+  // needs packages/core BUILT (the EFs import `packages/core/dist/*.js`; `dist` is gitignored,
+  // so run `pnpm --filter @shift/core build` before serving/deploying). With the float_enabled
+  // June calendar rows and NO eligible floater source for the vacant Quad window, the EF routes
+  // to HMOD-for-Allied — the outcome the result surfaces.
+  test('accepting the confirm invokes the lookup and shows a result (routed to HMOD for Allied — no eligible floater seeded)', async ({
     page,
   }) => {
     // §4c lines 3 (accept) + 4: with the added float_enabled June calendar rows
@@ -163,7 +159,10 @@ test.describe('Coverage force-trigger float (§6.6) — confirm + result', () =>
     await page.getByTestId('force-trigger-confirm-accept').click();
 
     const result = page.getByTestId('force-trigger-result');
-    await expect(result).toBeVisible();
+    // Generous timeout: the edge runtime's `oneshot` policy cold-spawns a fresh Deno worker
+    // per request (boots + dynamically imports the bundled core), so the first round-trip can
+    // take several seconds.
+    await expect(result).toBeVisible({ timeout: 20000 });
     // The routed-to-Allied outcome (alliedNotifications > 0). Copy mentions Allied.
     await expect(result).toContainText(/allied/i);
     // No-takeback (D4 / invariant #3): there is no "cancel / revoke float" control.

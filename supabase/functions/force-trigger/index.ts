@@ -162,14 +162,14 @@ function localDateIso(date: Date, timezone = TIMEZONE): string {
 async function validateForceTrigger(
   input: ForceTriggerValidationInput,
 ): Promise<ForceTriggerValidationResult> {
-  const module = (await import('../../../packages/core/src/force-trigger/index.ts')) as {
+  const module = (await import('../../../packages/core/dist/force-trigger/index.js')) as {
     validateForceTrigger: (input: ForceTriggerValidationInput) => ForceTriggerValidationResult;
   };
   return module.validateForceTrigger(input);
 }
 
 async function findFloaters(input: FloatLookupInput): Promise<FloatLookupResult> {
-  const module = (await import('../../../packages/core/src/float-lookup/index.ts')) as {
+  const module = (await import('../../../packages/core/dist/float-lookup/index.js')) as {
     findFloaters: (input: FloatLookupInput) => FloatLookupResult;
   };
   return module.findFloaters(input);

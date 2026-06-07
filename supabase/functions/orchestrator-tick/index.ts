@@ -242,7 +242,7 @@ async function evaluateChainSteps(params: {
   chain: ChainStep[];
   stepStatus: StepStatusMap;
 }): Promise<ChainStepEvaluation[]> {
-  const module = (await import('../../../packages/core/src/orchestrator/evaluate.ts')) as {
+  const module = (await import('../../../packages/core/dist/orchestrator/evaluate.js')) as {
     evaluateChainSteps: (input: {
       blockStartAt: Date;
       now: Date;
@@ -254,7 +254,7 @@ async function evaluateChainSteps(params: {
 }
 
 async function findFloaters(input: FloatLookupInput): Promise<FloatLookupResult> {
-  const module = (await import('../../../packages/core/src/float-lookup/index.ts')) as {
+  const module = (await import('../../../packages/core/dist/float-lookup/index.js')) as {
     findFloaters: (input: FloatLookupInput) => FloatLookupResult;
   };
   return module.findFloaters(input);

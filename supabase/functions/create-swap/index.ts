@@ -222,7 +222,7 @@ Deno.serve(
       }
 
       const module =
-        (await import('../../../packages/core/src/swaps/eligibility.ts')) as typeof import('../../../packages/core/src/swaps/eligibility.ts');
+        (await import('../../../packages/core/dist/swaps/eligibility.js')) as typeof import('../../../packages/core/dist/swaps/eligibility.js');
 
       if (swapType !== 'permanent_swap') {
         const eligibility = module.evaluateSwapEligibility({

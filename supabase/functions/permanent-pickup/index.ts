@@ -226,7 +226,7 @@ async function buildPickupSnapshot(supabase: Supabase, userId: string, slot: Slo
 
   weeks.sort((left, right) => left.weekStartDate.localeCompare(right.weekStartDate));
   const module =
-    (await import('../../../packages/core/src/permanent-ops/pickup-evaluator.ts')) as typeof import('../../../packages/core/src/permanent-ops/pickup-evaluator.ts');
+    (await import('../../../packages/core/dist/permanent-ops/pickup-evaluator.js')) as typeof import('../../../packages/core/dist/permanent-ops/pickup-evaluator.js');
   return module.evaluatePermanentPickup({ weeks });
 }
 

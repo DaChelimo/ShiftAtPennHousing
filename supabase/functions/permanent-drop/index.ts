@@ -100,7 +100,7 @@ async function loadFloatCommitmentWarnings(
   if (floatError !== null) throw floatError;
 
   const module =
-    (await import('../../../packages/core/src/permanent-ops/drop-scope.ts')) as typeof import('../../../packages/core/src/permanent-ops/drop-scope.ts');
+    (await import('../../../packages/core/dist/permanent-ops/drop-scope.js')) as typeof import('../../../packages/core/dist/permanent-ops/drop-scope.js');
 
   return module.findFloatCommitmentWarnings({
     slotAssignmentIds,

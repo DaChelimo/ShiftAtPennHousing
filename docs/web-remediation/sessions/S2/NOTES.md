@@ -1,14 +1,29 @@
 # S2 — Force-trigger float · NOTES (outcome)
 
-**Status: web wiring DONE & verified. Live end-to-end blocked by a pre-existing, systemic
-EF-boot infra issue (force-trigger not yet proven e2e — see Key finding).** Decision 2 / audit #2.
+**Status: DONE & GREEN — force-trigger works end-to-end.** The pre-existing EF-boot blocker
+(below) was FIXED in a follow-on infra pass (see "EF-boot fix"). Decision 2 / audit #2.
 
-## Results
+## Results (after the EF-boot fix)
 
 - **Core Vitest:** 597/597 (10 new `summarizeForceTrigger` cases).
-- **Playwright:** full web suite **27 passed / 2 skipped** (admin-override 8 + originals 15 +
-  force-trigger 4; 2 force-trigger cases skipped — see below).
+- **Playwright:** full web suite **28 passed / 1 skipped** — the live force-trigger EF
+  round-trip now passes (routed-to-Allied). The 1 skip is the "button absent on a
+  float/allied-stage gap" case (needs a float-stage seed fixture; unrelated to the EF).
 - **Repo gate:** `type-check` 5/5 · `lint` 3/3 · `build` clean.
+- All 5 core-importing EFs (force-trigger, orchestrator-tick, permanent-drop/pickup,
+  create-swap) now boot in the local edge runtime.
+
+## EF-boot fix (resolves the KEY FINDING below)
+
+Root cause: the supabase edge runtime (Deno 1.45) bind-mounts the _literal_ import
+specifiers it finds; `@shift/core` source uses NodeNext `.js` specifiers against `.ts`
+files, so `src/.../x.js` mounts never resolve. Fix: point the 5 EFs at `packages/core/dist/*.js`
+(real `.js` whose specifiers resolve), build core with **`sourceMap: false`** (else the
+runtime relocates dist modules back to `src` via the map and re-breaks), and do a **full
+`supabase stop && start`** so the runtime re-analyzes imports and mounts `dist`. Operational
+requirement (build core before serving/deploying; `dist` is gitignored) documented in
+`supabase/functions/README.md`. Test re-enabled with a 20s timeout (the `oneshot` policy
+cold-spawns a Deno worker per request).
 
 ## What shipped (the web wiring — the S2 scope)
 

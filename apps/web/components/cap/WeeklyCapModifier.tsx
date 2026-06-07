@@ -4,6 +4,49 @@ import { useState } from 'react';
 
 import { saveWeeklyCap } from '../../lib/actions/cap';
 import type { WeeklyCapAudit, WeeklyCapWeek } from '../../lib/data/cap';
+import {
+  Button,
+  Card,
+  type Column,
+  DataTable,
+  DateInput,
+  Field,
+  Notification,
+  Tag,
+  TextArea,
+} from '../ui';
+
+const COLUMNS: Column<WeeklyCapWeek>[] = [
+  {
+    key: 'week',
+    header: 'Week',
+    render: (w) => <span className="t-mono">{w.weekStartDate}</span>,
+  },
+  {
+    key: 'cap',
+    header: 'Effective cap',
+    render: (w) => (
+      <span className="row gap-2 center">
+        <span className="t-mono">{w.hoursCap}h</span>
+        <Tag kind={w.capEnforcement === 'hard' ? 'amber' : 'blue'}>
+          {w.capEnforcement === 'hard' ? 'Hard' : 'Soft'}
+        </Tag>
+      </span>
+    ),
+  },
+  {
+    key: 'source',
+    header: 'Source',
+    render: (w) =>
+      w.isOverride ? (
+        <Tag kind="purple" icon="edit">
+          Manual override
+        </Tag>
+      ) : (
+        <span className="t-meta">Profile default</span>
+      ),
+  },
+];
 
 export function WeeklyCapModifier({ weeks }: { weeks: WeeklyCapWeek[] }) {
   const [weekStartDate, setWeekStartDate] = useState('');
@@ -27,96 +70,97 @@ export function WeeklyCapModifier({ weeks }: { weeks: WeeklyCapWeek[] }) {
   }
 
   return (
-    <div data-testid="cap-modifier" className="space-y-6">
-      <p
-        data-testid="cap-global-notice"
-        className="rounded-md bg-blue-50 p-3 text-sm text-blue-900"
-      >
-        Each change applies to all 13 houses immediately.
-      </p>
+    <div data-testid="cap-modifier" className="col gap-5">
+      <Notification kind="info" title="Global control" testId="cap-global-notice">
+        Every change applies to all 13 houses immediately — there is no per-house cap.
+      </Notification>
 
-      <div className="grid gap-4 rounded-lg border border-black/10 p-4 dark:border-white/10">
-        <label className="grid gap-1 text-sm">
-          Week beginning Monday
-          <input
-            type="date"
-            data-testid="cap-week"
-            value={weekStartDate}
-            onChange={(event) => setWeekStartDate(event.target.value)}
-            className="rounded-md border border-black/15 px-3 py-2 dark:border-white/15 dark:bg-zinc-800"
-          />
-        </label>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            data-testid="cap-value-20"
-            onClick={() => setHoursCap(20)}
-            className={`rounded-md border px-3 py-2 text-sm ${hoursCap === 20 ? 'bg-zinc-900 text-white' : ''}`}
-          >
-            20 hours (soft)
-          </button>
-          <button
-            type="button"
-            data-testid="cap-value-40"
-            onClick={() => setHoursCap(40)}
-            className={`rounded-md border px-3 py-2 text-sm ${hoursCap === 40 ? 'bg-zinc-900 text-white' : ''}`}
-          >
-            40 hours (hard)
-          </button>
-        </div>
-        <label className="grid gap-1 text-sm">
-          Audit notes
-          <textarea
-            data-testid="cap-notes"
-            value={notes}
-            onChange={(event) => setNotes(event.target.value)}
-            className="rounded-md border border-black/15 px-3 py-2 dark:border-white/15 dark:bg-zinc-800"
-          />
-        </label>
-        <button
-          type="button"
-          data-testid="cap-submit"
-          disabled={saving}
-          onClick={submit}
-          className="w-fit rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900"
-        >
-          {saving ? 'Applying...' : 'Apply cap'}
-        </button>
-      </div>
+      <Card pad>
+        <div className="col gap-5">
+          <div style={{ maxWidth: 260 }}>
+            <Field label="Week beginning Monday">
+              <DateInput
+                data-testid="cap-week"
+                value={weekStartDate}
+                onChange={(event) => setWeekStartDate(event.target.value)}
+              />
+            </Field>
+          </div>
 
-      {error !== null && <p className="text-sm text-red-600">{error}</p>}
-      {audit !== null && (
-        <div
-          data-testid="cap-success"
-          className="rounded-md bg-green-50 p-3 text-sm text-green-900"
-        >
-          <p>Weekly cap saved.</p>
-          <p data-testid="cap-audit-modified-by">Modified by: {audit.modifiedByName}</p>
-          <p data-testid="cap-audit-modified-at">Modified at: {audit.modifiedAt}</p>
-          <p data-testid="cap-audit-notes">Notes: {audit.notes ?? 'None'}</p>
+          <Field label="Cap for this week">
+            <div className="seg" role="group" aria-label="Weekly hours cap">
+              <button
+                type="button"
+                data-testid="cap-value-20"
+                aria-pressed={hoursCap === 20}
+                className={`seg-btn ${hoursCap === 20 ? 'is-on' : ''}`.trim()}
+                onClick={() => setHoursCap(20)}
+              >
+                20 hours · soft
+              </button>
+              <button
+                type="button"
+                data-testid="cap-value-40"
+                aria-pressed={hoursCap === 40}
+                className={`seg-btn ${hoursCap === 40 ? 'is-on' : ''}`.trim()}
+                onClick={() => setHoursCap(40)}
+              >
+                40 hours · hard
+              </button>
+            </div>
+          </Field>
+
+          <Field
+            label="Audit notes"
+            helper="Recorded with who changed the cap and when (ARCH §3.10)."
+          >
+            <TextArea
+              data-testid="cap-notes"
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+            />
+          </Field>
+
+          <div>
+            <Button data-testid="cap-submit" disabled={saving} onClick={submit} icon="check">
+              {saving ? 'Applying…' : 'Apply cap'}
+            </Button>
+          </div>
         </div>
+      </Card>
+
+      {error !== null && (
+        <Notification kind="error" title="Could not apply cap">
+          {error}
+        </Notification>
       )}
 
-      <table className="w-full border-collapse text-sm">
-        <thead>
-          <tr className="border-b text-left">
-            <th className="py-2">Week</th>
-            <th className="py-2">Effective cap</th>
-            <th className="py-2">Source</th>
-          </tr>
-        </thead>
-        <tbody>
-          {weeks.map((week) => (
-            <tr key={week.weekStartDate} className="border-b border-black/5 dark:border-white/5">
-              <td className="py-2">{week.weekStartDate}</td>
-              <td className="py-2">
-                {week.hoursCap} hours ({week.capEnforcement})
-              </td>
-              <td className="py-2">{week.isOverride ? 'Manual override' : 'Profile default'}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {audit !== null && (
+        <Notification kind="success" title="Weekly cap saved" testId="cap-success">
+          <div className="col gap-1" style={{ marginTop: 4, fontSize: 13 }}>
+            <span data-testid="cap-audit-modified-by">
+              <span className="t-meta">Modified by</span> {audit.modifiedByName}
+            </span>
+            <span data-testid="cap-audit-modified-at">
+              <span className="t-meta">Modified at</span>{' '}
+              <span className="t-mono">{audit.modifiedAt}</span>
+            </span>
+            <span data-testid="cap-audit-notes">
+              <span className="t-meta">Notes</span> {audit.notes ?? 'None'}
+            </span>
+          </div>
+        </Notification>
+      )}
+
+      <section className="col gap-2">
+        <h2 className="t-h2">Upcoming weeks</h2>
+        <DataTable
+          columns={COLUMNS}
+          rows={weeks}
+          getRowKey={(w) => w.weekStartDate}
+          emptyText="No upcoming weeks in the operating calendar."
+        />
+      </section>
     </div>
   );
 }

@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation';
 
 import { HmLeaveForm } from '../../../../components/leave/HmLeaveForm';
+import { Notification } from '../../../../components/ui/Notification';
+import { PageHead } from '../../../../components/ui/PageHead';
 import { getSessionUser, isHouseAdmin } from '../../../../lib/auth';
 import { getLeaveAdminData } from '../../../../lib/data/leave';
 
@@ -11,19 +13,20 @@ export default async function LeavePage() {
   if (user === null) redirect('/login');
 
   return (
-    <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-8">
-      <h1 className="mb-6 text-lg font-semibold tracking-tight">Housing Manager leave</h1>
+    <div className="page" style={{ maxWidth: 720 }}>
+      <PageHead
+        eyebrow="Manage"
+        title="Housing Manager leave"
+        sub="Record your leave dates and pick a replacement — we'll prep the email to your student workers (§2.6)."
+      />
       {isHouseAdmin(user) ? (
         await renderForm(user)
       ) : (
-        <div
-          data-testid="leave-unauthorized"
-          className="rounded-lg border border-amber-300 bg-amber-50 p-6 text-sm text-amber-900"
-        >
+        <Notification kind="warning" title="Managers only" testId="leave-unauthorized">
           Only Housing Managers and Building Managers may submit leave.
-        </div>
+        </Notification>
       )}
-    </main>
+    </div>
   );
 }
 

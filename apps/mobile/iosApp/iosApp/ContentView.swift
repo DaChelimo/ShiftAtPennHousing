@@ -108,55 +108,85 @@ struct ShiftsRootView: View {
 
     // MARK: Tab 1 — My Shifts
 
+    // §5.6 Tab 1 order (top→bottom): picked-up, dropped, scheduled — spec + Maestro
+    // contract (the design's visual order is scheduled-first; spec pins this order).
     private var myShifts: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            section("Picked-up", "section_picked_up", model.state.myShifts.pickedUp) { shift in
-                shiftCard(shift, "picked_up_shift_card")
-            }
-            section("Dropped", "section_dropped", model.state.myShifts.dropped) { shift in
-                HStack {
-                    shiftCard(shift, "dropped_shift_card")
-                    Button("Reclaim") { model.vm.reclaim(shiftId: shift.id) }
+        VStack(alignment: .leading, spacing: 22) {
+            WeekTotalChip(currentWeeklyHours: DemoFactory.shared.demoWeeklyHours)
+
+            ShiftSection(
+                title: "Picked up",
+                isEmpty: model.state.myShifts.pickedUp.isEmpty,
+                count: model.state.myShifts.pickedUp.count,
+                emptyText: "Nothing picked up. Browse Open Shifts to claim."
+            ) {
+                VStack(spacing: 10) {
+                    ForEach(model.state.myShifts.pickedUp, id: \.id) { s in
+                        myShiftCard(s, "picked_up_shift_card", onTap: { dropTarget = s })
+                    }
                 }
             }
-            section("Their shifts", "section_scheduled", model.state.myShifts.scheduled) { shift in
-                shiftCard(shift, "scheduled_shift_card")
-                    .onTapGesture { dropTarget = shift }
+            .accessibilityIdentifier("section_picked_up")
+
+            ShiftSection(
+                title: "Dropped — still open",
+                isEmpty: model.state.myShifts.dropped.isEmpty,
+                count: model.state.myShifts.dropped.count,
+                emptyText: "Nothing dropped. 👍"
+            ) {
+                VStack(spacing: 10) {
+                    ForEach(model.state.myShifts.dropped, id: \.id) { s in
+                        myShiftCard(s, "dropped_shift_card", reclaim: { model.vm.reclaim(shiftId: s.id) })
+                    }
+                }
             }
+            .accessibilityIdentifier("section_dropped")
+
+            ShiftSection(
+                title: "Scheduled",
+                isEmpty: model.state.myShifts.scheduled.isEmpty,
+                count: model.state.myShifts.scheduled.count,
+                emptyText: "No scheduled shifts."
+            ) {
+                VStack(spacing: 10) {
+                    ForEach(model.state.myShifts.scheduled, id: \.id) { s in
+                        myShiftCard(s, "scheduled_shift_card", onTap: { dropTarget = s })
+                    }
+                }
+            }
+            .accessibilityIdentifier("section_scheduled")
         }
-        .padding()
+        .padding(16)
     }
 
-    private func section<Row: View>(
-        _ title: String,
-        _ id: String,
-        _ shifts: [MyShift],
-        @ViewBuilder row: @escaping (MyShift) -> Row
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.headline)
-            if shifts.isEmpty {
-                Text("None this week").font(.caption).foregroundColor(.secondary)
-            } else {
-                ForEach(shifts, id: \.id) { row($0) }
-            }
-            Divider()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    /// One My-Shifts card, driven by the shared `MyShift.toRow()` presentation model.
+    private func myShiftCard(_ shift: MyShift, _ id: String, onTap: (() -> Void)? = nil, reclaim: (() -> Void)? = nil) -> some View {
+        let row = shift.toRow()
+        return ShiftCard(
+            state: kitState(row.state),
+            houseInitial: row.houseInitial,
+            timeLabel: row.timeLabel,
+            houseName: row.houseName,
+            destination: row.destination,
+            durationLabel: row.durationLabel,
+            meta: row.dayLabel,
+            onTap: onTap,
+            trailing: reclaim.map { AnyView(ShiftButton(title: "Reclaim", action: $0, variant: .tonal, size: .sm)) }
+        )
         .accessibilityIdentifier(id)
     }
 
-    private func shiftCard(_ shift: MyShift, _ id: String) -> some View {
-        VStack(alignment: .leading) {
-            Text(shift.house.name + (shift.crossHouse ? "  (cross-house)" : "") + (shift.pending ? "  (Pending)" : ""))
-                .fontWeight(.semibold)
-            Text("\(String(describing: shift.start)) – \(String(describing: shift.end))").font(.caption)
+    private func kitState(_ s: MyShiftCardState) -> ShiftState {
+        switch s {
+        case .scheduled: return .scheduled
+        case .pickupHome: return .pickupHome
+        case .pickupCross: return .pickupCross
+        case .floatOut: return .floatOut
+        case .pendingFloat: return .pendingFloat
+        case .breakShift: return .breakShift
+        case .dropped: return .dropped
+        default: return .scheduled
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(8)
-        .accessibilityIdentifier(id)
     }
 
     // MARK: Tab 2 — Open in My House
@@ -295,39 +325,123 @@ private struct DropFlowSheet: View {
     let vm: ShiftsScreenViewModel
     let shift: MyShift
     @Environment(\.dismiss) private var dismiss
-    @State private var occurrenceChosen = false
-    @State private var shortNoticeAccepted = false
+    @Environment(\.colorScheme) private var scheme
+    @State private var permanentScope = false
+    @State private var acknowledged = false
 
     var body: some View {
+        let c = ShiftColors.resolve(scheme)
+        let row = shift.toRow()
         let options = vm.dropOptions(shift: shift, breakProfile: false)
         let plan = vm.planDrop(shift: shift, dropFromNow: false)
-        VStack(spacing: 16) {
-            if !occurrenceChosen {
-                VStack(spacing: 8) {
-                    Text("Drop this shift").font(.title2)
-                    Button("Drop this occurrence") { occurrenceChosen = true }
-                        .accessibilityIdentifier("drop_occurrence_option")
-                    Button("Drop permanently") { /* §8.4 flow, out of scope here */ }
-                        .disabled(!options.canDropPermanently)
-                        .accessibilityIdentifier("drop_permanent_option")
+        ShiftSheet(title: "Drop shift", onClose: { dismiss() }) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    HouseBadge(initial: row.houseInitial, bg: c.surfaceVar, fg: c.ink)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(row.timeLabel).font(ShiftType.monoTime).monospacedDigit().foregroundColor(c.ink)
+                        Text("\(row.houseName ?? row.destination ?? "") · \(row.durationLabel)")
+                            .font(ShiftFont.sans(13)).foregroundColor(c.sec)
+                    }
                 }
-                .accessibilityIdentifier("drop_options_sheet")
-            } else if plan.shortNotice && !shortNoticeAccepted {
-                VStack(spacing: 8) {
-                    Text("This shift starts within 20 minutes. Dropping it is short notice (§5.2).")
-                    Button("Continue anyway") { shortNoticeAccepted = true }
-                        .accessibilityIdentifier("drop_short_notice_continue")
+
+                DropScopeOption(
+                    selected: !permanentScope, title: "Drop this occurrence",
+                    detail: "Drops just this occurrence. The slot opens for others to claim.",
+                    systemIcon: ShiftIcons.calendar, accent: c.blue, id: "drop_occurrence_option"
+                ) { permanentScope = false }
+
+                DropScopeOption(
+                    selected: permanentScope, title: "Drop permanently",
+                    detail: "Releases this recurring slot. It becomes a permanent opening.",
+                    systemIcon: ShiftIcons.refresh, accent: c.permanent.accent, enabled: options.canDropPermanently,
+                    id: "drop_permanent_option"
+                ) { if options.canDropPermanently { permanentScope = true } }
+
+                if plan.shortNotice && !acknowledged {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ShiftBanner(
+                            title: "Starts within 20 minutes",
+                            bodyText: "Short-notice drop — your manager is notified immediately to arrange cover.",
+                            tone: .warning
+                        )
+                        ShiftButton(title: "Continue anyway", action: { acknowledged = true }, variant: .outlined, size: .sm)
+                            .accessibilityIdentifier("drop_short_notice_continue")
+                    }
+                    .accessibilityIdentifier("drop_short_notice_warning")
                 }
-                .accessibilityIdentifier("drop_short_notice_warning")
-            } else {
-                Button("Confirm drop") {
-                    vm.drop(shiftId: shift.id)
-                    dismiss()
-                }
+
+                ShiftButton(
+                    title: permanentScope ? "Drop permanently" : "Drop this week",
+                    action: { vm.drop(shiftId: shift.id); dismiss() },
+                    variant: .destructiveFilled, fullWidth: true
+                )
+                .disabled(plan.shortNotice && !acknowledged)
                 .accessibilityIdentifier("drop_confirm_button")
             }
+            .accessibilityIdentifier("drop_options_sheet")
         }
-        .padding()
+    }
+}
+
+/// The "This week — 14h of 20h soft cap" summary chip (design My-Shifts header).
+private struct WeekTotalChip: View {
+    let currentWeeklyHours: Double
+    var breakProfile: Bool = false
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let c = ShiftColors.resolve(scheme)
+        let summary = weeklyHoursSummary(currentWeeklyHours: currentWeeklyHours, breakProfile: breakProfile)
+        HStack(spacing: 8) {
+            Image(systemName: ShiftIcons.clock).font(.system(size: 17, weight: .regular)).foregroundColor(c.blue)
+            Text("This week").font(ShiftFont.sans(13.5, .medium)).foregroundColor(c.sec)
+            Spacer()
+            Text(summary.current).font(ShiftFont.mono(13.5, .semibold)).monospacedDigit().foregroundColor(c.ink)
+            Text(summary.capLabel).font(ShiftFont.mono(13.5)).monospacedDigit().foregroundColor(c.ter)
+        }
+        .padding(.horizontal, 13).padding(.vertical, 9)
+        .background(c.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(c.divider, lineWidth: 1))
+    }
+}
+
+/// A radio-style drop-scope option (design `ScopeOption`).
+private struct DropScopeOption: View {
+    let selected: Bool
+    let title: String
+    let detail: String
+    let systemIcon: String
+    let accent: Color
+    var enabled: Bool = true
+    let id: String
+    let onTap: () -> Void
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let c = ShiftColors.resolve(scheme)
+        Button(action: { if enabled { onTap() } }) {
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    Circle().strokeBorder(selected ? accent : c.outline, lineWidth: 2).frame(width: 20, height: 20)
+                    if selected { Circle().fill(accent).frame(width: 10, height: 10) }
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(ShiftFont.sans(15, .semibold)).foregroundColor(c.ink)
+                    Text(detail).font(ShiftFont.sans(13)).foregroundColor(c.sec).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: systemIcon).font(.system(size: 18)).foregroundColor(selected ? accent : c.ter)
+            }
+            .padding(12)
+            .background(selected ? accent.opacity(0.08) : c.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(selected ? accent : c.divider, lineWidth: selected ? 1.5 : 1))
+        }
+        .buttonStyle(.plain)
+        .opacity(enabled ? 1 : 0.5)
+        .accessibilityIdentifier(id)
     }
 }
 

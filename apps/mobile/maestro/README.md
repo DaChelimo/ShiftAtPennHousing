@@ -74,3 +74,9 @@ The screens MUST expose these stable ids. On Android attach them with
 | `decline_button`            | Decline.                                                 |
 | `ack_success`               | Acknowledge success state.                               |
 | `ack_deadline_passed`       | Disabled state after the T-10m deadline (§7.1).          |
+| `tab_calendar`              | Calendar tab (agenda-first personal calendar).           |
+| `calendar_screen`           | Calendar screen root.                                    |
+| `calendar_week_strip`       | The Mon–Sun day-picker strip.                            |
+| `calendar_day_cell`         | A day cell in the week strip.                            |
+| `calendar_agenda`           | The selected day's agenda list.                          |
+| `calendar_shift_card`       | A shift card in the agenda.                              |

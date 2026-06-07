@@ -29,10 +29,31 @@ final class ShiftsObservable: ObservableObject {
     deinit { task?.cancel() }
 }
 
-private enum Tab: Int { case mine, home, other, updates }
+/// Observes the Personal-Calendar `StateFlow` (its `selectDay` mutates state, so —
+/// unlike the static Updates feed — it must be observed).
+@MainActor
+final class CalendarObservable: ObservableObject {
+    let vm: CalendarViewModel
+    @Published var state: CalendarUiState
+    private var task: Task<Void, Never>?
+
+    init(vm: CalendarViewModel) {
+        self.vm = vm
+        self.state = vm.uiState.value
+        task = Task { [weak self] in
+            guard let self else { return }
+            for await s in self.vm.uiState { self.state = s }
+        }
+    }
+
+    deinit { task?.cancel() }
+}
+
+private enum Tab: Int { case mine, home, other, calendar, updates }
 
 struct ShiftsRootView: View {
     @StateObject private var model = ShiftsObservable(vm: DemoFactory.shared.shiftsViewModel())
+    @StateObject private var calendarModel = CalendarObservable(vm: DemoFactory.shared.calendarViewModel())
     private let ackVm = DemoFactory.shared.ackViewModel()
     private let updatesVm = DemoFactory.shared.updatesViewModel()
     @Environment(\.colorScheme) private var scheme
@@ -63,6 +84,7 @@ struct ShiftsRootView: View {
                 case .mine: myShifts
                 case .home: homeOpen
                 case .other: otherHouses
+                case .calendar: calendarTab
                 case .updates: updates
                 }
             }
@@ -85,6 +107,7 @@ struct ShiftsRootView: View {
             tabButton("My Shifts", "tab_my_shifts", .mine)
             tabButton("Open Shifts in My House", "tab_open_home", .home)
             tabButton("Open Shifts in Other Houses", "tab_open_other", .other)
+            tabButton("Calendar", "tab_calendar", .calendar)
             tabButton("Updates", "tab_updates", .updates)
         }
         .padding(.vertical, 6)
@@ -97,6 +120,7 @@ struct ShiftsRootView: View {
             case .mine: model.vm.selectTab(tab: .myShifts)
             case .home: model.vm.selectTab(tab: .openHome)
             case .other: model.vm.selectTab(tab: .openOther)
+            case .calendar: break
             case .updates: break
             }
         }) {
@@ -371,6 +395,122 @@ struct ShiftsRootView: View {
         .foregroundColor(c.floatOut.deep)
         .background(c.floatOut.badge)
         .clipShape(Capsule())
+    }
+
+    // MARK: Calendar — agenda-first Personal Calendar (current week only)
+
+    private var calendarTab: some View {
+        let c = ShiftColors.resolve(scheme)
+        let st = calendarModel.state
+        return VStack(alignment: .leading, spacing: 0) {
+            weekHeaderCard(st.week.rangeLabel, c)
+            weekStrip(st.week, Int(st.selectedDayIndex), c)
+            dayHeaderRow(st.agenda.header, c)
+            if st.agenda.isEmpty {
+                EmptyState(
+                    title: "No shifts this day",
+                    systemIcon: ShiftIcons.calendar,
+                    bodyText: "Enjoy the day off — or browse Open Shifts to pick one up."
+                )
+                .padding(.top, 8)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(st.agenda.items.enumerated()), id: \.offset) { _, item in
+                        if let nowLabel = item.nowLabel {
+                            nowLine(nowLabel, c)
+                        } else if let shift = item.shift {
+                            ShiftCard(
+                                state: kitState(shift.state),
+                                houseInitial: shift.houseInitial,
+                                timeLabel: shift.timeLabel,
+                                houseName: shift.houseName,
+                                destination: shift.destination,
+                                durationLabel: shift.durationLabel,
+                                active: item.active
+                            )
+                            .accessibilityIdentifier("calendar_shift_card")
+                        }
+                    }
+                }
+                .padding(.horizontal, 16).padding(.top, 4)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("calendar_screen")
+    }
+
+    /// The static "this week" header (the design's week-picker card sans picker — no other weeks).
+    private func weekHeaderCard(_ range: String, _ c: ShiftColors) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous).fill(c.blueContainer).frame(width: 38, height: 38)
+                Image(systemName: ShiftIcons.calendar).font(.system(size: 19)).foregroundColor(c.blue)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text("This week").font(ShiftFont.sans(15, .semibold)).foregroundColor(c.ink)
+                Text(range).font(ShiftFont.sans(13)).foregroundColor(c.sec)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .background(c.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(c.divider, lineWidth: 1))
+        .padding(.horizontal, 16).padding(.vertical, 8)
+    }
+
+    private func weekStrip(_ week: CalendarWeek, _ selected: Int, _ c: ShiftColors) -> some View {
+        HStack(spacing: 2) {
+            ForEach(week.days, id: \.index) { day in
+                weekDayCell(day, Int(day.index) == selected, c)
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 2)
+        .accessibilityIdentifier("calendar_week_strip")
+    }
+
+    private func weekDayCell(_ day: WeekDayCell, _ selected: Bool, _ c: ShiftColors) -> some View {
+        Button(action: { calendarModel.vm.selectDay(index: day.index) }) {
+            VStack(spacing: 4) {
+                Text(day.dayLetter).font(ShiftFont.sans(11, .semibold)).foregroundColor(c.ter)
+                ZStack {
+                    Circle().fill(selected ? c.blue : Color.clear).frame(width: 34, height: 34)
+                    if day.isToday && !selected {
+                        Circle().strokeBorder(c.blue, lineWidth: 1.5).frame(width: 34, height: 34)
+                    }
+                    Text(day.dateLabel)
+                        .font(ShiftFont.sans(14, day.isToday ? .bold : .medium))
+                        .foregroundColor(selected ? .white : c.ink)
+                }
+                Circle().fill(day.hasShifts ? c.blue : Color.clear).frame(width: 5, height: 5)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("calendar_day_cell")
+    }
+
+    private func dayHeaderRow(_ header: CalendarDayHeader, _ c: ShiftColors) -> some View {
+        HStack(alignment: .bottom) {
+            HStack(alignment: .bottom, spacing: 6) {
+                Text(header.title).font(ShiftFont.sans(17, .bold)).foregroundColor(c.ink)
+                Text("· \(header.dateLabel)").font(ShiftFont.sans(15, .medium)).foregroundColor(c.ter)
+            }
+            Spacer()
+            if let summary = header.summary {
+                Text(summary).font(ShiftFont.mono(13)).monospacedDigit().foregroundColor(c.sec)
+            }
+        }
+        .padding(.horizontal, 18).padding(.top, 6).padding(.bottom, 10)
+    }
+
+    private func nowLine(_ label: String, _ c: ShiftColors) -> some View {
+        HStack(spacing: 9) {
+            Circle().fill(c.danger.accent).frame(width: 9, height: 9)
+            Text(label).font(ShiftFont.mono(12, .semibold)).monospacedDigit().foregroundColor(c.danger.accent)
+            Rectangle().fill(c.danger.accent.opacity(0.45)).frame(height: 1.5).clipShape(Capsule())
+        }
+        .padding(.vertical, 2)
     }
 }
 

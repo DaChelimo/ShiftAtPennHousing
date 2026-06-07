@@ -128,6 +128,37 @@ where the urgent float-assignment row IS the pending-float entry that opens the 
 - **Selectors:** `tab_updates` + `pending_float_notification` preserved (the urgent float row);
   Maestro 04 (tap `tab_updates` → `pending_float_notification` → `ack_modal`) still holds.
 
+### Screen 5 — Personal Calendar ✦ (agenda-first) — **latest**
+
+NEW screen on a 5th **Calendar** tab (between Open-Other and Updates), built over the EXISTING
+current-week `MyShift` snapshot — the same data the Shifts screen renders.
+
+- **DATA-AVAILABILITY CHECK:** ✅ current-week own-shifts (`MyShift` via `worker_my_shifts` /
+  `ShiftsScreenViewModel` / `DemoData.snapshot`). ⚠️ **No arbitrary-week view** (no date-param
+  query) → the design's week-picker / future-weeks / permanent-schedule template are **OMITTED**
+  (no data) — the header is a static "This week". ⚠️ No recurring-template entity. Nothing
+  fabricated.
+- **Shared (`:shared`, tested — 8 new kotlin.test):** `calendar/Calendar.kt` — `CalendarWeek`
+  (Mon–Sun strip cells), `CalendarAgenda`/`CalendarAgendaItem` (shift OR now-line — a flat model,
+  SKIE-safe, no sealed type), `buildCalendarWeek` + `buildCalendarAgenda(selectedDayIndex, now)`:
+  NY-anchored `LocalDate` week math, a shift is placed only if it truly falls in `now`'s week
+  (cross-week rows sharing a weekday never collide), per-day total ("N shifts · 6h"), and a live
+  "NOW · HH:mm" marker inserted before the next upcoming shift (today only) with the in-progress
+  shift flagged `active`. Thin `CalendarViewModel(myShifts, now)` + `selectDay`;
+  `DemoFactory.calendarViewModel` over `DemoData.snapshot`. `MONTH_SHORT` widened to `internal`.
+- **Compose (`ShiftsScreen.kt` + `MainActivity.kt`) + SwiftUI (`ContentView.swift`):** a 5th
+  `tab_calendar`; calendar = static "This week" header + a Mon–Sun strip (date pill: selected fill
+  / today ring / shift dot, tappable → `selectDay`) + a day header ("Today · Jun 3" + summary) +
+  the selected day's agenda (reusing the My-Shifts `ShiftCard` via `toRow`, `active` ring) with the
+  red NOW line. Empty day → `EmptyState` (calendar, "No shifts this day"). iOS observes the VM
+  (`CalendarObservable`) since `selectDay` mutates state. No kit additions.
+- **Selectors added** (to the README contract): `tab_calendar`, `calendar_screen`,
+  `calendar_week_strip`, `calendar_day_cell`, `calendar_agenda`, `calendar_shift_card`. Existing
+  Maestro flows are unaffected (they find tabs by id; the new tab is additive).
+- **Data flags:** week-picker / future weeks / permanent template / Day+Week grid views omitted
+  (no arbitrary-week data); loading + error live in the data layer (the VM is a snapshot) — the
+  kit's `SkeletonShiftCard` / error `EmptyState` are ready for when it wires.
+
 ## Decisions & deviations — Open Shifts (Screen 2)
 
 - **Navigation:** kept the existing 4-tab scrollable row (My Shifts / Open in My House /
@@ -164,8 +195,8 @@ where the urgent float-assignment row IS the pending-float entry that opens the 
 ## Verification
 
 - JVM/KMP gate: **all four green** (shared tests incl. Screen-2's 16 + Screen-3's 8 +
-  Screen-4's 10 new, `assembleDebug`, iOS compile, SKIE framework link). The only link
-  warning is the pre-existing Ktor `description` rename, unrelated.
+  Screen-4's 10 + Screen-5's 8 new, `assembleDebug`, iOS compile, SKIE framework link). The
+  only link warning is the pre-existing Ktor `description` rename, unrelated.
 - **Manual (not the JVM gate):** Maestro `01-view-my-shifts`, `02-claim-shift`,
   `04-acknowledge-float` (the last now reaches `pending_float_notification` via the new feed)
   on a real emulator/simulator; Xcode build of `iosApp` (SwiftUI isn't gated by Gradle); an
@@ -183,9 +214,8 @@ where the urgent float-assignment row IS the pending-float entry that opens the 
 
 ## Next
 
-- Done so far: foundation + My Shifts + Open Shifts/Claim + Float Acknowledgment + **Updates
-  (notifications feed + pending-float entry)** — all bound to existing data. Remaining per
-  `DESIGN_TOKENS.md` §6 are the **New (✦)** screens — Preferences submission, Break claim,
-  Personal calendar, Settings/Profile — each needing the **data-availability check first**
-  (and screens 10/11 "who's working" + desk/floater phone are ⛔ blocked: no backend). Next
-  screen is user-directed in the same conversation.
+- Done so far: foundation + My Shifts + Open Shifts/Claim + Float Acknowledgment + Updates +
+  **Personal Calendar ✦** — all bound to existing data. Remaining per `DESIGN_TOKENS.md` §6 are
+  the **New (✦)** screens — Preferences submission, Break claim, Settings/Profile — each needing
+  the **data-availability check first** (and screens 10/11 "who's working" + desk/floater phone
+  are ⛔ blocked: no backend). Next screen is user-directed in the same conversation.

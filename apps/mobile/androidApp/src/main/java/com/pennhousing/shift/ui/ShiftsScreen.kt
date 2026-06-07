@@ -42,6 +42,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.pennhousing.shift.shared.calendar.CalendarAgenda
+import com.pennhousing.shift.shared.calendar.CalendarDayHeader
+import com.pennhousing.shift.shared.calendar.CalendarWeek
+import com.pennhousing.shift.shared.calendar.WeekDayCell
 import com.pennhousing.shift.shared.data.ToastNotification
 import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.model.OpenShift
@@ -52,6 +56,7 @@ import com.pennhousing.shift.shared.shifts.ClaimCapVerdict
 import com.pennhousing.shift.shared.shifts.ClaimMeter
 import com.pennhousing.shift.shared.shifts.HomeOpenShiftsTab
 import com.pennhousing.shift.shared.shifts.MyShiftCardState
+import com.pennhousing.shift.shared.shifts.MyShiftRow
 import com.pennhousing.shift.shared.shifts.MyShiftsTab
 import com.pennhousing.shift.shared.shifts.OpenShiftCardState
 import com.pennhousing.shift.shared.shifts.OpenShiftRow
@@ -61,6 +66,7 @@ import com.pennhousing.shift.shared.shifts.hoursBetween
 import com.pennhousing.shift.shared.shifts.toRow
 import com.pennhousing.shift.shared.shifts.weeklyHoursSummary
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
+import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.ShiftsScreenViewModel
 import com.pennhousing.shift.shared.viewmodel.ShiftsTab
 import com.pennhousing.shift.shared.viewmodel.UpdatesViewModel
@@ -84,7 +90,8 @@ import com.pennhousing.shift.ui.theme.ShiftTheme
 private const val TAB_MY = 0
 private const val TAB_HOME = 1
 private const val TAB_OTHER = 2
-private const val TAB_UPDATES = 3
+private const val TAB_CALENDAR = 3
+private const val TAB_UPDATES = 4
 
 /**
  * Phase 13a — the worker's Shifts screen (BEHAVIORAL_SPECIFICATION.md §5.6).
@@ -100,6 +107,7 @@ fun ShiftsApp(
     shiftsVm: ShiftsScreenViewModel,
     ackVm: AckDeclineViewModel,
     updatesVm: UpdatesViewModel,
+    calendarVm: CalendarViewModel,
     currentWeeklyHours: Double,
     breakProfile: Boolean = false,
     toast: ToastNotification? = null,
@@ -143,6 +151,9 @@ fun ShiftsApp(
                         selectedIndex = TAB_OTHER
                         shiftsVm.selectTab(ShiftsTab.OPEN_OTHER)
                     }
+                    SpecTab("Calendar", "tab_calendar", selectedIndex == TAB_CALENDAR) {
+                        selectedIndex = TAB_CALENDAR
+                    }
                     SpecTab("Updates", "tab_updates", selectedIndex == TAB_UPDATES) {
                         selectedIndex = TAB_UPDATES
                     }
@@ -166,6 +177,7 @@ fun ShiftsApp(
                             breakProfile = breakProfile,
                             onClaimed = { claimSuccess = true },
                         )
+                    TAB_CALENDAR -> CalendarTabContent(calendarVm)
                     TAB_UPDATES ->
                         UpdatesTabContent(
                             feed = updatesState.feed,
@@ -795,6 +807,199 @@ private fun ActionNeededTag() {
         Icon(ShiftIcons.Warning, contentDescription = null, tint = c.floatOut.deep, modifier = Modifier.size(13.dp))
         Text("Action needed", color = c.floatOut.deep, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
     }
+}
+
+// ===================================================================
+// Calendar tab — agenda-first Personal Calendar (current week only).
+// ===================================================================
+
+/**
+ * The Personal Calendar (worker-app.html `CalendarScreen`, agenda-first): a static
+ * "this week" header (NO week-picker — only the current week is exposed; arbitrary
+ * weeks + the permanent template have no data), a Mon–Sun strip, and the selected
+ * day's agenda with a live NOW line. All from the shared, tested
+ * [com.pennhousing.shift.shared.calendar.buildCalendarWeek] / `buildCalendarAgenda`
+ * over the same `MyShift` snapshot the Shifts screen renders.
+ */
+@Composable
+private fun CalendarTabContent(vm: CalendarViewModel) {
+    val state by vm.uiState.collectAsStateWithLifecycle()
+    val c = ShiftTheme.colors
+    Column(Modifier.fillMaxSize().background(c.bg).testTag("calendar_screen")) {
+        WeekHeaderCard(state.week.rangeLabel)
+        WeekStrip(state.week, state.selectedDayIndex, vm::selectDay)
+        DayHeaderRow(state.agenda.header)
+        if (state.agenda.isEmpty) {
+            EmptyState(
+                title = "No shifts this day",
+                icon = ShiftIcons.Calendar,
+                body = "Enjoy the day off — or browse Open Shifts to pick one up.",
+            )
+        } else {
+            LazyColumn(
+                Modifier.fillMaxSize().testTag("calendar_agenda"),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
+            ) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        state.agenda.items.forEach { item ->
+                            val now = item.nowLabel
+                            val shift = item.shift
+                            if (now != null) {
+                                NowLine(now)
+                            } else if (shift != null) {
+                                AgendaShiftCard(shift, item.active)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** The static "this week" header (the design's week-picker card, sans picker — no other weeks). */
+@Composable
+private fun WeekHeaderCard(rangeLabel: String) {
+    val c = ShiftTheme.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(c.surface)
+            .border(1.dp, c.divider, RoundedCornerShape(14.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            Modifier.size(38.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(ShiftIcons.Calendar, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(19.dp))
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text("This week", color = c.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text(rangeLabel, color = c.sec, fontSize = 13.sp)
+        }
+    }
+}
+
+/** Mon–Sun day picker: weekday letter, a date pill (selected fill / today ring), a shift dot. */
+@Composable
+private fun WeekStrip(
+    week: CalendarWeek,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().testTag("calendar_week_strip").padding(horizontal = 12.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        week.days.forEach { day ->
+            WeekDayCellView(day, day.index == selected, Modifier.weight(1f)) { onSelect(day.index) }
+        }
+    }
+}
+
+@Composable
+private fun WeekDayCellView(
+    day: WeekDayCell,
+    selected: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    val c = ShiftTheme.colors
+    val blue = MaterialTheme.colorScheme.primary
+    Column(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .testTag("calendar_day_cell")
+            .padding(vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(day.dayLetter, color = c.ter, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        Box(
+            Modifier
+                .size(34.dp)
+                .clip(RoundedCornerShape(50))
+                .background(if (selected) blue else Color.Transparent)
+                .then(if (day.isToday && !selected) Modifier.border(1.5.dp, blue, RoundedCornerShape(50)) else Modifier),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                day.dateLabel,
+                color = if (selected) Color.White else c.ink,
+                fontSize = 14.sp,
+                fontWeight = if (day.isToday) FontWeight.Bold else FontWeight.Medium,
+            )
+        }
+        Box(
+            Modifier.size(5.dp).clip(RoundedCornerShape(50)).background(if (day.hasShifts) blue else Color.Transparent),
+        )
+    }
+}
+
+/** "Today · Jun 3" + a "2 shifts · 6h" summary. */
+@Composable
+private fun DayHeaderRow(header: CalendarDayHeader) {
+    val c = ShiftTheme.colors
+    Row(
+        Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 6.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(header.title, color = c.ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Text("· ${header.dateLabel}", color = c.ter, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+        }
+        header.summary?.let { Text(it, style = ShiftTheme.type.monoTime.copy(fontSize = 13.sp), color = c.sec) }
+    }
+}
+
+/** The live "NOW · HH:mm" agenda divider (red dot + label + rule) — today only. */
+@Composable
+private fun NowLine(label: String) {
+    val c = ShiftTheme.colors
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
+        Box(Modifier.size(9.dp).clip(RoundedCornerShape(50)).background(c.danger.accent))
+        Text(
+            label,
+            style = ShiftTheme.type.monoTime.copy(fontSize = 12.sp, fontWeight = FontWeight.SemiBold),
+            color = c.danger.accent,
+        )
+        Box(
+            Modifier
+                .weight(1f)
+                .height(1.5.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(c.danger.accent.copy(alpha = 0.45f)),
+        )
+    }
+}
+
+@Composable
+private fun AgendaShiftCard(
+    row: MyShiftRow,
+    active: Boolean,
+) {
+    ShiftCard(
+        state = row.state.toKitState(),
+        houseInitial = row.houseInitial,
+        timeLabel = row.timeLabel,
+        modifier = Modifier.testTag("calendar_shift_card"),
+        houseName = row.houseName,
+        destination = row.destination,
+        durationLabel = row.durationLabel,
+        active = active,
+    )
 }
 
 // ===================================================================

@@ -3,6 +3,8 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
 
+import { Button } from '../../components/ui/Button';
+import { Field, TextInput } from '../../components/ui/Field';
 import { createClient } from '../../lib/supabase/client';
 
 function LoginForm() {
@@ -34,56 +36,64 @@ function LoginForm() {
   }
 
   return (
-    <main className="flex flex-1 items-center justify-center bg-zinc-50 px-4 dark:bg-black">
+    <main
+      style={{
+        minHeight: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 24,
+        background: 'var(--surface-2)',
+      }}
+    >
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-sm space-y-4 rounded-xl border border-black/10 bg-white p-8 shadow-sm dark:border-white/10 dark:bg-zinc-900"
+        className="card col gap-5"
+        style={{ width: '100%', maxWidth: 380, padding: 32 }}
       >
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight">Shift@PennHousing</h1>
-          <p className="text-sm text-zinc-500">Sign in to the admin console.</p>
+        <div className="col gap-1">
+          <h1 className="t-h1">
+            Shift<span style={{ color: 'var(--brand)', fontWeight: 700 }}>@</span>PennHousing
+          </h1>
+          <p className="t-helper">Sign in to the admin console.</p>
         </div>
 
-        <label className="block space-y-1 text-sm font-medium">
-          <span>Email</span>
-          <input
+        <Field label="Email">
+          <TextInput
             data-testid="login-email"
             type="email"
             autoComplete="username"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-md border border-black/15 px-3 py-2 text-sm dark:border-white/15 dark:bg-zinc-800"
           />
-        </label>
+        </Field>
 
-        <label className="block space-y-1 text-sm font-medium">
-          <span>Password</span>
-          <input
+        <Field label="Password">
+          <TextInput
             data-testid="login-password"
             type="password"
             autoComplete="current-password"
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-md border border-black/15 px-3 py-2 text-sm dark:border-white/15 dark:bg-zinc-800"
           />
-        </label>
+        </Field>
 
         {error !== null && (
-          <p data-testid="login-error" className="text-sm text-red-600">
+          <p data-testid="login-error" className="t-helper" style={{ color: 'var(--st-danger)' }}>
             {error}
           </p>
         )}
 
-        <button
+        <Button
           data-testid="login-submit"
           type="submit"
           disabled={submitting}
-          className="w-full rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900"
+          style={{ width: '100%', justifyContent: 'center' }}
         >
           {submitting ? 'Signing in…' : 'Sign in'}
-        </button>
+        </Button>
       </form>
     </main>
   );

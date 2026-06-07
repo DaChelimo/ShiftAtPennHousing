@@ -9,19 +9,20 @@ routes, and every test contract.
 
 ## Status: all admin + supporting screens reskinned ✅
 
-| Screen (design ref)              | Route                            | Commit    | Notes                                                             |
-| -------------------------------- | -------------------------------- | --------- | ----------------------------------------------------------------- |
-| Foundation (tokens/shell/kit)    | `components/ui`, `globals.css`   | `ecf9916` | prior                                                             |
-| Live calendar (§6.1)             | `/calendar`                      | `7f07d10` | prior · read-only; override flagged                               |
-| Schedule builder (§6.3)          | `/schedule-builder`              | `4ef356a` | prior · visual-only; drag/testids preserved                       |
-| Coverage + Action inbox (§6.4)   | `/coverage`, `/inbox`            | `4929a3d` | prior · read-only; write actions flagged                          |
-| **Leave (§6.7)**                 | `/admin/leave`                   | `29643ec` | reskin · uses shared ComboBox; mailto preserved                   |
-| **HMOD rotor (§6.8)**            | `/admin/rotor`                   | `80ff60d` | reskin · .dtable grid + EmptyState                                |
-| **Weekly hours cap (§6.9)**      | `/admin/cap` (+ `/hours-cap`)    | `614af46` | reskin · .seg 20/40, TextArea notes, audit readback               |
-| **People / roster (§6.6) — NEW** | `/admin/people`                  | `b5df5f2` | new · roster + hours-vs-cap meter; Hire/Fire flagged              |
-| **Hours report (§6.10) — NEW**   | `/admin/hours`                   | `3cbabf6` | new · home/float/pickup decomposition + composition bars          |
-| **Config + Health (§6.12)**      | `/admin/config`, `/admin/health` | `c028ec5` | reskin · config editor + tick read-out; integration cards flagged |
-| **Login**                        | `/login`                         | `84c4624` | reskin · branded card on brand gradient                           |
+| Screen (design ref)                     | Route                            | Commit    | Notes                                                             |
+| --------------------------------------- | -------------------------------- | --------- | ----------------------------------------------------------------- |
+| Foundation (tokens/shell/kit)           | `components/ui`, `globals.css`   | `ecf9916` | prior                                                             |
+| Live calendar (§6.1)                    | `/calendar`                      | `7f07d10` | prior · read-only; override flagged                               |
+| Schedule builder (§6.3)                 | `/schedule-builder`              | `4ef356a` | prior · visual-only; drag/testids preserved                       |
+| Coverage + Action inbox (§6.4)          | `/coverage`, `/inbox`            | `4929a3d` | prior · read-only; write actions flagged                          |
+| **Leave (§6.7)**                        | `/admin/leave`                   | `29643ec` | reskin · uses shared ComboBox; mailto preserved                   |
+| **HMOD rotor (§6.8)**                   | `/admin/rotor`                   | `80ff60d` | reskin · .dtable grid + EmptyState                                |
+| **Weekly hours cap (§6.9)**             | `/admin/cap` (+ `/hours-cap`)    | `614af46` | reskin · .seg 20/40, TextArea notes, audit readback               |
+| **People / roster (§6.6) — NEW**        | `/admin/people`                  | `b5df5f2` | new · roster + hours-vs-cap meter; Hire/Fire flagged              |
+| **Hours report (§6.10) — NEW**          | `/admin/hours`                   | `3cbabf6` | new · home/float/pickup decomposition + composition bars          |
+| **Config + Health (§6.12)**             | `/admin/config`, `/admin/health` | `c028ec5` | reskin · config editor + tick read-out; integration cards flagged |
+| **Login**                               | `/login`                         | `84c4624` | reskin · branded card on brand gradient                           |
+| **Preferences oversight (§6.11) — NEW** | `/admin/preferences`             | `5b333fe` | new · submission + 5/3/1 reminder tracking; Set-deadline flagged  |
 
 ## Foundation additions this session (additive, backward-compatible)
 
@@ -42,10 +43,20 @@ No new screen-specific CSS files were needed; People/Hours use existing primitiv
 - **Hours** (`lib/data/hours.ts`): same engine, **decomposed** by the canonical
   `worker_my_shifts` kind logic (scheduled→home, floated_in/pending_float_in→
   floated-out, claimed+is_cross_house_pickup→cross-house pickup). Gated SM/HM/BM.
+- **Preferences oversight** (`lib/data/preferences.ts`): the active period =
+  most-recent **unpublished** `scheduling_periods` row; submission status mirrors
+  the builder's `submittedUserIds` (`preferences` ∪ non-opt-out `period_targets`;
+  `opted_out`→"no hours"); reminder 5/3/1 status reads the real
+  `preference_reminder_sends` table (authoritative "sent"), with overdue/upcoming
+  for outstanding workers derived from the deadline + now. Roster = active SW/SM
+  home-housed here (the population `send_preference_reminders` targets). Gated SM/HM/BM.
 
 ## Flagged (design shows it; NO backing RPC → surfaced disabled/flagged, never faked)
 
 - **People**: Hire / Fire (no create-user / fire-worker RPC).
+- **Preferences**: Set submission **deadline** — the `scheduling_periods.preference_deadline`
+  column exists (shown live, read-only) but there is no set-deadline RPC (only a
+  service-role RLS policy), so the date input + Set button are disabled + flagged.
 - **Health**: per-integration cards (SMS / Allied / SSO / SIS) — only the
   orchestrator tick is recorded; surfaced as a flagged note.
 - (prior) Live-calendar inline override; Coverage force-trigger / "Mark covered /
@@ -53,7 +64,8 @@ No new screen-specific CSS files were needed; People/Hours use existing primitiv
 
 ## Verification (all green, this session)
 
-- `pnpm type-check`, `pnpm lint`, `pnpm build` (apps/web) — clean (18 routes).
+- `pnpm type-check`, `pnpm lint`, `pnpm build` (apps/web) — clean (19 routes,
+  incl. `/admin/preferences`).
 - Repo-root Vitest: **561/561** (`pnpm test`).
 - Playwright: **15/15** — but **run `supabase db reset` first** (the publish e2e
   needs an unpublished seed; a prior in-session publish contaminated it once).
@@ -63,11 +75,10 @@ No new screen-specific CSS files were needed; People/Hours use existing primitiv
 
 ## What's next (not in this session's scope)
 
-- **§6.11 Preferences oversight (SM)** — the one remaining admin screen. NEW.
-  Set submission **deadline**, track submitted / "no hours" / not-yet + reminder
-  status (5d/3d/1d), roster-completion view. **Data check first:** confirm a
-  deadline field exists on `scheduling_periods` (or wherever) and that
-  reminder/submission status is derivable from `preferences` + `period_targets`
-  before building — do not invent backend.
+- **All §6 admin + supporting screens are now reskinned/built** — §6.11
+  Preferences oversight (`5b333fe`) was the last one. The data check held: the
+  deadline field (`scheduling_periods.preference_deadline`) exists but has no
+  write RPC (flagged), and submission/reminder status is fully derivable from
+  `preferences` + `period_targets` + `preference_reminder_sends`.
 - SW phone views (§7.x) are the mobile app's surface — out of scope for the
   desktop admin reskin.

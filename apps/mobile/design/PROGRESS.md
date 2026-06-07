@@ -66,7 +66,39 @@ state. Nothing else added to the kit.
 `soft_cap_warning_modal`, `soft_cap_confirm_button`, `claim_confirm_button`,
 `claim_success`.
 
-## Decisions & deviations (this screen)
+### Screen 3 — Float Acknowledgment (Pending · Acknowledged · Declined · Deadline-passed) — **latest**
+
+Reskinned the float-ack hero on **both** platforms over the existing `AckDeclineViewModel`
+(no VM/data change). Was a raw `Dialog` / plain `VStack` (rendered `Instant.toString()`); now
+the design's "from Updates" sheet hero (worker-app.html `FloatAckSheet` / `FloatBody`).
+
+- **Shared (`:shared`, tested — 8 new kotlin.test):** `ack/FloatAckPresentation.kt` —
+  `FloatAckHero` + `floatAckHero(phase, destinationName, floatStart, deadline, now)`: per-phase
+  eyebrow/headline ("You're needed at Quad" → "You're covering Quad" → "No problem" →
+  "Reassigned"), the Desk/When/Starts-in strings, the pending countdown ("Respond by 17:50 ·
+  1h 50m left", urgent < 30m), and the terminal status line. NY-anchored; `formatFloatWhen`
+  shows "Today · HH:mm" same-day else the day label. Reuses the `shifts/` formatters; clock-free
+  (the UI injects the load `now`).
+- **Compose (`FloatAcknowledgmentScreen.kt`) + SwiftUI (`FloatAcknowledgmentView.swift`):** a
+  centred float-OUT (purple) hero — 60dp icon circle (arrow-out / check / close / clock per
+  phase) + uppercase eyebrow + 26/700 headline; the Desk/When/Starts-in card (kit `KeyValueRow`);
+  the float-tint **"Your weekly hours don't change"** reassurance (invariant #4); pending →
+  `CountdownChip` (Urgent tone < 30m) + Acknowledge (filled, check) / Decline (outlined); terminal
+  → status line + Close (tonal). Hosted in the kit sheet (`ShiftBottomSheet` / `ShiftSheet`).
+- **Decisions:** (a) **sheet host, not full-screen** — the design has both a full-screen
+  `FloatAckSurface` (push-launched) and a `FloatAckSheet` (from Updates); we only have the Updates
+  entry, so the hero lives in the sheet (preserving the `ack_modal` selector + the Maestro-04
+  entry). (b) `ack_success` is the acked status line; the sheet stays open on the acked hero +
+  Close (Maestro 04 asserts `ack_success`, never taps Close). (c) the static countdown / "starts
+  in" are computed from the load `now` (the kit never ticks a clock — like the snapshot VM).
+- **Data flag:** `FloatAck` carries only `floatStart` (no end), so the design's "21:00 – 23:00"
+  range is **start-only** ("Today · 21:00"); the "Confirmed at 18:42" timestamp isn't stored
+  → "Confirmed · read-only". No backend invented; no kit additions (reused `CountdownChip`,
+  `KeyValueRow`, `ShiftBottomSheet`/`ShiftSheet`, `ShiftButton`).
+- **Selectors preserved:** `ack_modal`, `ack_button`, `decline_button`, `ack_success`,
+  `ack_deadline_passed` (+ the unchanged `tab_updates` / `pending_float_notification` entry).
+
+## Decisions & deviations — Open Shifts (Screen 2)
 
 - **Navigation:** kept the existing 4-tab scrollable row (My Shifts / Open in My House /
   Open in Other Houses / Updates). The design renders Open Shifts as a screen with a
@@ -101,13 +133,14 @@ state. Nothing else added to the kit.
 
 ## Verification
 
-- JVM/KMP gate: **all four green** (shared tests incl. the 16 new, `assembleDebug`, iOS
-  compile, SKIE framework link). The only link warning is the pre-existing Ktor
-  `description` rename, unrelated.
-- **Manual (not the JVM gate):** Maestro `01-view-my-shifts` + `02-claim-shift` on a
-  real emulator/simulator; Xcode build of `iosApp` (SwiftUI isn't gated by Gradle); an
-  emulator render to eyeball against `worker-app.html`. SwiftUI was hand-verified against
-  the kit signatures + SKIE patterns used by the (working) existing screens.
+- JVM/KMP gate: **all four green** (shared tests incl. Screen-2's 16 + Screen-3's 8 new,
+  `assembleDebug`, iOS compile, SKIE framework link). The only link warning is the
+  pre-existing Ktor `description` rename, unrelated.
+- **Manual (not the JVM gate):** Maestro `01-view-my-shifts`, `02-claim-shift`,
+  `04-acknowledge-float` on a real emulator/simulator; Xcode build of `iosApp` (SwiftUI
+  isn't gated by Gradle); an emulator render to eyeball against `worker-app.html`. SwiftUI
+  was hand-verified against the kit signatures + SKIE patterns used by the (working)
+  existing screens.
 
 ## Housekeeping
 
@@ -120,7 +153,9 @@ state. Nothing else added to the kit.
 
 ## Next
 
-- Next screen TBD (user-directed in the same conversation). Candidates per
-  `DESIGN_TOKENS.md` §6: Float acknowledgment (existing VM) or a New screen
-  (Preferences / Break claim / Calendar) — each New screen needs the data-availability
-  check first.
+- Done so far: foundation + My Shifts (existing) + Open Shifts/Claim (existing) + **Float
+  Acknowledgment (existing)**. Remaining per `DESIGN_TOKENS.md` §6 are mostly **New (✦)**
+  screens — Preferences submission, Break claim, Personal calendar, Settings/Profile —
+  each of which needs the **data-availability check first** (and screens 10/11 "who's
+  working" + desk/floater phone are ⛔ blocked: no backend). Next screen is user-directed
+  in the same conversation.

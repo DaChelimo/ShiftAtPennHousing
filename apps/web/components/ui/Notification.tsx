@@ -22,6 +22,7 @@ export function Notification({
   actions,
   onClose,
   actionable = false,
+  testId,
 }: {
   kind?: NotificationKind;
   title?: ReactNode;
@@ -29,11 +30,14 @@ export function Notification({
   actions?: ReactNode;
   onClose?: () => void;
   actionable?: boolean;
+  /** data-testid for the root element (some flows assert on the notice). */
+  testId?: string;
 }) {
   return (
     <div
       className={`notif notif-${kind} ${actionable ? 'notif-actionable' : ''}`.trim()}
       role={kind === 'error' || kind === 'warning' ? 'alert' : 'status'}
+      data-testid={testId}
     >
       <span className="notif-bar" />
       <Icon name={ICON_FOR[kind]} size={18} className="notif-icon" />
@@ -42,7 +46,9 @@ export function Notification({
         {children && <div className="notif-text">{children}</div>}
       </div>
       {actions && <div className="notif-actions">{actions}</div>}
-      {onClose && <IconButton icon="close" label="Dismiss" onClick={onClose} className="notif-close" />}
+      {onClose && (
+        <IconButton icon="close" label="Dismiss" onClick={onClose} className="notif-close" />
+      )}
     </div>
   );
 }

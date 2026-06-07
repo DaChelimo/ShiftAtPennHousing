@@ -22,6 +22,8 @@ export function ComboBox({
   placeholder = 'Select…',
   emptyText = 'No matches',
   disabled = false,
+  testId,
+  listTestId,
 }: {
   options: ComboOption[];
   value: string | null;
@@ -29,6 +31,10 @@ export function ComboBox({
   placeholder?: string;
   emptyText?: string;
   disabled?: boolean;
+  /** data-testid for the trigger button. */
+  testId?: string;
+  /** data-testid for the open option list (role=listbox). */
+  listTestId?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -65,15 +71,18 @@ export function ComboBox({
         aria-haspopup="listbox"
         aria-expanded={open}
         disabled={disabled}
+        data-testid={testId}
         onClick={() => setOpen((o) => !o)}
       >
-        <span style={{ flex: 1, color: selected ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+        <span
+          style={{ flex: 1, color: selected ? 'var(--text-primary)' : 'var(--text-secondary)' }}
+        >
           {selected ? selected.label : placeholder}
         </span>
         <Icon name="chevDown" size={16} className="select-caret" />
       </button>
       {open && (
-        <div className="combo-menu" role="listbox" id={listId}>
+        <div className="combo-menu" role="listbox" id={listId} data-testid={listTestId}>
           <div style={{ padding: 8, borderBottom: '1px solid var(--border-subtle)' }}>
             <div className="input-wrap">
               <Icon name="search" size={16} className="input-icon" />

@@ -46,6 +46,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       icon: 'inbox',
       group: 'Operate',
     });
+    nav.push({
+      href: '/admin/hours',
+      label: 'Hours report',
+      testId: 'nav-admin-hours',
+      icon: 'hours',
+      group: 'Operate',
+    });
   }
   if (isHouseAdmin(user)) {
     nav.push({

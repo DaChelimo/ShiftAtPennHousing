@@ -4,6 +4,7 @@ import { useState } from 'react';
 
 import { saveRotor } from '../../lib/actions/rotor';
 import type { RotorCandidate, RotorWeek } from '../../lib/data/rotor';
+import { Button, Card, EmptyState, Icon, Notification, Select } from '../ui';
 
 export function HmodRotor({
   weeks,
@@ -35,67 +36,81 @@ export function HmodRotor({
     setSaved(true);
   }
 
+  if (weeks.length === 0) {
+    return (
+      <Card pad>
+        <EmptyState
+          tone="neutral"
+          icon="calendar"
+          title="No active semester"
+          desc="There is no scheduling period to plan a rotor for yet."
+        />
+      </Card>
+    );
+  }
+
   return (
-    <div className="space-y-4">
-      <table data-testid="rotor-grid" className="w-full border-collapse text-sm">
-        <thead>
-          <tr className="border-b border-black/10 text-left dark:border-white/10">
-            <th className="py-2 font-semibold">Week</th>
-            <th className="py-2 font-semibold">HMOD</th>
-          </tr>
-        </thead>
-        <tbody>
-          {weeks.map((week) => (
-            <tr key={week.weekStartDate} className="border-b border-black/5 dark:border-white/5">
-              <td className="py-2">{week.label}</td>
-              <td className="py-2">
-                <select
-                  data-testid={`rotor-select-${week.weekStartDate}`}
-                  value={selection[week.weekStartDate] ?? ''}
-                  onChange={(e) => {
-                    setSaved(false);
-                    setSelection((prev) => ({ ...prev, [week.weekStartDate]: e.target.value }));
-                  }}
-                  className="rounded-md border border-black/15 px-2 py-1 text-sm dark:border-white/15 dark:bg-zinc-800"
-                >
-                  <option value="">— Unassigned —</option>
-                  {candidates.map((c) => (
-                    <option key={c.userId} value={c.userId}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </td>
-            </tr>
-          ))}
-          {weeks.length === 0 && (
-            <tr>
-              <td colSpan={2} className="py-4 text-zinc-500">
-                No active semester to plan.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+    <div className="col gap-4">
+      <Card>
+        <div className="dtable-wrap">
+          <table data-testid="rotor-grid" className="dtable">
+            <thead>
+              <tr>
+                <th>Week</th>
+                <th>HMOD on duty</th>
+              </tr>
+            </thead>
+            <tbody>
+              {weeks.map((week) => (
+                <tr key={week.weekStartDate}>
+                  <td>
+                    <span className="cell-name">
+                      <b>{week.label}</b>
+                      <span className="cell-sub">Friday 08:00 handoff</span>
+                    </span>
+                  </td>
+                  <td>
+                    <Select
+                      data-testid={`rotor-select-${week.weekStartDate}`}
+                      aria-label={`HMOD for ${week.label}`}
+                      value={selection[week.weekStartDate] ?? ''}
+                      onChange={(e) => {
+                        setSaved(false);
+                        setSelection((prev) => ({ ...prev, [week.weekStartDate]: e.target.value }));
+                      }}
+                    >
+                      <option value="">— Unassigned —</option>
+                      {candidates.map((c) => (
+                        <option key={c.userId} value={c.userId}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
 
       {error !== null && (
-        <p data-testid="rotor-error" className="text-sm text-red-600">
+        <Notification kind="error" title="Could not save" testId="rotor-error">
           {error}
-        </p>
+        </Notification>
       )}
 
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          data-testid="rotor-save"
-          onClick={onSave}
-          disabled={saving || weeks.length === 0}
-          className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900"
-        >
+      <div className="row gap-3 center">
+        <Button data-testid="rotor-save" onClick={onSave} disabled={saving} icon="check">
           {saving ? 'Saving…' : 'Save rotor'}
-        </button>
+        </Button>
         {saved && (
-          <span data-testid="rotor-saved" className="text-sm text-green-600">
+          <span
+            data-testid="rotor-saved"
+            className="row gap-1 center"
+            style={{ color: 'var(--success)', fontSize: 13, fontWeight: 500 }}
+          >
+            <Icon name="checkCircle" size={16} />
             Saved.
           </span>
         )}

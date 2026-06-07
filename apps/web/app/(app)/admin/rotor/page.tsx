@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation';
 
 import { HmodRotor } from '../../../../components/rotor/HmodRotor';
+import { Notification } from '../../../../components/ui/Notification';
+import { PageHead } from '../../../../components/ui/PageHead';
 import { getSessionUser, isHouseAdmin } from '../../../../lib/auth';
 import { getRotorData } from '../../../../lib/data/rotor';
 
@@ -10,22 +12,20 @@ export default async function RotorPage() {
   if (user === null) redirect('/login');
 
   return (
-    <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-8">
-      <h1 className="mb-1 text-lg font-semibold tracking-tight">HMOD rotor</h1>
-      <p className="mb-6 text-sm text-zinc-500">
-        One Housing Manager On Duty per week, planned by HMs/BMs (§2.5).
-      </p>
+    <div className="page" style={{ maxWidth: 720 }}>
+      <PageHead
+        eyebrow="Manage"
+        title="HMOD rotor"
+        sub="One Housing Manager On Duty per week, planned by HMs/BMs (§2.5)."
+      />
       {isHouseAdmin(user) ? (
         await renderRotor()
       ) : (
-        <div
-          data-testid="rotor-unauthorized"
-          className="rounded-lg border border-amber-300 bg-amber-50 p-6 text-sm text-amber-900"
-        >
+        <Notification kind="warning" title="Managers only" testId="rotor-unauthorized">
           Only Housing Managers and Building Managers may plan the HMOD rotor.
-        </div>
+        </Notification>
       )}
-    </main>
+    </div>
   );
 }
 

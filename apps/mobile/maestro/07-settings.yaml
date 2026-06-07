@@ -1,0 +1,23 @@
+# Phase 13a E2E — §6 open Settings and toggle the broadcast subscription.
+#
+# Android emulator + iOS simulator (Maestro). TDD-RED: selectors are the UI contract.
+appId: com.pennhousing.shift
+---
+- launchApp:
+    clearState: true
+
+# Open the Settings tab (a scrollable tab; Maestro scrolls to find it).
+- tapOn:
+    id: "tab_settings"
+- assertVisible:
+    id: "settings_screen"
+
+# Toggle the one user-configurable channel ("General updates" / broadcast).
+- assertVisible:
+    id: "settings_broadcast_toggle"
+- tapOn:
+    id: "settings_broadcast_toggle"
+
+# The Account group (incl. Sign out) is present.
+- assertVisible:
+    id: "settings_sign_out"

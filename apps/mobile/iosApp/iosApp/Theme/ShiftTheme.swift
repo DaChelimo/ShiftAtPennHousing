@@ -306,4 +306,6 @@ enum ShiftIcons {
     static let building = "building.2"
     static let heart = "heart"
     static let ban = "nosign"
+    static let tune = "slider.horizontal.3"
+    static let logout = "rectangle.portrait.and.arrow.right"
 }

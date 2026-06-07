@@ -49,13 +49,17 @@ final class CalendarObservable: ObservableObject {
     deinit { task?.cancel() }
 }
 
-private enum Tab: Int { case mine, home, other, calendar, updates, preferences, breakShifts }
+private enum Tab: Int { case mine, home, other, calendar, updates, preferences, breakShifts, settings }
 
 struct ShiftsRootView: View {
+    /// Optional sign-out hook from the live host (demo passes nil → no-op).
+    var onSignOut: () -> Void = {}
+
     @StateObject private var model = ShiftsObservable(vm: DemoFactory.shared.shiftsViewModel())
     @StateObject private var calendarModel = CalendarObservable(vm: DemoFactory.shared.calendarViewModel())
     @StateObject private var prefsModel = PreferencesObservable(vm: DemoFactory.shared.preferencesViewModel())
     @StateObject private var breakModel = BreakClaimObservable(vm: DemoFactory.shared.breakClaimViewModel())
+    @StateObject private var settingsModel = SettingsObservable(vm: DemoFactory.shared.settingsViewModel())
     private let ackVm = DemoFactory.shared.ackViewModel()
     private let updatesVm = DemoFactory.shared.updatesViewModel()
     @Environment(\.colorScheme) private var scheme
@@ -90,6 +94,7 @@ struct ShiftsRootView: View {
                 case .updates: updates
                 case .preferences: PreferencesScreen(model: prefsModel)
                 case .breakShifts: BreakClaimScreen(model: breakModel)
+                case .settings: SettingsScreen(model: settingsModel, onSignOut: onSignOut)
                 }
             }
         }
@@ -116,6 +121,7 @@ struct ShiftsRootView: View {
                 tabButton("Updates", "tab_updates", .updates)
                 tabButton("Preferences", "tab_preferences", .preferences)
                 tabButton("Break shifts", "tab_break", .breakShifts)
+                tabButton("Settings", "tab_settings", .settings)
             }
             .padding(.horizontal, 12)
         }
@@ -129,7 +135,7 @@ struct ShiftsRootView: View {
             case .mine: model.vm.selectTab(tab: .myShifts)
             case .home: model.vm.selectTab(tab: .openHome)
             case .other: model.vm.selectTab(tab: .openOther)
-            case .calendar, .updates, .preferences, .breakShifts: break
+            case .calendar, .updates, .preferences, .breakShifts, .settings: break
             }
         }) {
             Text(title)

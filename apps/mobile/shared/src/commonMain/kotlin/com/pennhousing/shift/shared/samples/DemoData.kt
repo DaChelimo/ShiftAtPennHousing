@@ -14,6 +14,7 @@ import com.pennhousing.shift.shared.notifications.NotificationItem
 import com.pennhousing.shift.shared.preferences.PrefBlock
 import com.pennhousing.shift.shared.preferences.PrefBrush
 import com.pennhousing.shift.shared.preferences.PreferencePeriod
+import com.pennhousing.shift.shared.settings.SettingsProfile
 import com.pennhousing.shift.shared.shifts.MONTH_SHORT
 import com.pennhousing.shift.shared.shifts.NEW_YORK
 import kotlinx.datetime.DateTimeUnit
@@ -205,4 +206,22 @@ object DemoData {
             initiallyClaimedIds = emptySet(),
         )
     }
+
+    // ── Settings / Profile (NEW ✦) ───────────────────────────────────────────────
+
+    const val DEMO_BROADCAST_SUBSCRIBED: Boolean = false
+    const val DEMO_APP_VERSION: String = "2.4.0"
+
+    /**
+     * A demo identity. Live, this comes from the worker's own `users` row (name/email/
+     * home_house_id) + `user_roles` (role) + `houses` (name) — all RLS-readable; the
+     * live read is the data-layer TODO (no purpose-built profile view).
+     */
+    fun settingsProfile(): SettingsProfile =
+        SettingsProfile(
+            name = "Andrew P.",
+            email = "andrewp@upenn.edu",
+            role = "sw",
+            homeHouseName = "Harnwell College House",
+        )
 }

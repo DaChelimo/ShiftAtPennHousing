@@ -277,6 +277,31 @@ object ShiftIcons {
             close()
         }
 
+    /** Tune — sliders (settings / hours limits). */
+    val Tune: ImageVector =
+        stroked("Tune") {
+            moveTo(4f, 8f)
+            lineTo(20f, 8f)
+            moveTo(4f, 16f)
+            lineTo(20f, 16f)
+            circle(9f, 8f, 2.4f)
+            circle(15f, 16f, 2.4f)
+        }
+
+    /** Logout — arrow leaving a door (sign out). */
+    val Logout: ImageVector =
+        stroked("Logout") {
+            moveTo(14f, 5.5f)
+            lineTo(6f, 5.5f)
+            lineTo(6f, 18.5f)
+            lineTo(14f, 18.5f)
+            moveTo(11f, 12f)
+            lineTo(20f, 12f)
+            moveTo(16.5f, 8.5f)
+            lineTo(20f, 12f)
+            lineTo(16.5f, 15.5f)
+        }
+
     /** Preferred — heart (the preference brush). */
     val Heart: ImageVector =
         stroked("Heart") {

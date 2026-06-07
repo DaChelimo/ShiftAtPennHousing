@@ -69,6 +69,7 @@ import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
 import com.pennhousing.shift.shared.viewmodel.BreakClaimViewModel
 import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.PreferencesViewModel
+import com.pennhousing.shift.shared.viewmodel.SettingsViewModel
 import com.pennhousing.shift.shared.viewmodel.ShiftsScreenViewModel
 import com.pennhousing.shift.shared.viewmodel.ShiftsTab
 import com.pennhousing.shift.shared.viewmodel.UpdatesViewModel
@@ -96,6 +97,7 @@ private const val TAB_CALENDAR = 3
 private const val TAB_UPDATES = 4
 private const val TAB_PREFS = 5
 private const val TAB_BREAK = 6
+private const val TAB_SETTINGS = 7
 
 /**
  * Phase 13a — the worker's Shifts screen (BEHAVIORAL_SPECIFICATION.md §5.6).
@@ -114,9 +116,11 @@ fun ShiftsApp(
     calendarVm: CalendarViewModel,
     preferencesVm: PreferencesViewModel,
     breakClaimVm: BreakClaimViewModel,
+    settingsVm: SettingsViewModel,
     currentWeeklyHours: Double,
     breakProfile: Boolean = false,
     toast: ToastNotification? = null,
+    onSignOut: () -> Unit = {},
 ) {
     ShiftTheme {
         val state by shiftsVm.uiState.collectAsStateWithLifecycle()
@@ -169,6 +173,9 @@ fun ShiftsApp(
                     SpecTab("Break shifts", "tab_break", selectedIndex == TAB_BREAK) {
                         selectedIndex = TAB_BREAK
                     }
+                    SpecTab("Settings", "tab_settings", selectedIndex == TAB_SETTINGS) {
+                        selectedIndex = TAB_SETTINGS
+                    }
                 }
 
                 when (selectedIndex) {
@@ -197,6 +204,7 @@ fun ShiftsApp(
                         )
                     TAB_PREFS -> PreferencesTabContent(preferencesVm)
                     TAB_BREAK -> BreakClaimTabContent(breakClaimVm)
+                    TAB_SETTINGS -> SettingsTabContent(settingsVm, onSignOut)
                 }
             }
         }

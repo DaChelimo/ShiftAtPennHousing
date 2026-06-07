@@ -1,27 +1,52 @@
 package com.pennhousing.shift.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pennhousing.shift.shared.auth.AuthError
 import com.pennhousing.shift.shared.auth.AuthGateway
@@ -31,6 +56,11 @@ import com.pennhousing.shift.shared.auth.LoginEvent
 import com.pennhousing.shift.shared.auth.LoginPhase
 import com.pennhousing.shift.shared.auth.LoginReducer
 import com.pennhousing.shift.shared.auth.LoginUiState
+import com.pennhousing.shift.ui.kit.BannerTone
+import com.pennhousing.shift.ui.kit.ButtonSize
+import com.pennhousing.shift.ui.kit.ShiftBanner
+import com.pennhousing.shift.ui.kit.ShiftButton
+import com.pennhousing.shift.ui.kit.ShiftIcons
 import com.pennhousing.shift.ui.theme.ShiftTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -109,9 +139,15 @@ fun LoginRoute(
 }
 
 /**
- * Pure-ish Compose view over [LoginUiState]. testTags (`login_email`,
- * `login_password`, `login_submit`, `login_error`) match the Maestro selector
- * contract for future flows.
+ * The reskinned login screen (worker-app.html `LoginScreen`) over [LoginUiState] — the
+ * brand mark, the PennKey credential fields, "keep me signed in", and the primary
+ * sign-in CTA. Binds to the existing reducer via [onEvent]; testTags (`login_screen`,
+ * `login_email`, `login_password`, `login_submit`, `login_error`) are preserved.
+ *
+ * NOTE: a true PennKey SSO redirect is not wired (the gateway is email+password), so
+ * the design's separate "Sign in with PennKey" SSO button + the credentials path are
+ * folded into one real credential sign-in. "Keep me signed in" is informational — the
+ * Supabase session persists via storage regardless.
  */
 @Composable
 fun LoginScreen(
@@ -119,69 +155,214 @@ fun LoginScreen(
     onEvent: (LoginEvent) -> Unit,
 ) {
     ShiftTheme {
-        Scaffold(modifier = Modifier.fillMaxSize().testTag("login_screen")) { padding ->
+        val c = ShiftTheme.colors
+        val submitting = state.phase == LoginPhase.SUBMITTING
+        var showPassword by remember { mutableStateOf(false) }
+        var keepSignedIn by remember { mutableStateOf(true) }
+
+        Scaffold(
+            modifier = Modifier.fillMaxSize().testTag("login_screen"),
+            containerColor = c.bg,
+        ) { padding ->
             Column(
                 modifier =
                     Modifier
                         .fillMaxSize()
                         .padding(padding)
-                        .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
+                Spacer(Modifier.height(40.dp))
+                BrandMark(72.dp)
                 Text(
                     "Shift@PennHousing",
-                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.padding(top = 20.dp),
+                    color = c.ink,
+                    fontSize = 27.sp,
                     fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.02).em,
+                )
+                Text(
+                    "Your schedule, floats and open shifts — for Residential Services staff.",
+                    modifier = Modifier.padding(top = 6.dp),
+                    color = c.sec,
+                    fontSize = 14.5.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 21.sp,
                 )
 
-                val submitting = state.phase == LoginPhase.SUBMITTING
+                Spacer(Modifier.height(36.dp))
 
-                OutlinedTextField(
+                LoginField(
+                    label = "PennKey email",
                     value = state.email,
                     onValueChange = { onEvent(LoginEvent.EmailChanged(it)) },
-                    label = { Text("Email") },
-                    singleLine = true,
+                    icon = ShiftIcons.Person,
+                    keyboardType = KeyboardType.Email,
                     enabled = !submitting,
-                    isError = state.errors.email != null,
-                    supportingText = { state.errors.email?.let { Text(it) } },
-                    modifier = Modifier.fillMaxWidth().testTag("login_email"),
+                    error = state.errors.email,
+                    modifier = Modifier.testTag("login_email"),
                 )
-
-                OutlinedTextField(
+                Spacer(Modifier.height(16.dp))
+                LoginField(
+                    label = "Password",
                     value = state.password,
                     onValueChange = { onEvent(LoginEvent.PasswordChanged(it)) },
-                    label = { Text("Password") },
-                    singleLine = true,
+                    icon = ShiftIcons.Lock,
+                    isPassword = true,
+                    passwordVisible = showPassword,
+                    keyboardType = KeyboardType.Password,
                     enabled = !submitting,
-                    isError = state.errors.password != null,
-                    supportingText = { state.errors.password?.let { Text(it) } },
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth().testTag("login_password"),
+                    error = state.errors.password,
+                    trailing = {
+                        Text(
+                            if (showPassword) "Hide" else "Show",
+                            modifier = Modifier.clickable { showPassword = !showPassword },
+                            color = MaterialTheme.colorScheme.primary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    },
+                    modifier = Modifier.testTag("login_password"),
                 )
 
-                Button(
-                    onClick = { onEvent(LoginEvent.SubmitRequested) },
-                    enabled = !submitting,
-                    modifier = Modifier.fillMaxWidth().testTag("login_submit"),
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    if (submitting) {
-                        CircularProgressIndicator(modifier = Modifier.padding(end = 8.dp))
-                        Text("Signing in…")
-                    } else {
-                        Text("Sign in")
+                    Row(
+                        modifier = Modifier.clickable { keepSignedIn = !keepSignedIn },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Box(
+                            Modifier
+                                .size(20.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (keepSignedIn) MaterialTheme.colorScheme.primary else Color.Transparent)
+                                .border(
+                                    1.5.dp,
+                                    if (keepSignedIn) MaterialTheme.colorScheme.primary else c.outline,
+                                    RoundedCornerShape(6.dp),
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (keepSignedIn) {
+                                Icon(ShiftIcons.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+                            }
+                        }
+                        Text("Keep me signed in", color = c.sec, fontSize = 13.5.sp, fontWeight = FontWeight.Medium)
                     }
+                    Text("Need help?", color = MaterialTheme.colorScheme.primary, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
                 }
 
+                Spacer(Modifier.height(20.dp))
+                ShiftButton(
+                    text = if (submitting) "Signing in…" else "Sign in with PennKey",
+                    onClick = { onEvent(LoginEvent.SubmitRequested) },
+                    modifier = Modifier.fillMaxWidth().testTag("login_submit"),
+                    size = ButtonSize.Lg,
+                    icon = if (submitting) null else ShiftIcons.Lock,
+                    enabled = !submitting,
+                    fullWidth = true,
+                )
+
                 if (state.phase == LoginPhase.ERROR && state.formError != null) {
-                    Text(
-                        text = state.formError!!.toMessage(),
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.fillMaxWidth().testTag("login_error"),
+                    Spacer(Modifier.height(16.dp))
+                    ShiftBanner(
+                        title = state.formError!!.toMessage(),
+                        tone = BannerTone.Error,
+                        modifier = Modifier.testTag("login_error"),
                     )
                 }
+
+                Spacer(Modifier.height(28.dp))
+                Text(
+                    "University of Pennsylvania · Residential Services\nBy signing in you agree to the staff scheduling policy.",
+                    color = c.ter,
+                    fontSize = 11.5.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 17.sp,
+                    modifier = Modifier.padding(bottom = 24.dp),
+                )
             }
         }
+    }
+}
+
+/** The brand mark (worker-app.html `BrandMark`): brand-blue rounded square + "S" + dot. */
+@Composable
+private fun BrandMark(size: androidx.compose.ui.unit.Dp) {
+    val blue = androidx.compose.material3.MaterialTheme.colorScheme.primary
+    Box(
+        Modifier.size(size).clip(RoundedCornerShape(size * 0.28f)).background(blue),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("S", color = Color.White, fontSize = (size.value * 0.46f).sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.03).em)
+        Box(
+            Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = size * 0.16f, bottom = size * 0.18f)
+                .size(size * 0.1f)
+                .clip(RoundedCornerShape(50))
+                .background(Color.White.copy(alpha = 0.85f)),
+        )
+    }
+}
+
+/** A login text field (worker-app.html `Field`): label + a 52dp rounded box with icon + input. */
+@Composable
+private fun LoginField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    isPassword: Boolean = false,
+    passwordVisible: Boolean = false,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    enabled: Boolean = true,
+    error: String? = null,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    val c = ShiftTheme.colors
+    var focused by remember { mutableStateOf(false) }
+    val borderColor =
+        when {
+            error != null -> c.danger.accent
+            focused -> MaterialTheme.colorScheme.primary
+            else -> c.divider
+        }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Text(label, color = c.sec, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+                .clip(RoundedCornerShape(13.dp))
+                .background(c.surface)
+                .border(1.5.dp, borderColor, RoundedCornerShape(13.dp))
+                .padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(icon, contentDescription = null, tint = c.ter, modifier = Modifier.size(18.dp))
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = modifier.weight(1f).onFocusChanged { focused = it.isFocused },
+                enabled = enabled,
+                singleLine = true,
+                textStyle = TextStyle(color = c.ink, fontSize = 16.sp, fontWeight = FontWeight.Medium),
+                visualTransformation = if (isPassword && !passwordVisible) PasswordVisualTransformation() else VisualTransformation.None,
+                keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            )
+            trailing?.invoke()
+        }
+        if (error != null) Text(error, color = c.danger.accent, fontSize = 12.5.sp)
     }
 }
 

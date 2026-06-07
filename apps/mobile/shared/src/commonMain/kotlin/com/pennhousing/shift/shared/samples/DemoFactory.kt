@@ -4,6 +4,7 @@ import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
 import com.pennhousing.shift.shared.viewmodel.BreakClaimViewModel
 import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.PreferencesViewModel
+import com.pennhousing.shift.shared.viewmodel.SettingsViewModel
 import com.pennhousing.shift.shared.viewmodel.ShiftsScreenViewModel
 import com.pennhousing.shift.shared.viewmodel.UpdatesViewModel
 import kotlin.time.Clock
@@ -46,6 +47,9 @@ object DemoFactory {
     fun preferencesViewModel(): PreferencesViewModel = PreferencesViewModel(DemoData.preferencePeriod(now()))
 
     fun breakClaimViewModel(): BreakClaimViewModel = BreakClaimViewModel(DemoData.breakClaim(now()))
+
+    fun settingsViewModel(): SettingsViewModel =
+        SettingsViewModel(DemoData.settingsProfile(), DemoData.DEMO_BROADCAST_SUBSCRIBED, DemoData.DEMO_APP_VERSION)
 
     val demoWeeklyHours: Double get() = DemoData.DEMO_WEEKLY_HOURS
 }

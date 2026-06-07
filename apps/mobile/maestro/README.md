@@ -20,6 +20,11 @@ not-yet-implemented shared ViewModels under test in `:shared`'s `commonTest`.
 | `04-acknowledge-float.yaml`| §7.1, §7.2      | Acknowledge a float from the ack/decline modal.             |
 | `05-submit-preferences.yaml`| §6 prefs       | Paint a block + submit the preference grid → read-only.     |
 | `06-claim-break.yaml`      | §6 Phase 11     | Claim a break shift (FCFS) → "Break shift claimed" toast.   |
+| `07-settings.yaml`         | §6 settings     | Open Settings, toggle the broadcast subscription.           |
+
+> **Login** has no flow here: it is the LIVE path only (the demo bypasses it on both
+> platforms), so it cannot run without a configured backend. Its selectors are listed
+> below for a future backed flow; verify login in Xcode / against a live backend.
 
 ## Running
 
@@ -103,3 +108,13 @@ The screens MUST expose these stable ids. On Android attach them with
 | `break_claim_button`        | Claim a break shift.                                     |
 | `break_drop_button`         | Drop a claimed break shift back to the pool.             |
 | `break_claim_success`       | "Break shift claimed" toast.                             |
+| `tab_settings`              | Settings tab (profile + preferences).                    |
+| `settings_screen`           | Settings screen root.                                    |
+| `settings_broadcast_toggle` | "General updates" broadcast-subscription switch.         |
+| `settings_theme_segmented`  | Appearance theme segmented control (System/Light/Dark).  |
+| `settings_sign_out`         | Sign-out row.                                            |
+| `login_screen`              | Login screen root (live path only).                      |
+| `login_email`               | PennKey email field.                                     |
+| `login_password`            | Password field.                                          |
+| `login_submit`              | Sign-in button.                                          |
+| `login_error`               | Sign-in error banner.                                    |

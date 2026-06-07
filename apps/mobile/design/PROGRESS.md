@@ -235,6 +235,69 @@ The tab bar became horizontally scrollable to fit 7 tabs.
   screen's claim/drop ("server write out of scope"); the exact EFs to wire are documented in
   the module headers.
 
+### Screen 7 — Login (reskin) · Settings / Profile ✦ — **this session**
+
+The login screen reskin + the NEW (✦) Settings screen, on **both** platforms. Settings
+is an 8th scrollable tab (after Break shifts); Login is the LIVE-path-only route (the
+demo bypasses it on both platforms, exactly as before).
+
+**Login (existing reskin):** rebuilt over the EXISTING shared `LoginReducer` /
+`LoginFormValidator` / `AuthGateway` (no contract/data change). Compose
+`ui/LoginScreen.kt` `LoginScreen(state, onEvent)` reskinned to the design (brand mark +
+PennKey credential fields + "keep me signed in" + primary CTA + footer), `LoginHost` /
+`LoginRoute` untouched; testTags `login_screen/_email/_password/_submit/_error`
+preserved. **iOS had no login at all** (the app went straight to demo), so this builds
+a fresh SwiftUI `LoginView.swift` (`LoginScreen` + `LoginObservable`) over the same
+shared validator + the `SupabaseAuthGateway`, and a `RootView` in `iOSApp.swift` that
+mirrors Android's bootstrap (no backend → demo `ShiftsRootView`; backend → login → shifts).
+- DECISIONS / flags: a true **PennKey SSO redirect is not wired** (the gateway is
+  email+password) → the design's SSO button + credentials path are folded into one real
+  credential sign-in. "Keep me signed in" is informational (Supabase persists the
+  session regardless). iOS **launch-time session restore** is a follow-up (the iOS
+  observable orchestrates validate → signIn → currentSession; it reuses the tested pure
+  validator but reimplements the host phase machine in Swift, avoiding sealed-type
+  bridging). Validator requires an `@`, so the field is "PennKey email".
+
+**Settings (NEW ✦):** DATA-AVAILABILITY CHECK done — identity is READABLE (own `users`
+name/email/home_house + own `user_roles` role + `houses` name, all RLS-allowed; no
+profile view, so the live read joins those tables — documented, demo renders today).
+`users.broadcast_subscribed` ("General updates") is the ONE user-toggleable channel; it
+has **no authenticated UPDATE policy**, so the write goes through the
+`users-broadcast-subscription` Edge Function (kept optimistic-local, EF documented).
+Float assignments are always-on (§7); **shift-reminders / schedule-published have no
+per-category opt-out backing** → shown always-on/disabled (not fabricated). Caps are the
+shared constants (20h/40h). Theme is client-only. Sign out uses `AuthGateway.signOut`.
+
+- **Shared (`:shared`, tested — 9 new kotlin.test):** `settings/Settings.kt`
+  (`ThemeChoice`+`label`/`THEME_CHOICES`, `roleLabel`, `initialOf`, `SettingsProfile`
+  +derived `initial`/`roleLabel`/`subtitle`, `NotificationChannel`/`NotificationRowModel`
+  +`buildNotificationRows` — only GENERAL_UPDATES interactive, `hoursLimits` from the
+  caps) + thin `SettingsViewModel` (broadcast + theme mutable; `toggleBroadcast`
+  optimistic-local, `setTheme`) + `DemoData.settingsProfile`/`DemoFactory.settingsViewModel`.
+- **Compose (`ui/SettingsScreen.kt`):** profile card (gradient avatar) + Notifications
+  group (icon-tile rows + `ShiftSwitch`, only broadcast enabled) + Appearance
+  `SegmentedControl` + read-only Hours & limits + Account group (PennKey / Help / Sign
+  out → `onSignOut`) + version footer. Threaded through `ShiftsApp` + `MainActivity`
+  (live path wires `onSignOut` = `gateway.signOut()` + a `signedOut` flag forcing LOGIN).
+- **SwiftUI (`SettingsView.swift`):** the same — `SettingsObservable` + `SettingsScreen`,
+  `ShiftSegmented` theme, native `Toggle`, Sign out → `onSignOut`. `ContentView` adds the
+  tab + observable; `iOSApp.LiveRootView` wires sign-out back to login.
+
+**New shared components:** two kit icons — `Tune` (hours) + `Logout` (sign out) — on
+Compose (`ShiftIcons.kt`) and iOS (`tune`=`slider.horizontal.3`, `logout`=
+`rectangle.portrait.and.arrow.right`). Nothing else added.
+
+**Selectors added** (Maestro contract): `login_screen/_email/_password/_submit/_error`;
+`tab_settings`, `settings_screen`, `settings_broadcast_toggle`, `settings_theme_segmented`,
+`settings_sign_out`. New flow `07-settings.yaml` (device-only). Login has no flow (live-
+path-only — verify in Xcode / against a backend).
+
+**Data flags / not-built:** PennKey SSO redirect (no SSO backend); per-category notif
+opt-outs (no backing) shown always-on/disabled; broadcast write + profile read are the
+documented data-layer wiring (optimistic-local + demo today); theme is not yet applied
+app-wide (held in the VM — applying it would thread a theme override into the root
+`ShiftTheme`, a foundation change out of this screen's scope); iOS launch session-restore TODO.
+
 ## Decisions & deviations — Open Shifts (Screen 2)
 
 - **Navigation:** kept the existing 4-tab scrollable row (My Shifts / Open in My House /
@@ -290,10 +353,15 @@ The tab bar became horizontally scrollable to fit 7 tabs.
 
 ## Next
 
-- Done so far: foundation + My Shifts + Open Shifts/Claim + Float Acknowledgment + Updates +
-  **Personal Calendar ✦** + **Preferences painting ✦ + Break claim picker ✦** — all bound to
-  existing data. Remaining per `DESIGN_TOKENS.md` §6: the last **New (✦)** screen —
-  **Settings / Profile** (identity + `broadcast_subscribed` toggle + sign out + theme; ⚠️ no
-  per-category notification toggles, no profile view — see §6 blockers). Screens 10/11
-  ("who's working" + Call desk/floater) stay ⛔ **blocked** (no house-roster view, no desk/
-  worker phone exposure) — do not build without new backend. Next screen is user-directed.
+- Done: foundation + My Shifts + Open Shifts/Claim + Float Acknowledgment + Updates +
+  **Personal Calendar ✦ + Preferences painting ✦ + Break claim picker ✦ + Login (reskin) +
+  Settings/Profile ✦** — every buildable worker screen in `DESIGN_TOKENS.md` §6 is now done,
+  all bound to existing data.
+- **Remaining = ⛔ BLOCKED only** (need NEW backend — do NOT build without it): screen 10
+  (Shift detail / "Call desk" + "who's working") and screen 11 (house schedule grid) — no
+  worker-readable house-roster view, no desk-phone column, no cross-worker phone access.
+  Flag if asked; don't fabricate.
+- **Follow-ups (live wiring, not screens):** worker profile read (users/user_roles/houses
+  join), the `users-broadcast-subscription` + `submit-preferences` + `break-claim` Edge-
+  Function writes (currently optimistic-local), live preference-period discovery (deadline),
+  iOS launch session-restore + live shifts repository, and app-wide theme application.

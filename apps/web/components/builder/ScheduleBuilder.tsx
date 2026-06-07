@@ -21,9 +21,12 @@ import {
   type PublishStats,
 } from '../../lib/actions/builder';
 import type { BuilderBlock, BuilderData } from '../../lib/data/scheduleBuilder';
+import { Avatar, Button, Icon, IconButton, Modal, Notification, Tag } from '../ui';
+import './builder.css';
 
 const HOURS_PER_BLOCK = 0.5;
 const NY = 'America/New_York';
+const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 function nyTime(date: Date): string {
   return new Intl.DateTimeFormat('en-GB', {
@@ -32,6 +35,16 @@ function nyTime(date: Date): string {
     minute: '2-digit',
     hour12: false,
   }).format(date);
+}
+
+function prettifyHouse(id: string): string {
+  const m = /^house-(\d+)$/.exec(id);
+  if (m) return `House ${String(Number(m[1]))}`;
+  return id.charAt(0).toUpperCase() + id.slice(1);
+}
+
+function dowLabel(dayKey: string): string {
+  return DOW[new Date(`${dayKey}T00:00:00Z`).getUTCDay()] ?? '';
 }
 
 type PendingAssign = {
@@ -43,7 +56,6 @@ type PendingAssign = {
 };
 
 export function ScheduleBuilder({ data }: { data: BuilderData }) {
-  const [isDesktop, setIsDesktop] = useState<boolean | null>(null);
   const [phase, setPhase] = useState<1 | 2>(1);
   const [drafts, setDrafts] = useState<Record<string, string[]>>(data.drafts);
   const [anchorIdx, setAnchorIdx] = useState<number | null>(null);
@@ -55,14 +67,6 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
   const [published, setPublished] = useState(data.published);
   const [publishStats, setPublishStats] = useState<PublishStats | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  // §4.3: desktop-only. Detect after mount (avoids SSR/hydration viewport guesses).
-  useEffect(() => {
-    const check = () => setIsDesktop(window.innerWidth >= 1024);
-    check();
-    window.addEventListener('resize', check);
-    return () => window.removeEventListener('resize', check);
-  }, []);
 
   // Finalize a drag on mouse-up anywhere.
   useEffect(() => {
@@ -101,16 +105,26 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
     }));
   }, [data.workers, data.targets, drafts]);
 
-  const span = useMemo<SpanBlock[]>(() => {
-    const byId = new Map(data.blocks.map((b) => [b.blockId, b]));
-    return selectedBlockIds
-      .map((id) => byId.get(id))
-      .filter((b): b is BuilderBlock => b !== undefined)
-      .map((b) => ({ blockId: b.blockId, blockStartAt: new Date(b.startAtIso) }));
+  const selectedBlocks = useMemo<BuilderBlock[]>(() => {
+    const set = new Set(selectedBlockIds);
+    return data.blocks.filter((b) => set.has(b.blockId));
   }, [selectedBlockIds, data.blocks]);
+
+  const span = useMemo<SpanBlock[]>(
+    () => selectedBlocks.map((b) => ({ blockId: b.blockId, blockStartAt: new Date(b.startAtIso) })),
+    [selectedBlocks],
+  );
 
   const spanValidation = span.length > 0 ? validateDragSpan(span) : null;
   const spanValid = spanValidation?.valid === true;
+
+  const spanLabel = useMemo(() => {
+    if (selectedBlocks.length === 0) return '';
+    const first = selectedBlocks[0]!;
+    const last = selectedBlocks[selectedBlocks.length - 1]!;
+    const end = nyTime(new Date(new Date(last.startAtIso).getTime() + 30 * 60000));
+    return `${first.timeLabel}–${end}`;
+  }, [selectedBlocks]);
 
   const phase1Card: Phase1Card | null = useMemo(() => {
     if (!spanValid || phase !== 1) return null;
@@ -123,6 +137,11 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
     if (!spanValid || phase !== 2) return null;
     return buildPhase2Roster(scheduleInfos, span, data.preferences as PreferenceRecord[]);
   }, [spanValid, phase, scheduleInfos, span, data.preferences]);
+
+  const assignedBlockCount = useMemo(
+    () => Object.values(drafts).filter((a) => a.length > 0).length,
+    [drafts],
+  );
 
   const commitAssign = useCallback(
     async (userId: string, blockIds: string[]) => {
@@ -207,73 +226,87 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
     setPublishStats(res.data);
   };
 
+  const clearSelection = () => {
+    setSelectedBlockIds([]);
+    setAnchorIdx(null);
+    setHoverIdx(null);
+  };
+
   // ---- render ------------------------------------------------------------
 
   return (
-    <main data-testid="schedule-builder" className="mx-auto w-full max-w-6xl flex-1 px-6 py-6">
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">Schedule builder</h1>
-          <p className="text-sm text-zinc-500">
-            House {data.houseId}
-            {data.weekStartDate !== null && ` · week of ${data.weekStartDate}`}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-md border border-black/10 p-0.5 dark:border-white/10">
-            <button
-              type="button"
-              data-testid="builder-phase-1"
-              onClick={() => setPhase(1)}
-              className={`rounded px-3 py-1 text-sm font-medium ${phase === 1 ? 'bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900' : 'text-zinc-600 dark:text-zinc-300'}`}
-            >
-              Phase 1
-            </button>
-            <button
-              type="button"
-              data-testid="builder-phase-2"
-              onClick={() => setPhase(2)}
-              className={`rounded px-3 py-1 text-sm font-medium ${phase === 2 ? 'bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900' : 'text-zinc-600 dark:text-zinc-300'}`}
-            >
-              Phase 2
-            </button>
-          </div>
-          {published ? (
-            <span
-              data-testid="schedule-published-badge"
-              className="rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white"
-            >
-              Published{publishStats !== null && ` · ${publishStats.scheduled} scheduled`}
-            </span>
-          ) : (
-            <button
-              type="button"
-              data-testid="publish-button"
-              onClick={() => setPublishOpen(true)}
-              className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white dark:bg-zinc-50 dark:text-zinc-900"
-            >
-              Publish
-            </button>
-          )}
+    <div data-testid="schedule-builder" className="builder-page">
+      {/* desktop-only gate — shown ≤680px via CSS (§4.3) */}
+      <div data-testid="builder-desktop-only-notice" className="builder-narrow">
+        <Icon name="grid" size={32} />
+        <div className="t-h2">Schedule builder is desktop-only</div>
+        <div className="t-helper">
+          Building a week needs a wide canvas — open this on a larger screen.
         </div>
       </div>
 
-      {error !== null && (
-        <p data-testid="builder-error" className="mb-3 text-sm text-red-600">
-          {error}
-        </p>
-      )}
-
-      {isDesktop === false ? (
-        <div
-          data-testid="builder-desktop-only-notice"
-          className="rounded-lg border border-amber-300 bg-amber-50 p-6 text-sm text-amber-900"
-        >
-          The schedule builder is desktop-only. Please use a desktop browser (a wider screen) to
-          drag-pick shifts.
+      <div className="builder-main">
+        <div className="bld-toolbar">
+          <div className="col gap-1">
+            <div className="row gap-2">
+              <h1 className="t-h1">Schedule builder — {prettifyHouse(data.houseId)}</h1>
+              {published ? (
+                <span data-testid="schedule-published-badge">
+                  <Tag kind="green" icon="check">
+                    Published{publishStats !== null && ` · ${publishStats.scheduled} scheduled`}
+                  </Tag>
+                </span>
+              ) : (
+                <Tag kind="amber">
+                  Draft{data.weekStartDate !== null && ` · week of ${data.weekStartDate}`}
+                </Tag>
+              )}
+            </div>
+            <div className="t-helper">
+              Build the recurring weekly pattern. Drag a span of consecutive 30-min blocks, then
+              assign from preferences (Phase 1) or the full roster (Phase 2).
+            </div>
+          </div>
+          <div className="row gap-2 wrap">
+            <div className="seg">
+              <button
+                type="button"
+                data-testid="builder-phase-1"
+                className={`seg-btn ${phase === 1 ? 'is-on' : ''}`.trim()}
+                onClick={() => setPhase(1)}
+              >
+                Phase 1 · Preferences
+              </button>
+              <button
+                type="button"
+                data-testid="builder-phase-2"
+                className={`seg-btn ${phase === 2 ? 'is-on' : ''}`.trim()}
+                onClick={() => setPhase(2)}
+              >
+                Phase 2 · Manual
+              </button>
+            </div>
+            {!published && (
+              <Button
+                data-testid="publish-button"
+                icon="check"
+                onClick={() => setPublishOpen(true)}
+              >
+                Publish
+              </Button>
+            )}
+          </div>
         </div>
-      ) : (
-        <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
+
+        {error !== null && (
+          <div data-testid="builder-error" className="side-note">
+            <Notification kind="error" title="Something went wrong">
+              {error}
+            </Notification>
+          </div>
+        )}
+
+        <div className="bld-body">
           <Grid
             blocks={data.blocks}
             drafts={drafts}
@@ -281,6 +314,7 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
             anchorIdx={anchorIdx}
             hoverIdx={hoverIdx}
             dragging={dragging}
+            selectedBlockIds={selectedBlockIds}
             onCellDown={(idx) => {
               setDragging(true);
               setAnchorIdx(idx);
@@ -291,107 +325,148 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
             onRemove={onRemove}
           />
 
-          <aside className="space-y-4">
-            {phase1Card !== null && <Phase1CardView card={phase1Card} onClick={onPhase1Click} />}
-            {phase2Roster !== null && (
-              <Phase2RosterView roster={phase2Roster} onClick={onPhase2Click} />
-            )}
-            {selectedBlockIds.length > 0 && spanValid && (
-              <ManualOverridePanel
-                blocks={data.blocks.filter((b) => selectedBlockIds.includes(b.blockId))}
-                drafts={drafts}
-                workerName={workerName}
-                onRemove={onRemove}
-              />
-            )}
-            {selectedBlockIds.length === 0 && (
-              <p className="text-sm text-zinc-500">
-                Drag across {phase === 1 ? '2–12' : 'one or more'} consecutive cells to pick a span.
-              </p>
+          <aside className="builder-side">
+            {selectedBlockIds.length === 0 ? (
+              <div className="side-empty">
+                <Icon name="drag" size={24} />
+                <div className="t-h3">Select blocks to assign</div>
+                <div className="t-helper">
+                  Drag across {phase === 1 ? '2–12' : 'one or more'} consecutive cells to pick a
+                  span.
+                </div>
+                <div className="side-stat">
+                  <span className="t-meta">Assigned so far</span>
+                  <b className="t-mono">{assignedBlockCount} blocks</b>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="side-head">
+                  <div className="col gap-1">
+                    <span className="t-eyebrow">New selection</span>
+                    <span className="t-h2 t-mono">{spanLabel}</span>
+                    <span className="t-meta">
+                      {selectedBlockIds.length * HOURS_PER_BLOCK}h · {selectedBlockIds.length}{' '}
+                      blocks
+                    </span>
+                  </div>
+                  <IconButton icon="close" label="Clear selection" onClick={clearSelection} />
+                </div>
+                {!spanValid ? (
+                  <div className="side-note">
+                    <Notification kind="warning" title="Adjust your selection">
+                      Pick a span of 2–12 consecutive 30-min blocks.
+                    </Notification>
+                  </div>
+                ) : (
+                  <>
+                    <span className="side-list-label t-label">Assign</span>
+                    <div className="side-list">
+                      {phase1Card !== null && (
+                        <Phase1CardView card={phase1Card} onClick={onPhase1Click} />
+                      )}
+                      {phase2Roster !== null && (
+                        <Phase2RosterView roster={phase2Roster} onClick={onPhase2Click} />
+                      )}
+                    </div>
+                  </>
+                )}
+              </>
             )}
           </aside>
         </div>
-      )}
+      </div>
 
       {pending?.kind === 'over_target' && (
-        <Modal testId="over-target-warning">
-          <h2 className="text-base font-semibold">Over target hours</h2>
-          <p className="text-sm text-zinc-600 dark:text-zinc-300">
-            {pending.name} would be pushed over their weekly target hours. Assign anyway?
-          </p>
-          <ModalActions>
-            <button type="button" onClick={() => setPending(null)} className={btnGhost}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              data-testid="over-target-confirm"
-              onClick={() => void commitAssign(pending.userId, pending.blockIds)}
-              className={btnPrimary}
-            >
-              Assign anyway
-            </button>
-          </ModalActions>
+        <Modal
+          testId="over-target-warning"
+          eyebrow="Soft cap"
+          title="Over target hours"
+          width={440}
+          onClose={() => setPending(null)}
+          footer={
+            <>
+              <Button kind="secondary" onClick={() => setPending(null)}>
+                Cancel
+              </Button>
+              <Button
+                kind="primary"
+                data-testid="over-target-confirm"
+                onClick={() => void commitAssign(pending.userId, pending.blockIds)}
+              >
+                Assign anyway
+              </Button>
+            </>
+          }
+        >
+          <Notification kind="warning" title="Exceeds target">
+            {pending.name} would be pushed over their weekly target hours. The 20h soft cap is
+            overridable.
+          </Notification>
         </Modal>
       )}
 
       {pending?.kind === 'advisory' && (
-        <Modal testId="advisory-confirm">
-          <h2 className="text-base font-semibold">Advisory</h2>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-zinc-600 dark:text-zinc-300">
-            {(pending.advisories ?? []).map((a, i) => (
-              <li key={i}>{advisoryText(a)}</li>
-            ))}
-          </ul>
-          <p className="text-sm text-zinc-600 dark:text-zinc-300">Assign {pending.name} anyway?</p>
-          <ModalActions>
-            <button type="button" onClick={() => setPending(null)} className={btnGhost}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              data-testid="advisory-confirm-accept"
-              onClick={() => void commitAssign(pending.userId, pending.blockIds)}
-              className={btnPrimary}
-            >
-              Assign anyway
-            </button>
-          </ModalActions>
+        <Modal
+          testId="advisory-confirm"
+          eyebrow="Advisory"
+          title="Override availability?"
+          width={440}
+          onClose={() => setPending(null)}
+          footer={
+            <>
+              <Button kind="secondary" onClick={() => setPending(null)}>
+                Cancel
+              </Button>
+              <Button
+                kind="danger"
+                data-testid="advisory-confirm-accept"
+                onClick={() => void commitAssign(pending.userId, pending.blockIds)}
+              >
+                Assign anyway
+              </Button>
+            </>
+          }
+        >
+          <Notification kind="warning" title={`Assign ${pending.name} anyway?`}>
+            <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+              {(pending.advisories ?? []).map((a, i) => (
+                <li key={i}>{advisoryText(a)}</li>
+              ))}
+            </ul>
+          </Notification>
         </Modal>
       )}
 
       {publishOpen && (
-        <Modal testId="publish-confirm-dialog">
-          <h2 className="text-base font-semibold">Publish schedule?</h2>
-          <p className="text-sm text-zinc-600 dark:text-zinc-300">
+        <Modal
+          testId="publish-confirm-dialog"
+          eyebrow="Confirm publish"
+          title="Publish schedule?"
+          width={480}
+          onClose={() => setPublishOpen(false)}
+          footer={
+            <>
+              <Button kind="secondary" onClick={() => setPublishOpen(false)}>
+                Keep editing
+              </Button>
+              <Button kind="primary" icon="check" data-testid="publish-confirm" onClick={onPublish}>
+                Publish
+              </Button>
+            </>
+          }
+        >
+          <p className="t-body">
             Publishing converts your drafts into worker assignments and fills the remaining
             headcount with open shifts. This cannot be undone for the period.
           </p>
-          <ModalActions>
-            <button type="button" onClick={() => setPublishOpen(false)} className={btnGhost}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              data-testid="publish-confirm"
-              onClick={onPublish}
-              className={btnPrimary}
-            >
-              Publish
-            </button>
-          </ModalActions>
         </Modal>
       )}
-    </main>
+    </div>
   );
 }
 
 // ---- subcomponents -------------------------------------------------------
-
-const btnPrimary =
-  'rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white dark:bg-zinc-50 dark:text-zinc-900';
-const btnGhost =
-  'rounded-md border border-black/15 px-3 py-1.5 text-sm font-medium dark:border-white/15';
 
 function advisoryText(a: Phase2Advisory): string {
   if (a.kind === 'opted_out') return 'Opted out — no hours';
@@ -405,6 +480,7 @@ function Grid({
   anchorIdx,
   hoverIdx,
   dragging,
+  selectedBlockIds,
   onCellDown,
   onCellEnter,
   onRemove,
@@ -415,76 +491,87 @@ function Grid({
   anchorIdx: number | null;
   hoverIdx: number | null;
   dragging: boolean;
+  selectedBlockIds: string[];
   onCellDown: (idx: number) => void;
   onCellEnter: (idx: number) => void;
   onRemove: (userId: string, blockId: string) => void;
 }) {
   const lo = anchorIdx !== null && hoverIdx !== null ? Math.min(anchorIdx, hoverIdx) : -1;
   const hi = anchorIdx !== null && hoverIdx !== null ? Math.max(anchorIdx, hoverIdx) : -1;
-
-  // Group cells by NY day for column layout.
+  const selected = new Set(selectedBlockIds);
   const days = [...new Set(blocks.map((b) => b.dayKey))];
 
-  return (
-    <div data-testid="schedule-builder-grid" className="select-none">
-      <div className="flex gap-4">
-        {days.map((day) => (
-          <div key={day} className="flex-1">
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-              {day}
+  if (blocks.length === 0) {
+    return (
+      <div data-testid="schedule-builder-grid" className="bld-grid">
+        <div className="bld-grid-empty">
+          <div className="empty empty-neutral">
+            <div className="empty-icon">
+              <Icon name="grid" size={28} />
             </div>
-            <div className="space-y-1">
-              {blocks.map((b, idx) => {
-                if (b.dayKey !== day) return null;
-                const inSpan = dragging && idx >= lo && idx <= hi;
-                const assignees = drafts[b.blockId] ?? [];
-                return (
-                  <div
-                    key={b.blockId}
-                    data-testid={`block-${b.cellKey}`}
-                    onMouseDown={() => onCellDown(idx)}
-                    onMouseEnter={() => onCellEnter(idx)}
-                    className={`cursor-pointer rounded-md border px-2 py-1.5 text-sm ${
-                      inSpan
-                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-950'
-                        : 'border-black/10 dark:border-white/10'
-                    }`}
-                  >
-                    <div className="font-medium text-zinc-700 dark:text-zinc-200">
-                      {b.timeLabel}
-                    </div>
+            <div className="t-h2">Nothing to build yet</div>
+            <div className="t-helper" style={{ maxWidth: 320, textAlign: 'center' }}>
+              This week’s period has no generated blocks.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div data-testid="schedule-builder-grid" className="bld-grid">
+      {days.map((day) => (
+        <div className="bld-day" key={day}>
+          <div className="bld-dayhead">
+            <span className="cal-dow">{dowLabel(day)}</span>
+            <span className="cal-date t-mono">{day}</span>
+          </div>
+          <div className="bld-col">
+            {blocks.map((b, idx) => {
+              if (b.dayKey !== day) return null;
+              const inSpan = (dragging && idx >= lo && idx <= hi) || selected.has(b.blockId);
+              const assignees = drafts[b.blockId] ?? [];
+              const isHour = b.timeKey.endsWith('00');
+              return (
+                <div
+                  key={b.blockId}
+                  data-testid={`block-${b.cellKey}`}
+                  onMouseDown={() => onCellDown(idx)}
+                  onMouseEnter={() => onCellEnter(idx)}
+                  className={`bld-cell ${isHour ? 'is-hour' : ''} ${inSpan ? 'is-span' : ''}`.trim()}
+                >
+                  <span className="bld-time">{b.timeLabel}</span>
+                  <div className="bld-assignees">
                     {assignees.map((userId) => (
-                      <div
-                        key={userId}
-                        className="mt-1 flex items-center justify-between rounded bg-zinc-100 px-1.5 py-0.5 text-xs dark:bg-zinc-800"
-                      >
+                      <span key={userId} className="bld-chip">
                         <span>{workerName.get(userId) ?? userId}</span>
                         <button
                           type="button"
+                          className="bld-chip-x"
                           aria-label={`Remove ${workerName.get(userId) ?? userId}`}
                           onMouseDown={(e) => e.stopPropagation()}
                           onClick={() => onRemove(userId, b.blockId)}
-                          className="ml-1 text-zinc-400 hover:text-red-600"
                         >
                           ×
                         </button>
-                      </div>
+                      </span>
                     ))}
                   </div>
-                );
-              })}
-            </div>
+                </div>
+              );
+            })}
           </div>
-        ))}
-      </div>
+        </div>
+      ))}
     </div>
   );
 }
 
 function HoursRemaining({ hours }: { hours: number }) {
   return (
-    <span data-testid="worker-hours-remaining" className="text-xs text-zinc-500">
-      {hours}h left
+    <span data-testid="worker-hours-remaining" className="t-meta">
+      {hours}h left to target
     </span>
   );
 }
@@ -499,59 +586,55 @@ function Phase1CardView({
   const groups: Array<{
     key: 'preferred' | 'available' | 'blocked';
     label: string;
+    tone: string;
     entries: Phase1Entry[];
   }> = [
-    { key: 'preferred', label: 'Preferred', entries: card.preferred },
-    { key: 'available', label: 'Available', entries: card.available },
-    { key: 'blocked', label: 'Blocked', entries: card.blocked },
+    { key: 'preferred', label: 'Preferred', tone: 'green', entries: card.preferred },
+    { key: 'available', label: 'Available', tone: '', entries: card.available },
+    { key: 'blocked', label: 'Blocked', tone: 'red', entries: card.blocked },
   ];
 
   return (
-    <div
-      data-testid="phase1-card"
-      className="rounded-lg border border-black/10 p-3 dark:border-white/10"
-    >
-      <h2 className="mb-2 text-sm font-semibold">Workers for this span</h2>
-      <div className="space-y-3">
-        {groups.map((group) => (
-          <section key={group.key} data-testid={`card-group-${group.key}`}>
-            <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-              {group.label}
-            </h3>
-            <ul className="space-y-1">
-              {group.entries.map((entry) => (
-                <li
-                  key={entry.worker.userId}
-                  className="flex items-center justify-between gap-2 rounded-md border border-black/5 px-2 py-1 dark:border-white/5"
-                >
-                  <button
-                    type="button"
-                    disabled={!entry.selectable}
-                    onClick={() => onClick(entry)}
-                    className="text-sm font-medium disabled:cursor-not-allowed disabled:text-zinc-400"
-                  >
-                    {entry.worker.name}
-                  </button>
-                  <span className="flex items-center gap-2">
-                    {entry.wouldExceedTarget && (
-                      <span className="text-xs text-amber-600">over target</span>
-                    )}
-                    {entry.status === 'blocked' && entry.blockedReason !== undefined && (
-                      <span className="text-xs text-red-600">
-                        {entry.blockedReason.kind === 'cannot'
-                          ? `Cannot — ${nyTime(entry.blockedReason.blockStartAt)}`
-                          : 'No preference'}
-                      </span>
-                    )}
-                    <HoursRemaining hours={entry.hoursRemaining} />
+    <div data-testid="phase1-card">
+      {groups.map((group) => (
+        <div key={group.key} data-testid={`card-group-${group.key}`} className="prefgroup">
+          <div className={`prefgroup-label ${group.tone ? `tone-${group.tone}` : ''}`.trim()}>
+            <span className="prefgroup-dot" />
+            {group.label} · {group.entries.length}
+          </div>
+          {group.entries.length === 0 && <div className="prefgroup-empty t-meta">None</div>}
+          {group.entries.map((entry) => {
+            const blocked = entry.status === 'blocked';
+            return (
+              <button
+                key={entry.worker.userId}
+                type="button"
+                disabled={!entry.selectable}
+                onClick={() => onClick(entry)}
+                className={`roster-row ${blocked ? 'is-blocked' : ''}`.trim()}
+              >
+                <Avatar name={entry.worker.name} size={28} />
+                <span className="roster-meta">
+                  <span className="row gap-2">
+                    <b>{entry.worker.name}</b>
+                    {entry.wouldExceedTarget && <Tag kind="amber">Over target</Tag>}
                   </span>
-                </li>
-              ))}
-              {group.entries.length === 0 && <li className="text-xs text-zinc-400">None</li>}
-            </ul>
-          </section>
-        ))}
-      </div>
+                  {blocked && entry.blockedReason !== undefined ? (
+                    <span className="t-meta" style={{ color: 'var(--st-danger)' }}>
+                      {entry.blockedReason.kind === 'cannot'
+                        ? `Cannot — ${nyTime(entry.blockedReason.blockStartAt)}`
+                        : 'No preference'}
+                    </span>
+                  ) : (
+                    <HoursRemaining hours={entry.hoursRemaining} />
+                  )}
+                </span>
+                {!blocked && <Icon name="add" size={16} className="roster-add" />}
+              </button>
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
 }
@@ -564,99 +647,35 @@ function Phase2RosterView({
   onClick: (entry: Phase2Entry) => void;
 }) {
   return (
-    <div
-      data-testid="phase2-roster"
-      className="rounded-lg border border-black/10 p-3 dark:border-white/10"
-    >
-      <h2 className="mb-2 text-sm font-semibold">Full roster (manual override)</h2>
-      <ul className="space-y-1">
-        {roster.map((entry) => (
-          <li
-            key={entry.worker.userId}
-            className="flex items-center justify-between gap-2 rounded-md border border-black/5 px-2 py-1 dark:border-white/5"
-          >
-            <button type="button" onClick={() => onClick(entry)} className="text-sm font-medium">
-              {entry.worker.name}
-            </button>
-            <span className="flex items-center gap-2">
-              {entry.advisories.map((a, i) => (
-                <span key={i} className="text-xs text-amber-600">
-                  {advisoryText(a)}
+    <div data-testid="phase2-roster" className="prefgroup">
+      <div className="prefgroup-label">Full roster · {roster.length}</div>
+      <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+        {roster.map((entry) => {
+          const cannot = entry.advisories.some((a) => a.kind === 'cannot');
+          const optedOut = entry.advisories.some((a) => a.kind === 'opted_out');
+          return (
+            <li key={entry.worker.userId} className="roster-li">
+              <button type="button" onClick={() => onClick(entry)} className="roster-row">
+                <Avatar name={entry.worker.name} size={28} />
+                <span className="roster-meta">
+                  <span className="row gap-2">
+                    <b>{entry.worker.name}</b>
+                    {cannot && <Tag kind="red">Cannot</Tag>}
+                    {optedOut && <Tag kind="amber">Opted out</Tag>}
+                    {entry.wouldExceedTarget && <Tag kind="amber">Over target</Tag>}
+                  </span>
+                  <span className="t-meta">
+                    {entry.advisories.length > 0
+                      ? entry.advisories.map(advisoryText).join(' · ')
+                      : `${entry.hoursRemaining}h left to target`}
+                  </span>
                 </span>
-              ))}
-              {entry.wouldExceedTarget && (
-                <span className="text-xs text-amber-600">over target</span>
-              )}
-              <HoursRemaining hours={entry.hoursRemaining} />
-            </span>
-          </li>
-        ))}
+                <Icon name="add" size={16} className="roster-add" />
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
-}
-
-function ManualOverridePanel({
-  blocks,
-  drafts,
-  workerName,
-  onRemove,
-}: {
-  blocks: BuilderBlock[];
-  drafts: Record<string, string[]>;
-  workerName: Map<string, string>;
-  onRemove: (userId: string, blockId: string) => void;
-}) {
-  return (
-    <div
-      data-testid="manual-override-panel"
-      className="rounded-lg border border-black/10 p-3 dark:border-white/10"
-    >
-      <h2 className="mb-2 text-sm font-semibold">Manual override — selected blocks</h2>
-      <ul className="space-y-2">
-        {blocks.map((b) => (
-          <li key={b.blockId} className="text-sm">
-            <div className="font-medium">{b.timeLabel}</div>
-            <ul className="mt-1 space-y-1">
-              {(drafts[b.blockId] ?? []).length === 0 ? (
-                <li className="text-xs text-zinc-400">Unassigned</li>
-              ) : (
-                (drafts[b.blockId] ?? []).map((userId) => (
-                  <li key={userId} className="flex items-center justify-between text-xs">
-                    <span>{workerName.get(userId) ?? userId}</span>
-                    <button
-                      type="button"
-                      onClick={() => onRemove(userId, b.blockId)}
-                      className="text-zinc-400 hover:text-red-600"
-                    >
-                      Remove
-                    </button>
-                  </li>
-                ))
-              )}
-            </ul>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function Modal({ testId, children }: { testId: string; children: React.ReactNode }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div
-        data-testid={testId}
-        role="dialog"
-        aria-modal="true"
-        className="w-full max-w-md space-y-3 rounded-xl bg-white p-5 shadow-xl dark:bg-zinc-900"
-      >
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function ModalActions({ children }: { children: React.ReactNode }) {
-  return <div className="flex justify-end gap-2 pt-2">{children}</div>;
 }

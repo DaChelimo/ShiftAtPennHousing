@@ -15,6 +15,7 @@ export function Modal({
   onClose,
   danger = false,
   width = 520,
+  testId,
 }: {
   title: ReactNode;
   eyebrow?: ReactNode;
@@ -23,6 +24,8 @@ export function Modal({
   onClose?: () => void;
   danger?: boolean;
   width?: number;
+  /** data-testid for the dialog element (some flows assert on the modal). */
+  testId?: string;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -44,6 +47,7 @@ export function Modal({
         style={{ width }}
         role="dialog"
         aria-modal="true"
+        data-testid={testId}
       >
         <div className="modal-head">
           <div className="col gap-1">

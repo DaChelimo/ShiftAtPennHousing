@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation';
 
 import { WeeklyCapModifier } from '../../../../components/cap/WeeklyCapModifier';
+import { Notification } from '../../../../components/ui/Notification';
+import { PageHead } from '../../../../components/ui/PageHead';
 import { canModifyWeeklyCap, getSessionUser } from '../../../../lib/auth';
 import { getWeeklyCaps } from '../../../../lib/data/cap';
 
@@ -9,21 +11,19 @@ export default async function CapPage() {
   if (user === null) redirect('/login');
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-8">
-      <h1 className="mb-1 text-lg font-semibold tracking-tight">Weekly hours cap</h1>
-      <p className="mb-6 text-sm text-zinc-500">
-        Choose a calendar week and set its campus-wide cap.
-      </p>
+    <div className="page" style={{ maxWidth: 820 }}>
+      <PageHead
+        eyebrow="Manage"
+        title="Weekly hours cap"
+        sub="Choose a calendar week and set its campus-wide cap (§9.3)."
+      />
       {canModifyWeeklyCap(user) ? (
         <WeeklyCapModifier weeks={await getWeeklyCaps()} />
       ) : (
-        <div
-          data-testid="cap-unauthorized"
-          className="rounded-lg border border-amber-300 bg-amber-50 p-6 text-sm text-amber-900"
-        >
-          403: Only Housing Managers and Building Managers may modify the weekly cap.
-        </div>
+        <Notification kind="warning" title="Managers only" testId="cap-unauthorized">
+          403 — only Housing Managers and Building Managers may modify the weekly cap.
+        </Notification>
       )}
-    </main>
+    </div>
   );
 }

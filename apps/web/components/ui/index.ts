@@ -6,13 +6,9 @@ export { Icon, ICONS, type IconName } from './Icon';
 export { Button, IconButton, type ButtonKind, type ButtonSize } from './Button';
 export { Tag, PickupDot, type TagKind } from './Tag';
 export { Avatar } from './Avatar';
-export {
-  EscalationChip,
-  ESCALATION_STEPS,
-  type EscalationStep,
-} from './EscalationChip';
+export { EscalationChip, ESCALATION_STEPS, type EscalationStep } from './EscalationChip';
 export { Toggle } from './Toggle';
-export { Field, TextInput, DateInput, Select } from './Field';
+export { Field, TextInput, TextArea, DateInput, Select } from './Field';
 export { ComboBox, type ComboOption } from './ComboBox';
 export { Modal } from './Modal';
 export { Notification, type NotificationKind } from './Notification';

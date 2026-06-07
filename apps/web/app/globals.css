@@ -691,6 +691,34 @@ textarea {
   color: var(--text-secondary);
   pointer-events: none;
 }
+/* Multi-line field — Carbon text area (filled, bottom-border, square). */
+.textarea {
+  width: 100%;
+  min-height: 80px;
+  background: var(--field);
+  border: none;
+  border-bottom: 1px solid var(--border-strong);
+  padding: 11px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.4;
+  color: var(--text-primary);
+  border-radius: 0;
+  resize: vertical;
+  transition:
+    background var(--motion) var(--ease),
+    border-color var(--motion) var(--ease);
+}
+.textarea::placeholder {
+  color: var(--text-placeholder);
+}
+.textarea:hover {
+  background: var(--field-hover);
+}
+.textarea:focus {
+  outline: none;
+  border-bottom: 2px solid var(--brand);
+}
 .select-wrap {
   position: relative;
 }

@@ -1,4 +1,9 @@
-import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
+import type {
+  InputHTMLAttributes,
+  ReactNode,
+  SelectHTMLAttributes,
+  TextareaHTMLAttributes,
+} from 'react';
 
 import { Icon, type IconName } from './Icon';
 
@@ -43,6 +48,15 @@ export function DateInput({ className = '', ...rest }: InputHTMLAttributes<HTMLI
       <input type="date" className={`input ${className}`.trim()} {...rest} />
     </div>
   );
+}
+
+// Carbon text area: filled, bottom-border, square; vertically resizable.
+export function TextArea({
+  className = '',
+  rows = 3,
+  ...rest
+}: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return <textarea className={`textarea ${className}`.trim()} rows={rows} {...rest} />;
 }
 
 type SelectProps = SelectHTMLAttributes<HTMLSelectElement>;

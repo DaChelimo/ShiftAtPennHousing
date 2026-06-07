@@ -16,7 +16,8 @@ import { createServiceClient } from '../supabase/server';
 // Each 30-min block = 0.5h. Cap via the effective_weekly_cap RPC.
 //
 // Service client (the authorized house-scoped snapshot used by builder / leave /
-// rotor / people); the page gates on isHouseAdmin + the admin's own house.
+// rotor / people); the page gates on canBuildSchedule (SM/HM/BM) + the admin's
+// own house — the same managerial-read pattern as coverage.
 // ===========================================================================
 
 const NY = 'America/New_York';

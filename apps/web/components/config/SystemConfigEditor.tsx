@@ -4,6 +4,7 @@ import { useState } from 'react';
 
 import { saveSystemConfig } from '../../lib/actions/config';
 import type { SystemConfigRow } from '../../lib/data/config';
+import { Button, Card, Field, Notification, Tag, TextArea, TextInput } from '../ui';
 
 export function SystemConfigEditor({ initialRows }: { initialRows: SystemConfigRow[] }) {
   const [rows, setRows] = useState(initialRows);
@@ -33,49 +34,61 @@ export function SystemConfigEditor({ initialRows }: { initialRows: SystemConfigR
   }
 
   return (
-    <div className="space-y-4">
-      <p className="rounded-md bg-blue-50 p-3 text-sm text-blue-900">
-        Saved changes are read by the orchestrator on its next tick.
-      </p>
-      {error !== null && <p className="text-sm text-red-600">{error}</p>}
-      <div className="space-y-3">
+    <div className="col gap-4">
+      <Notification kind="info" title="Applied on the next tick">
+        Saved changes are read by the orchestrator on its next once-a-minute tick.
+      </Notification>
+      {error !== null && (
+        <Notification kind="error" title="Could not save">
+          {error}
+        </Notification>
+      )}
+
+      <div className="col gap-3">
         {rows.map((row) => (
-          <section
-            key={row.configKey}
-            className="rounded-lg border border-black/10 p-4 dark:border-white/10"
-          >
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <h2 className="font-medium">{row.configKey}</h2>
-                <p className="text-xs text-zinc-500">Type: {row.valueType}</p>
+          <Card key={row.configKey} pad>
+            <div className="row between gap-3" style={{ marginBottom: 16 }}>
+              <div className="col gap-1">
+                <span className="t-mono" style={{ fontWeight: 600, fontSize: 14 }}>
+                  {row.configKey}
+                </span>
+                <Tag kind="gray">{row.valueType}</Tag>
               </div>
-              <button
-                type="button"
+              <Button
+                kind="secondary"
+                size="sm"
+                icon="check"
                 disabled={savingKey === row.configKey}
                 onClick={() => save(row)}
-                className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900"
               >
-                {savingKey === row.configKey ? 'Saving...' : 'Save'}
-              </button>
+                {savingKey === row.configKey ? 'Saving…' : 'Save'}
+              </Button>
             </div>
-            <input
-              aria-label={`${row.configKey} value`}
-              value={row.configValue}
-              onChange={(event) => patch(row.configKey, { configValue: event.target.value })}
-              className="mb-2 w-full rounded-md border border-black/15 px-3 py-2 text-sm dark:border-white/15 dark:bg-zinc-800"
-            />
-            <textarea
-              aria-label={`${row.configKey} notes`}
-              placeholder="Audit notes"
-              value={row.notes ?? ''}
-              onChange={(event) => patch(row.configKey, { notes: event.target.value })}
-              className="mb-2 w-full rounded-md border border-black/15 px-3 py-2 text-sm dark:border-white/15 dark:bg-zinc-800"
-            />
-            <p className="text-xs text-zinc-500">
+
+            <div className="col gap-4">
+              <Field label="Value">
+                <TextInput
+                  aria-label={`${row.configKey} value`}
+                  value={row.configValue}
+                  onChange={(event) => patch(row.configKey, { configValue: event.target.value })}
+                />
+              </Field>
+              <Field label="Audit notes">
+                <TextArea
+                  aria-label={`${row.configKey} notes`}
+                  placeholder="Why is this changing?"
+                  rows={2}
+                  value={row.notes ?? ''}
+                  onChange={(event) => patch(row.configKey, { notes: event.target.value })}
+                />
+              </Field>
+            </div>
+
+            <p className="t-meta" style={{ marginTop: 12 }}>
               Last modified {row.modifiedAt} by {row.modifiedByName ?? 'seed data'}
               {row.notes === null ? '' : `: ${row.notes}`}
             </p>
-          </section>
+          </Card>
         ))}
       </div>
     </div>

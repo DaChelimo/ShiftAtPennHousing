@@ -1,8 +1,12 @@
+import { canViewOtherHouses, resolveCalendarHouse } from '@shift/core';
+
 import { HouseCalendar } from '../../../components/calendar/HouseCalendar';
 import { Notification } from '../../../components/ui/Notification';
 import { PageHead } from '../../../components/ui/PageHead';
 import { adminHouseId, canBuildSchedule, getSessionUser } from '../../../lib/auth';
 import { getHouseCalendar, mondayOf, nyToday } from '../../../lib/data/calendar';
+import { isProjectAdministrator } from '../../../lib/data/config';
+import { getOnDutyHmodId, getShellHouses } from '../../../lib/data/hmod';
 
 // Live house calendar — the source-of-truth week grid for the user's house
 // (design screen 03/04). READ-only presentation over existing schedule data
@@ -13,7 +17,7 @@ import { getHouseCalendar, mondayOf, nyToday } from '../../../lib/data/calendar'
 export default async function CalendarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ week?: string }>;
+  searchParams: Promise<{ week?: string; house?: string }>;
 }) {
   const user = await getSessionUser();
   if (user === null) return null; // the layout already redirected
@@ -30,12 +34,29 @@ export default async function CalendarPage({
     );
   }
 
-  const { week } = await searchParams;
+  const { week, house } = await searchParams;
   const todayKey = nyToday();
   const thisMondayKey = mondayOf(todayKey);
   const weekStartDate = week && /^\d{4}-\d{2}-\d{2}$/.test(week) ? mondayOf(week) : thisMondayKey;
 
-  const model = await getHouseCalendar(adminHouseId(user), weekStartDate);
+  // §2.5 cross-house: the on-duty HMOD / project admin may open another house's
+  // calendar via ?house=; everyone else is pinned to their own house (the param is
+  // silently ignored — D6). Calendar is always single-house.
+  const now = new Date();
+  const onDutyId = await getOnDutyHmodId(now);
+  const canViewOthers = canViewOtherHouses({
+    isOnDutyHmod: onDutyId === user.userId,
+    isProjectAdmin: await isProjectAdministrator(user.userId),
+  });
+  const validHouseIds = (await getShellHouses()).map((h) => h.id);
+  const viewHouse = resolveCalendarHouse({
+    requested: house ?? null,
+    homeHouse: adminHouseId(user),
+    canViewOthers,
+    validHouseIds,
+  });
+
+  const model = await getHouseCalendar(viewHouse, weekStartDate);
 
   return <HouseCalendar model={model} todayKey={todayKey} thisMondayKey={thisMondayKey} />;
 }

@@ -60,6 +60,17 @@ export const SEED = {
   hmQuad: { email: 'hm.quad@pennhousing.test', name: 'Hana Quad' } as SeedUser,
   bmQuad: { email: 'bm.quad@pennhousing.test', name: 'Bea Quad' } as SeedUser,
 
+  // --- S6 HMOD-context actors (web-remediation, audit #8/#9/#18a) ---
+  // After `supabase db reset` the S6 seed block inserts an `hmod_rotor` row making
+  // Hana Quad the on-duty HMOD for the current Friday duty-week, so she is the
+  // cross-house authority (canViewOthers → unlocked switcher, ?house= honored,
+  // "All houses" coverage) and her pill reads "On duty". Bea Quad is a BM (so
+  // `canBeHmod`, the pill renders) but is NOT in the rotor → "Off duty", and she is
+  // the unauthorized cross-house actor (off-duty ⇒ not canViewOthers). These alias
+  // the existing Quad HM/BM fixtures (no new seed users). See TEST_PLAN §5.
+  hmodOnDuty: { email: 'hm.quad@pennhousing.test', name: 'Hana Quad' } as SeedUser,
+  hmodOffDuty: { email: 'bm.quad@pennhousing.test', name: 'Bea Quad' } as SeedUser,
+
   // --- S1 admin-override actors (web-remediation, audit #1) ---
   // The override flows run on the LIVE calendar, which renders cards only from
   // PUBLISHED Quad blocks that have assignment rows. The S1 seed must publish a

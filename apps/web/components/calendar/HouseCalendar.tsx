@@ -286,7 +286,9 @@ export function HouseCalendar({
       <div className="cal-toolbar">
         <div className="col gap-1">
           <div className="row gap-2">
-            <h1 className="t-h1">{model.houseName}</h1>
+            <h1 className="t-h1" data-testid="calendar-house-name">
+              {model.houseName}
+            </h1>
             {model.restricted && <Tag kind="outline">Harnwell-trained only</Tag>}
           </div>
           <div className="t-helper">

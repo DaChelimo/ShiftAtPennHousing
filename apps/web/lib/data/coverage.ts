@@ -1,5 +1,9 @@
+import { summarizeAckReminders } from '@shift/core';
+
 import type { EscalationStep } from '../../components/ui';
 import { createServiceClient } from '../supabase/server';
+
+import { getShellHouses } from './hmod';
 
 // ===========================================================================
 // Coverage & open-shifts monitor — READ model (presentation + wiring over
@@ -32,7 +36,14 @@ export type CoverageGap = {
   esc: EscalationStep;
   tMinus: string;
   reason: string;
-  floater: { name: string; fromHouse: string; ack: 'pending' } | null;
+  // A pending_float_in seat is by definition un-acked (pending: true). reminderLabel
+  // surfaces the deepest ack-reminder cadence step reached, or null if none fired yet
+  // (#8 — D9). The amber "Pending ack" tag is unchanged; the label is appended.
+  floater: {
+    name: string;
+    fromHouse: string;
+    ack: { pending: true; reminderLabel: string | null };
+  } | null;
   blockIds: string[]; // the DB block_ids the gap's window spans (force-trigger input)
   weekKey: string; // for the "view on calendar" link
 };
@@ -109,12 +120,30 @@ function mapStep(stepName: string): EscalationStep {
   return 'broadcast';
 }
 
+// #8 / D9 — the ack-reminder cadence stage → the label appended to "Pending ack".
+// awaiting → null (no reminder fired yet → no suffix).
+function stageToReminderLabel(
+  stage: 'awaiting' | 'reminded_6h' | 'reminded_2h' | 'reminded_final',
+): string | null {
+  switch (stage) {
+    case 'reminded_6h':
+      return '6h reminder sent';
+    case 'reminded_2h':
+      return '2h reminder sent';
+    case 'reminded_final':
+      return 'final reminder sent';
+    default:
+      return null;
+  }
+}
+
 type AsgRow = {
   block_id: string;
   status: string;
   user_id: string | null;
   vacancy_origin: string;
   source_house_id: string | null;
+  parent_float_id: string | null;
 };
 
 export async function getCoverageData(
@@ -156,7 +185,7 @@ export async function getCoverageData(
 
   const { data: asgRows } = await supabase
     .from('shift_block_assignments')
-    .select('block_id, status, user_id, vacancy_origin, source_house_id')
+    .select('block_id, status, user_id, vacancy_origin, source_house_id, parent_float_id')
     .in('block_id', blockIds)
     .in('status', ['vacant', 'pending_float_in', 'allied']);
   const assignments = (asgRows ?? []) as AsgRow[];
@@ -185,11 +214,48 @@ export async function getCoverageData(
     for (const u of us ?? []) userById.set(u.user_id, { name: u.name, home: u.home_house_id });
   }
 
+  // ---- ack-reminder indicator (#8 / D9) ----
+  // Each pending_float_in seat carries a parent_float_id. Batch-query the float ack
+  // reminders (notifications, type='ack_reminder', payload.float_id ∈ the set),
+  // group by float-id, run each group through the pure summarizer, and map the
+  // deepest fired cadence stage → the label appended to "Pending ack".
+  const floatIds = [
+    ...new Set(
+      assignments
+        .filter((a) => a.status === 'pending_float_in' && a.parent_float_id)
+        .map((a) => a.parent_float_id as string),
+    ),
+  ];
+  const reminderLabelByFloat = new Map<string, string | null>();
+  if (floatIds.length > 0) {
+    const { data: reminderRows } = await supabase
+      .from('notifications')
+      .select('scheduled_for, payload')
+      .eq('type', 'ack_reminder')
+      .in('payload->>float_id', floatIds);
+    const byFloat = new Map<string, { scheduledForIso: string; ackDeadlineIso: string }[]>();
+    for (const r of reminderRows ?? []) {
+      const payload = (r.payload ?? {}) as { float_id?: string; ack_deadline?: string };
+      const fid = payload.float_id;
+      const deadline = payload.ack_deadline;
+      if (!fid || !deadline || r.scheduled_for === null) continue;
+      (byFloat.get(fid) ?? byFloat.set(fid, []).get(fid)!).push({
+        scheduledForIso: r.scheduled_for,
+        ackDeadlineIso: deadline,
+      });
+    }
+    for (const fid of floatIds) {
+      const { stage } = summarizeAckReminders({ reminders: byFloat.get(fid) ?? [], now });
+      reminderLabelByFloat.set(fid, stageToReminderLabel(stage));
+    }
+  }
+
   // ---- weekly gaps: vacant (non-permanent) + pending_float_in + allied, ≤30d ----
   type Atom = {
     esc: EscalationStep;
     floaterId: string | null;
     floaterHome: string | null;
+    floatId: string | null; // parent_float_id — join key to ack-reminder rows (#8)
     blockId: string;
   };
   // day → blockIndex → atoms (one per open seat)
@@ -210,22 +276,29 @@ export async function getCoverageData(
     let esc: EscalationStep;
     let floaterId: string | null = null;
     let floaterHome: string | null = null;
+    let floatId: string | null = null;
     if (a.status === 'allied') esc = 'allied';
     else if (a.status === 'pending_float_in') {
       esc = 'float';
       floaterId = a.user_id;
       floaterHome = a.source_house_id;
+      floatId = a.parent_float_id;
     } else esc = stepByBlock.get(a.block_id) ?? 'broadcast';
     const day = perDay.get(meta.dateKey) ?? perDay.set(meta.dateKey, new Map()).get(meta.dateKey)!;
     (day.get(meta.blockIndex) ?? day.set(meta.blockIndex, []).get(meta.blockIndex)!).push({
       esc,
       floaterId,
       floaterHome,
+      floatId,
       blockId: a.block_id,
     });
   }
 
   const gaps: CoverageGap[] = [];
+  // Monotonic per-call counter so the gap id (a React key) is unique even when
+  // parallel seats coalesce into separate runs starting at the same block — the
+  // per-track `i` alone collides across seats (e.g. two vacant seats at one block).
+  let gapSeq = 0;
   for (const [dateKey, byBlock] of perDay) {
     // signature groups whose consecutive blocks coalesce into one window
     const sig = (a: Atom) => `${a.esc}|${a.floaterId ?? ''}`;
@@ -249,11 +322,15 @@ export async function getCoverageData(
             ? {
                 name: userById.get(head.floaterId)?.name ?? 'Floater',
                 fromHouse: head.floaterHome ?? '',
-                ack: 'pending' as const,
+                ack: {
+                  pending: true as const,
+                  reminderLabel:
+                    head.floatId !== null ? (reminderLabelByFloat.get(head.floatId) ?? null) : null,
+                },
               }
             : null;
         gaps.push({
-          id: `${dateKey}-${items[i]!.block}-${head.esc}-${i}`,
+          id: `${dateKey}-${items[i]!.block}-${head.esc}-${gapSeq++}`,
           houseId,
           houseName: base.houseName,
           restricted,
@@ -307,4 +384,25 @@ export async function getCoverageData(
   }));
 
   return { ...base, gaps, permOpenings };
+}
+
+// D7 — aggregate coverage across all houses (the on-duty HMOD's campus-wide board).
+// Each gap/opening already carries its own houseName, so CoverageMonitor renders
+// multi-house with no component change. 13× the per-house queries, run in parallel
+// (acceptable for an admin board — a future optimization could batch the reads).
+export async function getAllHousesCoverageData(now: Date = new Date()): Promise<CoverageData> {
+  const houses = await getShellHouses();
+  const perHouse = await Promise.all(houses.map((h) => getCoverageData(h.id, now)));
+
+  // Per-house gap/opening ids are only house-LOCAL-unique (e.g. two houses can each
+  // have a broadcast gap at the same date/block/seat), so namespace them by houseId
+  // to keep the merged list's React keys globally unique.
+  const gaps = perHouse
+    .flatMap((d) => d.gaps.map((g) => ({ ...g, id: `${g.houseId}:${g.id}` })))
+    .sort((a, b) => (a.dateLabel + a.spanLabel).localeCompare(b.dateLabel + b.spanLabel));
+  const permOpenings = perHouse.flatMap((d) =>
+    d.permOpenings.map((p) => ({ ...p, id: `${p.houseId}:${p.id}` })),
+  );
+
+  return { houseId: 'all', houseName: 'All houses', gaps, permOpenings };
 }

@@ -52,7 +52,7 @@ SELECT plan(54);
 
 -- ============================================================
 -- 0. Fixtures.
---    Anchor: a FIXED Thursday-evening NY-local timestamp in July 2026 — chosen
+--    Anchor: a FIXED Thursday-evening NY-local timestamp in July 2027 — chosen
 --    DST-stable (EDT throughout July/August, so every weekly occurrence shares
 --    the same UTC offset; AGENTS invariant #6). All block local times are <= 19:30
 --    so each block's UTC-slice date equals its NY-local calendar date.
@@ -107,10 +107,14 @@ VALUES
   ('51000001-0000-0000-0000-000000000007', 'sw', NULL)
 ON CONFLICT DO NOTHING;
 
--- Anchor: 2026-07-02 19:00 America/New_York (EDT). Stored as timestamptz.
+-- Anchor: 2027-07-01 19:00 America/New_York (EDT). Stored as timestamptz.
+-- (Was 2026-07-02; bumped +52 weeks — same Thursday, same EDT/DST-stable window —
+-- to clear the seed's Jun–Aug 2026 "Summer 2026" e2e period, which overlaps this
+-- suite's anchor-derived scheduling_periods row and would trip the no-overlap
+-- exclusion. Everything else here is anchor-relative, so the suite just shifts.)
 SELECT set_config(
   'test.s1.anchor',
-  ('2026-07-02 19:00'::timestamp AT TIME ZONE 'America/New_York')::text,
+  ('2027-07-01 19:00'::timestamp AT TIME ZONE 'America/New_York')::text,
   false
 );
 
@@ -148,7 +152,7 @@ ON CONFLICT (date) DO UPDATE SET profile_name = EXCLUDED.profile_name;
 -- and the anchor+42d week is next semester (out of permanent scope).
 INSERT INTO public.scheduling_periods (period_name, profile_name, start_date, end_date)
 VALUES (
-  'S1 Fall 2026', 'regular_school_year',
+  'S1 Fall 2027', 'regular_school_year',
   ((current_setting('test.s1.anchor')::timestamptz AT TIME ZONE 'America/New_York')::date - 14),
   ((current_setting('test.s1.anchor')::timestamptz + interval '38 days')
     AT TIME ZONE 'America/New_York')::date

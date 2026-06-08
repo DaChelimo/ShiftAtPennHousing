@@ -9,6 +9,7 @@ export * from './break-phases/index.js';
 export * from './cap-modification/index.js';
 export * from './eligibility/index.js';
 export * from './eligibility/cross-house.js';
+export * from './firing/index.js';
 export * from './float-lookup/index.js';
 export * from './force-trigger/index.js';
 export * from './hmod-context/index.js';

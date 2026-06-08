@@ -1555,6 +1555,10 @@ export type Database = {
       };
       execute_due_break_transitions: { Args: never; Returns: number };
       expire_pending_swaps: { Args: { p_now: string }; Returns: number };
+      fire_worker: {
+        Args: { p_initiator: string; p_now?: string; p_user_id: string };
+        Returns: Json;
+      };
       force_trigger_float: {
         Args: {
           p_destination_assignment_ids: string[];

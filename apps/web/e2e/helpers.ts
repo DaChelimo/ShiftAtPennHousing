@@ -19,6 +19,19 @@ const PASSWORD = 'test-Password-123';
 
 export type SeedUser = { email: string; name: string };
 
+// The Quad override/force-trigger week — NEXT week's Monday in the host's local
+// (America/New_York) time, matching the seed's `e2e.quad_monday`
+// (date_trunc('week', now NY) + 7). Computed at module load so the fixtures are
+// always future-dated and the now()-relative coverage/override gates surface them.
+function nextNyMondayISO(): string {
+  const now = new Date();
+  const daysToNextMonday = (8 - now.getDay()) % 7 || 7; // Sun=0..Sat=6 → 1..7 ahead
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysToNextMonday);
+  const mm = String(monday.getMonth() + 1).padStart(2, '0');
+  const dd = String(monday.getDate()).padStart(2, '0');
+  return `${monday.getFullYear()}-${mm}-${dd}`;
+}
+
 // House under test: Quad (a multi-staff, non-Harnwell house — no training constraint
 // confounds the grouping assertions). Regular-school-year period; build week of the
 // Monday below.
@@ -69,7 +82,7 @@ export const SEED = {
   // triggers an advisory when assigned (opted-out / over-soft-cap that week), so
   // the advisory-confirm modal appears. The actors reuse the phase-13b Quad SWs:
   // Cara (incumbent) and Fred (opted-out → advisory). See e2e/README.md (S1).
-  overrideWeek: '2026-06-08', // a Monday; the S1 seed publishes Quad cards for it
+  overrideWeek: nextNyMondayISO(), // next NY Monday; the seed anchors Quad cards to it (now-relative, never ages out)
   overrideIncumbent: { email: 'cara.quad@pennhousing.test', name: 'Cara Quad' } as SeedUser,
   overrideAdvisoryWorker: { email: 'fred.quad@pennhousing.test', name: 'Fred Quad' } as SeedUser,
   // An HM at another house whose ACTIVE leave delegation currently resolves THROUGH

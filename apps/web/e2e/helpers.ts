@@ -92,6 +92,19 @@ export const SEED = {
   // The project administrator — ALWAYS a valid terminal replacement, never excluded
   // (BEH §2.6: "The project administrator is always a valid terminal selection").
   projectAdmin: { email: 'admin@pennhousing.test', name: 'Project Administrator' } as SeedUser,
+
+  // --- S4 fire-worker actor (web-remediation, audit #4) ---
+  // A dedicated ACTIVE Quad SW the HM/BM may fire on /admin/people. Intentionally
+  // obligation-free (no shifts/floats/swaps) so the e2e is date-robust: firing a
+  // worker with nothing to unwind is a pure deactivate, which always succeeds
+  // regardless of clock/period (avoids the now()-relative semester-boundary
+  // fragility the S1/S2 week introduced). The thorough seat/float/swap unwinding is
+  // the pgTAP surface (supabase/tests/s4-fire-worker.sql). Authorized actor =
+  // SEED.hmQuad (existing). The Lead's seed.sql adds the matching row:
+  //   uuid a0000000-0000-4000-8000-00000000000c, home_house 'quad', role 'sw',
+  //   is_active=true (…000c — …000b is the project administrator). Re-seed
+  //   (supabase db reset) between runs. See e2e/README.md (S4).
+  fireable: { email: 'gabe.quad@pennhousing.test', name: 'Gabe Quad' } as SeedUser,
 };
 
 // ---------------------------------------------------------------------------

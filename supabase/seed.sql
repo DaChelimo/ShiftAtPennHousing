@@ -479,6 +479,48 @@ VALUES
 ON CONFLICT (notification_id) DO NOTHING;
 
 -- =====================================================================
+-- S4 fire-worker e2e fixture (web-remediation, audit #4).
+-- A dedicated ACTIVE Quad SW — Gabe Quad — with NO entanglements, so the
+-- /admin/people Fire flow (modal → confirm → Active→Inactive) is deterministic
+-- regardless of clock/period (firing a worker with no obligations is a pure
+-- deactivate). The THOROUGH seat/float/swap unwinding is pgTAP-only
+-- (supabase/tests/s4-fire-worker.sql). Authorized actor for the e2e = Hana Quad
+-- (hmQuad, a0…0008). Fixed id a0…000c (the next free id after the project admin
+-- at …000b) + ON CONFLICT → idempotent. Appended as its own block to avoid churn
+-- with S5, which shares the People files.
+-- =====================================================================
+INSERT INTO auth.users (
+  instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+  created_at, updated_at, raw_app_meta_data, raw_user_meta_data,
+  confirmation_token, recovery_token, email_change_token_new, email_change
+) VALUES (
+  '00000000-0000-0000-0000-000000000000',
+  'a0000000-0000-4000-8000-00000000000c',
+  'authenticated', 'authenticated', 'gabe.quad@pennhousing.test',
+  extensions.crypt('test-Password-123', extensions.gen_salt('bf')),
+  now(), now(), now(),
+  '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb,
+  '', '', '', ''
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO auth.identities (provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
+VALUES (
+  'a0000000-0000-4000-8000-00000000000c', 'a0000000-0000-4000-8000-00000000000c',
+  jsonb_build_object('sub', 'a0000000-0000-4000-8000-00000000000c', 'email', 'gabe.quad@pennhousing.test'),
+  'email', now(), now(), now()
+)
+ON CONFLICT (provider_id, provider) DO NOTHING;
+
+INSERT INTO users (user_id, name, email, home_house_id, is_active) VALUES
+  ('a0000000-0000-4000-8000-00000000000c', 'Gabe Quad', 'gabe.quad@pennhousing.test', 'quad', true)
+ON CONFLICT (user_id) DO NOTHING;
+
+INSERT INTO user_roles (user_id, role, scope_house_id) VALUES
+  ('a0000000-0000-4000-8000-00000000000c', 'sw', NULL)
+ON CONFLICT (user_id, role, scope_house_id) DO NOTHING;
+
+-- =====================================================================
 -- S6 HMOD context e2e fixtures (web-remediation, audit #8/#9/#18a).
 -- Make Hana Quad (the Quad HM, a0…0008) the ON-DUTY HMOD *right now* so the
 -- AppShell pill resolves to "On duty" for her and "Off duty" for Bea Quad

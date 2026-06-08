@@ -1,15 +1,8 @@
 import type { AppRole } from '../../lib/auth';
 import type { PeopleData, PersonRow } from '../../lib/data/people';
-import {
-  Avatar,
-  Button,
-  type Column,
-  DataTable,
-  Notification,
-  PageHead,
-  Tag,
-  type TagKind,
-} from '../ui';
+import { Avatar, Button, type Column, DataTable, PageHead, Tag, type TagKind } from '../ui';
+
+import { FireWorkerControl } from './FireWorkerControl';
 
 const ROLE_META: Record<AppRole, { short: string; full: string; kind: TagKind }> = {
   sw: { short: 'SW', full: 'Student Worker', kind: 'gray' },
@@ -103,17 +96,9 @@ function rosterColumns(cap: number): Column<PersonRow>[] {
     {
       key: 'actions',
       header: '',
-      render: () => (
-        <Button
-          kind="ghost"
-          size="sm"
-          icon="trash"
-          disabled
-          title="Fire a worker — no backing RPC in this build (flagged)"
-        >
-          Fire
-        </Button>
-      ),
+      // S4: Fire is enabled per-row, but ONLY on active workers. An already-fired
+      // (inactive) row shows nothing here — the Status cell carries the Inactive tag.
+      render: (p) => (p.isActive ? <FireWorkerControl userId={p.userId} name={p.name} /> : null),
     },
   ];
 }
@@ -139,11 +124,6 @@ export function PeopleRoster({ data }: { data: PeopleData }) {
           </Button>
         }
       />
-
-      <Notification kind="info" title="Read-only roster in this build">
-        Hire and Fire are not wired here — there is no create-user / fire-worker RPC yet
-        (DESIGN_TOKENS.md §6). Roles, weekly hours, and active status are live.
-      </Notification>
 
       <div
         className="statstrip"

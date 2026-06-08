@@ -182,3 +182,44 @@ a Quad week — Monday **`SEED.overrideWeek` (2026-06-08)** — holding at minim
 modal when assigned. Reuses the phase-13b Quad actors (`hmQuad`/`smQuad` authorized,
 `alice` an SW who cannot reach the manager calendar). Re-seed (`supabase db reset`)
 between runs.
+
+## S4 — Fire a worker (web-remediation, audit #4) — route `/admin/people`
+
+`fire-worker.spec.ts` is **TDD-first / RED**: the People roster still renders a
+**disabled** Fire button (`title="Fire a worker — no backing RPC in this build
+(flagged)"`) under a "Read-only roster in this build" notice, so each flow fails at
+its first missing `people-fire-*` / `fire-confirm*` selector. An HM/BM may **fire** a
+worker from the roster — one transactional action that vacates every shift, voids
+floats, deactivates the account, and escalates any mid-shift gap (§4.5). Behavioral
+source: `BEHAVIORAL_SPECIFICATION.md` §4.5 (firing) + §2.3/§2.6 (people-admin is
+HM/BM-only). Pinned decisions + the full contract:
+`docs/web-remediation/sessions/S4/TEST_PLAN.md` (PIN 4 = the modal testids). The pure
+planner is unit-pinned in `packages/core/tests/firing/fire-planner.test.ts`; the
+authoritative RPC behavior **and all the seat/float/swap unwinding** is in
+`supabase/tests/s4-fire-worker.sql`. The e2e asserts only the **modal + Active→Inactive**
+transition (the harness can't run the float-lookup algorithm and the page shows no
+seat detail) — the thorough unwinding is pgTAP-only, like S2.
+
+| testid                 | Meaning                                                                                                                                                 |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `people-fire-<userId>` | The per-row **Fire** button. Rendered **enabled only for `is_active` rows**; absent/disabled on already-inactive rows.                                  |
+| `fire-confirm`         | The destructive confirm modal (`role=dialog`). Body copy: "vacates all shifts, voids floats, deactivates account; mid-shift gaps escalate immediately." |
+| `fire-confirm-accept`  | Execute the firing.                                                                                                                                     |
+| `fire-confirm-cancel`  | Dismiss without firing (nothing changes).                                                                                                               |
+| `fire-success`         | Post-fire confirmation toast/notice.                                                                                                                    |
+
+After a successful fire the worker's **Status** cell flips to the existing `Inactive`
+tag and the row's Fire button disappears (no re-fire). The "Read-only roster in this
+build" `Notification` and the disabled-button `title` are removed/replaced. **Hire
+stays disabled — that is S5; do not touch the Hire button.** A non-HM/BM (an SM or
+SW) hits the existing `people-unauthorized` gate and never sees a Fire control.
+
+**S4 seed contract.** The Lead adds **`SEED.fireable` (Gabe Quad,
+`gabe.quad@pennhousing.test`)** — a dedicated **active Quad SW**, uuid
+**`a0000000-0000-4000-8000-00000000000c`** (…000b is the project administrator),
+`home_house='quad'`, role `sw`,
+`is_active=true`. Intentionally **obligation-free** (no shifts/floats/swaps) so the
+fire is a pure deactivate that always succeeds regardless of clock/period (date-robust;
+avoids the now()-relative semester-boundary fragility). Authorized actor =
+**`SEED.hmQuad`** (existing). Reuses `smQuad`/`alice` as the unauthorized actors.
+Re-seed (`supabase db reset`) between runs.

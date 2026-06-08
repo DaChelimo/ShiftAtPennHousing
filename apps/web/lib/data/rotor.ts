@@ -1,3 +1,5 @@
+import { fridayAnchor } from '@shift/core';
+
 import { createServiceClient } from '../supabase/server';
 
 export type RotorWeek = { weekStartDate: string; label: string };
@@ -9,13 +11,6 @@ export type RotorData = {
   assignments: Record<string, string>; // weekStartDate → hmod_user_id
 };
 
-function weekStart(date: string): string {
-  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
-  const at = new Date(Date.UTC(y, m - 1, d));
-  at.setUTCDate(at.getUTCDate() - ((at.getUTCDay() + 6) % 7)); // back to Monday
-  return at.toISOString().slice(0, 10);
-}
-
 function addDays(date: string, days: number): string {
   const [y, m, d] = date.split('-').map(Number) as [number, number, number];
   const at = new Date(Date.UTC(y, m - 1, d));
@@ -25,7 +20,10 @@ function addDays(date: string, days: number): string {
 
 // §2.5 HMOD rotor — weekly, one HMOD per week, planned by HMs/BMs. Reads use the
 // service client (cross-house roster + the rotor table). Weeks span the current
-// semester, Monday-anchored (hmod_rotor.week_start_date).
+// semester, anchored to the Friday-08:00 duty-week boundary
+// (hmod_rotor.week_start_date — its CHECK requires isodow=5/Friday, matching
+// resolve_hmod_on_duty's snap, so fridayAnchor keys both the displayed weeks and the
+// saved key).
 export async function getRotorData(): Promise<RotorData> {
   const svc = createServiceClient();
 
@@ -38,7 +36,7 @@ export async function getRotorData(): Promise<RotorData> {
 
   const weeks: RotorWeek[] = [];
   if (period !== null) {
-    let cursor = weekStart(period.start_date);
+    let cursor = fridayAnchor(period.start_date);
     const end = period.end_date;
     // Guard against an unbounded loop on malformed dates.
     for (let i = 0; i < 60 && cursor <= end; i += 1) {

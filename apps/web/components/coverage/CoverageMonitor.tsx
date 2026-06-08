@@ -168,6 +168,7 @@ function GapCard({ gap }: { gap: CoverageGap }) {
           </span>
           <Tag kind="amber" icon="clock">
             Pending ack
+            {gap.floater.ack.reminderLabel !== null && ` · ${gap.floater.ack.reminderLabel}`}
           </Tag>
         </div>
       )}
@@ -227,7 +228,11 @@ export function CoverageMonitor({ data }: { data: CoverageData }) {
   return (
     <div className="page" style={{ maxWidth: 1000 }}>
       <PageHead
-        eyebrow={`${data.houseName} · next 30 days`}
+        eyebrow={
+          <>
+            <span data-testid="coverage-house-name">{data.houseName}</span> · next 30 days
+          </>
+        }
         title="Coverage monitor"
         sub="A live board of everything needing coverage — and where each gap sits on the escalation timeline."
       />

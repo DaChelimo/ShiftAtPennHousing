@@ -500,3 +500,24 @@ VALUES
    'ack_reminder', now() + interval '2 days', NULL, NULL, NULL, NULL,
    jsonb_build_object('kind', 'reminder'))
 ON CONFLICT (notification_id) DO NOTHING;
+
+-- =====================================================================
+-- S6 HMOD context e2e fixtures (web-remediation, audit #8/#9/#18a).
+-- Make Hana Quad (the Quad HM, a0…0008) the ON-DUTY HMOD *right now* so the
+-- AppShell pill resolves to "On duty" for her and "Off duty" for Bea Quad
+-- (the Quad BM, a0…0009 — canBeHmod but not in the rotor), and so Hana gains
+-- cross-house authority (switcher unlocked, ?house= honored, coverage
+-- aggregates all houses) while Bea stays pinned to Quad.
+--
+-- The duty week is Friday-08:00→Friday-08:00 (BSpec §2.5). We compute the
+-- current duty-week Friday with the SAME expression resolve_hmod_on_duty uses
+-- (shift back 8h so the 08:00 boundary lands at midnight, then snap to the most
+-- recent Friday via (isodow+2)%7) — guaranteeing the row both MATCHES the
+-- resolver for `now` and satisfies the hmod_rotor isodow=5 (Friday) CHECK.
+-- now()-relative + ON CONFLICT → idempotent and never ages out under db reset.
+-- =====================================================================
+INSERT INTO hmod_rotor (week_start_date, hmod_user_id)
+SELECT (s.d - (((extract(isodow FROM s.d)::int + 2) % 7)))::date,
+       'a0000000-0000-4000-8000-000000000008'
+FROM (SELECT ((now() AT TIME ZONE 'America/New_York') - interval '8 hours')::date AS d) s
+ON CONFLICT (week_start_date) DO UPDATE SET hmod_user_id = EXCLUDED.hmod_user_id;

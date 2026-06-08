@@ -11,6 +11,7 @@ export * from './eligibility/index.js';
 export * from './eligibility/cross-house.js';
 export * from './float-lookup/index.js';
 export * from './force-trigger/index.js';
+export * from './hmod-context/index.js';
 export * from './hours/index.js';
 export * from './inbox/index.js';
 export * from './notifications/index.js';

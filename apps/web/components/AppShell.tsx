@@ -1,13 +1,16 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { createClient } from '../lib/supabase/client';
+
 import { Avatar } from './ui/Avatar';
 import { Icon, type IconName } from './ui/Icon';
 import { Tag } from './ui/Tag';
+
+export type ShellHouse = { id: string; name: string; restricted: boolean };
 
 export type NavItem = {
   href: string;
@@ -63,21 +66,40 @@ function getThemeServerSnapshot(): 'light' | 'dark' {
   return 'light';
 }
 
-// House-context switcher. Locked to the home house for SM/HM (the only mode the
-// foundation wires); the dropdown unlocks to all houses when acting as HMOD/admin
-// — a later integration once house-context routing lands.
+// House-context switcher (§2.5 / D11). Locked to the home house for an off-duty
+// SM/HM/BM; the on-duty HMOD / project admin gets the full house list. The current
+// house is read from `?house=` (defaulting to the home house) — the layout can't see
+// page searchParams, so the client component derives it. Selecting an item merges
+// `?house=<id|all>` into the current pathname's query (preserving `?week=`). The
+// "All houses" aggregate item appears only on /coverage (the calendar is always
+// single-house).
 function HouseSwitcher({
   houses,
-  currentHouseId,
+  homeHouseId,
   locked,
 }: {
-  houses: { id: string; name: string; staff?: number; restricted?: boolean; closed?: boolean }[];
-  currentHouseId: string;
+  houses: ShellHouse[];
+  homeHouseId: string;
   locked: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const cur = houses.find((h) => h.id === currentHouseId) ?? houses[0];
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const requested = searchParams.get('house') ?? homeHouseId;
+  const onCoverage = pathname.startsWith('/coverage');
+  // The active selection: `all` only on coverage; otherwise an unknown id falls back
+  // to the home house for the label.
+  const selectedId =
+    requested === 'all' && onCoverage
+      ? 'all'
+      : (houses.find((h) => h.id === requested)?.id ?? homeHouseId);
+  const cur =
+    selectedId === 'all'
+      ? { id: 'all', name: 'All houses', restricted: false }
+      : (houses.find((h) => h.id === selectedId) ?? houses[0]);
 
   useEffect(() => {
     if (!open) return;
@@ -93,14 +115,22 @@ function HouseSwitcher({
     };
   }, [open]);
 
+  function select(houseId: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('house', houseId);
+    router.push(`${pathname}?${params.toString()}`);
+    setOpen(false);
+  }
+
   if (!cur) return null;
 
   return (
     <div className="hswitch" ref={ref}>
       <button
         type="button"
+        data-testid="house-switcher"
         className={`hswitch-btn ${locked ? 'is-locked' : ''}`.trim()}
-        onClick={() => !locked && setOpen((o) => !o)}
+        onClick={() => setOpen((o) => !o)}
         aria-haspopup="listbox"
         aria-expanded={open}
       >
@@ -115,6 +145,38 @@ function HouseSwitcher({
           )}
         </span>
       </button>
+
+      {open && !locked && (
+        <div className="hswitch-menu" role="listbox">
+          <div className="hswitch-menu-head">Switch house context</div>
+          {onCoverage && (
+            <button
+              type="button"
+              role="option"
+              aria-selected={selectedId === 'all'}
+              data-testid="house-option-all"
+              className={`hswitch-opt ${selectedId === 'all' ? 'is-sel' : ''}`.trim()}
+              onClick={() => select('all')}
+            >
+              <span>All houses</span>
+            </button>
+          )}
+          {houses.map((h) => (
+            <button
+              key={h.id}
+              type="button"
+              role="option"
+              aria-selected={selectedId === h.id}
+              data-testid={`house-option-${h.id}`}
+              className={`hswitch-opt ${selectedId === h.id ? 'is-sel' : ''}`.trim()}
+              onClick={() => select(h.id)}
+            >
+              <span>{h.name}</span>
+              {h.restricted && <span className="hswitch-chip">Restricted</span>}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -122,10 +184,18 @@ function HouseSwitcher({
 export function AppShell({
   user,
   nav,
+  hmodOnDuty = false,
+  canSwitchHouse = false,
+  houses,
+  unreadCount = 0,
   children,
 }: {
   user: ShellUser;
   nav: NavItem[];
+  hmodOnDuty?: boolean;
+  canSwitchHouse?: boolean;
+  houses?: ShellHouse[];
+  unreadCount?: number;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -194,26 +264,32 @@ export function AppShell({
         <div className="hdr-sep hdr-nonessential" />
         <div className="hdr-nonessential">
           <HouseSwitcher
-            houses={[
-              {
-                id: user.homeHouseId,
-                name: prettifyHouse(user.homeHouseId),
-                restricted: user.homeHouseId === 'harnwell',
-              },
-            ]}
-            currentHouseId={user.homeHouseId}
-            locked
+            houses={
+              houses ?? [
+                {
+                  id: user.homeHouseId,
+                  name: prettifyHouse(user.homeHouseId),
+                  restricted: user.homeHouseId === 'harnwell',
+                },
+              ]
+            }
+            homeHouseId={user.homeHouseId}
+            locked={!canSwitchHouse}
           />
         </div>
 
         <div className="grow" />
 
         {canBeHmod && (
-          <div className="hmod-pill hdr-nonessential" aria-label="HMOD on-duty status">
+          <div
+            data-testid="hmod-pill"
+            className={`hmod-pill hdr-nonessential ${hmodOnDuty ? 'is-on' : ''}`.trim()}
+            aria-label="HMOD on-duty status"
+          >
             <span className="hmod-dot" />
             <span className="col" style={{ lineHeight: 1.1, alignItems: 'flex-start' }}>
               <span className="hmod-label">HMOD</span>
-              <span className="hmod-state">Off duty</span>
+              <span className="hmod-state">{hmodOnDuty ? 'On duty' : 'Off duty'}</span>
             </span>
           </div>
         )}
@@ -228,9 +304,20 @@ export function AppShell({
           <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={18} />
         </button>
 
-        <button type="button" className="hdr-bell" aria-label="Notifications" title="Notifications">
+        <Link
+          href="/inbox"
+          data-testid="nav-bell"
+          className="hdr-bell"
+          aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+          title="Notifications"
+        >
           <Icon name="bell" size={18} />
-        </button>
+          {unreadCount > 0 && (
+            <span data-testid="bell-count" className="bell-count">
+              {unreadCount}
+            </span>
+          )}
+        </Link>
 
         <div className="hdr-user-wrap" ref={userRef}>
           <button
@@ -265,12 +352,7 @@ export function AppShell({
                   </span>
                 )}
               </div>
-              <button
-                type="button"
-                onClick={signOut}
-                data-testid="sign-out"
-                className="user-item"
-              >
+              <button type="button" onClick={signOut} data-testid="sign-out" className="user-item">
                 Sign out
               </button>
             </div>

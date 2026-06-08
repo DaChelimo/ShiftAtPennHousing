@@ -1,8 +1,17 @@
+import { canViewOtherHouses } from '@shift/core';
 import { redirect } from 'next/navigation';
 
 import { AppShell, type NavItem } from '../../components/AppShell';
 import { canBuildSchedule, getSessionUser, isHouseAdmin } from '../../lib/auth';
 import { isProjectAdministrator } from '../../lib/data/config';
+import { getOnDutyHmodId, getShellHouses, getUnreadCount } from '../../lib/data/hmod';
+
+function prettifyHouse(id: string): string {
+  if (!id) return 'House';
+  const m = /^house-(\d+)$/.exec(id);
+  if (m) return `House ${String(Number(m[1]))}`;
+  return id.charAt(0).toUpperCase() + id.slice(1);
+}
 
 // Authenticated shell. Any unauthenticated request to a route in this group is
 // redirected to /login (the proxy also guards the admin prefixes). The nav is
@@ -124,6 +133,25 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     group: 'System',
   });
 
+  // §2.5 HMOD context: resolve who is on-duty now, whether this user may leave their
+  // home house (on-duty HMOD or project admin — D5), the switcher's house list, and
+  // the bell's due/unread count. A single `now` so the pill, switcher, and bell agree.
+  const now = new Date();
+  const onDutyId = await getOnDutyHmodId(now);
+  const hmodOnDuty = onDutyId === user.userId;
+  const isProjectAdmin = await isProjectAdministrator(user.userId);
+  const canSwitchHouse = canViewOtherHouses({ isOnDutyHmod: hmodOnDuty, isProjectAdmin });
+  const houses = canSwitchHouse
+    ? await getShellHouses()
+    : [
+        {
+          id: user.homeHouseId,
+          name: prettifyHouse(user.homeHouseId),
+          restricted: user.homeHouseId === 'harnwell',
+        },
+      ];
+  const unreadCount = await getUnreadCount(user.userId, now);
+
   return (
     <AppShell
       user={{
@@ -133,6 +161,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         homeHouseId: user.homeHouseId,
       }}
       nav={nav}
+      hmodOnDuty={hmodOnDuty}
+      canSwitchHouse={canSwitchHouse}
+      houses={houses}
+      unreadCount={unreadCount}
     >
       {children}
     </AppShell>

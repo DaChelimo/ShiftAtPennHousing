@@ -1,9 +1,12 @@
 'use client';
 
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
+import { markRead, setAlliedResolved } from '../../lib/actions/inbox';
 import type { InboxData, InboxItem as InboxItemT } from '../../lib/data/inbox';
-import { Button, EmptyState, Icon, Notification, PageHead, Tabs, Tag, type IconName } from '../ui';
+import { Button, EmptyState, Icon, PageHead, Tabs, Tag, type IconName } from '../ui';
 import './inbox.css';
 
 const ICON_FOR: Record<string, IconName> = {
@@ -17,7 +20,42 @@ const ICON_FOR: Record<string, IconName> = {
   personal_shift: 'calendar',
 };
 
+// One inbox row. The container keeps `.inbox-item`; an unread row keeps the
+// `.unread-dot` element (DOM contract). hmod_urgent rows carry a native Resolved
+// checkbox (set/clear the Allied resolved marker); every other row carries a
+// mark-read button. After a successful action we refresh so the server re-partitions
+// the view (the resolved alert leaves / re-enters the default inbox).
 function InboxItem({ item }: { item: InboxItemT }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isUrgentType = item.type === 'hmod_urgent';
+
+  async function toggleResolved(next: boolean) {
+    setBusy(true);
+    setError(null);
+    const res = await setAlliedResolved({ notificationId: item.id, resolved: next });
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    router.refresh();
+  }
+
+  async function onMarkRead() {
+    setBusy(true);
+    setError(null);
+    const res = await markRead({ notificationId: item.id });
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    router.refresh();
+  }
+
   return (
     <div className={`inbox-item ${item.urgent ? 'is-urgent' : ''}`.trim()}>
       <div className={`inbox-icon ${item.urgent ? 'urgent' : ''}`.trim()}>
@@ -31,6 +69,11 @@ function InboxItem({ item }: { item: InboxItemT }) {
             {item.urgent && (
               <Tag kind="red" icon="warnFill">
                 Action required
+              </Tag>
+            )}
+            {item.resolved && (
+              <Tag kind="green" icon="check">
+                Resolved
               </Tag>
             )}
           </div>
@@ -57,19 +100,36 @@ function InboxItem({ item }: { item: InboxItemT }) {
         {item.reason && <div className="inbox-reason">{item.reason}</div>}
 
         <div className="row gap-2" style={{ marginTop: 10 }}>
-          <Button
-            kind={item.urgent ? 'danger' : 'tertiary'}
-            size="sm"
-            icon={item.urgent ? 'phone' : undefined}
-            disabled
-            title="Not wired in this build — flagged"
-          >
-            {item.urgent ? 'Call Allied / Mark covered' : 'Open'}
-          </Button>
-          <button type="button" className="inbox-dismiss" disabled>
-            Dismiss
-          </button>
+          {isUrgentType ? (
+            <label className="inbox-resolve">
+              <input
+                type="checkbox"
+                data-testid="inbox-resolve-checkbox"
+                aria-label="Resolved"
+                checked={item.resolved}
+                disabled={busy}
+                onChange={(e) => toggleResolved(e.target.checked)}
+              />
+              <span>Resolved</span>
+            </label>
+          ) : (
+            <Button
+              kind="tertiary"
+              size="sm"
+              data-testid="inbox-mark-read"
+              disabled={busy}
+              onClick={onMarkRead}
+            >
+              Mark read
+            </Button>
+          )}
         </div>
+
+        {error !== null && (
+          <div className="inbox-reason" style={{ color: 'var(--st-danger)', marginTop: 8 }}>
+            {error}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -77,6 +137,44 @@ function InboxItem({ item }: { item: InboxItemT }) {
 
 export function ActionInbox({ data }: { data: InboxData }) {
   const [tab, setTab] = useState<'all' | 'urgent' | 'unread'>('all');
+
+  // ---- Resolved view: a plain list of the resolved Allied alerts + hide link. ----
+  if (data.view === 'resolved') {
+    return (
+      <div className="page" style={{ maxWidth: 880 }}>
+        <PageHead
+          eyebrow="Action inbox"
+          title="Resolved Allied requests"
+          sub="Allied-coverage alerts that have been marked resolved. Untick one to send it back to the active inbox."
+        />
+
+        <div style={{ marginTop: 16 }}>
+          <Link href="/inbox" className="btn btn-ghost btn-sm" data-testid="inbox-hide-resolved">
+            <Icon name="chevLeft" size={16} />
+            <span>Back to action inbox</span>
+          </Link>
+        </div>
+
+        {data.items.length === 0 ? (
+          <div className="card" style={{ marginTop: 16 }}>
+            <EmptyState
+              title="Nothing resolved yet"
+              desc="Resolved Allied requests will appear here."
+              tone="neutral"
+            />
+          </div>
+        ) : (
+          <div className="inbox-list" style={{ marginTop: 16 }}>
+            {data.items.map((n) => (
+              <InboxItem key={n.id} item={n} />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ---- Default view: only unresolved Allied requests + non-urgent notifications. ----
   const urgent = data.items.filter((i) => i.urgent);
   const earlier = data.items.filter((i) => !i.urgent);
   const shown =
@@ -90,13 +188,7 @@ export function ActionInbox({ data }: { data: InboxData }) {
         sub="The human-in-the-loop queue. Real-time, action-required alerts. Most healthy weeks, this is empty."
       />
 
-      <Notification kind="info" title="Read-only in this build">
-        Item actions (Call Allied / Mark covered, mark-read, dismiss) are surfaced but not wired —
-        “mark covered” has no RPC; mark_notification_read exists and is left for the wiring phase
-        (DESIGN_TOKENS.md §6).
-      </Notification>
-
-      <div style={{ marginTop: 16 }}>
+      <div className="row gap-2 between" style={{ marginTop: 16 }}>
         <Tabs
           active={tab}
           onChange={(k) => setTab(k as 'all' | 'urgent' | 'unread')}
@@ -106,6 +198,16 @@ export function ActionInbox({ data }: { data: InboxData }) {
             { key: 'unread', label: 'Unread', count: data.unreadCount },
           ]}
         />
+        {data.resolvedCount > 0 && (
+          <Link
+            href="/inbox?show=resolved"
+            className="btn btn-ghost btn-sm"
+            data-testid="inbox-show-resolved"
+          >
+            <Icon name="check" size={16} />
+            <span>Show resolved ({data.resolvedCount})</span>
+          </Link>
+        )}
       </div>
 
       {data.items.length === 0 ? (

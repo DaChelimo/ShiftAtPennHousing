@@ -87,15 +87,22 @@
   font-size: 13px;
   color: var(--text-secondary);
 }
-.inbox-dismiss {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
+/* S3 — the native Resolved checkbox on an hmod_urgent row. */
+.inbox-resolve {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 13px;
-  padding: 0 8px;
-  margin-left: auto;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
 }
-.inbox-dismiss:disabled {
-  opacity: 0.5;
+.inbox-resolve input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+.inbox-resolve input:disabled {
   cursor: not-allowed;
 }

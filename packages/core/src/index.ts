@@ -12,6 +12,7 @@ export * from './eligibility/cross-house.js';
 export * from './float-lookup/index.js';
 export * from './force-trigger/index.js';
 export * from './hours/index.js';
+export * from './inbox/index.js';
 export * from './notifications/index.js';
 export * from './orchestrator/index.js';
 export * from './permanent-ops/index.js';

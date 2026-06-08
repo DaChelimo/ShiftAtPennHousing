@@ -567,6 +567,8 @@ export type Database = {
           notification_id: string;
           payload: Json;
           recipient_user_id: string;
+          resolved_at: string | null;
+          resolved_by: string | null;
           scheduled_for: string | null;
           type: Database['public']['Enums']['notification_type'];
         };
@@ -577,6 +579,8 @@ export type Database = {
           notification_id?: string;
           payload?: Json;
           recipient_user_id: string;
+          resolved_at?: string | null;
+          resolved_by?: string | null;
           scheduled_for?: string | null;
           type: Database['public']['Enums']['notification_type'];
         };
@@ -587,6 +591,8 @@ export type Database = {
           notification_id?: string;
           payload?: Json;
           recipient_user_id?: string;
+          resolved_at?: string | null;
+          resolved_by?: string | null;
           scheduled_for?: string | null;
           type?: Database['public']['Enums']['notification_type'];
         };
@@ -601,6 +607,20 @@ export type Database = {
           {
             foreignKeyName: 'notifications_recipient_user_id_fkey';
             columns: ['recipient_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
+          {
+            foreignKeyName: 'notifications_resolved_by_fkey';
+            columns: ['resolved_by'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'notifications_resolved_by_fkey';
+            columns: ['resolved_by'];
             isOneToOne: false;
             referencedRelation: 'worker_open_shifts';
             referencedColumns: ['eligible_user_id'];
@@ -1612,6 +1632,8 @@ export type Database = {
           notification_id: string;
           payload: Json;
           recipient_user_id: string;
+          resolved_at: string | null;
+          resolved_by: string | null;
           scheduled_for: string | null;
           type: Database['public']['Enums']['notification_type'];
         }[];
@@ -1726,6 +1748,15 @@ export type Database = {
       resolve_hmod_on_duty: { Args: { p_at: string }; Returns: string };
       send_break_nag: { Args: { p_break_id: string }; Returns: number };
       send_preference_reminders: { Args: never; Returns: number };
+      set_allied_resolved: {
+        Args: {
+          p_notification_id: string;
+          p_now: string;
+          p_resolved: boolean;
+          p_user_id: string;
+        };
+        Returns: boolean;
+      };
       snapshot_float_ack_reminders: {
         Args: {
           p_destination_assignment_ids: string[];

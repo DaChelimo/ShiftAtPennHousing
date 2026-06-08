@@ -439,3 +439,41 @@ INSERT INTO shift_block_assignments (assignment_id, block_id, user_id, status, v
 -- Fred (overrideAdvisoryWorker) opted out for the Summer period → opted_out advisory.
 INSERT INTO period_targets (user_id, period_id, target_hours, opted_out) VALUES
   ('a0000000-0000-4000-8000-000000000007', 'c0000000-0000-4000-8000-000000000002', 0, true);
+
+-- =====================================================================
+-- S3 Allied-resolved e2e fixtures (web-remediation, audit #3).
+-- The action inbox (/inbox) reads the SIGNED-IN manager's notifications (RLS-scoped).
+-- These four rows give Hana Quad (the Quad HM, a0…0008) an UNRESOLVED + a RESOLVED
+-- Allied alert (hmod_urgent, payload.house_id=quad → she may resolve via
+-- user_has_house_admin_role(Hana,'quad')), a non-urgent UNREAD item (mark-read
+-- target), and a FUTURE item (hidden by the #18b due gate). Times are now()-relative
+-- because the inbox data layer judges due/future against the REAL clock
+-- (getInboxData(view, new Date())). N1/N2 carry DISTINCT reasons so the Playwright
+-- suite can address each row, and are seeded acknowledged (read) so N3 is the sole
+-- unread dot. Fixed ids + ON CONFLICT → idempotent under `supabase db reset`.
+-- =====================================================================
+INSERT INTO notifications
+  (notification_id, recipient_user_id, type, scheduled_for, delivered_at, acknowledged_at,
+   resolved_at, resolved_by, payload)
+VALUES
+  -- N1 — UNRESOLVED Allied alert for quad (default-view target). Acknowledged (read).
+  ('f0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000008',
+   'hmod_urgent', now() - interval '1 hour', now() - interval '1 hour', now() - interval '50 minutes',
+   NULL, NULL,
+   jsonb_build_object('target', 'hm', 'reason', 'float_no_acknowledgment', 'house_id', 'quad',
+     'block_id', 'b0000000-0000-4000-8000-000000060800', 'block_start_at', '2026-06-08 10:00:00-04')),
+  -- N2 — RESOLVED Allied alert for quad (resolved-view target). Resolved by Hana; read.
+  ('f0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000008',
+   'hmod_urgent', now() - interval '2 hours', now() - interval '2 hours', now() - interval '90 minutes',
+   now() - interval '30 minutes', 'a0000000-0000-4000-8000-000000000008',
+   jsonb_build_object('target', 'hm', 'reason', 'floater_declined', 'house_id', 'quad',
+     'block_id', 'b0000000-0000-4000-8000-000000060830', 'block_start_at', '2026-06-08 10:30:00-04')),
+  -- N3 — a NON-urgent UNREAD notification (mark-read target).
+  ('f0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000008',
+   'hm_leave_notice', now() - interval '1 hour', now() - interval '1 hour', NULL, NULL, NULL,
+   jsonb_build_object('kind', 'hm_leave_notice')),
+  -- N4 — a FUTURE-scheduled notification (#18b: hidden until due).
+  ('f0000000-0000-4000-8000-000000000004', 'a0000000-0000-4000-8000-000000000008',
+   'ack_reminder', now() + interval '2 days', NULL, NULL, NULL, NULL,
+   jsonb_build_object('kind', 'reminder'))
+ON CONFLICT (notification_id) DO NOTHING;

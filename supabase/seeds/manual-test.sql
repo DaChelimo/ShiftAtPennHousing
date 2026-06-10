@@ -149,16 +149,23 @@ ON CONFLICT DO NOTHING;
 
 -- ----------------------------------------------------------------------------
 -- 3. Fall 2026 period + operating calendar, then generate the semester's blocks.
---    Submission window is left OPEN (deadline 2026-08-12) so you can also test
---    worker preference submission; close it early by setting preference_deadline
---    to a past timestamp if you want preferences locked before building.
+--    The preference deadline is the night before the term starts (2026-06-14);
+--    it is STAMPED at the very end of this script (see section 5). We create the
+--    period with an OPEN window (NULL deadline) here so the section-4
+--    preference/target inserts always run — the deadline trigger rejects writes
+--    once the window closes, which would otherwise break re-runs after 2026-06-14.
 -- ----------------------------------------------------------------------------
 INSERT INTO scheduling_periods
   (period_id, period_name, profile_name, start_date, end_date, preference_deadline, published_at)
 VALUES
   ('c0000000-0000-4000-8000-0000000fa112', 'Fall 2026', 'regular_school_year',
-   '2026-06-15', '2026-12-17', '2026-08-12 23:59:59-04', NULL)
+   '2026-06-15', '2026-12-17', NULL, NULL)
 ON CONFLICT (period_id) DO NOTHING;
+
+-- Force the window open for the seeding below, even on a re-run where a prior
+-- run already stamped the real (possibly now-past) deadline.
+UPDATE scheduling_periods SET preference_deadline = NULL
+WHERE period_id = 'c0000000-0000-4000-8000-0000000fa112';
 
 INSERT INTO operating_calendar (date, profile_name)
 SELECT d::date, 'regular_school_year'
@@ -204,6 +211,17 @@ FROM (
 ) s
 WHERE s.status IS NOT NULL
 ON CONFLICT (user_id, block_id, period_id) DO NOTHING;
+
+-- ----------------------------------------------------------------------------
+-- 5. Stamp the real preference deadline: the night before the term starts.
+--    Done LAST so every preference/target insert above runs under an open
+--    window (keeping the seed idempotent regardless of run date). To test
+--    worker preference submission, run before 2026-06-14; to test the drafter
+--    against locked preferences, run after it (or hand-set a past timestamp).
+-- ----------------------------------------------------------------------------
+UPDATE scheduling_periods
+SET preference_deadline = '2026-06-14 23:59:59-04'
+WHERE period_id = 'c0000000-0000-4000-8000-0000000fa112';
 
 COMMIT;
 

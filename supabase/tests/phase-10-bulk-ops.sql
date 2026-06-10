@@ -60,7 +60,7 @@ SELECT plan(46);
 -- 0. Fixtures: users, the SM-of-house-05 role, the recurring-slot blocks, the
 --    operating calendar + scheduling period.
 --
---    Anchor: a FIXED Thursday-evening NY-local timestamp in July 2026 — chosen
+--    Anchor: a FIXED Thursday-evening NY-local timestamp in July 2027 — chosen
 --    DST-stable (EDT throughout July/August, so every weekly occurrence shares
 --    the same UTC offset and the recurring-slot pattern (DOW + local time)
 --    matches cleanly across all eight weeks, AGENTS invariant #6). All block
@@ -96,10 +96,14 @@ INSERT INTO public.user_roles (user_id, role, scope_house_id)
 VALUES ('0a000001-0000-0000-0000-000000000004', 'sm', 'house-05')
 ON CONFLICT DO NOTHING;
 
--- Anchor: 2026-07-02 19:00 America/New_York (EDT). Stored as timestamptz.
+-- Anchor: 2027-07-01 19:00 America/New_York (EDT). Stored as timestamptz.
+-- (Was 2026-07-02; bumped +52 weeks — same Thursday, same EDT/DST-stable window —
+-- to clear the seed's Jun–Aug 2026 "Summer 2026" e2e period, which overlaps this
+-- suite's anchor-derived scheduling_periods row and would trip the no-overlap
+-- exclusion. Everything else here is anchor-relative, so the suite just shifts.)
 SELECT set_config(
   'test.p10.anchor',
-  ('2026-07-02 19:00'::timestamp AT TIME ZONE 'America/New_York')::text,
+  ('2027-07-01 19:00'::timestamp AT TIME ZONE 'America/New_York')::text,
   false
 );
 
@@ -141,7 +145,7 @@ ON CONFLICT (date) DO UPDATE SET profile_name = EXCLUDED.profile_name;
 -- next semester (out of scope). Covers the drop date (the anchor's date).
 INSERT INTO public.scheduling_periods (period_name, profile_name, start_date, end_date)
 VALUES (
-  'Fall 2026', 'regular_school_year',
+  'Fall 2027', 'regular_school_year',
   ((current_setting('test.p10.anchor')::timestamptz AT TIME ZONE 'America/New_York')::date - 8),
   ((current_setting('test.p10.anchor')::timestamptz + interval '38 days')
     AT TIME ZONE 'America/New_York')::date

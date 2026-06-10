@@ -6,7 +6,7 @@
 --           name  "<First> <n> <House>"        e.g. "Alice 1 Harnwell"
 --           email "<first>-<house>@upenn.edu"  e.g. alice-harnwell@upenn.edu
 --           password: abc123   (everyone)
--- Period:   Fall 2026 — 2026-08-19 .. 2026-12-17 (regular_school_year)
+-- Period:   Fall 2026 — 2026-06-15 .. 2026-12-17 (regular_school_year)
 --           Whole-semester blocks generated; preferences + targets seeded so the
 --           Phase-1 "preference-assisted" drafter (draft 1) shows real grouping.
 --           Nothing is drafted or published — you draft/override in the tool.
@@ -57,6 +57,15 @@ DELETE FROM period_targets            WHERE period_id <> 'c0000000-0000-4000-800
 DELETE FROM draft_block_assignments   WHERE period_id <> 'c0000000-0000-4000-8000-0000000fa112';
 DELETE FROM preference_reminder_sends WHERE period_id <> 'c0000000-0000-4000-8000-0000000fa112';
 DELETE FROM scheduling_periods        WHERE period_id <> 'c0000000-0000-4000-8000-0000000fa112';
+
+-- The base seed hand-inserts two Quad blocks on 2026-06-15 (its e2e "quad_monday")
+-- pre-assigned to a dev @pennhousing.test user. Now that Fall starts 2026-06-15,
+-- generate_blocks_for_range would ON CONFLICT-skip those slots and leave the dev
+-- assignment in place, polluting the clean roster. Drop them (assignments cascade)
+-- so the generator emits proper vacant seats for that morning instead.
+DELETE FROM shift_blocks
+WHERE block_id IN ('b0000000-0000-4000-8000-000000060800',
+                   'b0000000-0000-4000-8000-000000060830');
 
 -- ----------------------------------------------------------------------------
 -- 1. DuBois house + config (Harnwell & Quad config come from the base seed).
@@ -148,17 +157,17 @@ INSERT INTO scheduling_periods
   (period_id, period_name, profile_name, start_date, end_date, preference_deadline, published_at)
 VALUES
   ('c0000000-0000-4000-8000-0000000fa112', 'Fall 2026', 'regular_school_year',
-   '2026-08-19', '2026-12-17', '2026-08-12 23:59:59-04', NULL)
+   '2026-06-15', '2026-12-17', '2026-08-12 23:59:59-04', NULL)
 ON CONFLICT (period_id) DO NOTHING;
 
 INSERT INTO operating_calendar (date, profile_name)
 SELECT d::date, 'regular_school_year'
-FROM generate_series('2026-08-19'::date, '2026-12-17'::date, interval '1 day') AS d
+FROM generate_series('2026-06-15'::date, '2026-12-17'::date, interval '1 day') AS d
 ON CONFLICT (date) DO NOTHING;
 
 -- Reads operating_calendar + staffing_patterns → emits 30-min blocks + vacant
 -- assignments for Harnwell/Quad/DuBois across the whole semester. Idempotent.
-SELECT * FROM generate_blocks_for_range('2026-08-19'::date, '2026-12-17'::date);
+SELECT * FROM generate_blocks_for_range('2026-06-15'::date, '2026-12-17'::date);
 
 -- ----------------------------------------------------------------------------
 -- 4. Worker submissions (24 SWs): 20h target each + a deterministic preference

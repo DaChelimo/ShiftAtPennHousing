@@ -102,6 +102,40 @@ class WorkerShiftsRepository(
         return edge.invoke("permanent-drop", body)
     }
 
+    /**
+     * Claim an open shift → the phase-05 `claim-shift` Edge Function (`claim_type:
+     * 'temporary'`). The open-shift feed row id IS the vacant block's `assignment_id`
+     * (worker_open_shifts exposes `assignment_id::text AS id`), which is exactly what
+     * the EF's `claim_open_shift` RPC keys on. Best-effort (the UI flips its optimistic
+     * local move regardless); `EdgeResult.ok` reports the 2xx.
+     *
+     * The SERVER is authoritative for the hours-cap, the T-2h cutoff, cross-house
+     * eligibility (Harnwell training constraint — invariant #1) and FCFS conflict
+     * resolution; the client cap/claimable gating stays a pre-check only. One feed row
+     * is one 30-minute block (invariant #5); permanent pickup (`claim_type:
+     * 'permanent'`) is out of scope here (the EF returns 501).
+     */
+    suspend fun claimShift(shift: OpenShift): EdgeResult =
+        edge.invoke(
+            "claim-shift",
+            Json.encodeToString(ClaimShiftRequest(assignmentId = shift.id, claimType = "temporary")),
+        )
+
+    /**
+     * Reclaim a shift the worker dropped that is still open → the SAME `claim-shift`
+     * Edge Function. `drop_shift` vacates the block in place (status → 'vacant') WITHOUT
+     * changing its `assignment_id`, so the dropped-still-open `MyShift.id` is the very
+     * `assignment_id` now sitting vacant in `worker_open_shifts`. Reclaiming is therefore
+     * a temporary claim keyed on that id — no separate backend exists or is needed. The
+     * server re-applies the same cap / T-2h / FCFS checks; if someone else already took
+     * the slot the EF returns `shift_unavailable` and the next snapshot reconciles.
+     */
+    suspend fun reclaimShift(shift: MyShift): EdgeResult =
+        edge.invoke(
+            "claim-shift",
+            Json.encodeToString(ClaimShiftRequest(assignmentId = shift.id, claimType = "temporary")),
+        )
+
     suspend fun fetchWorkerWeek(userId: String): WorkerSnapshot {
         val myShifts =
             supabase
@@ -256,6 +290,13 @@ private fun NotificationWireRow.toModel(): NotificationItem =
 private data class DropShiftRequest(
     @SerialName("assignment_ids") val assignmentIds: List<String>,
     @SerialName("drop_type") val dropType: String,
+)
+
+/** `claim-shift` request — the vacant block's assignment id + claim scope (§5.3). */
+@Serializable
+private data class ClaimShiftRequest(
+    @SerialName("assignment_id") val assignmentId: String,
+    @SerialName("claim_type") val claimType: String,
 )
 
 /** `permanent-drop` request — the recurring slot, by house + NY-local day + HH:MM start. */

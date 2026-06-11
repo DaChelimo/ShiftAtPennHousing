@@ -144,6 +144,14 @@ struct ShiftsRootView: View {
         }
         .sheet(item: $claimTarget) { shift in
             ClaimFlowSheet(vm: model.vm, shift: shift, currentWeeklyHours: DemoFactory.shared.demoWeeklyHours) {
+                // Live host POSTs `claim-shift` (best-effort) while the ViewModel does the
+                // optimistic local pickup. The server is authoritative for the hours-cap,
+                // T-2h cutoff, cross-house eligibility and FCFS; client gating was a
+                // pre-check. The next Realtime snapshot reconciles the UI. Demo = local-only.
+                if liveUserId != nil {
+                    let repo = WorkerBackend.shared.shiftsRepository
+                    Task { _ = try? await repo.claimShift(shift: shift) }
+                }
                 model.vm.claim(shift: shift)
                 claimSucceeded = true
             }
@@ -227,7 +235,15 @@ struct ShiftsRootView: View {
             ) {
                 VStack(spacing: 10) {
                     ForEach(model.state.myShifts.dropped, id: \.id) { s in
-                        myShiftCard(s, "dropped_shift_card", reclaim: { model.vm.reclaim(shiftId: s.id) })
+                        myShiftCard(s, "dropped_shift_card", reclaim: {
+                            // Live host POSTs the SAME `claim-shift` to retake the
+                            // still-vacant slot (best-effort); demo = local-only.
+                            if liveUserId != nil {
+                                let repo = WorkerBackend.shared.shiftsRepository
+                                Task { _ = try? await repo.reclaimShift(shift: s) }
+                            }
+                            model.vm.reclaim(shiftId: s.id)
+                        })
                     }
                 }
             }

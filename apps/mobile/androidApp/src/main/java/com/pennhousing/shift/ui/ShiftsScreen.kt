@@ -127,6 +127,12 @@ fun ShiftsApp(
     // Live host POSTs to `drop-shift` / `permanent-drop` on confirm (best-effort) while
     // the ViewModel still does the optimistic local move; demo defaults to no live write.
     onDropShift: (MyShift, Boolean) -> Unit = { _, _ -> },
+    // Live host POSTs to `claim-shift` on confirm (best-effort) while the ViewModel still
+    // does the optimistic local pickup; demo defaults to no live write.
+    onClaimShift: (OpenShift) -> Unit = {},
+    // Live host POSTs the same `claim-shift` to reclaim a dropped-still-open shift
+    // (its assignment_id is still vacant); demo defaults to no live write.
+    onReclaimShift: (MyShift) -> Unit = {},
 ) {
     ShiftTheme {
         val state by shiftsVm.uiState.collectAsStateWithLifecycle()
@@ -185,7 +191,7 @@ fun ShiftsApp(
                 }
 
                 when (selectedIndex) {
-                    TAB_MY -> MyShiftsTabContent(state.myShifts, shiftsVm, currentWeeklyHours, breakProfile, onDropShift)
+                    TAB_MY -> MyShiftsTabContent(state.myShifts, shiftsVm, currentWeeklyHours, breakProfile, onDropShift, onReclaimShift)
                     TAB_HOME ->
                         HomeOpenTabContent(
                             tab = state.homeOpen,
@@ -193,6 +199,7 @@ fun ShiftsApp(
                             currentWeeklyHours = currentWeeklyHours,
                             breakProfile = breakProfile,
                             onClaimed = { claimSuccess = true },
+                            onClaimShift = onClaimShift,
                         )
                     TAB_OTHER ->
                         OtherHousesTabContent(
@@ -201,6 +208,7 @@ fun ShiftsApp(
                             currentWeeklyHours = currentWeeklyHours,
                             breakProfile = breakProfile,
                             onClaimed = { claimSuccess = true },
+                            onClaimShift = onClaimShift,
                         )
                     TAB_CALENDAR -> CalendarTabContent(calendarVm)
                     TAB_UPDATES ->
@@ -261,6 +269,7 @@ private fun MyShiftsTabContent(
     currentWeeklyHours: Double,
     breakProfile: Boolean,
     onDropShift: (MyShift, Boolean) -> Unit = { _, _ -> },
+    onReclaimShift: (MyShift) -> Unit = {},
 ) {
     var dropTarget by remember { mutableStateOf<MyShift?>(null) }
 
@@ -291,7 +300,20 @@ private fun MyShiftsTabContent(
                 count = tab.dropped.size,
                 emptyText = "Nothing dropped. 👍",
             ) {
-                ShiftCardColumn { tab.dropped.forEach { MyShiftCardItem(it, "dropped_shift_card", reclaim = { vm.reclaim(it.id) }) } }
+                ShiftCardColumn {
+                    tab.dropped.forEach { dropped ->
+                        MyShiftCardItem(
+                            dropped,
+                            "dropped_shift_card",
+                            reclaim = {
+                                // Live host POSTs `claim-shift` to retake the still-vacant
+                                // slot (best-effort); the ViewModel does the optimistic move.
+                                onReclaimShift(dropped)
+                                vm.reclaim(dropped.id)
+                            },
+                        )
+                    }
+                }
             }
         }
         item {
@@ -399,6 +421,7 @@ private fun HomeOpenTabContent(
     currentWeeklyHours: Double,
     breakProfile: Boolean,
     onClaimed: () -> Unit,
+    onClaimShift: (OpenShift) -> Unit = {},
 ) {
     var claimTarget by remember { mutableStateOf<OpenShift?>(null) }
 
@@ -438,6 +461,9 @@ private fun HomeOpenTabContent(
             currentWeeklyHours = currentWeeklyHours,
             breakProfile = breakProfile,
             onConfirmed = {
+                // Live host POSTs `claim-shift` (best-effort); the ViewModel does the
+                // optimistic local pickup. Server stays authoritative for cap/T-2h/FCFS.
+                onClaimShift(shift)
                 vm.claim(shift)
                 onClaimed()
             },
@@ -667,6 +693,7 @@ private fun OtherHousesTabContent(
     currentWeeklyHours: Double,
     breakProfile: Boolean,
     onClaimed: () -> Unit,
+    onClaimShift: (OpenShift) -> Unit = {},
 ) {
     var claimTarget by remember { mutableStateOf<OpenShift?>(null) }
 
@@ -706,6 +733,9 @@ private fun OtherHousesTabContent(
             currentWeeklyHours = currentWeeklyHours,
             breakProfile = breakProfile,
             onConfirmed = {
+                // Live host POSTs `claim-shift` (best-effort); the ViewModel does the
+                // optimistic local pickup. Server stays authoritative for cap/T-2h/FCFS.
+                onClaimShift(shift)
                 vm.claim(shift)
                 onClaimed()
             },

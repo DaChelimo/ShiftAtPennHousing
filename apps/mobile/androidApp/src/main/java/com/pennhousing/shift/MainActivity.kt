@@ -263,6 +263,18 @@ private fun LiveShiftsRoot(
                         if (permanent) repo.permanentDrop(shift) else repo.dropShift(shift)
                     }
                 },
+                onClaimShift = { shift ->
+                    // POST the real claim → `claim-shift` (best-effort) while the ViewModel
+                    // does the optimistic local pickup. The server is authoritative for the
+                    // hours-cap, T-2h cutoff, cross-house eligibility and FCFS; the client
+                    // gating was a pre-check. The next Realtime snapshot reconciles the UI.
+                    prefsScope.launch { repo.claimShift(shift) }
+                },
+                onReclaimShift = { shift ->
+                    // Reclaim a dropped-still-open shift via the SAME `claim-shift` EF
+                    // (its assignment_id is still vacant). Best-effort; optimistic locally.
+                    prefsScope.launch { repo.reclaimShift(shift) }
+                },
             )
         }
     }

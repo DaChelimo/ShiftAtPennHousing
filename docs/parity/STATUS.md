@@ -9,7 +9,7 @@ Status legend: ☐ pending · ◐ in-progress · ☑ done (gate green) · ⚠ bl
 | ID   | Chunk                                                                                                                                                      | Status | Gate result            | Commit    |
 | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ---------------------- | --------- |
 | T1-0 | Mobile data-layer write foundation (reusable `EdgeFunctionClient`) — folded into T1-2 (first write caller); `PreferencesRepository` is the proven template | ☐      | —                      | —         |
-| T1-1 | Updates feed live (`fetchNotifications`/`observeNotifications` already exist, just uncalled)                                                               | ☑      | JVM+assemble+iOS green | `PENDING` |
+| T1-1 | Updates feed live (`fetchNotifications`/`observeNotifications` already exist, just uncalled)                                                               | ☑      | JVM+assemble+iOS green | `0e7f07a` |
 | T1-2 | My Shifts drop/reclaim (+ creates `EdgeFunctionClient`)                                                                                                    | ☐      | —                      | —         |
 | T1-3 | Open Shifts claim                                                                                                                                          | ☐      | —                      | —         |
 | T1-4 | Float ack/decline                                                                                                                                          | ☐      | —                      | —         |

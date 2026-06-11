@@ -21,7 +21,7 @@ import {
   type PublishStats,
 } from '../../lib/actions/builder';
 import type { BuilderBlock, BuilderData } from '../../lib/data/scheduleBuilder';
-import { Avatar, Button, Icon, IconButton, Modal, Notification, Tag } from '../ui';
+import { Avatar, Button, Icon, IconButton, Modal, Notification, Tag, TextInput } from '../ui';
 import './builder.css';
 
 const HOURS_PER_BLOCK = 0.5;
@@ -67,6 +67,9 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
   const [published, setPublished] = useState(data.published);
   const [publishStats, setPublishStats] = useState<PublishStats | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Phase-2 worker search (§6.2 / design): a client-side filter over the
+  // already-loaded full roster — no new query. Empty = show everyone.
+  const [rosterQuery, setRosterQuery] = useState('');
 
   // Finalize a drag on mouse-up anywhere.
   useEffect(() => {
@@ -366,7 +369,12 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
                         <Phase1CardView card={phase1Card} onClick={onPhase1Click} />
                       )}
                       {phase2Roster !== null && (
-                        <Phase2RosterView roster={phase2Roster} onClick={onPhase2Click} />
+                        <Phase2RosterView
+                          roster={phase2Roster}
+                          query={rosterQuery}
+                          onQueryChange={setRosterQuery}
+                          onClick={onPhase2Click}
+                        />
                       )}
                     </div>
                   </>
@@ -641,16 +649,43 @@ function Phase1CardView({
 
 function Phase2RosterView({
   roster,
+  query,
+  onQueryChange,
   onClick,
 }: {
   roster: Phase2Entry[];
+  query: string;
+  onQueryChange: (value: string) => void;
   onClick: (entry: Phase2Entry) => void;
 }) {
+  const q = query.trim().toLowerCase();
+  const filtered =
+    q === '' ? roster : roster.filter((e) => e.worker.name.toLowerCase().includes(q));
+
   return (
     <div data-testid="phase2-roster" className="prefgroup">
-      <div className="prefgroup-label">Full roster · {roster.length}</div>
+      <div className="side-search">
+        <TextInput
+          icon="search"
+          type="search"
+          data-testid="builder-roster-search"
+          placeholder="Search workers"
+          aria-label="Search workers"
+          value={query}
+          onChange={(e) => onQueryChange(e.target.value)}
+        />
+      </div>
+      <div className="prefgroup-label">
+        Full roster · {filtered.length}
+        {q !== '' && filtered.length !== roster.length && ` of ${roster.length}`}
+      </div>
+      {filtered.length === 0 && (
+        <div className="prefgroup-empty t-meta" data-testid="builder-roster-empty">
+          No workers match “{query.trim()}”
+        </div>
+      )}
       <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-        {roster.map((entry) => {
+        {filtered.map((entry) => {
           const cannot = entry.advisories.some((a) => a.kind === 'cannot');
           const optedOut = entry.advisories.some((a) => a.kind === 'opted_out');
           return (

@@ -27,6 +27,8 @@ object WorkerBackend {
 
     val shiftsRepository: WorkerShiftsRepository by lazy { WorkerShiftsRepository(client) }
 
+    val preferencesRepository: PreferencesRepository by lazy { PreferencesRepository(client) }
+
     /** Point `AppConfig.accessTokenProvider` at the live worker JWT (call after sign-in). */
     fun wireAccessToken() {
         AppConfig.accessTokenProvider = { client.auth.currentAccessTokenOrNull() }

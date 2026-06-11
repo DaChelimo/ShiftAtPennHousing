@@ -121,6 +121,9 @@ fun ShiftsApp(
     breakProfile: Boolean = false,
     toast: ToastNotification? = null,
     onSignOut: () -> Unit = {},
+    // Live host POSTs to `submit-preferences` then flips the optimistic state; demo
+    // defaults to the local-only flip (the screen's own ViewModel.submit).
+    onSubmitPreferences: () -> Unit = preferencesVm::submit,
 ) {
     ShiftTheme {
         val state by shiftsVm.uiState.collectAsStateWithLifecycle()
@@ -202,7 +205,7 @@ fun ShiftsApp(
                             feed = updatesState.feed,
                             onOpenAck = { showAckModal = true },
                         )
-                    TAB_PREFS -> PreferencesTabContent(preferencesVm)
+                    TAB_PREFS -> PreferencesTabContent(preferencesVm, onSubmitPreferences)
                     TAB_BREAK -> BreakClaimTabContent(breakClaimVm)
                     TAB_SETTINGS -> SettingsTabContent(settingsVm, onSignOut)
                 }

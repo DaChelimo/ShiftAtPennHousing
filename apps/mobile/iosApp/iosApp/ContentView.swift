@@ -54,6 +54,9 @@ private enum Tab: Int { case mine, home, other, calendar, updates, preferences, 
 struct ShiftsRootView: View {
     /// Optional sign-out hook from the live host (demo passes nil → no-op).
     var onSignOut: () -> Void = {}
+    /// The authenticated worker's id on the backend-configured path (nil in demo).
+    /// When set, the Preferences tab loads the worker's real period and submits live.
+    var liveUserId: String? = nil
 
     @StateObject private var model = ShiftsObservable(vm: DemoFactory.shared.shiftsViewModel())
     @StateObject private var calendarModel = CalendarObservable(vm: DemoFactory.shared.calendarViewModel())
@@ -107,6 +110,13 @@ struct ShiftsRootView: View {
             }
         }
         .sheet(isPresented: $showAck) { FloatAcknowledgmentView(vm: ackVm) }
+        .task {
+            // Backend-configured path: load the worker's real active period + wire the
+            // live submit. Demo (liveUserId == nil) keeps the DemoFactory period.
+            if let uid = liveUserId {
+                await prefsModel.activateLive(repo: WorkerBackend.shared.preferencesRepository, userId: uid)
+            }
+        }
     }
 
     // MARK: tabs

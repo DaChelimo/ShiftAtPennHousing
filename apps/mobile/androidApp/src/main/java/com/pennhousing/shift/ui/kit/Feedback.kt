@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -109,6 +110,12 @@ fun ShiftBanner(
     Box(
         modifier
             .fillMaxWidth()
+            // Height = content (the Row). Without this, the accent's fillMaxHeight (below)
+            // resolves against the PARENT's max height — which blows the banner up to fill
+            // the screen inside a bounded, non-scrollable Column (e.g. PreferencesScreen).
+            // IntrinsicSize.Min pins it to content height in any container; in the scrollable
+            // screens that already use ShiftBanner the result is unchanged (content height).
+            .height(IntrinsicSize.Min)
             .clip(ShiftShapes.banner)
             .background(c.surface)
             .border(Dimens.hairline, c.divider, ShiftShapes.banner),

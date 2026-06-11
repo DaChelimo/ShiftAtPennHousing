@@ -37,11 +37,11 @@ struct LiveRootView: View {
     @StateObject private var login = LoginObservable(gateway: WorkerBackend.shared.authGateway)
 
     var body: some View {
-        if login.authedSession != nil {
+        if let session = login.authedSession {
             ShiftsRootView(onSignOut: {
                 Task { try? await WorkerBackend.shared.authGateway.signOut() }
                 login.authedSession = nil
-            })
+            }, liveUserId: session.userId)
         } else {
             LoginScreen(model: login)
         }

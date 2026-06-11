@@ -33,6 +33,7 @@ import com.pennhousing.shift.shared.auth.StartDestination
 import com.pennhousing.shift.shared.data.WorkerBackend
 import com.pennhousing.shift.shared.data.WorkerSnapshot
 import com.pennhousing.shift.shared.platform.AppConfig
+import com.pennhousing.shift.shared.preferences.PreferencePeriod
 import com.pennhousing.shift.shared.samples.DemoData
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
 import com.pennhousing.shift.shared.viewmodel.BreakClaimViewModel
@@ -206,9 +207,18 @@ private fun LiveShiftsRoot(
             val ackVm = remember { AckDeclineViewModel(DemoData.pendingFloat(now), now) }
             val updatesVm = remember { UpdatesViewModel(DemoData.notifications(now), now) }
             val calendarVm = remember(snapshot) { CalendarViewModel(snapshot.myShifts, now) }
-            // Preferences + Break-claim run on the demo snapshot until their data layer
-            // wires (scheduling_periods deadline / break-period name are not worker-readable).
-            val preferencesVm = remember { PreferencesViewModel(DemoData.preferencePeriod(now)) }
+            // Preferences: load the worker's real active period (scheduling_periods now
+            // worker-readable — migration 20260610000001); fall back to the demo period
+            // while loading or when no period is open. Submit POSTs to `submit-preferences`.
+            val prefsRepo = remember { WorkerBackend.preferencesRepository }
+            val prefsScope = rememberCoroutineScope()
+            val livePeriod by
+                produceState<PreferencePeriod?>(initialValue = null, session.userId) {
+                    value = runCatching { prefsRepo.fetchActivePreferencePeriod(session.userId) }.getOrNull()
+                }
+            val preferencesVm =
+                remember(livePeriod) { PreferencesViewModel(livePeriod ?: DemoData.preferencePeriod(now)) }
+            // Break-claim still runs on the demo snapshot (break-period name not worker-readable).
             val breakClaimVm = remember { BreakClaimViewModel(DemoData.breakClaim(now)) }
             // Settings runs on the demo profile until the profile read wires (users /
             // user_roles / houses are RLS-readable; no purpose-built profile view yet).
@@ -224,6 +234,14 @@ private fun LiveShiftsRoot(
                 settingsVm = settingsVm,
                 currentWeeklyHours = DemoData.DEMO_WEEKLY_HOURS,
                 onSignOut = onSignOut,
+                onSubmitPreferences = {
+                    // POST the current edits, then flip to the optimistic submitted state
+                    // (mirrors the Shifts screen's claim/drop). A failed POST simply means
+                    // no row lands on the web oversight; the UI does not block on it.
+                    val payload = preferencesVm.submitPayload()
+                    prefsScope.launch { prefsRepo.submitPreferences(payload) }
+                    preferencesVm.submit()
+                },
             )
         }
     }

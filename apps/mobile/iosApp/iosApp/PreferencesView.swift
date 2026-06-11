@@ -9,22 +9,54 @@ import Shared
 /// once submitted. Selector `accessibilityIdentifier`s match the Maestro contract.
 
 /// Observes the preference `StateFlow` (selectDay/paint/setBrush/… mutate state).
+///
+/// Demo by default. The backend-configured host calls `activateLive` (mirroring the
+/// Android `MainActivity` live wiring): it loads the worker's real active period and
+/// swaps the demo VM for it, and `submit` then POSTs to the `submit-preferences`
+/// Edge Function before the optimistic local flip.
 @MainActor
 final class PreferencesObservable: ObservableObject {
-    let vm: PreferencesViewModel
+    private(set) var vm: PreferencesViewModel
     @Published var state: PreferencesUiState
     private var task: Task<Void, Never>?
+    private var live: (repo: PreferencesRepository, userId: String)?
 
     init(vm: PreferencesViewModel) {
         self.vm = vm
         self.state = vm.uiState.value
-        task = Task { [weak self] in
-            guard let self else { return }
-            for await s in self.vm.uiState { self.state = s }
-        }
+        observe()
     }
 
     deinit { task?.cancel() }
+
+    private func observe() {
+        task?.cancel()
+        let vm = self.vm
+        task = Task { [weak self] in
+            for await s in vm.uiState { self?.state = s }
+        }
+    }
+
+    /// Live host: remember the repo+user, load the real active period, swap the VM.
+    /// Falls back to the demo period (no swap) when nothing is open.
+    func activateLive(repo: PreferencesRepository, userId: String) async {
+        guard live == nil else { return }
+        live = (repo, userId)
+        guard let period = try? await repo.fetchActivePreferencePeriod(userId: userId) else { return }
+        vm = PreferencesViewModel(period: period)
+        state = vm.uiState.value
+        observe()
+    }
+
+    /// Live → POST the current edits, then the optimistic local flip; demo → flip only
+    /// (mirrors the Shifts screen's claim/drop). A failed POST simply lands no row.
+    func submit() {
+        if let live {
+            let payload = vm.submitPayload()
+            Task { _ = try? await live.repo.submitPreferences(payload: payload) }
+        }
+        vm.submit()
+    }
 }
 
 struct PreferencesScreen: View {
@@ -69,7 +101,7 @@ struct PreferencesScreen: View {
             .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 16)
 
             if !st.submitted {
-                ShiftButton(title: "Submit preferences", action: { model.vm.submit() }, size: .lg, fullWidth: true)
+                ShiftButton(title: "Submit preferences", action: { model.submit() }, size: .lg, fullWidth: true)
                     .padding(.horizontal, 16).padding(.bottom, 24)
                     .accessibilityIdentifier("submit_preferences_button")
             }

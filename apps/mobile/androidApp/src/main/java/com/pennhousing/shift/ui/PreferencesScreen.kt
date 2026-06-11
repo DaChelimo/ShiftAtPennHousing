@@ -60,7 +60,10 @@ import com.pennhousing.shift.ui.theme.ShiftTheme
  * submitted. Selector ids match `apps/mobile/maestro/README.md`.
  */
 @Composable
-fun PreferencesTabContent(vm: PreferencesViewModel) {
+fun PreferencesTabContent(
+    vm: PreferencesViewModel,
+    onSubmit: () -> Unit = vm::submit,
+) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val c = ShiftTheme.colors
 
@@ -126,7 +129,7 @@ fun PreferencesTabContent(vm: PreferencesViewModel) {
             ) {
                 ShiftButton(
                     text = "Submit preferences",
-                    onClick = vm::submit,
+                    onClick = onSubmit,
                     modifier = Modifier.fillMaxWidth().testTag("submit_preferences_button"),
                     size = ButtonSize.Lg,
                     fullWidth = true,

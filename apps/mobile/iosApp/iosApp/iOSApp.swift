@@ -30,20 +30,58 @@ struct RootView: View {
     }
 }
 
-/// The backend-configured path: login until authenticated, then the shifts screen.
-/// Launch-time session restore is a follow-up (mirrors the iOS data-layer TODO); a
-/// fresh sign-in promotes to shifts, and Sign out returns here.
+/// The backend-configured path: on cold launch, restore any persisted Supabase
+/// session (`SupabaseAuthGateway.currentSession()` → `loadFromStorage()` +
+/// `awaitInitialization()`) and route straight to the shifts screen when it is still
+/// valid — the iOS analogue of Android `MainActivity`'s `currentSession()` bootstrap.
+/// While the (async) restore is in flight a loading view shows; with no/expired
+/// session it falls through to login. A fresh sign-in promotes to shifts, and Sign out
+/// returns here. The validity check reuses the shared, tested `SessionValidity` so the
+/// restore decision is identical to Android's `AppBootstrap.decide`.
 struct LiveRootView: View {
     @StateObject private var login = LoginObservable(gateway: WorkerBackend.shared.authGateway)
+    /// nil while the launch restore runs; .some(session?) once it has resolved.
+    @State private var restored: AuthSession?? = nil
 
     var body: some View {
-        if let session = login.authedSession {
-            ShiftsRootView(onSignOut: {
-                Task { try? await WorkerBackend.shared.authGateway.signOut() }
-                login.authedSession = nil
-            }, liveUserId: session.userId)
-        } else {
-            LoginScreen(model: login)
+        Group {
+            // An in-session sign-in (login.authedSession) takes precedence; otherwise
+            // use the launch-restored session once the restore has resolved.
+            if let session = login.authedSession ?? restored.flatMap({ $0 }) {
+                ShiftsRootView(onSignOut: {
+                    Task { try? await WorkerBackend.shared.authGateway.signOut() }
+                    login.authedSession = nil
+                    // A sign-out forces LOGIN even though a session was restored at launch.
+                    restored = .some(nil)
+                }, liveUserId: session.userId)
+            } else if restored == nil {
+                LaunchRestoreView()
+            } else {
+                LoginScreen(model: login)
+            }
+        }
+        .task {
+            // Restore the persisted session exactly once on cold launch (mirrors
+            // Android's `produceState { currentSession() }` + `AppBootstrap.decide`).
+            // `restoreValidSession()` runs the shared `SessionValidity` gate Kotlin-side
+            // and wires the worker JWT on success, so a valid restored session routes
+            // straight to shifts and carries the bearer on every privileged read.
+            guard restored == nil else { return }
+            let session = try? await WorkerBackend.shared.restoreValidSession()
+            restored = .some(session)
+        }
+    }
+}
+
+/// Brief launch-time loading state while the persisted session is restored (the iOS
+/// analogue of Android's skeleton `LoadingScreen`).
+private struct LaunchRestoreView: View {
+    @Environment(\.colorScheme) private var scheme
+    var body: some View {
+        let c = ShiftColors.resolve(scheme)
+        return ZStack {
+            c.bg.ignoresSafeArea()
+            ProgressView()
         }
     }
 }

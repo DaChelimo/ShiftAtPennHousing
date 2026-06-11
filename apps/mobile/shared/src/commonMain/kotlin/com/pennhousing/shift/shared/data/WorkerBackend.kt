@@ -1,9 +1,12 @@
 package com.pennhousing.shift.shared.data
 
+import com.pennhousing.shift.shared.auth.AuthSession
+import com.pennhousing.shift.shared.auth.SessionValidity
 import com.pennhousing.shift.shared.network.createAppSupabaseClient
 import com.pennhousing.shift.shared.platform.AppConfig
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
+import kotlin.time.Clock
 
 /**
  * Worker auth — the single shared Supabase client + token wiring (DESIGN §5, item 2).
@@ -34,5 +37,23 @@ object WorkerBackend {
     /** Point `AppConfig.accessTokenProvider` at the live worker JWT (call after sign-in). */
     fun wireAccessToken() {
         AppConfig.accessTokenProvider = { client.auth.currentAccessTokenOrNull() }
+    }
+
+    /**
+     * Launch-time session restore (the iOS analogue of Android `MainActivity`'s
+     * `produceState { currentSession() }` + `AppBootstrap.decide` gate). Restores any
+     * persisted Supabase session through [authGateway] and returns it only when the
+     * shared, tested [SessionValidity] check passes for the current wall clock —
+     * otherwise null (caller shows login). On a valid restore it wires the worker JWT.
+     *
+     * The clock read and the `kotlin.time` validity arithmetic stay Kotlin-side so the
+     * Swift caller never has to bridge `kotlin.time.Instant`/`Duration`; the pure
+     * `auth/` package (and its tests) is untouched.
+     */
+    suspend fun restoreValidSession(): AuthSession? {
+        val session = authGateway.currentSession()
+        val valid = if (SessionValidity.isValid(session, Clock.System.now())) session else null
+        if (valid != null) wireAccessToken()
+        return valid
     }
 }

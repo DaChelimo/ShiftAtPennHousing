@@ -254,6 +254,15 @@ private fun LiveShiftsRoot(
                     prefsScope.launch { prefsRepo.submitPreferences(payload) }
                     preferencesVm.submit()
                 },
+                onDropShift = { shift, permanent ->
+                    // POST the real drop (best-effort) while the ViewModel does the
+                    // optimistic local move. Occurrence → `drop-shift`; the recurring
+                    // slot → `permanent-drop`. A failed POST leaves the server unchanged;
+                    // the next Realtime snapshot reconciles the UI.
+                    prefsScope.launch {
+                        if (permanent) repo.permanentDrop(shift) else repo.dropShift(shift)
+                    }
+                },
             )
         }
     }

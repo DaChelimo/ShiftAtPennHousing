@@ -4,21 +4,13 @@ import com.pennhousing.shift.shared.preferences.PrefBlock
 import com.pennhousing.shift.shared.preferences.PrefBrush
 import com.pennhousing.shift.shared.preferences.PreferencePeriod
 import com.pennhousing.shift.shared.preferences.SubmitPreferencesPayload
-import com.pennhousing.shift.shared.platform.AppConfig
+import com.pennhousing.shift.shared.network.EdgeFunctionClient
 import com.pennhousing.shift.shared.shifts.MONTH_SHORT
 import com.pennhousing.shift.shared.shifts.NEW_YORK
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order
-import io.ktor.client.HttpClient
-import io.ktor.client.request.headers
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.client.statement.HttpResponse
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
-import io.ktor.http.isSuccess
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
@@ -63,8 +55,8 @@ import kotlin.time.Instant
  */
 class PreferencesRepository(
     private val supabase: SupabaseClient,
+    private val edge: EdgeFunctionClient = EdgeFunctionClient(),
 ) {
-    private val http by lazy { HttpClient() }
 
     /**
      * The active preference period for [userId], or null when there is no open/published
@@ -180,9 +172,6 @@ class PreferencesRepository(
      * no row on the web oversight.
      */
     suspend fun submitPreferences(payload: SubmitPreferencesPayload): Boolean {
-        val base = AppConfig.supabaseUrl
-        if (base.isBlank()) return false
-        val bearer = AppConfig.accessTokenProvider() ?: AppConfig.supabaseAnonKey
         val body =
             Json.encodeToString(
                 SubmitPreferencesRequest(
@@ -192,18 +181,7 @@ class PreferencesRepository(
                     optedOut = payload.optedOut,
                 ),
             )
-        return runCatching {
-            val response: HttpResponse =
-                http.post("$base/functions/v1/submit-preferences/preferences") {
-                    headers {
-                        append("apikey", AppConfig.supabaseAnonKey)
-                        append("Authorization", "Bearer $bearer")
-                    }
-                    contentType(ContentType.Application.Json)
-                    setBody(body)
-                }
-            response.status.isSuccess()
-        }.getOrDefault(false)
+        return edge.invoke("submit-preferences/preferences", body).ok
     }
 
     /** DB `preference_status_enum` → brush; `none` (and unknowns) leave the cell default. */

@@ -128,7 +128,20 @@ struct ShiftsRootView: View {
             }
         }
         .accessibilityIdentifier("shifts_screen")
-        .sheet(item: $dropTarget) { shift in DropFlowSheet(vm: model.vm, shift: shift) }
+        .sheet(item: $dropTarget) { shift in
+            // Live host POSTs the real drop on confirm (best-effort); demo keeps the
+            // local-only optimistic move. Mirrors the preferences-submit live wiring.
+            DropFlowSheet(vm: model.vm, shift: shift, onDrop: liveUserId == nil ? nil : { droppedShift, permanent in
+                let repo = WorkerBackend.shared.shiftsRepository
+                Task {
+                    if permanent {
+                        _ = try? await repo.permanentDrop(shift: droppedShift)
+                    } else {
+                        _ = try? await repo.dropShift(shift: droppedShift)
+                    }
+                }
+            })
+        }
         .sheet(item: $claimTarget) { shift in
             ClaimFlowSheet(vm: model.vm, shift: shift, currentWeeklyHours: DemoFactory.shared.demoWeeklyHours) {
                 model.vm.claim(shift: shift)
@@ -727,6 +740,9 @@ private struct PermanentRecurringNote: View {
 private struct DropFlowSheet: View {
     let vm: ShiftsScreenViewModel
     let shift: MyShift
+    /// Live host POSTs to `drop-shift` / `permanent-drop` on confirm (best-effort);
+    /// nil in the demo path. The Bool is the permanent-vs-occurrence scope.
+    var onDrop: ((MyShift, Bool) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
     @State private var permanentScope = false
@@ -776,7 +792,7 @@ private struct DropFlowSheet: View {
 
                 ShiftButton(
                     title: permanentScope ? "Drop permanently" : "Drop this week",
-                    action: { vm.drop(shiftId: shift.id); dismiss() },
+                    action: { onDrop?(shift, permanentScope); vm.drop(shiftId: shift.id); dismiss() },
                     variant: .destructiveFilled, fullWidth: true
                 )
                 .disabled(plan.shortNotice && !acknowledged)

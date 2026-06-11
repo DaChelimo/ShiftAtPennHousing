@@ -5,8 +5,11 @@ import com.pennhousing.shift.shared.model.House
 import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.model.OpenFeed
 import com.pennhousing.shift.shared.model.OpenShift
+import com.pennhousing.shift.shared.network.EdgeFunctionClient
+import com.pennhousing.shift.shared.network.EdgeResult
 import com.pennhousing.shift.shared.notifications.NotificationItem
 import com.pennhousing.shift.shared.notifications.categoryForType
+import com.pennhousing.shift.shared.shifts.NEW_YORK
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.realtime.PostgresAction
@@ -14,8 +17,13 @@ import io.github.jan.supabase.realtime.channel
 import io.github.jan.supabase.realtime.postgresChangeFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.datetime.DayOfWeek
+import kotlinx.datetime.isoDayNumber
+import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.time.Instant
@@ -48,7 +56,52 @@ data class ToastNotification(
 
 class WorkerShiftsRepository(
     private val supabase: SupabaseClient,
+    private val edge: EdgeFunctionClient = EdgeFunctionClient(),
 ) {
+    /**
+     * Drop a single occurrence of [shift] this week → the phase-05 `drop-shift` Edge
+     * Function (`drop_type: 'temporary'`). The block's `assignment_id` is the worker-read
+     * model row id; the EF's `drop_shift` RPC reattributes it to a vacant slot. Best-effort
+     * (the UI flips its optimistic local state regardless); `EdgeResult.ok` reports the 2xx.
+     *
+     * One `MyShift` is one 30-minute block (invariant #5), so this drops exactly one
+     * contiguous occurrence — `assignment_ids` is the single-element array the EF requires.
+     */
+    suspend fun dropShift(shift: MyShift): EdgeResult {
+        val body =
+            Json.encodeToString(
+                DropShiftRequest(
+                    assignmentIds = listOf(shift.id),
+                    dropType = "temporary",
+                ),
+            )
+        return edge.invoke("drop-shift", body)
+    }
+
+    /**
+     * Drop the recurring slot [shift] sits in → the `permanent-drop` Edge Function, which
+     * releases it as a permanent opening. The EF identifies the slot by house + NY-local
+     * day-of-week (Sun=0) + the block's HH:MM start (invariant #6); `dropping_user_id` is
+     * omitted so the EF defaults it to the authenticated worker (self-initiated path).
+     */
+    suspend fun permanentDrop(shift: MyShift): EdgeResult {
+        val local = shift.start.toLocalDateTime(NEW_YORK)
+        // The EF maps weekday names through ['Sun','Mon',…], so Sunday is index 0 and
+        // Monday…Saturday are 1…6 (kotlinx `isoDayNumber`, with Sunday folded to 0).
+        val dayOfWeek = if (local.dayOfWeek == DayOfWeek.SUNDAY) 0 else local.dayOfWeek.isoDayNumber
+        val hh = local.hour.toString().padStart(2, '0')
+        val mm = local.minute.toString().padStart(2, '0')
+        val body =
+            Json.encodeToString(
+                PermanentDropRequest(
+                    houseId = shift.house.id,
+                    dayOfWeek = dayOfWeek,
+                    blockStartLocals = listOf("$hh:$mm"),
+                ),
+            )
+        return edge.invoke("permanent-drop", body)
+    }
+
     suspend fun fetchWorkerWeek(userId: String): WorkerSnapshot {
         val myShifts =
             supabase
@@ -195,6 +248,23 @@ private fun NotificationWireRow.toModel(): NotificationItem =
         createdAt = Instant.parse(createdAt),
         unread = acknowledgedAt == null,
     )
+
+// ----- Edge-Function request bodies. -----
+
+/** `drop-shift` request — a contiguous run of assignment ids dropped for one week. */
+@Serializable
+private data class DropShiftRequest(
+    @SerialName("assignment_ids") val assignmentIds: List<String>,
+    @SerialName("drop_type") val dropType: String,
+)
+
+/** `permanent-drop` request — the recurring slot, by house + NY-local day + HH:MM start. */
+@Serializable
+private data class PermanentDropRequest(
+    @SerialName("house_id") val houseId: String,
+    @SerialName("day_of_week") val dayOfWeek: Int,
+    @SerialName("block_start_locals") val blockStartLocals: List<String>,
+)
 
 private fun JsonObject.toToast(): ToastNotification? {
     val title = this["title"]?.jsonPrimitive?.content ?: return null

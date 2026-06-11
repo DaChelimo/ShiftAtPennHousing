@@ -124,6 +124,9 @@ fun ShiftsApp(
     // Live host POSTs to `submit-preferences` then flips the optimistic state; demo
     // defaults to the local-only flip (the screen's own ViewModel.submit).
     onSubmitPreferences: () -> Unit = preferencesVm::submit,
+    // Live host POSTs to `drop-shift` / `permanent-drop` on confirm (best-effort) while
+    // the ViewModel still does the optimistic local move; demo defaults to no live write.
+    onDropShift: (MyShift, Boolean) -> Unit = { _, _ -> },
 ) {
     ShiftTheme {
         val state by shiftsVm.uiState.collectAsStateWithLifecycle()
@@ -182,7 +185,7 @@ fun ShiftsApp(
                 }
 
                 when (selectedIndex) {
-                    TAB_MY -> MyShiftsTabContent(state.myShifts, shiftsVm, currentWeeklyHours, breakProfile)
+                    TAB_MY -> MyShiftsTabContent(state.myShifts, shiftsVm, currentWeeklyHours, breakProfile, onDropShift)
                     TAB_HOME ->
                         HomeOpenTabContent(
                             tab = state.homeOpen,
@@ -257,6 +260,7 @@ private fun MyShiftsTabContent(
     vm: ShiftsScreenViewModel,
     currentWeeklyHours: Double,
     breakProfile: Boolean,
+    onDropShift: (MyShift, Boolean) -> Unit = { _, _ -> },
 ) {
     var dropTarget by remember { mutableStateOf<MyShift?>(null) }
 
@@ -304,7 +308,13 @@ private fun MyShiftsTabContent(
     }
 
     dropTarget?.let { shift ->
-        DropSheet(shift = shift, vm = vm, breakProfile = breakProfile, onDismiss = { dropTarget = null })
+        DropSheet(
+            shift = shift,
+            vm = vm,
+            breakProfile = breakProfile,
+            onDrop = onDropShift,
+            onDismiss = { dropTarget = null },
+        )
     }
 }
 
@@ -1045,6 +1055,7 @@ private fun DropSheet(
     vm: ShiftsScreenViewModel,
     breakProfile: Boolean,
     onDismiss: () -> Unit,
+    onDrop: (MyShift, Boolean) -> Unit = { _, _ -> },
 ) {
     val c = ShiftTheme.colors
     val row = remember(shift) { shift.toRow() }
@@ -1106,6 +1117,9 @@ private fun DropSheet(
             ShiftButton(
                 if (permanentScope) "Drop permanently" else "Drop this week",
                 onClick = {
+                    // Live host POSTs to `drop-shift` / `permanent-drop` (best-effort);
+                    // the ViewModel still does the optimistic local section move.
+                    onDrop(shift, permanentScope)
                     vm.drop(shift.id)
                     onDismiss()
                 },

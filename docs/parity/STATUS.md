@@ -6,18 +6,18 @@ Status legend: ☐ pending · ◐ in-progress · ☑ done (gate green) · ⚠ bl
 
 ## Track T1 — Wire existing backends + test
 
-| ID   | Chunk                                                                                                                                                      | Status | Gate result            | Commit    |
-| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ---------------------- | --------- |
-| T1-0 | Mobile data-layer write foundation (reusable `EdgeFunctionClient`) — folded into T1-2 (first write caller); `PreferencesRepository` is the proven template | ☐      | —                      | —         |
-| T1-1 | Updates feed live (`fetchNotifications`/`observeNotifications` already exist, just uncalled)                                                               | ☑      | JVM+assemble+iOS green | `0e7f07a` |
-| T1-2 | My Shifts drop/reclaim (+ creates `EdgeFunctionClient`)                                                                                                    | ☐      | —                      | —         |
-| T1-3 | Open Shifts claim                                                                                                                                          | ☐      | —                      | —         |
-| T1-4 | Float ack/decline                                                                                                                                          | ☐      | —                      | —         |
-| T1-5 | Break claim/drop                                                                                                                                           | ☐      | —                      | —         |
-| T1-6 | Preferences submit                                                                                                                                         | ☑      | pre-landed             | `f53d335` |
-| T1-7 | Settings broadcast + profile                                                                                                                               | ☐      | —                      | —         |
-| T1-8 | Login live path                                                                                                                                            | ☐      | —                      | —         |
-| T1-9 | Web inbox realtime                                                                                                                                         | ☐      | —                      | —         |
+| ID   | Chunk                                                                                                                                                                    | Status | Gate result            | Commit    |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ | ---------------------- | --------- |
+| T1-0 | Mobile data-layer write foundation (reusable `EdgeFunctionClient`) — created in T1-2; `PreferencesRepository.submitPreferences` refactored onto it (behavior-preserving) | ☑      | JVM+assemble+iOS green | `T1-2`    |
+| T1-1 | Updates feed live (`fetchNotifications`/`observeNotifications` already exist, just uncalled)                                                                             | ☑      | JVM+assemble+iOS green | `0e7f07a` |
+| T1-2 | My Shifts **drop** wired (`drop-shift` / `permanent-drop`, Android + iOS) + creates `EdgeFunctionClient`. Reclaim deferred to T1-3.                                      | ☑      | JVM+assemble+iOS green | `8aa8b10` |
+| T1-3 | Open Shifts claim                                                                                                                                                        | ☐      | —                      | —         |
+| T1-4 | Float ack/decline                                                                                                                                                        | ☐      | —                      | —         |
+| T1-5 | Break claim/drop                                                                                                                                                         | ☐      | —                      | —         |
+| T1-6 | Preferences submit                                                                                                                                                       | ☑      | pre-landed             | `f53d335` |
+| T1-7 | Settings broadcast + profile                                                                                                                                             | ☐      | —                      | —         |
+| T1-8 | Login live path                                                                                                                                                          | ☐      | —                      | —         |
+| T1-9 | Web inbox realtime                                                                                                                                                       | ☐      | —                      | —         |
 
 ## Track T2 — Build missing backend + UI
 
@@ -68,4 +68,4 @@ Status legend: ☐ pending · ◐ in-progress · ☑ done (gate green) · ⚠ bl
 
 ---
 
-_Last updated: T1-1 done (Updates feed wired to live `fetchNotifications` on the authed path, Android + iOS; demo path unchanged). Next: T1-2 (drop + EdgeFunctionClient)._
+_Last updated: T1-2 done (My-Shifts drop wired live to `drop-shift` / `permanent-drop`, Android + iOS; demo path unchanged optimistic-local). Created the reusable `EdgeFunctionClient` (T1-0) and refactored `PreferencesRepository.submitPreferences` onto it. Residual: reclaim (→ T1-3 claim), week-total hours chip still demo, permanent-drop break-profile gating, `dropped_still_open` read-model (→ T2-1). Next: T1-3 (claim) reuses `EdgeFunctionClient`._

@@ -60,6 +60,10 @@ import kotlin.time.Clock
 fun FloatAcknowledgmentModal(
     ackVm: AckDeclineViewModel,
     onClose: () -> Unit,
+    // Live host POSTs to `acknowledge-float` / `decline-float` (best-effort) when the
+    // optimistic local transition actually succeeds; demo defaults to no live write.
+    onAcknowledgeFloat: (String) -> Unit = {},
+    onDeclineFloat: (String) -> Unit = {},
 ) {
     val state by ackVm.uiState.collectAsStateWithLifecycle()
     // The screen's load instant — drives the static "starts in" + countdown (the kit
@@ -81,8 +85,15 @@ fun FloatAcknowledgmentModal(
             StatusOrCountdown(state.phase, hero)
             ActionButtons(
                 state = state,
-                onAck = { ackVm.acknowledge(Clock.System.now()) },
-                onDecline = { ackVm.decline(Clock.System.now()) },
+                // Fire the live RPC only when the optimistic local transition actually
+                // succeeds (the VM returns true iff it moved PENDING → terminal before
+                // the T-10m deadline) — a no-op tap past the deadline must not POST.
+                onAck = {
+                    if (ackVm.acknowledge(Clock.System.now())) onAcknowledgeFloat(state.floatId)
+                },
+                onDecline = {
+                    if (ackVm.decline(Clock.System.now())) onDeclineFloat(state.floatId)
+                },
                 onClose = onClose,
             )
         }

@@ -35,10 +35,21 @@ struct FloatAcknowledgmentView: View {
     @Environment(\.colorScheme) private var scheme
     /// The screen's load instant — drives the static "starts in" + countdown.
     private let now: Instant
+    /// Live host POSTs to `acknowledge-float` / `decline-float` (best-effort) when the
+    /// optimistic local transition succeeds; demo passes nil → no live write. The
+    /// argument is the float id the modal is showing.
+    private let onAcknowledge: ((String) -> Void)?
+    private let onDecline: ((String) -> Void)?
 
-    init(vm: AckDeclineViewModel) {
+    init(
+        vm: AckDeclineViewModel,
+        onAcknowledge: ((String) -> Void)? = nil,
+        onDecline: ((String) -> Void)? = nil
+    ) {
         _model = StateObject(wrappedValue: AckObservable(vm: vm))
         now = DemoFactory.shared.now()
+        self.onAcknowledge = onAcknowledge
+        self.onDecline = onDecline
     }
 
     var body: some View {
@@ -166,7 +177,14 @@ struct FloatAcknowledgmentView: View {
             VStack(spacing: 10) {
                 ShiftButton(
                     title: "Acknowledge",
-                    action: { _ = model.vm.acknowledge(now: DemoFactory.shared.now()) },
+                    // Fire the live RPC only when the optimistic local transition actually
+                    // succeeds (the VM returns true iff it moved PENDING → terminal before
+                    // the T-10m deadline) — a no-op tap past the deadline must not POST.
+                    action: {
+                        if model.vm.acknowledge(now: DemoFactory.shared.now()).boolValue {
+                            onAcknowledge?(state.floatId)
+                        }
+                    },
                     variant: .filled, size: .lg, systemIcon: ShiftIcons.check, fullWidth: true
                 )
                 .disabled(!state.canRespond)
@@ -174,7 +192,11 @@ struct FloatAcknowledgmentView: View {
 
                 ShiftButton(
                     title: "Decline",
-                    action: { _ = model.vm.decline(now: DemoFactory.shared.now()) },
+                    action: {
+                        if model.vm.decline(now: DemoFactory.shared.now()).boolValue {
+                            onDecline?(state.floatId)
+                        }
+                    },
                     variant: .outlined, size: .lg, fullWidth: true
                 )
                 .disabled(!state.canRespond)

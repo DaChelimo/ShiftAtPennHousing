@@ -1,5 +1,6 @@
 package com.pennhousing.shift.shared.samples
 
+import com.pennhousing.shift.shared.model.FloatAck
 import com.pennhousing.shift.shared.notifications.NotificationItem
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
 import com.pennhousing.shift.shared.viewmodel.BreakClaimViewModel
@@ -34,6 +35,14 @@ object DemoFactory {
         val now = now()
         return AckDeclineViewModel(DemoData.pendingFloat(now), now)
     }
+
+    /**
+     * Live ack/decline VM from the worker's real pending [float] — supplies `now` here
+     * so iOS need not construct a `kotlin.time.Instant` across the Swift bridge (mirrors
+     * [ackViewModel] for the demo path). Android builds the live VM inline in
+     * `MainActivity`; iOS calls this from `AckObservable.activateLive`.
+     */
+    fun ackViewModel(float: FloatAck): AckDeclineViewModel = AckDeclineViewModel(float, now())
 
     fun updatesViewModel(): UpdatesViewModel {
         val now = now()

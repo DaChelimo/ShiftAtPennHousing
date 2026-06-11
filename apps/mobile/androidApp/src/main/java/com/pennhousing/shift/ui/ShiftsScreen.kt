@@ -133,6 +133,11 @@ fun ShiftsApp(
     // Live host POSTs the same `claim-shift` to reclaim a dropped-still-open shift
     // (its assignment_id is still vacant); demo defaults to no live write.
     onReclaimShift: (MyShift) -> Unit = {},
+    // Live host POSTs to `acknowledge-float` / `decline-float` (best-effort) while the
+    // ack ViewModel still does the optimistic local phase transition; demo defaults to
+    // no live write. The argument is the float id the modal is showing.
+    onAcknowledgeFloat: (String) -> Unit = {},
+    onDeclineFloat: (String) -> Unit = {},
 ) {
     ShiftTheme {
         val state by shiftsVm.uiState.collectAsStateWithLifecycle()
@@ -224,7 +229,12 @@ fun ShiftsApp(
         }
 
         if (showAckModal) {
-            FloatAcknowledgmentModal(ackVm) { showAckModal = false }
+            FloatAcknowledgmentModal(
+                ackVm = ackVm,
+                onAcknowledgeFloat = onAcknowledgeFloat,
+                onDeclineFloat = onDeclineFloat,
+                onClose = { showAckModal = false },
+            )
         }
     }
 }

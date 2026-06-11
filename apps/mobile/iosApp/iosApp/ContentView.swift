@@ -75,6 +75,30 @@ final class UpdatesObservable: ObservableObject {
     }
 }
 
+/// Holds the float-ack `AckDeclineViewModel`. Demo by default; the backend-configured
+/// host calls `activateLive` (mirroring the Android `MainActivity` live wiring): it
+/// loads the worker's live pending float (own `float_assignments` row + own pending
+/// float-out blocks, both RLS-scoped) and swaps the demo VM for a live one. Falls back
+/// to the demo float (no swap) while the read is in flight or when none is outstanding.
+@MainActor
+final class AckHostObservable: ObservableObject {
+    @Published private(set) var vm: AckDeclineViewModel
+    private var live = false
+
+    init() {
+        self.vm = DemoFactory.shared.ackViewModel()
+    }
+
+    /// Live host: load the worker's pending float, rebuild the VM. `DemoFactory`
+    /// supplies `now` Kotlin-side so we avoid bridging a `kotlin.time.Instant`.
+    func activateLive(repo: WorkerShiftsRepository, userId: String) async {
+        guard !live else { return }
+        live = true
+        guard let float = try? await repo.fetchPendingFloat(userId: userId), let float else { return }
+        vm = DemoFactory.shared.ackViewModel(float: float)
+    }
+}
+
 private enum Tab: Int { case mine, home, other, calendar, updates, preferences, breakShifts, settings }
 
 struct ShiftsRootView: View {
@@ -89,7 +113,7 @@ struct ShiftsRootView: View {
     @StateObject private var prefsModel = PreferencesObservable(vm: DemoFactory.shared.preferencesViewModel())
     @StateObject private var breakModel = BreakClaimObservable(vm: DemoFactory.shared.breakClaimViewModel())
     @StateObject private var settingsModel = SettingsObservable(vm: DemoFactory.shared.settingsViewModel())
-    private let ackVm = DemoFactory.shared.ackViewModel()
+    @StateObject private var ackModel = AckHostObservable()
     @StateObject private var updatesModel = UpdatesObservable(vm: DemoFactory.shared.updatesViewModel())
     @Environment(\.colorScheme) private var scheme
 
@@ -156,13 +180,28 @@ struct ShiftsRootView: View {
                 claimSucceeded = true
             }
         }
-        .sheet(isPresented: $showAck) { FloatAcknowledgmentView(vm: ackVm) }
+        .sheet(isPresented: $showAck) {
+            // Live host POSTs `acknowledge-float` / `decline-float` (best-effort) when the
+            // optimistic local transition succeeds; demo (liveUserId == nil) = local-only.
+            FloatAcknowledgmentView(
+                vm: ackModel.vm,
+                onAcknowledge: liveUserId == nil ? nil : { floatId in
+                    let repo = WorkerBackend.shared.shiftsRepository
+                    Task { _ = try? await repo.acknowledgeFloat(floatId: floatId) }
+                },
+                onDecline: liveUserId == nil ? nil : { floatId in
+                    let repo = WorkerBackend.shared.shiftsRepository
+                    Task { _ = try? await repo.declineFloat(floatId: floatId) }
+                }
+            )
+        }
         .task {
             // Backend-configured path: load the worker's real active period + wire the
             // live submit. Demo (liveUserId == nil) keeps the DemoFactory period.
             if let uid = liveUserId {
                 await prefsModel.activateLive(repo: WorkerBackend.shared.preferencesRepository, userId: uid)
                 await updatesModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
+                await ackModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
             }
         }
     }

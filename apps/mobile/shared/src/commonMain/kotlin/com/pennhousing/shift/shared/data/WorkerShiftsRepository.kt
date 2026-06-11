@@ -1,6 +1,7 @@
 package com.pennhousing.shift.shared.data
 
 import com.pennhousing.shift.shared.model.AssignmentKind
+import com.pennhousing.shift.shared.model.FloatAck
 import com.pennhousing.shift.shared.model.House
 import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.model.OpenFeed
@@ -136,6 +137,74 @@ class WorkerShiftsRepository(
             Json.encodeToString(ClaimShiftRequest(assignmentId = shift.id, claimType = "temporary")),
         )
 
+    /**
+     * The worker's CURRENT pending float, mapped to the pure [FloatAck] the ack/decline
+     * modal renders, or `null` if none is outstanding. Worker-readable end-to-end:
+     * `float_assignments` has an own-row SELECT policy (`user_id = auth.uid()`), and the
+     * destination house + float start come from the worker's own `pending_float_in`
+     * blocks (`worker_my_shifts`, kind `float_out`, `pending = true`), which are
+     * RLS-scoped to the worker.
+     *
+     * Resolution: read the single `status = 'pending'` float row for `float_id` +
+     * `destination_assignment_ids`, then pick the earliest pending float-out block among
+     * those ids for the destination house and float start. A float already
+     * acked/declined server-side simply has no `pending` row → `null` (terminal state is
+     * resolved by the absence of a pending float, matching the modal's idempotent phase
+     * machine).
+     */
+    suspend fun fetchPendingFloat(userId: String): FloatAck? {
+        val float =
+            supabase
+                .from(TABLE_FLOAT_ASSIGNMENTS)
+                .select {
+                    filter {
+                        eq("user_id", userId)
+                        eq("status", "pending")
+                    }
+                }
+                .decodeList<PendingFloatRow>()
+                .firstOrNull() ?: return null
+
+        val destinationIds = float.destinationAssignmentIds.toSet()
+        if (destinationIds.isEmpty()) return null
+
+        // The destination blocks live in the worker's own pending float-out rows; pick
+        // the earliest by start to anchor the hero's "Starts in" + destination house.
+        val destinationBlock =
+            fetchWorkerWeek(userId).myShifts
+                .asSequence()
+                .filter { it.id in destinationIds }
+                .minByOrNull { it.start } ?: return null
+
+        return FloatAck(
+            floatId = float.floatId,
+            destinationHouse = destinationBlock.house,
+            floatStart = destinationBlock.start,
+        )
+    }
+
+    /**
+     * Acknowledge the worker's pending float → the `acknowledge-float` Edge Function,
+     * a thin worker-authenticated wrapper over the service-role-only `acknowledge_float`
+     * RPC (migration 20260528000014; the RPC is GRANTed to service_role only, so it
+     * cannot be called from the worker's JWT through PostgREST). The worker's own ack is
+     * the one legitimate manual action permitted under no-takeback (invariant #3).
+     * Best-effort (the modal flips its optimistic local phase regardless); idempotent —
+     * a non-pending float resolves to `{ acknowledged: false, reason: 'not_pending' }`.
+     */
+    suspend fun acknowledgeFloat(floatId: String): EdgeResult =
+        edge.invoke("acknowledge-float", Json.encodeToString(FloatActionRequest(floatId = floatId)))
+
+    /**
+     * Decline the worker's pending float → the `decline-float` Edge Function (same shape
+     * as [acknowledgeFloat]; wraps the service-role-only `decline_float` RPC). Declining
+     * reopens the destination block as the original gap and restores the floater home —
+     * the worker's own decline is a legitimate manual action under no-takeback
+     * (invariant #3). Best-effort + idempotent on terminal state.
+     */
+    suspend fun declineFloat(floatId: String): EdgeResult =
+        edge.invoke("decline-float", Json.encodeToString(FloatActionRequest(floatId = floatId)))
+
     suspend fun fetchWorkerWeek(userId: String): WorkerSnapshot {
         val myShifts =
             supabase
@@ -201,6 +270,7 @@ class WorkerShiftsRepository(
         const val VIEW_MY_SHIFTS = "worker_my_shifts"
         const val VIEW_OPEN_SHIFTS = "worker_open_shifts"
         const val TABLE_NOTIFICATIONS = "notifications"
+        const val TABLE_FLOAT_ASSIGNMENTS = "float_assignments"
     }
 }
 
@@ -264,6 +334,17 @@ private fun parseAssignmentKind(raw: String): AssignmentKind =
         else -> AssignmentKind.SCHEDULED
     }
 
+/**
+ * The worker's own `float_assignments` row (own-row RLS). Only the fields the pending
+ * read needs: `float_id` for the RPC and `destination_assignment_ids` to locate the
+ * destination house + float start among the worker's own pending float-out blocks.
+ */
+@Serializable
+internal data class PendingFloatRow(
+    @SerialName("float_id") val floatId: String,
+    @SerialName("destination_assignment_ids") val destinationAssignmentIds: List<String> = emptyList(),
+)
+
 @Serializable
 internal data class NotificationWireRow(
     @SerialName("notification_id") val id: String,
@@ -297,6 +378,12 @@ private data class DropShiftRequest(
 private data class ClaimShiftRequest(
     @SerialName("assignment_id") val assignmentId: String,
     @SerialName("claim_type") val claimType: String,
+)
+
+/** `acknowledge-float` / `decline-float` request — the worker's pending float id. */
+@Serializable
+private data class FloatActionRequest(
+    @SerialName("float_id") val floatId: String,
 )
 
 /** `permanent-drop` request — the recurring slot, by house + NY-local day + HH:MM start. */

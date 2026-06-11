@@ -32,6 +32,7 @@ import com.pennhousing.shift.shared.auth.DataSource
 import com.pennhousing.shift.shared.auth.StartDestination
 import com.pennhousing.shift.shared.data.WorkerBackend
 import com.pennhousing.shift.shared.data.WorkerSnapshot
+import com.pennhousing.shift.shared.model.FloatAck
 import com.pennhousing.shift.shared.notifications.NotificationItem
 import com.pennhousing.shift.shared.platform.AppConfig
 import com.pennhousing.shift.shared.preferences.PreferencePeriod
@@ -186,8 +187,9 @@ private fun LiveOrLoginRoot() {
  * [ShiftsScreenViewModel] from the latest snapshot. A simple loading state shows until
  * the first emission.
  *
- * The float-ack / Updates path keeps the demo [AckDeclineViewModel] for now.
- * TODO(worker-auth): live float-ack feed — the repo grows a pending-float query.
+ * The Updates feed loads the worker's real `notifications` rows; the float-ack modal
+ * loads the worker's live pending float (T1-4) and falls back to the demo float while
+ * the read is in flight or when none is outstanding.
  */
 @Composable
 private fun LiveShiftsRoot(
@@ -205,7 +207,16 @@ private fun LiveShiftsRoot(
         else -> {
             // Rebuild the ViewModel whenever a fresh snapshot arrives (e.g. a float at T-2h).
             val shiftsVm = remember(snapshot) { ShiftsScreenViewModel(snapshot.myShifts, snapshot.openShifts, now) }
-            val ackVm = remember { AckDeclineViewModel(DemoData.pendingFloat(now), now) }
+            // Float ack: load the worker's live pending float (own `float_assignments`
+            // row + own pending float-out blocks, both RLS-scoped); fall back to the demo
+            // float while the read is in flight or when none is outstanding. Ack/decline
+            // POST to `acknowledge-float` / `decline-float` (best-effort) when the
+            // optimistic local transition succeeds. Mirrors the live-notifications pattern.
+            val livePendingFloat by
+                produceState<FloatAck?>(initialValue = null, session.userId) {
+                    value = runCatching { repo.fetchPendingFloat(session.userId) }.getOrNull()
+                }
+            val ackVm = remember(livePendingFloat) { AckDeclineViewModel(livePendingFloat ?: DemoData.pendingFloat(now), now) }
             // Updates: load the worker's real `notifications` rows (RLS-scoped) for the
             // feed; fall back to the demo notifications while the fetch is in flight or
             // if it fails. `urgent`/`floatId` stay unset (the live pending-float linkage
@@ -274,6 +285,17 @@ private fun LiveShiftsRoot(
                     // Reclaim a dropped-still-open shift via the SAME `claim-shift` EF
                     // (its assignment_id is still vacant). Best-effort; optimistic locally.
                     prefsScope.launch { repo.reclaimShift(shift) }
+                },
+                onAcknowledgeFloat = { floatId ->
+                    // POST the real ack → `acknowledge-float` (best-effort) while the ack
+                    // ViewModel already flipped to ACKNOWLEDGED. The worker's own ack is the
+                    // one legitimate manual action under no-takeback (invariant #3).
+                    prefsScope.launch { repo.acknowledgeFloat(floatId) }
+                },
+                onDeclineFloat = { floatId ->
+                    // POST the real decline → `decline-float` (best-effort); the modal already
+                    // flipped to DECLINED. Declining reopens the destination gap server-side.
+                    prefsScope.launch { repo.declineFloat(floatId) }
                 },
             )
         }

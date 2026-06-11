@@ -32,6 +32,7 @@ import com.pennhousing.shift.shared.auth.DataSource
 import com.pennhousing.shift.shared.auth.StartDestination
 import com.pennhousing.shift.shared.data.WorkerBackend
 import com.pennhousing.shift.shared.data.WorkerSnapshot
+import com.pennhousing.shift.shared.notifications.NotificationItem
 import com.pennhousing.shift.shared.platform.AppConfig
 import com.pennhousing.shift.shared.preferences.PreferencePeriod
 import com.pennhousing.shift.shared.samples.DemoData
@@ -205,7 +206,18 @@ private fun LiveShiftsRoot(
             // Rebuild the ViewModel whenever a fresh snapshot arrives (e.g. a float at T-2h).
             val shiftsVm = remember(snapshot) { ShiftsScreenViewModel(snapshot.myShifts, snapshot.openShifts, now) }
             val ackVm = remember { AckDeclineViewModel(DemoData.pendingFloat(now), now) }
-            val updatesVm = remember { UpdatesViewModel(DemoData.notifications(now), now) }
+            // Updates: load the worker's real `notifications` rows (RLS-scoped) for the
+            // feed; fall back to the demo notifications while the fetch is in flight or
+            // if it fails. `urgent`/`floatId` stay unset (the live pending-float linkage
+            // is a later chunk) — this is feed-only. Mirrors the live-preferences pattern.
+            val liveNotifications by
+                produceState<List<NotificationItem>?>(initialValue = null, session.userId) {
+                    value = runCatching { repo.fetchNotifications(session.userId) }.getOrNull()
+                }
+            val updatesVm =
+                remember(liveNotifications) {
+                    UpdatesViewModel(liveNotifications ?: DemoData.notifications(now), now)
+                }
             val calendarVm = remember(snapshot) { CalendarViewModel(snapshot.myShifts, now) }
             // Preferences: load the worker's real active period (scheduling_periods now
             // worker-readable — migration 20260610000001); fall back to the demo period

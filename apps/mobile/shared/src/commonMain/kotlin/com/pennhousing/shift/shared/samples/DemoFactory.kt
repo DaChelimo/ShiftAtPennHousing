@@ -1,5 +1,6 @@
 package com.pennhousing.shift.shared.samples
 
+import com.pennhousing.shift.shared.notifications.NotificationItem
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
 import com.pennhousing.shift.shared.viewmodel.BreakClaimViewModel
 import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
@@ -38,6 +39,14 @@ object DemoFactory {
         val now = now()
         return UpdatesViewModel(DemoData.notifications(now), now)
     }
+
+    /**
+     * Live Updates VM from the worker's real `notifications` rows — supplies `now`
+     * here so iOS need not construct a `kotlin.time.Instant` across the Swift bridge
+     * (mirrors [updatesViewModel] for the demo path). Android builds the live VM
+     * inline in `MainActivity`; iOS calls this from `UpdatesObservable.activateLive`.
+     */
+    fun updatesViewModel(notifications: List<NotificationItem>): UpdatesViewModel = UpdatesViewModel(notifications, now())
 
     fun calendarViewModel(): CalendarViewModel {
         val now = now()

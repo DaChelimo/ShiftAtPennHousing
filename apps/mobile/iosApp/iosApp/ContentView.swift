@@ -49,6 +49,32 @@ final class CalendarObservable: ObservableObject {
     deinit { task?.cancel() }
 }
 
+/// Holds the Updates-tab `UpdatesViewModel`. Demo by default; the backend-configured
+/// host calls `activateLive` (mirroring the Android `MainActivity` live wiring): it
+/// loads the worker's real `notifications` rows (RLS-scoped) and swaps the demo VM for
+/// a live one. Feed-only — `urgent`/`floatId` stay unset (the live pending-float
+/// linkage is a separate chunk). The feed is static (no in-VM mutation), so this just
+/// republishes on the swap.
+@MainActor
+final class UpdatesObservable: ObservableObject {
+    @Published private(set) var feed: UpdatesFeed
+    private var live = false
+
+    init(vm: UpdatesViewModel) {
+        self.feed = vm.uiState.value.feed
+    }
+
+    /// Live host: load the real notifications, rebuild the VM, republish the feed.
+    /// Falls back to the demo feed (no swap) when the fetch fails. `DemoFactory`
+    /// supplies `now` Kotlin-side so we avoid bridging a `kotlin.time.Instant`.
+    func activateLive(repo: WorkerShiftsRepository, userId: String) async {
+        guard !live else { return }
+        live = true
+        guard let items = try? await repo.fetchNotifications(userId: userId) else { return }
+        feed = DemoFactory.shared.updatesViewModel(notifications: items).uiState.value.feed
+    }
+}
+
 private enum Tab: Int { case mine, home, other, calendar, updates, preferences, breakShifts, settings }
 
 struct ShiftsRootView: View {
@@ -64,7 +90,7 @@ struct ShiftsRootView: View {
     @StateObject private var breakModel = BreakClaimObservable(vm: DemoFactory.shared.breakClaimViewModel())
     @StateObject private var settingsModel = SettingsObservable(vm: DemoFactory.shared.settingsViewModel())
     private let ackVm = DemoFactory.shared.ackViewModel()
-    private let updatesVm = DemoFactory.shared.updatesViewModel()
+    @StateObject private var updatesModel = UpdatesObservable(vm: DemoFactory.shared.updatesViewModel())
     @Environment(\.colorScheme) private var scheme
 
     @State private var tab: Tab = .mine
@@ -115,6 +141,7 @@ struct ShiftsRootView: View {
             // live submit. Demo (liveUserId == nil) keeps the DemoFactory period.
             if let uid = liveUserId {
                 await prefsModel.activateLive(repo: WorkerBackend.shared.preferencesRepository, userId: uid)
+                await updatesModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
             }
         }
     }
@@ -332,7 +359,7 @@ struct ShiftsRootView: View {
     // MARK: Updates — §10.1 notifications feed + the §7 pending-float entry
 
     private var updates: some View {
-        let feed = updatesVm.uiState.value.feed
+        let feed = updatesModel.feed
         return Group {
             if feed.isEmpty {
                 EmptyState(

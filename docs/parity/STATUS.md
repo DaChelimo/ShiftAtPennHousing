@@ -6,18 +6,18 @@ Status legend: ☐ pending · ◐ in-progress · ☑ done (gate green) · ⚠ bl
 
 ## Track T1 — Wire existing backends + test
 
-| ID   | Chunk                                                                                                                                                      | Status | Gate result | Commit    |
-| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ----------- | --------- |
-| T1-0 | Mobile data-layer write foundation (reusable `EdgeFunctionClient`) — folded into T1-2 (first write caller); `PreferencesRepository` is the proven template | ☐      | —           | —         |
-| T1-1 | Updates feed live (`fetchNotifications`/`observeNotifications` already exist, just uncalled)                                                               | ☐      | —           | —         |
-| T1-2 | My Shifts drop/reclaim (+ creates `EdgeFunctionClient`)                                                                                                    | ☐      | —           | —         |
-| T1-3 | Open Shifts claim                                                                                                                                          | ☐      | —           | —         |
-| T1-4 | Float ack/decline                                                                                                                                          | ☐      | —           | —         |
-| T1-5 | Break claim/drop                                                                                                                                           | ☐      | —           | —         |
-| T1-6 | Preferences submit                                                                                                                                         | ☑      | pre-landed  | `f53d335` |
-| T1-7 | Settings broadcast + profile                                                                                                                               | ☐      | —           | —         |
-| T1-8 | Login live path                                                                                                                                            | ☐      | —           | —         |
-| T1-9 | Web inbox realtime                                                                                                                                         | ☐      | —           | —         |
+| ID   | Chunk                                                                                                                                                      | Status | Gate result            | Commit    |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ---------------------- | --------- |
+| T1-0 | Mobile data-layer write foundation (reusable `EdgeFunctionClient`) — folded into T1-2 (first write caller); `PreferencesRepository` is the proven template | ☐      | —                      | —         |
+| T1-1 | Updates feed live (`fetchNotifications`/`observeNotifications` already exist, just uncalled)                                                               | ☑      | JVM+assemble+iOS green | `PENDING` |
+| T1-2 | My Shifts drop/reclaim (+ creates `EdgeFunctionClient`)                                                                                                    | ☐      | —                      | —         |
+| T1-3 | Open Shifts claim                                                                                                                                          | ☐      | —                      | —         |
+| T1-4 | Float ack/decline                                                                                                                                          | ☐      | —                      | —         |
+| T1-5 | Break claim/drop                                                                                                                                           | ☐      | —                      | —         |
+| T1-6 | Preferences submit                                                                                                                                         | ☑      | pre-landed             | `f53d335` |
+| T1-7 | Settings broadcast + profile                                                                                                                               | ☐      | —                      | —         |
+| T1-8 | Login live path                                                                                                                                            | ☐      | —                      | —         |
+| T1-9 | Web inbox realtime                                                                                                                                         | ☐      | —                      | —         |
 
 ## Track T2 — Build missing backend + UI
 
@@ -68,4 +68,4 @@ Status legend: ☐ pending · ◐ in-progress · ☑ done (gate green) · ⚠ bl
 
 ---
 
-_Last updated: plan landed; T1-6 found pre-landed (`f53d335`). Next: T1-1 (Updates live), then T1-2 (drop + EdgeFunctionClient)._
+_Last updated: T1-1 done (Updates feed wired to live `fetchNotifications` on the authed path, Android + iOS; demo path unchanged). Next: T1-2 (drop + EdgeFunctionClient)._

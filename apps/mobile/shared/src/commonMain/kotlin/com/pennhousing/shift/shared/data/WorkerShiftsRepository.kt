@@ -68,11 +68,21 @@ class WorkerShiftsRepository(
      * One `MyShift` is one 30-minute block (invariant #5), so this drops exactly one
      * contiguous occurrence — `assignment_ids` is the single-element array the EF requires.
      */
-    suspend fun dropShift(shift: MyShift): EdgeResult {
+    suspend fun dropShift(shift: MyShift): EdgeResult = dropShift(shift.id)
+
+    /**
+     * Drop a single 30-minute block by its `assignment_id` → the `drop-shift` Edge
+     * Function (`drop_type: 'temporary'`). The id is the worker-read model row id; the
+     * EF's `drop_shift` RPC reattributes it to a vacant slot. This string-keyed overload
+     * is reused for break drops — a claimed break shift's `worker_my_shifts` row id IS
+     * its block `assignment_id`, exactly what `drop-shift` keys on (there is no
+     * break-specific drop RPC; confirmed). Best-effort; `EdgeResult.ok` reports the 2xx.
+     */
+    suspend fun dropShift(assignmentId: String): EdgeResult {
         val body =
             Json.encodeToString(
                 DropShiftRequest(
-                    assignmentIds = listOf(shift.id),
+                    assignmentIds = listOf(assignmentId),
                     dropType = "temporary",
                 ),
             )
@@ -135,6 +145,25 @@ class WorkerShiftsRepository(
         edge.invoke(
             "claim-shift",
             Json.encodeToString(ClaimShiftRequest(assignmentId = shift.id, claimType = "temporary")),
+        )
+
+    /**
+     * Claim a break shift from the pool → the phase-11 `break-claim` Edge Function. The
+     * request body matches `claim-shift` exactly — `{ assignment_id, claim_type:
+     * 'temporary' }` — where [assignmentId] is the vacant break block's `worker_open_shifts`
+     * row id (= its block `assignment_id`, what the EF's `claim_break_shift` RPC keys on).
+     * Best-effort (the picker flips its optimistic local claim regardless); `EdgeResult.ok`
+     * reports the 2xx.
+     *
+     * The SERVER is authoritative for the 40h break HARD cap and the Harnwell training
+     * constraint (invariant #1 — no non-Harnwell worker may claim a Harnwell break shift);
+     * the client meter/gating is a pre-check only. One pool row is one 30-minute block
+     * (invariant #5); timestamps are NY `timestamptz` (invariant #6).
+     */
+    suspend fun claimBreak(assignmentId: String): EdgeResult =
+        edge.invoke(
+            "break-claim",
+            Json.encodeToString(ClaimShiftRequest(assignmentId = assignmentId, claimType = "temporary")),
         )
 
     /**

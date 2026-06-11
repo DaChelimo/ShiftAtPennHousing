@@ -56,7 +56,14 @@ import kotlinx.coroutines.delay
  * Drop). Selector ids match `apps/mobile/maestro/README.md`.
  */
 @Composable
-fun BreakClaimTabContent(vm: BreakClaimViewModel) {
+fun BreakClaimTabContent(
+    vm: BreakClaimViewModel,
+    // Live host POSTs to `break-claim` / `drop-shift` (best-effort) while the picker
+    // does the optimistic local move; demo defaults to no live write. The argument is
+    // the break shift's pool-row id (= its block assignment_id).
+    onClaimBreak: (String) -> Unit = {},
+    onDropBreak: (String) -> Unit = {},
+) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val c = ShiftTheme.colors
     var toastTick by remember { mutableIntStateOf(0) }
@@ -106,9 +113,13 @@ fun BreakClaimTabContent(vm: BreakClaimViewModel) {
                                 row = row,
                                 onClaim = {
                                     vm.claim(row.id)
+                                    onClaimBreak(row.id)
                                     toastTick++
                                 },
-                                onDrop = { vm.drop(row.id) },
+                                onDrop = {
+                                    vm.drop(row.id)
+                                    onDropBreak(row.id)
+                                },
                             )
                         }
                     }

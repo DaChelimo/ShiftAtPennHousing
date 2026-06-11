@@ -27,6 +27,11 @@ final class BreakClaimObservable: ObservableObject {
 
 struct BreakClaimScreen: View {
     @ObservedObject var model: BreakClaimObservable
+    /// Live host POSTs to `break-claim` / `drop-shift` (best-effort) while the picker
+    /// does the optimistic local move; demo passes `nil` (local-only). The argument is
+    /// the break shift's pool-row id (= its block assignment_id).
+    var onClaim: ((String) -> Void)? = nil
+    var onDrop: ((String) -> Void)? = nil
     @Environment(\.colorScheme) private var scheme
     @State private var showToast = false
 
@@ -126,7 +131,10 @@ struct BreakClaimScreen: View {
     private func actionButton(_ row: BreakShiftRow) -> some View {
         Group {
             if row.claimedByMe {
-                ShiftButton(title: row.actionLabel, action: { model.vm.drop(id: row.id) }, variant: .destructive, size: .sm)
+                ShiftButton(title: row.actionLabel, action: {
+                    model.vm.drop(id: row.id)
+                    onDrop?(row.id)
+                }, variant: .destructive, size: .sm)
                     .accessibilityIdentifier("break_drop_button")
             } else {
                 ShiftButton(title: row.actionLabel, action: { claim(row.id) }, variant: .filled, size: .sm)
@@ -137,6 +145,7 @@ struct BreakClaimScreen: View {
 
     private func claim(_ id: String) {
         model.vm.claim(id: id)
+        onClaim?(id)
         showToast = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) { showToast = false }
     }

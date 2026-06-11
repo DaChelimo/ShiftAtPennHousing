@@ -138,6 +138,11 @@ fun ShiftsApp(
     // no live write. The argument is the float id the modal is showing.
     onAcknowledgeFloat: (String) -> Unit = {},
     onDeclineFloat: (String) -> Unit = {},
+    // Live host POSTs to `break-claim` / `drop-shift` (best-effort) while the break
+    // picker still does the optimistic local move; demo defaults to no live write. The
+    // argument is the break shift's pool-row id (= its block assignment_id).
+    onClaimBreak: (String) -> Unit = {},
+    onDropBreak: (String) -> Unit = {},
 ) {
     ShiftTheme {
         val state by shiftsVm.uiState.collectAsStateWithLifecycle()
@@ -222,7 +227,7 @@ fun ShiftsApp(
                             onOpenAck = { showAckModal = true },
                         )
                     TAB_PREFS -> PreferencesTabContent(preferencesVm, onSubmitPreferences)
-                    TAB_BREAK -> BreakClaimTabContent(breakClaimVm)
+                    TAB_BREAK -> BreakClaimTabContent(breakClaimVm, onClaimBreak, onDropBreak)
                     TAB_SETTINGS -> SettingsTabContent(settingsVm, onSignOut)
                 }
             }

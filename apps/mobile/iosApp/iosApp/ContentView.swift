@@ -146,7 +146,21 @@ struct ShiftsRootView: View {
                 case .calendar: calendarTab
                 case .updates: updates
                 case .preferences: PreferencesScreen(model: prefsModel)
-                case .breakShifts: BreakClaimScreen(model: breakModel)
+                case .breakShifts: BreakClaimScreen(
+                    model: breakModel,
+                    // Live host POSTs `break-claim` / `drop-shift` (best-effort) while the
+                    // picker does the optimistic local move; demo (liveUserId == nil) =
+                    // local-only. The break pool stays demo-backed until `break_periods` is
+                    // worker-readable (T2-2); the server enforces the 40h hard cap + Harnwell.
+                    onClaim: liveUserId == nil ? nil : { assignmentId in
+                        let repo = WorkerBackend.shared.shiftsRepository
+                        Task { _ = try? await repo.claimBreak(assignmentId: assignmentId) }
+                    },
+                    onDrop: liveUserId == nil ? nil : { assignmentId in
+                        let repo = WorkerBackend.shared.shiftsRepository
+                        Task { _ = try? await repo.dropShift(assignmentId: assignmentId) }
+                    }
+                )
                 case .settings: SettingsScreen(model: settingsModel, onSignOut: onSignOut)
                 }
             }

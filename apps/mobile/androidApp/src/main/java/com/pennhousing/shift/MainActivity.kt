@@ -297,6 +297,20 @@ private fun LiveShiftsRoot(
                     // flipped to DECLINED. Declining reopens the destination gap server-side.
                     prefsScope.launch { repo.declineFloat(floatId) }
                 },
+                onClaimBreak = { assignmentId ->
+                    // POST the real break claim → `break-claim` (best-effort) while the picker
+                    // does the optimistic local move. The server is authoritative for the 40h
+                    // break HARD cap and the Harnwell training constraint (invariant #1); the
+                    // client meter/gating was a pre-check. (The break pool itself is still
+                    // demo-backed until `break_periods` is worker-readable — T2-2.)
+                    prefsScope.launch { repo.claimBreak(assignmentId) }
+                },
+                onDropBreak = { assignmentId ->
+                    // POST the real break drop → `drop-shift` (best-effort); reuses the generic
+                    // drop EF (no break-specific drop RPC). The claimed break block's pool-row
+                    // id is its block assignment_id. Optimistic locally; next snapshot reconciles.
+                    prefsScope.launch { repo.dropShift(assignmentId) }
+                },
             )
         }
     }

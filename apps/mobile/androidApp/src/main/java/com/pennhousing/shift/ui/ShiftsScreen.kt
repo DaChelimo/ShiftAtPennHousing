@@ -9,18 +9,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -42,25 +41,44 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.pennhousing.shift.shared.calendar.CalendarAgenda
+import com.pennhousing.shift.shared.calendar.CalendarDayHeader
+import com.pennhousing.shift.shared.calendar.CalendarWeek
+import com.pennhousing.shift.shared.calendar.WeekDayCell
 import com.pennhousing.shift.shared.data.ToastNotification
 import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.model.OpenShift
+import com.pennhousing.shift.shared.notifications.NotificationCategory
+import com.pennhousing.shift.shared.notifications.NotificationRow
+import com.pennhousing.shift.shared.notifications.UpdatesFeed
 import com.pennhousing.shift.shared.shifts.ClaimCapVerdict
+import com.pennhousing.shift.shared.shifts.ClaimMeter
 import com.pennhousing.shift.shared.shifts.HomeOpenShiftsTab
 import com.pennhousing.shift.shared.shifts.MyShiftCardState
+import com.pennhousing.shift.shared.shifts.MyShiftRow
 import com.pennhousing.shift.shared.shifts.MyShiftsTab
+import com.pennhousing.shift.shared.shifts.OpenShiftCardState
+import com.pennhousing.shift.shared.shifts.OpenShiftRow
 import com.pennhousing.shift.shared.shifts.OtherHousesTab
+import com.pennhousing.shift.shared.shifts.claimMeter
+import com.pennhousing.shift.shared.shifts.hoursBetween
 import com.pennhousing.shift.shared.shifts.toRow
 import com.pennhousing.shift.shared.shifts.weeklyHoursSummary
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
+import com.pennhousing.shift.shared.viewmodel.BreakClaimViewModel
+import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
+import com.pennhousing.shift.shared.viewmodel.PreferencesViewModel
+import com.pennhousing.shift.shared.viewmodel.SettingsViewModel
 import com.pennhousing.shift.shared.viewmodel.ShiftsScreenViewModel
 import com.pennhousing.shift.shared.viewmodel.ShiftsTab
+import com.pennhousing.shift.shared.viewmodel.UpdatesViewModel
 import com.pennhousing.shift.ui.kit.BannerTone
 import com.pennhousing.shift.ui.kit.ButtonSize
 import com.pennhousing.shift.ui.kit.ButtonVariant
+import com.pennhousing.shift.ui.kit.EmptyState
 import com.pennhousing.shift.ui.kit.HouseBadge
+import com.pennhousing.shift.ui.kit.SectionHeader
 import com.pennhousing.shift.ui.kit.ShiftBanner
 import com.pennhousing.shift.ui.kit.ShiftBottomSheet
 import com.pennhousing.shift.ui.kit.ShiftButton
@@ -68,12 +86,18 @@ import com.pennhousing.shift.ui.kit.ShiftCard
 import com.pennhousing.shift.ui.kit.ShiftIcons
 import com.pennhousing.shift.ui.kit.ShiftSection
 import com.pennhousing.shift.ui.kit.ShiftState
+import com.pennhousing.shift.ui.kit.ShiftToast
+import com.pennhousing.shift.ui.kit.ToastTone
 import com.pennhousing.shift.ui.theme.ShiftTheme
 
 private const val TAB_MY = 0
 private const val TAB_HOME = 1
 private const val TAB_OTHER = 2
-private const val TAB_UPDATES = 3
+private const val TAB_CALENDAR = 3
+private const val TAB_UPDATES = 4
+private const val TAB_PREFS = 5
+private const val TAB_BREAK = 6
+private const val TAB_SETTINGS = 7
 
 /**
  * Phase 13a — the worker's Shifts screen (BEHAVIORAL_SPECIFICATION.md §5.6).
@@ -88,12 +112,19 @@ private const val TAB_UPDATES = 3
 fun ShiftsApp(
     shiftsVm: ShiftsScreenViewModel,
     ackVm: AckDeclineViewModel,
+    updatesVm: UpdatesViewModel,
+    calendarVm: CalendarViewModel,
+    preferencesVm: PreferencesViewModel,
+    breakClaimVm: BreakClaimViewModel,
+    settingsVm: SettingsViewModel,
     currentWeeklyHours: Double,
     breakProfile: Boolean = false,
     toast: ToastNotification? = null,
+    onSignOut: () -> Unit = {},
 ) {
     ShiftTheme {
         val state by shiftsVm.uiState.collectAsStateWithLifecycle()
+        val updatesState by updatesVm.uiState.collectAsStateWithLifecycle()
         var selectedIndex by remember { mutableIntStateOf(TAB_MY) }
         var showAckModal by remember { mutableStateOf(false) }
         var claimSuccess by remember { mutableStateOf(false) }
@@ -102,14 +133,18 @@ fun ShiftsApp(
             Column(Modifier.fillMaxSize().padding(padding)) {
                 toast?.let { NotificationToast(it) }
                 if (claimSuccess) {
-                    Text(
-                        "Shift claimed ✓",
+                    // §5.6 #1 — the sheet dismisses on confirm (so the tab bar stays
+                    // reachable for the Maestro flow); this top success toast carries
+                    // the `claim_success` selector and the "now in My Shifts" feedback.
+                    ShiftToast(
+                        message = "Claimed — it's now in My Shifts",
                         modifier =
                             Modifier
                                 .fillMaxWidth()
-                                .padding(12.dp)
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
                                 .testTag("claim_success"),
-                        fontWeight = FontWeight.SemiBold,
+                        tone = ToastTone.Success,
+                        icon = ShiftIcons.Check,
                     )
                 }
 
@@ -126,8 +161,20 @@ fun ShiftsApp(
                         selectedIndex = TAB_OTHER
                         shiftsVm.selectTab(ShiftsTab.OPEN_OTHER)
                     }
+                    SpecTab("Calendar", "tab_calendar", selectedIndex == TAB_CALENDAR) {
+                        selectedIndex = TAB_CALENDAR
+                    }
                     SpecTab("Updates", "tab_updates", selectedIndex == TAB_UPDATES) {
                         selectedIndex = TAB_UPDATES
+                    }
+                    SpecTab("Preferences", "tab_preferences", selectedIndex == TAB_PREFS) {
+                        selectedIndex = TAB_PREFS
+                    }
+                    SpecTab("Break shifts", "tab_break", selectedIndex == TAB_BREAK) {
+                        selectedIndex = TAB_BREAK
+                    }
+                    SpecTab("Settings", "tab_settings", selectedIndex == TAB_SETTINGS) {
+                        selectedIndex = TAB_SETTINGS
                     }
                 }
 
@@ -141,12 +188,23 @@ fun ShiftsApp(
                             breakProfile = breakProfile,
                             onClaimed = { claimSuccess = true },
                         )
-                    TAB_OTHER -> OtherHousesTabContent(state.otherHouses)
+                    TAB_OTHER ->
+                        OtherHousesTabContent(
+                            tab = state.otherHouses,
+                            vm = shiftsVm,
+                            currentWeeklyHours = currentWeeklyHours,
+                            breakProfile = breakProfile,
+                            onClaimed = { claimSuccess = true },
+                        )
+                    TAB_CALENDAR -> CalendarTabContent(calendarVm)
                     TAB_UPDATES ->
                         UpdatesTabContent(
-                            destinationHouse = ackVm.uiState.value.destinationHouse.name,
-                            onOpen = { showAckModal = true },
+                            feed = updatesState.feed,
+                            onOpenAck = { showAckModal = true },
                         )
+                    TAB_PREFS -> PreferencesTabContent(preferencesVm)
+                    TAB_BREAK -> BreakClaimTabContent(breakClaimVm)
+                    TAB_SETTINGS -> SettingsTabContent(settingsVm, onSignOut)
                 }
             }
         }
@@ -331,30 +389,42 @@ private fun HomeOpenTabContent(
 ) {
     var claimTarget by remember { mutableStateOf<OpenShift?>(null) }
 
-    LazyColumn(Modifier.fillMaxSize().padding(12.dp)) {
+    LazyColumn(
+        Modifier.fillMaxSize().background(ShiftTheme.colors.bg),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(22.dp),
+    ) {
         item {
-            Column(Modifier.fillMaxWidth().testTag("home_weekly_feed")) {
-                Text("This week", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                if (tab.weekly.isEmpty()) Text("No open shifts.")
-                tab.weekly.forEach { OpenShiftCard(it, vm) { claimTarget = it } }
+            ShiftSection(
+                title = "Weekly open shifts",
+                isEmpty = tab.weekly.isEmpty(),
+                modifier = Modifier.testTag("home_weekly_feed"),
+                count = tab.weekly.size,
+                emptyText = "No open shifts in your house this week.",
+            ) {
+                ShiftCardColumn { tab.weekly.forEach { OpenFeedCard(it, vm) { claimTarget = it } } }
             }
         }
         item {
-            Column(Modifier.fillMaxWidth().padding(top = 8.dp).testTag("home_permanent_feed")) {
-                Text("Permanent openings", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                if (tab.permanentOpenings.isEmpty()) Text("None.")
-                tab.permanentOpenings.forEach { OpenShiftCard(it, vm) { claimTarget = it } }
+            ShiftSection(
+                title = "Permanent openings",
+                isEmpty = tab.permanentOpenings.isEmpty(),
+                modifier = Modifier.testTag("home_permanent_feed"),
+                count = tab.permanentOpenings.size,
+                emptyText = "No permanent openings right now.",
+            ) {
+                ShiftCardColumn { tab.permanentOpenings.forEach { OpenFeedCard(it, vm) { claimTarget = it } } }
             }
         }
     }
 
     claimTarget?.let { shift ->
-        ClaimFlowDialog(
+        ClaimSheet(
             shift = shift,
             vm = vm,
             currentWeeklyHours = currentWeeklyHours,
             breakProfile = breakProfile,
-            onClaimed = {
+            onConfirmed = {
                 vm.claim(shift)
                 onClaimed()
             },
@@ -363,81 +433,213 @@ private fun HomeOpenTabContent(
     }
 }
 
+/**
+ * One open-shift feed card, driven by the shared
+ * [com.pennhousing.shift.shared.shifts.toRow]: OPEN → Claim (filled), PERMANENT →
+ * Pick up (tonal), UNPICKABLE → no action + "Locked" meta (§5.4 keeps the gap
+ * visible past T-2h, withholding only the action). The card root + the action carry
+ * the `open_shift_card` / `claim_button` selectors.
+ */
 @Composable
-private fun OpenShiftCard(
+private fun OpenFeedCard(
     shift: OpenShift,
     vm: ShiftsScreenViewModel,
     onClaim: () -> Unit,
 ) {
     val claimable = vm.claimable(shift)
-    Card(Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag("open_shift_card")) {
-        Row(
-            Modifier.fillMaxWidth().padding(12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column {
-                Text(shift.house.name, fontWeight = FontWeight.SemiBold)
-                Text("${shift.start} – ${shift.end}", style = MaterialTheme.typography.bodySmall)
-                shift.weeksRemaining?.let { Text("$it weeks remaining", style = MaterialTheme.typography.bodySmall) }
-                // §5.4: the shift stays VISIBLE past T-2h; only the claim action is gated.
-                if (!claimable) {
-                    Text("Unpickable (past T-2h)", style = MaterialTheme.typography.bodySmall)
+    val row = remember(shift, claimable) { shift.toRow(claimable) }
+    ShiftCard(
+        state = row.state.toKitState(),
+        houseInitial = row.houseInitial,
+        timeLabel = row.timeLabel,
+        modifier = Modifier.testTag("open_shift_card"),
+        eyebrow = row.dayLabel,
+        houseName = row.houseName,
+        durationLabel = row.durationLabel,
+        meta = row.meta,
+        action =
+            row.actionLabel?.let { label ->
+                {
+                    ShiftButton(
+                        label,
+                        onClaim,
+                        modifier = Modifier.testTag("claim_button"),
+                        variant = if (row.state == OpenShiftCardState.PERMANENT) ButtonVariant.Tonal else ButtonVariant.Filled,
+                        size = ButtonSize.Sm,
+                    )
                 }
-            }
-            // §5.4 / §5.6: the Claim button is DISABLED past T-2h — never hidden, so
-            // the worker still sees the shift and that it is no longer claimable.
-            Button(
-                onClick = onClaim,
-                enabled = claimable,
-                modifier = Modifier.testTag("claim_button"),
-            ) { Text("Claim") }
-        }
-    }
+            },
+    )
 }
 
+private fun OpenShiftCardState.toKitState(): ShiftState =
+    when (this) {
+        OpenShiftCardState.OPEN -> ShiftState.OPEN
+        OpenShiftCardState.UNPICKABLE -> ShiftState.UNPICKABLE
+        OpenShiftCardState.PERMANENT -> ShiftState.PERMANENT
+    }
+
+// ===================================================================
+// Claim flow (§5.3 / §5.4) — the design `ClaimSheet`.
+// ===================================================================
+
+/**
+ * The claim / pick-up sheet (worker-app.html `ClaimSheet`): a shift summary, the
+ * "this brings your week to Xh of Yh" hours meter, and the §5.3 cap gating. A
+ * soft-cap claim is a two-step confirm (warning banner → "Claim anyway" →
+ * `claim_confirm_button`) so the Maestro `soft_cap_*` contract holds; a break
+ * hard-cap claim disables the confirm. On confirm the sheet dismisses and the
+ * screen shows the `claim_success` toast — the picked-up shift is already in My
+ * Shifts (the optimistic [ShiftsScreenViewModel.claim], decision #13).
+ */
 @Composable
-private fun ClaimFlowDialog(
+private fun ClaimSheet(
     shift: OpenShift,
     vm: ShiftsScreenViewModel,
     currentWeeklyHours: Double,
     breakProfile: Boolean,
-    onClaimed: () -> Unit,
+    onConfirmed: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val c = ShiftTheme.colors
+    val claimable = vm.claimable(shift)
+    val row = remember(shift, claimable) { shift.toRow(claimable) }
+    val permanent = row.state == OpenShiftCardState.PERMANENT
+    val meter =
+        remember(shift, currentWeeklyHours, breakProfile) {
+            claimMeter(currentWeeklyHours, hoursBetween(shift.start, shift.end), breakProfile)
+        }
+    val overHard = meter.verdict == ClaimCapVerdict.HARD_CAP_BLOCKED
+    val overSoft = meter.verdict == ClaimCapVerdict.SOFT_CAP_WARNING
     var warningAccepted by remember { mutableStateOf(false) }
-    val verdict = vm.claimCap(shift, currentWeeklyHours, breakProfile)
 
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(shape = MaterialTheme.shapes.large, tonalElevation = 6.dp) {
-            Column(Modifier.padding(20.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Claim ${shift.house.name} shift", style = MaterialTheme.typography.titleLarge)
-                Text("${shift.start} – ${shift.end}")
+    ShiftBottomSheet(onDismiss = onDismiss, title = if (permanent) "Pick up permanently" else "Claim shift") {
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            // Shift summary — badge + mono time + house · duration · day.
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                HouseBadge(
+                    row.houseInitial,
+                    if (permanent) c.permanent.tint else c.surfaceVar,
+                    if (permanent) c.permanent.deep else c.ink,
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(row.timeLabel, style = ShiftTheme.type.monoTimeHero.copy(fontSize = 20.sp), color = c.ink)
+                    Text("${row.houseName} · ${row.durationLabel} · ${row.dayLabel}", color = c.sec, fontSize = 13.5.sp)
+                }
+            }
 
-                when {
-                    verdict == ClaimCapVerdict.HARD_CAP_BLOCKED ->
-                        Column {
-                            Text("This claim is over the 40-hour break cap and is blocked (§5.3).")
-                            OutlinedButton(onClick = onDismiss) { Text("Close") }
-                        }
-                    verdict == ClaimCapVerdict.SOFT_CAP_WARNING && !warningAccepted ->
-                        Column(Modifier.testTag("soft_cap_warning_modal"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("This claim puts you over the 20-hour cap. It is allowed (§5.3).")
-                            Button(
-                                onClick = { warningAccepted = true },
-                                modifier = Modifier.testTag("soft_cap_confirm_button"),
-                            ) { Text("Claim anyway") }
-                        }
-                    else ->
-                        Button(
-                            onClick = {
-                                onClaimed()
-                                onDismiss()
-                            },
-                            modifier = Modifier.testTag("claim_confirm_button"),
-                        ) { Text("Confirm claim") }
+            if (permanent) PermanentRecurringNote(row)
+
+            ClaimHoursMeter(meter)
+
+            if (overSoft) {
+                ShiftBanner(
+                    title = "Puts you over the 20h soft cap",
+                    body = "Allowed this period, but your manager sees the overage.",
+                    tone = BannerTone.Warning,
+                    modifier = Modifier.testTag("soft_cap_warning_modal"),
+                )
+            }
+            if (overHard) {
+                ShiftBanner(
+                    title = "Over the 40h limit — can't claim",
+                    body = "Break-period hard cap. Drop another shift first.",
+                    tone = BannerTone.Error,
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ShiftButton("Cancel", onDismiss, modifier = Modifier.weight(1f), variant = ButtonVariant.Outlined)
+                if (overSoft && !warningAccepted) {
+                    ShiftButton(
+                        "Claim anyway",
+                        onClick = { warningAccepted = true },
+                        modifier = Modifier.weight(1f).testTag("soft_cap_confirm_button"),
+                    )
+                } else {
+                    ShiftButton(
+                        if (permanent) "Confirm pickup" else "Claim shift",
+                        onClick = {
+                            onConfirmed()
+                            onDismiss()
+                        },
+                        modifier = Modifier.weight(1f).testTag("claim_confirm_button"),
+                        enabled = !overHard,
+                    )
                 }
             }
         }
+    }
+}
+
+/** The "this brings your week to {after}h of {cap}h" meter + progress bar (§5.3 caps). */
+@Composable
+private fun ClaimHoursMeter(meter: ClaimMeter) {
+    val c = ShiftTheme.colors
+    val overHard = meter.verdict == ClaimCapVerdict.HARD_CAP_BLOCKED
+    val overSoft = meter.verdict == ClaimCapVerdict.SOFT_CAP_WARNING
+    val emphasis =
+        when {
+            overHard -> c.danger.accent
+            overSoft -> c.pending
+            else -> c.ink
+        }
+    val barColor = if (overHard) {
+        c.danger.accent
+    } else if (overSoft) {
+        c.pending
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("This brings your week to", color = c.sec, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Text(
+                "${meter.afterLabel} of ${meter.capLabel}",
+                style = ShiftTheme.type.monoTime.copy(fontSize = 13.sp, fontWeight = FontWeight.SemiBold),
+                color = emphasis,
+            )
+        }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .clip(RoundedCornerShape(50))
+                .background(c.surfaceVar),
+        ) {
+            // Where you are now (ghost), then where this claim takes you (colored).
+            Box(
+                Modifier
+                    .fillMaxWidth(meter.currentFraction.toFloat())
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(50))
+                    .background(c.ink.copy(alpha = 0.22f)),
+            )
+            Box(
+                Modifier
+                    .fillMaxWidth(meter.afterFraction.toFloat())
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(50))
+                    .background(barColor),
+            )
+        }
+    }
+}
+
+/** The recurring-slot note shown when picking up a permanent opening (design `ClaimSheet`). */
+@Composable
+private fun PermanentRecurringNote(row: OpenShiftRow) {
+    val c = ShiftTheme.colors
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(c.permanent.tint)
+            .padding(horizontal = 13.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Text("Recurring · ${row.dayLabel} · ${row.timeLabel}", color = c.permanent.deep, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        row.meta?.let { Text("Repeats weekly — $it.", color = c.sec, fontSize = 12.5.sp) }
     }
 }
 
@@ -446,18 +648,231 @@ private fun ClaimFlowDialog(
 // ===================================================================
 
 @Composable
-private fun OtherHousesTabContent(tab: OtherHousesTab) {
-    LazyColumn(Modifier.fillMaxSize().padding(12.dp).testTag("other_houses_tab")) {
+private fun OtherHousesTabContent(
+    tab: OtherHousesTab,
+    vm: ShiftsScreenViewModel,
+    currentWeeklyHours: Double,
+    breakProfile: Boolean,
+    onClaimed: () -> Unit,
+) {
+    var claimTarget by remember { mutableStateOf<OpenShift?>(null) }
+
+    LazyColumn(
+        Modifier.fillMaxSize().background(ShiftTheme.colors.bg).testTag("other_houses_tab"),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(22.dp),
+    ) {
         if (tab.isEmpty) {
-            item { Text("No cross-house shifts available (e.g. during winter break).") }
+            // §5.6 / decision #6 — no eligible cross-house feed (e.g. winter break).
+            item {
+                EmptyState(
+                    title = "No eligible shifts elsewhere",
+                    icon = ShiftIcons.Building,
+                    body = "No open shifts at houses you can pick up at right now. Common during winter break.",
+                )
+            }
         } else {
             tab.groups.forEach { group ->
                 item {
-                    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                        Text(group.house.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        group.weekly.forEach { CrossHouseCard(it) }
-                        group.permanentOpenings.forEach { CrossHouseCard(it) }
-                        HorizontalDivider(Modifier.padding(top = 6.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SectionHeader(group.house.name, count = group.weekly.size + group.permanentOpenings.size)
+                        ShiftCardColumn {
+                            group.weekly.forEach { OpenFeedCard(it, vm) { claimTarget = it } }
+                            group.permanentOpenings.forEach { OpenFeedCard(it, vm) { claimTarget = it } }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    claimTarget?.let { shift ->
+        ClaimSheet(
+            shift = shift,
+            vm = vm,
+            currentWeeklyHours = currentWeeklyHours,
+            breakProfile = breakProfile,
+            onConfirmed = {
+                vm.claim(shift)
+                onClaimed()
+            },
+            onDismiss = { claimTarget = null },
+        )
+    }
+}
+
+// ===================================================================
+// Updates tab — §10.1 notifications feed + the §7 pending-float entry (Maestro 04).
+// ===================================================================
+
+/**
+ * The Updates feed (worker-app.html `UpdatesScreen`): Today / Earlier groups of
+ * notification rows (shared, tested [com.pennhousing.shift.shared.notifications.buildUpdatesFeed]).
+ * The urgent float-assignment row carries the `pending_float_notification` selector and
+ * opens the ack hero. Empty → "You're all caught up". (No "mark all read" — workers
+ * have no UPDATE policy on `notifications`; the unread dots are read-only.)
+ */
+@Composable
+private fun UpdatesTabContent(
+    feed: UpdatesFeed,
+    onOpenAck: () -> Unit,
+) {
+    if (feed.isEmpty) {
+        Column(Modifier.fillMaxSize().background(ShiftTheme.colors.bg).padding(top = 40.dp)) {
+            EmptyState(
+                title = "You're all caught up",
+                icon = ShiftIcons.Bell,
+                body = "No new notifications. Float assignments and reminders show up here.",
+            )
+        }
+        return
+    }
+    LazyColumn(
+        Modifier.fillMaxSize().background(ShiftTheme.colors.bg),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(22.dp),
+    ) {
+        if (feed.today.isNotEmpty()) {
+            item { NotificationGroup("Today", feed.today, onOpenAck) }
+        }
+        if (feed.earlier.isNotEmpty()) {
+            item { NotificationGroup("Earlier", feed.earlier, onOpenAck) }
+        }
+    }
+}
+
+@Composable
+private fun NotificationGroup(
+    title: String,
+    rows: List<NotificationRow>,
+    onOpenAck: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SectionHeader(title)
+        rows.forEach { NotificationCard(it, onOpenAck) }
+    }
+}
+
+/** One Updates row (worker-app.html `UpdateRow`). Urgent → float-tint card + left accent + "Action needed". */
+@Composable
+private fun NotificationCard(
+    row: NotificationRow,
+    onOpenAck: () -> Unit,
+) {
+    val c = ShiftTheme.colors
+    val (icon, accent) =
+        when (row.category) {
+            NotificationCategory.FLOAT -> ShiftIcons.FloatOut to c.floatOut.accent
+            NotificationCategory.REMINDER -> ShiftIcons.Warning to c.pending
+            NotificationCategory.SHIFT_REMOVED -> ShiftIcons.ArrowDown to c.sec
+            NotificationCategory.PERMANENT -> ShiftIcons.Refresh to c.permanent.accent
+            NotificationCategory.PREFERENCES -> ShiftIcons.CheckCircle to c.success.accent
+            NotificationCategory.SWAP -> ShiftIcons.Refresh to c.floatIn.accent
+            NotificationCategory.INFO -> ShiftIcons.Bell to c.pickupDot
+        }
+    val shape = RoundedCornerShape(14.dp)
+    var box = Modifier.fillMaxWidth().clip(shape).background(if (row.urgent) c.floatSoft else c.surface)
+    box = if (row.urgent) box else box.border(1.dp, c.divider, shape)
+    if (row.opensAck) box = box.clickable(onClick = onOpenAck).testTag("pending_float_notification")
+
+    Box(box) {
+        if (row.urgent) {
+            Box(
+                Modifier
+                    .align(Alignment.CenterStart)
+                    .width(4.dp)
+                    .fillMaxHeight()
+                    .background(c.floatOut.accent),
+            )
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                Modifier.size(38.dp).clip(RoundedCornerShape(10.dp)).background(accent.copy(alpha = 0.10f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(19.dp))
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Text(
+                        row.title,
+                        modifier = Modifier.weight(1f, fill = false),
+                        color = c.ink,
+                        fontSize = 14.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    if (row.unread) Box(Modifier.size(7.dp).clip(RoundedCornerShape(50)).background(c.pickupDot))
+                }
+                if (row.urgent) ActionNeededTag()
+                Text(row.body, color = c.sec, fontSize = 13.sp, lineHeight = 18.sp)
+            }
+            Text(row.timeLabel, style = ShiftTheme.type.monoId.copy(fontSize = 11.5.sp), color = c.ter)
+        }
+    }
+}
+
+/** The "Action needed" pill on an urgent (float) update — color + icon + text. */
+@Composable
+private fun ActionNeededTag() {
+    val c = ShiftTheme.colors
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(50))
+            .background(c.floatOut.badge)
+            .padding(start = 6.dp, top = 3.dp, end = 8.dp, bottom = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(ShiftIcons.Warning, contentDescription = null, tint = c.floatOut.deep, modifier = Modifier.size(13.dp))
+        Text("Action needed", color = c.floatOut.deep, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+// ===================================================================
+// Calendar tab — agenda-first Personal Calendar (current week only).
+// ===================================================================
+
+/**
+ * The Personal Calendar (worker-app.html `CalendarScreen`, agenda-first): a static
+ * "this week" header (NO week-picker — only the current week is exposed; arbitrary
+ * weeks + the permanent template have no data), a Mon–Sun strip, and the selected
+ * day's agenda with a live NOW line. All from the shared, tested
+ * [com.pennhousing.shift.shared.calendar.buildCalendarWeek] / `buildCalendarAgenda`
+ * over the same `MyShift` snapshot the Shifts screen renders.
+ */
+@Composable
+private fun CalendarTabContent(vm: CalendarViewModel) {
+    val state by vm.uiState.collectAsStateWithLifecycle()
+    val c = ShiftTheme.colors
+    Column(Modifier.fillMaxSize().background(c.bg).testTag("calendar_screen")) {
+        WeekHeaderCard(state.week.rangeLabel)
+        WeekStrip(state.week, state.selectedDayIndex, vm::selectDay)
+        DayHeaderRow(state.agenda.header)
+        if (state.agenda.isEmpty) {
+            EmptyState(
+                title = "No shifts this day",
+                icon = ShiftIcons.Calendar,
+                body = "Enjoy the day off — or browse Open Shifts to pick one up.",
+            )
+        } else {
+            LazyColumn(
+                Modifier.fillMaxSize().testTag("calendar_agenda"),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
+            ) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        state.agenda.items.forEach { item ->
+                            val now = item.nowLabel
+                            val shift = item.shift
+                            if (now != null) {
+                                NowLine(now)
+                            } else if (shift != null) {
+                                AgendaShiftCard(shift, item.active)
+                            }
+                        }
                     }
                 }
             }
@@ -465,43 +880,148 @@ private fun OtherHousesTabContent(tab: OtherHousesTab) {
     }
 }
 
+/** The static "this week" header (the design's week-picker card, sans picker — no other weeks). */
 @Composable
-private fun CrossHouseCard(shift: OpenShift) {
-    Card(Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag("open_shift_card")) {
-        Column(Modifier.padding(12.dp)) {
-            Text(shift.house.name, fontWeight = FontWeight.SemiBold)
-            Text("${shift.start} – ${shift.end}", style = MaterialTheme.typography.bodySmall)
-            shift.weeksRemaining?.let { Text("$it weeks remaining", style = MaterialTheme.typography.bodySmall) }
+private fun WeekHeaderCard(rangeLabel: String) {
+    val c = ShiftTheme.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(c.surface)
+            .border(1.dp, c.divider, RoundedCornerShape(14.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            Modifier.size(38.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(ShiftIcons.Calendar, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(19.dp))
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text("This week", color = c.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text(rangeLabel, color = c.sec, fontSize = 13.sp)
         }
     }
 }
 
-// ===================================================================
-// Updates tab — where a pending float surfaces (§7 / Maestro 04).
-// ===================================================================
-
+/** Mon–Sun day picker: weekday letter, a date pill (selected fill / today ring), a shift dot. */
 @Composable
-private fun UpdatesTabContent(
-    destinationHouse: String,
-    onOpen: () -> Unit,
+private fun WeekStrip(
+    week: CalendarWeek,
+    selected: Int,
+    onSelect: (Int) -> Unit,
 ) {
-    LazyColumn(Modifier.fillMaxSize().padding(12.dp)) {
-        item {
-            Card(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .clickable(onClick = onOpen)
-                        .testTag("pending_float_notification"),
-            ) {
-                Column(Modifier.padding(12.dp)) {
-                    Text("Float assigned — action needed", fontWeight = FontWeight.SemiBold)
-                    Text("You have been floated to $destinationHouse. Tap to acknowledge or decline.")
-                }
-            }
+    Row(
+        Modifier.fillMaxWidth().testTag("calendar_week_strip").padding(horizontal = 12.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        week.days.forEach { day ->
+            WeekDayCellView(day, day.index == selected, Modifier.weight(1f)) { onSelect(day.index) }
         }
     }
+}
+
+@Composable
+private fun WeekDayCellView(
+    day: WeekDayCell,
+    selected: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    val c = ShiftTheme.colors
+    val blue = MaterialTheme.colorScheme.primary
+    Column(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .testTag("calendar_day_cell")
+            .padding(vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(day.dayLetter, color = c.ter, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        Box(
+            Modifier
+                .size(34.dp)
+                .clip(RoundedCornerShape(50))
+                .background(if (selected) blue else Color.Transparent)
+                .then(if (day.isToday && !selected) Modifier.border(1.5.dp, blue, RoundedCornerShape(50)) else Modifier),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                day.dateLabel,
+                color = if (selected) Color.White else c.ink,
+                fontSize = 14.sp,
+                fontWeight = if (day.isToday) FontWeight.Bold else FontWeight.Medium,
+            )
+        }
+        Box(
+            Modifier.size(5.dp).clip(RoundedCornerShape(50)).background(if (day.hasShifts) blue else Color.Transparent),
+        )
+    }
+}
+
+/** "Today · Jun 3" + a "2 shifts · 6h" summary. */
+@Composable
+private fun DayHeaderRow(header: CalendarDayHeader) {
+    val c = ShiftTheme.colors
+    Row(
+        Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 6.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(header.title, color = c.ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Text("· ${header.dateLabel}", color = c.ter, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+        }
+        header.summary?.let { Text(it, style = ShiftTheme.type.monoTime.copy(fontSize = 13.sp), color = c.sec) }
+    }
+}
+
+/** The live "NOW · HH:mm" agenda divider (red dot + label + rule) — today only. */
+@Composable
+private fun NowLine(label: String) {
+    val c = ShiftTheme.colors
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
+        Box(Modifier.size(9.dp).clip(RoundedCornerShape(50)).background(c.danger.accent))
+        Text(
+            label,
+            style = ShiftTheme.type.monoTime.copy(fontSize = 12.sp, fontWeight = FontWeight.SemiBold),
+            color = c.danger.accent,
+        )
+        Box(
+            Modifier
+                .weight(1f)
+                .height(1.5.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(c.danger.accent.copy(alpha = 0.45f)),
+        )
+    }
+}
+
+@Composable
+private fun AgendaShiftCard(
+    row: MyShiftRow,
+    active: Boolean,
+) {
+    ShiftCard(
+        state = row.state.toKitState(),
+        houseInitial = row.houseInitial,
+        timeLabel = row.timeLabel,
+        modifier = Modifier.testTag("calendar_shift_card"),
+        houseName = row.houseName,
+        destination = row.destination,
+        durationLabel = row.durationLabel,
+        active = active,
+    )
 }
 
 // ===================================================================

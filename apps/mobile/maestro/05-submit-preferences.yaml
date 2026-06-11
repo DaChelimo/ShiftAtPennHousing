@@ -1,0 +1,29 @@
+# Phase 13a E2E — §6 paint a 30-min block on the preference grid, then submit.
+#
+# Android emulator + iOS simulator (Maestro). TDD-RED: selectors are the UI contract.
+appId: com.pennhousing.shift
+---
+- launchApp:
+    clearState: true
+
+# Open the Preferences tab (a scrollable tab; Maestro scrolls to find it).
+- tapOn:
+    id: "tab_preferences"
+- assertVisible:
+    id: "preferences_screen"
+- assertVisible:
+    id: "pref_target_stepper"
+
+# Pick the "Cannot" brush, then paint the first block in the day grid.
+- tapOn:
+    id: "pref_brush_cannot"
+- assertVisible:
+    id: "pref_block_grid"
+- tapOn:
+    id: "pref_block_cell"
+
+# Submit the grid → the screen flips to the read-only "submitted" state.
+- tapOn:
+    id: "submit_preferences_button"
+- assertVisible:
+    text: "Submitted · read-only"

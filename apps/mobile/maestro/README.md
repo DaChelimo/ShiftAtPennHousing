@@ -18,6 +18,13 @@ not-yet-implemented shared ViewModels under test in `:shared`'s `commonTest`.
 | `02-claim-shift.yaml`      | §5.3, §5.4      | Claim an open shift (soft-cap warning if any) → My Shifts.  |
 | `03-drop-shift.yaml`       | §5.2            | Drop a shift (occurrence) → it lands in the Dropped section.|
 | `04-acknowledge-float.yaml`| §7.1, §7.2      | Acknowledge a float from the ack/decline modal.             |
+| `05-submit-preferences.yaml`| §6 prefs       | Paint a block + submit the preference grid → read-only.     |
+| `06-claim-break.yaml`      | §6 Phase 11     | Claim a break shift (FCFS) → "Break shift claimed" toast.   |
+| `07-settings.yaml`         | §6 settings     | Open Settings, toggle the broadcast subscription.           |
+
+> **Login** has no flow here: it is the LIVE path only (the demo bypasses it on both
+> platforms), so it cannot run without a configured backend. Its selectors are listed
+> below for a future backed flow; verify login in Xcode / against a live backend.
 
 ## Running
 
@@ -74,3 +81,40 @@ The screens MUST expose these stable ids. On Android attach them with
 | `decline_button`            | Decline.                                                 |
 | `ack_success`               | Acknowledge success state.                               |
 | `ack_deadline_passed`       | Disabled state after the T-10m deadline (§7.1).          |
+| `tab_calendar`              | Calendar tab (agenda-first personal calendar).           |
+| `calendar_screen`           | Calendar screen root.                                    |
+| `calendar_week_strip`       | The Mon–Sun day-picker strip.                            |
+| `calendar_day_cell`         | A day cell in the week strip.                            |
+| `calendar_agenda`           | The selected day's agenda list.                          |
+| `calendar_shift_card`       | A shift card in the agenda.                              |
+| `tab_preferences`           | Preferences tab (preference submission).                 |
+| `preferences_screen`        | Preferences screen root.                                 |
+| `pref_week_strip`           | The Mon–Sun day picker for the preference week.          |
+| `pref_day_cell`             | A day cell in the preference week strip.                 |
+| `pref_target_stepper`       | The target-weekly-hours stepper card.                    |
+| `pref_target_increment`     | Increment target hours (+2).                             |
+| `pref_target_decrement`     | Decrement target hours (−2).                             |
+| `pref_no_hours_toggle`      | "I have no hours this week" toggle.                      |
+| `pref_brush_available`      | Brush: Available.                                        |
+| `pref_brush_preferred`      | Brush: Preferred.                                        |
+| `pref_brush_cannot`         | Brush: Cannot.                                           |
+| `pref_block_grid`           | The 2-column paintable block grid (selected day).        |
+| `pref_block_cell`           | A paintable 30-min block in the grid.                    |
+| `submit_preferences_button` | Submit the preference grid.                              |
+| `tab_break`                 | Break-shifts tab (break claim picker).                   |
+| `break_claim_screen`        | Break claim screen root.                                 |
+| `break_hours_meter`         | The "this week / 40h" hard-cap meter.                    |
+| `break_shift_card`          | A claimable/claimed break-shift card.                    |
+| `break_claim_button`        | Claim a break shift.                                     |
+| `break_drop_button`         | Drop a claimed break shift back to the pool.             |
+| `break_claim_success`       | "Break shift claimed" toast.                             |
+| `tab_settings`              | Settings tab (profile + preferences).                    |
+| `settings_screen`           | Settings screen root.                                    |
+| `settings_broadcast_toggle` | "General updates" broadcast-subscription switch.         |
+| `settings_theme_segmented`  | Appearance theme segmented control (System/Light/Dark).  |
+| `settings_sign_out`         | Sign-out row.                                            |
+| `login_screen`              | Login screen root (live path only).                      |
+| `login_email`               | PennKey email field.                                     |
+| `login_password`            | Password field.                                          |
+| `login_submit`              | Sign-in button.                                          |
+| `login_error`               | Sign-in error banner.                                    |

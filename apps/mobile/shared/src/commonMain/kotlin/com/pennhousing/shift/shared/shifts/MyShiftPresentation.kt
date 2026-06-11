@@ -42,8 +42,8 @@ fun myShiftCardState(shift: MyShift): MyShiftCardState =
         else -> MyShiftCardState.SCHEDULED
     }
 
-private val DOW_SHORT = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-private val MONTH_SHORT =
+internal val DOW_SHORT = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+internal val MONTH_SHORT =
     listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 private fun pad2(n: Int): String = if (n < 10) "0$n" else n.toString()

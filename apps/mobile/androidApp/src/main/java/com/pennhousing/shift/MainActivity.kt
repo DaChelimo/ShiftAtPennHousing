@@ -20,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -34,13 +35,19 @@ import com.pennhousing.shift.shared.data.WorkerSnapshot
 import com.pennhousing.shift.shared.platform.AppConfig
 import com.pennhousing.shift.shared.samples.DemoData
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
+import com.pennhousing.shift.shared.viewmodel.BreakClaimViewModel
+import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
+import com.pennhousing.shift.shared.viewmodel.PreferencesViewModel
+import com.pennhousing.shift.shared.viewmodel.SettingsViewModel
 import com.pennhousing.shift.shared.viewmodel.ShiftsScreenViewModel
+import com.pennhousing.shift.shared.viewmodel.UpdatesViewModel
 import com.pennhousing.shift.ui.LoginRoute
 import com.pennhousing.shift.ui.ShiftsApp
 import com.pennhousing.shift.ui.kit.SkeletonShiftCard
 import com.pennhousing.shift.ui.theme.ShiftTheme
 import kotlin.time.Clock
 import kotlin.time.Instant
+import kotlinx.coroutines.launch
 
 /**
  * Phase 13a / worker-auth — Android host for the worker app.
@@ -96,10 +103,23 @@ private fun DemoRoot() {
     val pendingFloat = remember(now) { DemoData.pendingFloat(now) }
     val shiftsVm = remember { ShiftsScreenViewModel(snapshot.myShifts, snapshot.openShifts, now) }
     val ackVm = remember { AckDeclineViewModel(pendingFloat, now) }
+    val updatesVm = remember { UpdatesViewModel(DemoData.notifications(now), now) }
+    val calendarVm = remember { CalendarViewModel(snapshot.myShifts, now) }
+    val preferencesVm = remember { PreferencesViewModel(DemoData.preferencePeriod(now)) }
+    val breakClaimVm = remember { BreakClaimViewModel(DemoData.breakClaim(now)) }
+    val settingsVm =
+        remember { SettingsViewModel(DemoData.settingsProfile(), DemoData.DEMO_BROADCAST_SUBSCRIBED, DemoData.DEMO_APP_VERSION) }
     ShiftsApp(
         shiftsVm = shiftsVm,
         ackVm = ackVm,
+        updatesVm = updatesVm,
+        calendarVm = calendarVm,
+        preferencesVm = preferencesVm,
+        breakClaimVm = breakClaimVm,
+        settingsVm = settingsVm,
         currentWeeklyHours = DemoData.DEMO_WEEKLY_HOURS,
+        // Demo has no backend session → sign-out is a no-op (login is the live path).
+        onSignOut = {},
     )
 }
 
@@ -118,13 +138,16 @@ private fun LiveOrLoginRoot() {
         value = RestoreResult.Loaded(WorkerBackend.authGateway.currentSession())
     }
 
+    val scope = rememberCoroutineScope()
     // An in-session sign-in promotes us to live shifts without re-running the restore.
     var authedSession by remember { mutableStateOf<AuthSession?>(null) }
+    // A sign-out forces LOGIN even though the launch-restored session is still cached.
+    var signedOut by remember { mutableStateOf(false) }
 
     when (val result = restored) {
         RestoreResult.Loading -> LoadingScreen()
         is RestoreResult.Loaded -> {
-            val session = authedSession ?: result.session
+            val session = if (signedOut) null else (authedSession ?: result.session)
             val decision = AppBootstrap.decide(backendConfigured = true, session = session, now = now)
 
             // decision.source is LIVE on this path; route on the start destination.
@@ -132,7 +155,15 @@ private fun LiveOrLoginRoot() {
                 // A session restored at launch (or just authenticated) is the live
                 // worker — carry their JWT on every privileged request.
                 LaunchedEffect(session.userId) { WorkerBackend.wireAccessToken() }
-                LiveShiftsRoot(session = session, now = now)
+                LiveShiftsRoot(
+                    session = session,
+                    now = now,
+                    onSignOut = {
+                        scope.launch { WorkerBackend.authGateway.signOut() }
+                        authedSession = null
+                        signedOut = true
+                    },
+                )
             } else {
                 LoginRoute(
                     gateway = WorkerBackend.authGateway,
@@ -140,6 +171,7 @@ private fun LiveOrLoginRoot() {
                         // Promote to live shifts; the SHIFTS branch's LaunchedEffect
                         // wires the live worker JWT onto privileged requests.
                         authedSession = newSession
+                        signedOut = false
                     },
                 )
             }
@@ -159,6 +191,7 @@ private fun LiveOrLoginRoot() {
 private fun LiveShiftsRoot(
     session: AuthSession,
     now: Instant,
+    onSignOut: () -> Unit,
 ) {
     val repo = remember { WorkerBackend.shiftsRepository }
     val snapshotState by remember(session.userId) {
@@ -171,10 +204,26 @@ private fun LiveShiftsRoot(
             // Rebuild the ViewModel whenever a fresh snapshot arrives (e.g. a float at T-2h).
             val shiftsVm = remember(snapshot) { ShiftsScreenViewModel(snapshot.myShifts, snapshot.openShifts, now) }
             val ackVm = remember { AckDeclineViewModel(DemoData.pendingFloat(now), now) }
+            val updatesVm = remember { UpdatesViewModel(DemoData.notifications(now), now) }
+            val calendarVm = remember(snapshot) { CalendarViewModel(snapshot.myShifts, now) }
+            // Preferences + Break-claim run on the demo snapshot until their data layer
+            // wires (scheduling_periods deadline / break-period name are not worker-readable).
+            val preferencesVm = remember { PreferencesViewModel(DemoData.preferencePeriod(now)) }
+            val breakClaimVm = remember { BreakClaimViewModel(DemoData.breakClaim(now)) }
+            // Settings runs on the demo profile until the profile read wires (users /
+            // user_roles / houses are RLS-readable; no purpose-built profile view yet).
+            val settingsVm =
+                remember { SettingsViewModel(DemoData.settingsProfile(), DemoData.DEMO_BROADCAST_SUBSCRIBED, DemoData.DEMO_APP_VERSION) }
             ShiftsApp(
                 shiftsVm = shiftsVm,
                 ackVm = ackVm,
+                updatesVm = updatesVm,
+                calendarVm = calendarVm,
+                preferencesVm = preferencesVm,
+                breakClaimVm = breakClaimVm,
+                settingsVm = settingsVm,
                 currentWeeklyHours = DemoData.DEMO_WEEKLY_HOURS,
+                onSignOut = onSignOut,
             )
         }
     }

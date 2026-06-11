@@ -1,7 +1,12 @@
 package com.pennhousing.shift.shared.samples
 
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
+import com.pennhousing.shift.shared.viewmodel.BreakClaimViewModel
+import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
+import com.pennhousing.shift.shared.viewmodel.PreferencesViewModel
+import com.pennhousing.shift.shared.viewmodel.SettingsViewModel
 import com.pennhousing.shift.shared.viewmodel.ShiftsScreenViewModel
+import com.pennhousing.shift.shared.viewmodel.UpdatesViewModel
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -28,6 +33,23 @@ object DemoFactory {
         val now = now()
         return AckDeclineViewModel(DemoData.pendingFloat(now), now)
     }
+
+    fun updatesViewModel(): UpdatesViewModel {
+        val now = now()
+        return UpdatesViewModel(DemoData.notifications(now), now)
+    }
+
+    fun calendarViewModel(): CalendarViewModel {
+        val now = now()
+        return CalendarViewModel(DemoData.snapshot(now).myShifts, now)
+    }
+
+    fun preferencesViewModel(): PreferencesViewModel = PreferencesViewModel(DemoData.preferencePeriod(now()))
+
+    fun breakClaimViewModel(): BreakClaimViewModel = BreakClaimViewModel(DemoData.breakClaim(now()))
+
+    fun settingsViewModel(): SettingsViewModel =
+        SettingsViewModel(DemoData.settingsProfile(), DemoData.DEMO_BROADCAST_SUBSCRIBED, DemoData.DEMO_APP_VERSION)
 
     val demoWeeklyHours: Double get() = DemoData.DEMO_WEEKLY_HOURS
 }

@@ -1,0 +1,23 @@
+# Phase 13a E2E — §6 (Phase 11) claim a break shift (FCFS) from the break picker.
+#
+# Android emulator + iOS simulator (Maestro). TDD-RED: selectors are the UI contract.
+appId: com.pennhousing.shift
+---
+- launchApp:
+    clearState: true
+
+# Open the Break-shifts tab (a scrollable tab; Maestro scrolls to find it).
+- tapOn:
+    id: "tab_break"
+- assertVisible:
+    id: "break_claim_screen"
+- assertVisible:
+    id: "break_hours_meter"
+- assertVisible:
+    id: "break_shift_card"
+
+# Claim the first claimable break shift → the "Break shift claimed" toast shows.
+- tapOn:
+    id: "break_claim_button"
+- assertVisible:
+    id: "break_claim_success"

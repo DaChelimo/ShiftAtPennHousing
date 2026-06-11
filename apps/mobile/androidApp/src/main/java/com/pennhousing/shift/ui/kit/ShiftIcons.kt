@@ -276,4 +276,71 @@ object ShiftIcons {
             arcTo(2.5f, 2.5f, 0f, false, true, 7f, 4.5f)
             close()
         }
+
+    /** Tune — sliders (settings / hours limits). */
+    val Tune: ImageVector =
+        stroked("Tune") {
+            moveTo(4f, 8f)
+            lineTo(20f, 8f)
+            moveTo(4f, 16f)
+            lineTo(20f, 16f)
+            circle(9f, 8f, 2.4f)
+            circle(15f, 16f, 2.4f)
+        }
+
+    /** Logout — arrow leaving a door (sign out). */
+    val Logout: ImageVector =
+        stroked("Logout") {
+            moveTo(14f, 5.5f)
+            lineTo(6f, 5.5f)
+            lineTo(6f, 18.5f)
+            lineTo(14f, 18.5f)
+            moveTo(11f, 12f)
+            lineTo(20f, 12f)
+            moveTo(16.5f, 8.5f)
+            lineTo(20f, 12f)
+            lineTo(16.5f, 15.5f)
+        }
+
+    /** Preferred — heart (the preference brush). */
+    val Heart: ImageVector =
+        stroked("Heart") {
+            moveTo(12f, 19.5f)
+            curveTo(12f, 19.5f, 4f, 14.5f, 4f, 9f)
+            arcTo(3.8f, 3.8f, 0f, false, true, 12f, 7.3f)
+            arcTo(3.8f, 3.8f, 0f, false, true, 20f, 9f)
+            curveTo(20f, 14.5f, 12f, 19.5f, 12f, 19.5f)
+            close()
+        }
+
+    /** Cannot — prohibited (the unavailable brush): circle + diagonal slash. */
+    val Ban: ImageVector =
+        stroked("Ban") {
+            circle(12f, 12f, 8f)
+            moveTo(6.3f, 6.3f)
+            lineTo(17.7f, 17.7f)
+        }
+
+    /** Building — a desk/house elsewhere (the cross-house empty state). */
+    val Building: ImageVector =
+        stroked("Building") {
+            moveTo(6f, 20.5f)
+            lineTo(6f, 4.5f)
+            lineTo(15f, 4.5f)
+            lineTo(15f, 20.5f)
+            moveTo(4f, 20.5f)
+            lineTo(20f, 20.5f)
+            moveTo(9f, 8f)
+            lineTo(9.01f, 8f)
+            moveTo(12f, 8f)
+            lineTo(12.01f, 8f)
+            moveTo(9f, 12f)
+            lineTo(9.01f, 12f)
+            moveTo(12f, 12f)
+            lineTo(12.01f, 12f)
+            moveTo(9f, 20.5f)
+            lineTo(9f, 16.5f)
+            lineTo(12f, 16.5f)
+            lineTo(12f, 20.5f)
+        }
 }

@@ -9,20 +9,40 @@ import Shared
 
 @MainActor
 final class BreakClaimObservable: ObservableObject {
-    let vm: BreakClaimViewModel
+    private(set) var vm: BreakClaimViewModel
     @Published var state: BreakClaimUiState
     private var task: Task<Void, Never>?
+    private var activated = false
 
     init(vm: BreakClaimViewModel) {
         self.vm = vm
         self.state = vm.uiState.value
-        task = Task { [weak self] in
-            guard let self else { return }
-            for await s in self.vm.uiState { self.state = s }
-        }
+        observe()
     }
 
     deinit { task?.cancel() }
+
+    private func observe() {
+        task?.cancel()
+        let vm = self.vm
+        task = Task { [weak self] in
+            for await s in vm.uiState { self?.state = s }
+        }
+    }
+
+    /// Live host: load the active break's descriptive context from the worker-readable
+    /// `break_periods` (migration 20260611000002), overlay it onto the (still demo-backed)
+    /// pool snapshot, and swap the VM. Falls back to the demo copy (no swap) when there is
+    /// no current/upcoming break.
+    func activateLive(repo: BreakRepository) async {
+        guard !activated else { return }
+        activated = true
+        guard let context = try? await repo.fetchActiveBreakContext(), let context else { return }
+        let snapshot = DemoFactory.shared.breakClaimSnapshot().doWithContext(context: context)
+        vm = BreakClaimViewModel(snapshot: snapshot)
+        state = vm.uiState.value
+        observe()
+    }
 }
 
 struct BreakClaimScreen: View {
@@ -137,7 +157,11 @@ struct BreakClaimScreen: View {
                 }, variant: .destructive, size: .sm)
                     .accessibilityIdentifier("break_drop_button")
             } else {
+                // At the 40h HARD cap → Claim disabled with the at-cap label (server is
+                // still authoritative — `break-claim` returns `hard_cap_exceeded`).
                 ShiftButton(title: row.actionLabel, action: { claim(row.id) }, variant: .filled, size: .sm)
+                    .disabled(row.claimBlocked)
+                    .opacity(row.claimBlocked ? 0.4 : 1)
                     .accessibilityIdentifier("break_claim_button")
             }
         }

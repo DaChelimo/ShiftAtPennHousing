@@ -30,6 +30,8 @@ import com.pennhousing.shift.shared.auth.AppBootstrap
 import com.pennhousing.shift.shared.auth.AuthSession
 import com.pennhousing.shift.shared.auth.DataSource
 import com.pennhousing.shift.shared.auth.StartDestination
+import com.pennhousing.shift.shared.breakclaim.BreakContextCopy
+import com.pennhousing.shift.shared.breakclaim.withContext
 import com.pennhousing.shift.shared.data.ProfileSnapshot
 import com.pennhousing.shift.shared.data.WorkerBackend
 import com.pennhousing.shift.shared.data.WorkerSnapshot
@@ -254,8 +256,22 @@ private fun LiveShiftsRoot(
                 }
             val preferencesVm =
                 remember(livePeriod) { PreferencesViewModel(livePeriod ?: DemoData.preferencePeriod(now)) }
-            // Break-claim still runs on the demo snapshot (break-period name not worker-readable).
-            val breakClaimVm = remember { BreakClaimViewModel(DemoData.breakClaim(now)) }
+            // Break-claim: LIVE descriptive context (name + window + "only Harnwell open")
+            // from the worker-readable `break_periods` (migration 20260611000002); the
+            // claimable POOL itself is still demo-backed (live `worker_open_shifts` break
+            // rows are a larger wiring, deferred). Fall back to the demo copy while the
+            // read is in flight or when no break is current/upcoming.
+            val breakRepo = remember { WorkerBackend.breakRepository }
+            val liveBreakContext by
+                produceState<BreakContextCopy?>(initialValue = null, session.userId) {
+                    value = runCatching { breakRepo.fetchActiveBreakContext() }.getOrNull()
+                }
+            val breakClaimVm =
+                remember(liveBreakContext) {
+                    val demo = DemoData.breakClaim(now)
+                    val snapshot = liveBreakContext?.let { demo.withContext(it) } ?: demo
+                    BreakClaimViewModel(snapshot)
+                }
             // Settings: load the worker's real profile + live `broadcast_subscribed` (own
             // users / user_roles + houses, all RLS-readable); fall back to the demo profile
             // while the read is in flight. The broadcast toggle PATCHes the

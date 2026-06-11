@@ -2,6 +2,7 @@ package com.pennhousing.shift.shared.breakclaim
 
 import com.pennhousing.shift.shared.model.House
 import com.pennhousing.shift.shared.viewmodel.BreakClaimViewModel
+import kotlinx.datetime.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -117,5 +118,88 @@ class BreakClaimTest {
         val vm = BreakClaimViewModel(snapshot(claimed = setOf("bk-3")))
         assertEquals(4.0, vm.uiState.value.list.claimedHours, 1e-9)
         assertTrue(vm.uiState.value.list.rows.first { it.id == "bk-3" }.claimedByMe)
+    }
+
+    // ----- at-40h-hard-cap claim block -----
+
+    @Test fun unclaimed_row_blocks_claim_at_cap() {
+        val row = s1.toRow(claimedByMe = false, atCap = true)
+        assertTrue(row.claimBlocked)
+        assertEquals(BREAK_AT_CAP_LABEL, row.actionLabel)
+    }
+
+    @Test fun claimed_row_is_never_blocked_even_at_cap() {
+        // A claimed row at cap still shows Drop — dropping only reduces hours.
+        val row = s1.toRow(claimedByMe = true, atCap = true)
+        assertFalse(row.claimBlocked)
+        assertEquals("Drop", row.actionLabel)
+    }
+
+    @Test fun list_blocks_unclaimed_rows_when_meter_at_cap() {
+        // cap=8h; claiming the two 4h shifts (bk-1, bk-2) reaches the cap. The remaining
+        // unclaimed bk-3 is claim-blocked; the claimed rows are not.
+        val list = buildBreakClaimList(snapshot(claimed = setOf("bk-1", "bk-2")), claimedIds = setOf("bk-1", "bk-2"), cap = 8.0)
+        assertTrue(list.meter.atCap)
+        assertFalse(list.rows.first { it.id == "bk-1" }.claimBlocked)
+        assertFalse(list.rows.first { it.id == "bk-2" }.claimBlocked)
+        assertTrue(list.rows.first { it.id == "bk-3" }.claimBlocked)
+        assertEquals(BREAK_AT_CAP_LABEL, list.rows.first { it.id == "bk-3" }.actionLabel)
+    }
+
+    @Test fun viewmodel_claim_is_noop_at_cap() {
+        // 11×4h shifts; claiming 10 reaches the 40h hard cap. A further claim is ignored
+        // (the UI also disables the button; this guards the programmatic path).
+        val many =
+            (1..11).map {
+                shift("c-$it", "2026-01-12T00:00:00-05:00", "2026-01-12T04:00:00-05:00")
+            }
+        val snap = snapshot().copy(shifts = many, initiallyClaimedIds = emptySet())
+        val vm = BreakClaimViewModel(snap)
+        (1..10).forEach { vm.claim("c-$it") } // 40h → at cap
+        assertTrue(vm.uiState.value.list.meter.atCap)
+        assertEquals(40.0, vm.uiState.value.list.claimedHours, 1e-9)
+
+        vm.claim("c-11") // blocked
+        assertEquals(40.0, vm.uiState.value.list.claimedHours, 1e-9)
+        assertFalse(vm.uiState.value.list.rows.first { it.id == "c-11" }.claimedByMe)
+    }
+
+    // ----- live context derivation (T2-2a) -----
+
+    @Test fun winter_break_context_surfaces_only_harnwell_open() {
+        val copy =
+            breakContextCopy(
+                breakName = "Winter Break 2026",
+                breakType = "winter_break",
+                startDate = LocalDate(2026, 12, 20),
+                endDate = LocalDate(2027, 1, 4),
+            )
+        assertEquals("Winter Break 2026 — only Harnwell open", copy.infoTitle)
+        assertEquals("WINTER BREAK 2026 · CLAIM-BASED", copy.profileContext)
+        assertTrue(copy.infoBody.contains("Dec 20 – Jan 4"))
+        assertTrue(copy.infoBody.contains("40h hard cap"))
+    }
+
+    @Test fun short_break_context_omits_harnwell_line() {
+        val copy =
+            breakContextCopy(
+                breakName = "Thanksgiving 2026",
+                breakType = "thanksgiving",
+                startDate = LocalDate(2026, 11, 25),
+                endDate = LocalDate(2026, 11, 29),
+            )
+        // No "only Harnwell open" for a short break — the break runs at the home house.
+        assertEquals("Thanksgiving 2026", copy.infoTitle)
+        assertFalse(copy.infoTitle.contains("Harnwell"))
+        assertTrue(copy.infoBody.contains("Nov 25 – Nov 29"))
+    }
+
+    @Test fun with_context_overlays_only_copy_keeps_pool() {
+        val live = breakContextCopy("Spring Break", "spring_break", LocalDate(2027, 3, 8), LocalDate(2027, 3, 14))
+        val merged = snapshot().withContext(live)
+        // Copy replaced; pool + claims preserved.
+        assertEquals(live.infoTitle, merged.infoTitle)
+        assertEquals(live.profileContext, merged.profileContext)
+        assertEquals(snapshot().shifts.size, merged.shifts.size)
     }
 }

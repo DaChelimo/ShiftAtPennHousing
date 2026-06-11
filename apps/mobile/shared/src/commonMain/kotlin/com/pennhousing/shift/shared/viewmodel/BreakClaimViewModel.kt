@@ -41,7 +41,14 @@ class BreakClaimViewModel(
             list = buildBreakClaimList(snapshot, claimedIds),
         )
 
+    /**
+     * Optimistic local claim. No-op when already claimed, or when the worker is at the
+     * 40h HARD cap (the UI also disables the Claim action — this guards the programmatic
+     * path; the server stays authoritative via `break-claim`'s `hard_cap_exceeded`).
+     */
     fun claim(id: String) {
+        if (id in claimedIds) return
+        if (_uiState.value.list.meter.atCap) return
         claimedIds = claimedIds + id
         _uiState.value = build()
     }

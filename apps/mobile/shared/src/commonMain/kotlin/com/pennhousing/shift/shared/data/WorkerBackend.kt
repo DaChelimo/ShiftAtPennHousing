@@ -34,6 +34,8 @@ object WorkerBackend {
 
     val profileRepository: ProfileRepository by lazy { ProfileRepository(client) }
 
+    val breakRepository: BreakRepository by lazy { BreakRepository(client) }
+
     /** Point `AppConfig.accessTokenProvider` at the live worker JWT (call after sign-in). */
     fun wireAccessToken() {
         AppConfig.accessTokenProvider = { client.auth.currentAccessTokenOrNull() }

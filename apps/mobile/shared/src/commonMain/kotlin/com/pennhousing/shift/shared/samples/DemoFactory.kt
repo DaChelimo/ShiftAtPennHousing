@@ -1,5 +1,6 @@
 package com.pennhousing.shift.shared.samples
 
+import com.pennhousing.shift.shared.breakclaim.BreakClaimSnapshot
 import com.pennhousing.shift.shared.data.ProfileSnapshot
 import com.pennhousing.shift.shared.model.FloatAck
 import com.pennhousing.shift.shared.notifications.NotificationItem
@@ -87,7 +88,10 @@ object DemoFactory {
 
     fun preferencesViewModel(): PreferencesViewModel = PreferencesViewModel(DemoData.preferencePeriod(now()))
 
-    fun breakClaimViewModel(): BreakClaimViewModel = BreakClaimViewModel(DemoData.breakClaim(now()))
+    fun breakClaimViewModel(): BreakClaimViewModel = BreakClaimViewModel(breakClaimSnapshot())
+
+    /** The demo break-claim snapshot — the iOS host overlays live context onto it. */
+    fun breakClaimSnapshot(): BreakClaimSnapshot = DemoData.breakClaim(now())
 
     fun settingsViewModel(): SettingsViewModel =
         SettingsViewModel(DemoData.settingsProfile(), DemoData.DEMO_BROADCAST_SUBSCRIBED, DemoData.DEMO_APP_VERSION)

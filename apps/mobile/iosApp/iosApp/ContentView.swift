@@ -233,6 +233,9 @@ struct ShiftsRootView: View {
                 await updatesModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
                 await ackModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
                 await settingsModel.activateLive(repo: WorkerBackend.shared.profileRepository, userId: uid)
+                // Live break context (name + window + "only Harnwell open") from the
+                // worker-readable `break_periods`; the pool stays demo-backed (T2-2a).
+                await breakModel.activateLive(repo: WorkerBackend.shared.breakRepository)
             }
         }
     }

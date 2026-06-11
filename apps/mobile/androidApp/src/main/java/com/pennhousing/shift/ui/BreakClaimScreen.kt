@@ -229,11 +229,14 @@ private fun BreakCard(
                     size = ButtonSize.Sm,
                 )
             } else {
+                // At the 40h HARD cap → Claim disabled with the at-cap label (server is
+                // still authoritative — `break-claim` returns `hard_cap_exceeded`).
                 ShiftButton(
                     row.actionLabel,
                     onClick = onClaim,
                     modifier = Modifier.testTag("break_claim_button"),
                     size = ButtonSize.Sm,
+                    enabled = !row.claimBlocked,
                 )
             }
         },

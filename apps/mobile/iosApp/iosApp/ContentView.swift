@@ -52,9 +52,10 @@ final class CalendarObservable: ObservableObject {
 /// Holds the Updates-tab `UpdatesViewModel`. Demo by default; the backend-configured
 /// host calls `activateLive` (mirroring the Android `MainActivity` live wiring): it
 /// loads the worker's real `notifications` rows (RLS-scoped) and swaps the demo VM for
-/// a live one. Feed-only — `urgent`/`floatId` stay unset (the live pending-float
-/// linkage is a separate chunk). The feed is static (no in-VM mutation), so this just
-/// republishes on the swap.
+/// a live one. A `float_assigned` notification row now maps to the urgent FLOAT entry
+/// that opens the §7 ack hero; `withPendingFloatEntry` (via the DemoFactory overload)
+/// additionally guarantees the live pending float is reachable even if its notification
+/// row hasn't landed. The feed is static (no in-VM mutation), so this just republishes.
 @MainActor
 final class UpdatesObservable: ObservableObject {
     @Published private(set) var feed: UpdatesFeed
@@ -64,14 +65,18 @@ final class UpdatesObservable: ObservableObject {
         self.feed = vm.uiState.value.feed
     }
 
-    /// Live host: load the real notifications, rebuild the VM, republish the feed.
-    /// Falls back to the demo feed (no swap) when the fetch fails. `DemoFactory`
-    /// supplies `now` Kotlin-side so we avoid bridging a `kotlin.time.Instant`.
+    /// Live host: load the real notifications + the worker's pending float, rebuild the
+    /// VM (merging the pending-float entry), republish the feed. Falls back to the demo
+    /// feed (no swap) when the notifications fetch fails. `DemoFactory` supplies `now`
+    /// Kotlin-side so we avoid bridging a `kotlin.time.Instant`.
     func activateLive(repo: WorkerShiftsRepository, userId: String) async {
         guard !live else { return }
         live = true
         guard let items = try? await repo.fetchNotifications(userId: userId) else { return }
-        feed = DemoFactory.shared.updatesViewModel(notifications: items).uiState.value.feed
+        let float = try? await repo.fetchPendingFloat(userId: userId)
+        feed = DemoFactory.shared
+            .updatesViewModel(notifications: items, float: float ?? nil)
+            .uiState.value.feed
     }
 }
 

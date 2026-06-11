@@ -107,4 +107,100 @@ class NotificationsTest {
     }
 
     @Test fun non_float_item_does_not_open_ack() = assertFalse(item("x", "2026-01-15T18:00:00-05:00").toRow(now).opensAck)
+
+    // ----- notificationFromPayload: the live float-linkage mapping (T1-10) -----
+
+    @Test fun float_assigned_payload_maps_to_urgent_openable_float() {
+        val n =
+            notificationFromPayload(
+                id = "n1",
+                rawType = "personal_shift",
+                payloadKind = "float_assigned",
+                floatId = "float-7",
+                title = null,
+                body = null,
+                createdAt = at("2026-01-15T18:00:00-05:00"),
+                unread = true,
+            )
+        assertEquals(NotificationCategory.FLOAT, n.category)
+        assertTrue(n.urgent)
+        assertEquals("float-7", n.floatId)
+        assertTrue(n.toRow(now).opensAck) // the row carries the pending_float_notification selector
+    }
+
+    @Test fun float_assigned_without_float_id_is_not_openable() {
+        val n =
+            notificationFromPayload(
+                id = "n2",
+                rawType = "personal_shift",
+                payloadKind = "float_assigned",
+                floatId = null,
+                title = null,
+                body = null,
+                createdAt = at("2026-01-15T18:00:00-05:00"),
+                unread = true,
+            )
+        assertEquals(NotificationCategory.FLOAT, n.category)
+        assertFalse(n.urgent)
+        assertEquals(null, n.floatId)
+        assertFalse(n.toRow(now).opensAck)
+    }
+
+    @Test fun non_float_payload_defers_to_category_for_type_and_never_opens_ack() {
+        val n =
+            notificationFromPayload(
+                id = "n3",
+                rawType = "ack_reminder",
+                payloadKind = null,
+                floatId = null,
+                title = "Reminder",
+                body = "Ack your float",
+                createdAt = at("2026-01-15T18:00:00-05:00"),
+                unread = false,
+            )
+        assertEquals(NotificationCategory.REMINDER, n.category)
+        assertFalse(n.urgent)
+        assertFalse(n.toRow(now).opensAck)
+    }
+
+    // ----- withPendingFloatEntry: live-pending-float reachability (T1-10) -----
+
+    @Test fun pending_float_entry_is_synthesized_when_no_row_references_it() {
+        val merged =
+            withPendingFloatEntry(
+                items = listOf(item("a", "2026-01-15T18:00:00-05:00")),
+                pendingFloatId = "float-9",
+                pendingFloatStart = at("2026-01-15T19:30:00-05:00"),
+                destinationHouseName = "Harnwell",
+            )
+        val synth = merged.single { it.floatId == "float-9" }
+        assertEquals(NotificationCategory.FLOAT, synth.category)
+        assertTrue(synth.urgent)
+        assertTrue(synth.toRow(now).opensAck)
+        assertTrue(buildUpdatesFeed(merged, now).today.any { it.opensAck })
+    }
+
+    @Test fun pending_float_entry_is_not_duplicated_when_a_row_already_links_it() {
+        val existing =
+            item(
+                "n",
+                "2026-01-15T18:00:00-05:00",
+                category = NotificationCategory.FLOAT,
+                urgent = true,
+                floatId = "float-9",
+            )
+        val merged =
+            withPendingFloatEntry(
+                items = listOf(existing),
+                pendingFloatId = "float-9",
+                pendingFloatStart = at("2026-01-15T19:30:00-05:00"),
+            )
+        assertEquals(1, merged.count { it.floatId == "float-9" })
+        assertEquals(1, merged.size)
+    }
+
+    @Test fun null_pending_float_leaves_items_unchanged() {
+        val items = listOf(item("a", "2026-01-15T18:00:00-05:00"))
+        assertEquals(items, withPendingFloatEntry(items, pendingFloatId = null, pendingFloatStart = null))
+    }
 }

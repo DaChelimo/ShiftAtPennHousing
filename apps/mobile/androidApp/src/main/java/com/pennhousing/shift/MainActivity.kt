@@ -35,6 +35,7 @@ import com.pennhousing.shift.shared.data.WorkerBackend
 import com.pennhousing.shift.shared.data.WorkerSnapshot
 import com.pennhousing.shift.shared.model.FloatAck
 import com.pennhousing.shift.shared.notifications.NotificationItem
+import com.pennhousing.shift.shared.notifications.withPendingFloatEntry
 import com.pennhousing.shift.shared.platform.AppConfig
 import com.pennhousing.shift.shared.preferences.PreferencePeriod
 import com.pennhousing.shift.shared.samples.DemoData
@@ -220,15 +221,26 @@ private fun LiveShiftsRoot(
             val ackVm = remember(livePendingFloat) { AckDeclineViewModel(livePendingFloat ?: DemoData.pendingFloat(now), now) }
             // Updates: load the worker's real `notifications` rows (RLS-scoped) for the
             // feed; fall back to the demo notifications while the fetch is in flight or
-            // if it fails. `urgent`/`floatId` stay unset (the live pending-float linkage
-            // is a later chunk) — this is feed-only. Mirrors the live-preferences pattern.
+            // if it fails. A `float_assigned` row now maps to the urgent FLOAT entry that
+            // opens the ack hero; `withPendingFloatEntry` additionally guarantees the live
+            // pending float (from `fetchPendingFloat`) is always represented even if its
+            // notification row hasn't landed. Mirrors the live-preferences pattern.
             val liveNotifications by
                 produceState<List<NotificationItem>?>(initialValue = null, session.userId) {
                     value = runCatching { repo.fetchNotifications(session.userId) }.getOrNull()
                 }
             val updatesVm =
-                remember(liveNotifications) {
-                    UpdatesViewModel(liveNotifications ?: DemoData.notifications(now), now)
+                remember(liveNotifications, livePendingFloat) {
+                    val base = liveNotifications ?: DemoData.notifications(now)
+                    UpdatesViewModel(
+                        withPendingFloatEntry(
+                            items = base,
+                            pendingFloatId = livePendingFloat?.floatId,
+                            pendingFloatStart = livePendingFloat?.floatStart,
+                            destinationHouseName = livePendingFloat?.destinationHouse?.name,
+                        ),
+                        now,
+                    )
                 }
             val calendarVm = remember(snapshot) { CalendarViewModel(snapshot.myShifts, now) }
             // Preferences: load the worker's real active period (scheduling_periods now

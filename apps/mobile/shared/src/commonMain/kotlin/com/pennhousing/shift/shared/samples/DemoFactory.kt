@@ -3,6 +3,7 @@ package com.pennhousing.shift.shared.samples
 import com.pennhousing.shift.shared.data.ProfileSnapshot
 import com.pennhousing.shift.shared.model.FloatAck
 import com.pennhousing.shift.shared.notifications.NotificationItem
+import com.pennhousing.shift.shared.notifications.withPendingFloatEntry
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
 import com.pennhousing.shift.shared.viewmodel.BreakClaimViewModel
 import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
@@ -57,6 +58,27 @@ object DemoFactory {
      * inline in `MainActivity`; iOS calls this from `UpdatesObservable.activateLive`.
      */
     fun updatesViewModel(notifications: List<NotificationItem>): UpdatesViewModel = UpdatesViewModel(notifications, now())
+
+    /**
+     * Live Updates VM that also guarantees the worker's current pending [float] (from
+     * `fetchPendingFloat`) is reachable in the feed — `withPendingFloatEntry` synthesizes
+     * the urgent `pending_float_notification` entry if no real `notifications` row already
+     * references it. A null [float] is the plain feed. iOS calls this from
+     * `UpdatesObservable.activateLive`; Android applies the same merge inline in `MainActivity`.
+     */
+    fun updatesViewModel(
+        notifications: List<NotificationItem>,
+        float: FloatAck?,
+    ): UpdatesViewModel =
+        UpdatesViewModel(
+            withPendingFloatEntry(
+                items = notifications,
+                pendingFloatId = float?.floatId,
+                pendingFloatStart = float?.floatStart,
+                destinationHouseName = float?.destinationHouse?.name,
+            ),
+            now(),
+        )
 
     fun calendarViewModel(): CalendarViewModel {
         val now = now()

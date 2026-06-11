@@ -9,7 +9,7 @@ import com.pennhousing.shift.shared.model.OpenShift
 import com.pennhousing.shift.shared.network.EdgeFunctionClient
 import com.pennhousing.shift.shared.network.EdgeResult
 import com.pennhousing.shift.shared.notifications.NotificationItem
-import com.pennhousing.shift.shared.notifications.categoryForType
+import com.pennhousing.shift.shared.notifications.notificationFromPayload
 import com.pennhousing.shift.shared.shifts.NEW_YORK
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
@@ -384,11 +384,16 @@ internal data class NotificationWireRow(
 )
 
 private fun NotificationWireRow.toModel(): NotificationItem =
-    NotificationItem(
+    notificationFromPayload(
         id = id,
-        category = categoryForType(type),
-        title = payload["title"]?.jsonPrimitive?.content ?: "Notification",
-        body = payload["body"]?.jsonPrimitive?.content ?: payload["message"]?.jsonPrimitive?.content ?: "",
+        rawType = type,
+        // The float-lookup / force-trigger RPCs stamp `payload.kind = 'float_assigned'`
+        // + `payload.float_id`; the pure mapper turns that into the urgent FLOAT entry
+        // whose row opens the ack hero (§7).
+        payloadKind = payload["kind"]?.jsonPrimitive?.content,
+        floatId = payload["float_id"]?.jsonPrimitive?.content,
+        title = payload["title"]?.jsonPrimitive?.content,
+        body = payload["body"]?.jsonPrimitive?.content ?: payload["message"]?.jsonPrimitive?.content,
         createdAt = Instant.parse(createdAt),
         unread = acknowledgedAt == null,
     )

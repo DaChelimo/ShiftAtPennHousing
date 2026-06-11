@@ -38,6 +38,87 @@ fun categoryForType(rawType: String): NotificationCategory =
         else -> NotificationCategory.INFO // broadcast, hm_leave_notice, hmod_urgent, personal_shift, unknown
     }
 
+/** The `payload.kind` the float-lookup / force-trigger RPCs stamp on the float-assigned notification. */
+const val PAYLOAD_KIND_FLOAT_ASSIGNED: String = "float_assigned"
+
+/**
+ * Map ONE `notifications` row (its `type`, `payload.kind`, `payload.float_id`, and any
+ * payload title/body) into the displayable [NotificationItem]. PURE — the repository
+ * extracts the wire fields and calls this so the float-linkage rule is tested once.
+ *
+ * The load-bearing case: a `personal_shift` row whose `payload.kind = 'float_assigned'`
+ * (stamped by `process_float_lookup_assignment` AND `force_trigger_float`) is the
+ * worker's pending-float entry. It maps to [NotificationCategory.FLOAT], is `urgent`,
+ * and carries [NotificationItem.floatId] from `payload.float_id` — so its row's
+ * `opensAck` is true and tapping it opens the §7 ack hero. (Backend follow-up: a
+ * dedicated `notification_type` for floats would let `categoryForType` resolve this
+ * without inspecting the payload; today the kind lives only in the JSON payload.)
+ *
+ * Any other row defers to [categoryForType] and carries no `floatId` (never opens the
+ * hero). A `float_assigned` row missing `float_id` cannot open the hero, so it is
+ * treated as a plain informational float entry (category FLOAT, not urgent, no link).
+ */
+fun notificationFromPayload(
+    id: String,
+    rawType: String,
+    payloadKind: String?,
+    floatId: String?,
+    title: String?,
+    body: String?,
+    createdAt: Instant,
+    unread: Boolean,
+): NotificationItem {
+    val isFloatAssigned = payloadKind == PAYLOAD_KIND_FLOAT_ASSIGNED
+    val openable = isFloatAssigned && floatId != null
+    return NotificationItem(
+        id = id,
+        category = if (isFloatAssigned) NotificationCategory.FLOAT else categoryForType(rawType),
+        title = title ?: if (isFloatAssigned) "Float assignment" else "Notification",
+        body = body ?: if (openable) "You've been floated. Tap to acknowledge." else "",
+        createdAt = createdAt,
+        unread = unread,
+        urgent = openable,
+        floatId = if (openable) floatId else null,
+    )
+}
+
+/**
+ * Ensure the worker's current pending float is reachable in the Updates feed.
+ *
+ * Belt-and-suspenders over [notificationFromPayload]: the float-lookup / force-trigger
+ * RPCs insert a `float_assigned` notification row (the primary path), but the live ack
+ * hero is driven by a SEPARATE `fetchPendingFloat` read. If that pending float is NOT
+ * already represented by an openable row in [items] — e.g. push delivery lagged, or the
+ * row was created before this linkage shipped — synthesize one urgent FLOAT entry so the
+ * `pending_float_notification` row is always present and opens the §7 ack hero.
+ *
+ * [pendingFloatId]/[pendingFloatStart] come from the live `fetchPendingFloat` result
+ * (null → nothing to add). The synthesized entry sorts by [pendingFloatStart] like any
+ * other row; [buildUpdatesFeed] handles grouping. Idempotent: if an existing item
+ * already carries [pendingFloatId], [items] is returned unchanged (no duplicate).
+ */
+fun withPendingFloatEntry(
+    items: List<NotificationItem>,
+    pendingFloatId: String?,
+    pendingFloatStart: Instant?,
+    destinationHouseName: String? = null,
+): List<NotificationItem> {
+    if (pendingFloatId == null) return items
+    if (items.any { it.floatId == pendingFloatId }) return items
+    val whereSuffix = destinationHouseName?.let { " to $it" } ?: ""
+    return items +
+        NotificationItem(
+            id = "pending-float-$pendingFloatId",
+            category = NotificationCategory.FLOAT,
+            title = "Float assignment",
+            body = "You've been floated$whereSuffix. Tap to acknowledge.",
+            createdAt = pendingFloatStart ?: items.maxOfOrNull { it.createdAt } ?: return items,
+            unread = true,
+            urgent = true,
+            floatId = pendingFloatId,
+        )
+}
+
 /** One notification the worker can see — a `notifications` row mapped to the app. */
 data class NotificationItem(
     val id: String,

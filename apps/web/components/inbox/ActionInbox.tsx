@@ -2,12 +2,36 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { markRead, setAlliedResolved } from '../../lib/actions/inbox';
 import type { InboxData, InboxItem as InboxItemT } from '../../lib/data/inbox';
+import { createClient } from '../../lib/supabase/client';
 import { Button, EmptyState, Icon, PageHead, Tabs, Tag, type IconName } from '../ui';
 import './inbox.css';
+
+// Realtime: open a postgres_changes channel on `notifications` so new/changed
+// alerts surface without a manual reload (the page copy promises "in real time").
+// The browser client carries the signed-in admin's cookie session, so RLS scopes
+// the stream to this recipient's rows exactly as the server-side initial load does.
+// On any change we just `router.refresh()` — that re-runs the inbox server
+// component, which re-fetches and re-partitions through the same @shift/core
+// predicates, so we never re-implement the enrich/partition logic client-side.
+function useInboxRealtime() {
+  const router = useRouter();
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel('inbox-notifications')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => {
+        router.refresh();
+      })
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [router]);
+}
 
 const ICON_FOR: Record<string, IconName> = {
   hmod_urgent: 'shield',
@@ -137,6 +161,7 @@ function InboxItem({ item }: { item: InboxItemT }) {
 
 export function ActionInbox({ data }: { data: InboxData }) {
   const [tab, setTab] = useState<'all' | 'urgent' | 'unread'>('all');
+  useInboxRealtime();
 
   // ---- Resolved view: a plain list of the resolved Allied alerts + hide link. ----
   if (data.view === 'resolved') {

@@ -995,6 +995,8 @@ export type Database = {
         Row: {
           assignment_id: string;
           block_id: string;
+          dropped_at: string | null;
+          dropped_by_user_id: string | null;
           is_cross_house_pickup: boolean;
           is_float: boolean;
           parent_float_id: string | null;
@@ -1006,6 +1008,8 @@ export type Database = {
         Insert: {
           assignment_id?: string;
           block_id: string;
+          dropped_at?: string | null;
+          dropped_by_user_id?: string | null;
           is_cross_house_pickup?: boolean;
           is_float?: boolean;
           parent_float_id?: string | null;
@@ -1017,6 +1021,8 @@ export type Database = {
         Update: {
           assignment_id?: string;
           block_id?: string;
+          dropped_at?: string | null;
+          dropped_by_user_id?: string | null;
           is_cross_house_pickup?: boolean;
           is_float?: boolean;
           parent_float_id?: string | null;
@@ -1032,6 +1038,20 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'shift_blocks';
             referencedColumns: ['block_id'];
+          },
+          {
+            foreignKeyName: 'shift_block_assignments_dropped_by_user_id_fkey';
+            columns: ['dropped_by_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'shift_block_assignments_dropped_by_user_id_fkey';
+            columns: ['dropped_by_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
           },
           {
             foreignKeyName: 'shift_block_assignments_parent_float_id_fkey';
@@ -1376,20 +1396,6 @@ export type Database = {
         };
         Relationships: [
           {
-            foreignKeyName: 'shift_block_assignments_user_id_fkey';
-            columns: ['user_id'];
-            isOneToOne: false;
-            referencedRelation: 'users';
-            referencedColumns: ['user_id'];
-          },
-          {
-            foreignKeyName: 'shift_block_assignments_user_id_fkey';
-            columns: ['user_id'];
-            isOneToOne: false;
-            referencedRelation: 'worker_open_shifts';
-            referencedColumns: ['eligible_user_id'];
-          },
-          {
             foreignKeyName: 'shift_blocks_house_id_fkey';
             columns: ['house_id'];
             isOneToOne: false;
@@ -1476,6 +1482,8 @@ export type Database = {
         Returns: {
           assignment_id: string;
           block_id: string;
+          dropped_at: string | null;
+          dropped_by_user_id: string | null;
           is_cross_house_pickup: boolean;
           is_float: boolean;
           parent_float_id: string | null;
@@ -1822,6 +1830,8 @@ export type Database = {
         Returns: {
           assignment_id: string;
           block_id: string;
+          dropped_at: string | null;
+          dropped_by_user_id: string | null;
           is_cross_house_pickup: boolean;
           is_float: boolean;
           parent_float_id: string | null;
@@ -1842,6 +1852,8 @@ export type Database = {
         Returns: {
           assignment_id: string;
           block_id: string;
+          dropped_at: string | null;
+          dropped_by_user_id: string | null;
           is_cross_house_pickup: boolean;
           is_float: boolean;
           parent_float_id: string | null;

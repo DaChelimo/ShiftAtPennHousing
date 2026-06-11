@@ -35,6 +35,47 @@ export function fridayAnchor(dateKey: string): string {
   return at.toISOString().slice(0, 10);
 }
 
+// T2-7 (§2.5 "Academic-year scope of the rotor") — the truncated week list for a
+// scheduling period. The rotor exists ONLY for operating (academic-year) dates:
+//   - the FIRST week is the Friday-08:00 opening the week that contains the first
+//     operating date in the period (fridayAnchor of that date);
+//   - the LAST week is the Friday-anchored week CONTAINING the last operating day —
+//     truncated so no interval extends into summer (a week is emitted iff its Friday
+//     anchor is on-or-before the last operating day). There is no summer rotor.
+// The upper bound is the last OPERATING date (operating_calendar), NOT period.end_date,
+// which may sit mid-summer or span a break and would otherwise over-generate weeks.
+// operatingDates is the unfiltered operating_calendar date list; this clamps it to the
+// period bounds itself. Pure: zero Supabase imports, no clock.
+export type RotorWeek = { weekStartDate: string; label: string };
+export function rotorWeeks(opts: {
+  periodStart: string;
+  periodEnd: string;
+  operatingDates: readonly string[];
+}): RotorWeek[] {
+  const inPeriod = opts.operatingDates
+    .filter((d) => d >= opts.periodStart && d <= opts.periodEnd)
+    .sort();
+  if (inPeriod.length === 0) return [];
+  const firstOperating = inPeriod[0]!;
+  const lastOperating = inPeriod[inPeriod.length - 1]!;
+
+  const weeks: RotorWeek[] = [];
+  let cursor = fridayAnchor(firstOperating);
+  // Bounded against malformed input (a semester is ~17–18 weeks; 60 is generous).
+  for (let i = 0; i < 60 && cursor <= lastOperating; i += 1) {
+    weeks.push({ weekStartDate: cursor, label: `Week of ${cursor}` });
+    cursor = addDaysUtc(cursor, 7);
+  }
+  return weeks;
+}
+
+function addDaysUtc(date: string, days: number): string {
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
+  const at = new Date(Date.UTC(y, m - 1, d));
+  at.setUTCDate(at.getUTCDate() + days);
+  return at.toISOString().slice(0, 10);
+}
+
 // D5 — cross-house authority is the on-duty HMOD's duty-week power (campus-wide)
 // plus the system-wide project administrator. An off-duty HM/BM is house-scoped.
 export function canViewOtherHouses(opts: {

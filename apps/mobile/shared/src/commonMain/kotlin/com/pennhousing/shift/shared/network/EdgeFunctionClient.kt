@@ -3,6 +3,7 @@ package com.pennhousing.shift.shared.network
 import com.pennhousing.shift.shared.platform.AppConfig
 import io.ktor.client.HttpClient
 import io.ktor.client.request.headers
+import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
@@ -52,6 +53,33 @@ class EdgeFunctionClient(
         return runCatching {
             val response: HttpResponse =
                 http.post("$base/functions/v1/$path") {
+                    headers {
+                        append("apikey", AppConfig.supabaseAnonKey)
+                        append("Authorization", "Bearer $bearer")
+                    }
+                    contentType(ContentType.Application.Json)
+                    setBody(jsonBody)
+                }
+            EdgeResult(response.status.isSuccess(), response.status.value, response.bodyAsText())
+        }.getOrDefault(EdgeResult(false, 0, ""))
+    }
+
+    /**
+     * PATCH [jsonBody] to `<supabaseUrl>/functions/v1/<path>` — the same auth/headers as
+     * [invoke], for the few Edge Functions that are PATCH-only (e.g.
+     * `users-broadcast-subscription`, which 405s on anything but PATCH). Returns
+     * `ok = true` on a 2xx; never throws (blank URL / transport failure → `(false, 0, "")`).
+     */
+    suspend fun patch(
+        path: String,
+        jsonBody: String,
+    ): EdgeResult {
+        val base = AppConfig.supabaseUrl
+        if (base.isBlank()) return EdgeResult(false, 0, "")
+        val bearer = AppConfig.accessTokenProvider() ?: AppConfig.supabaseAnonKey
+        return runCatching {
+            val response: HttpResponse =
+                http.patch("$base/functions/v1/$path") {
                     headers {
                         append("apikey", AppConfig.supabaseAnonKey)
                         append("Authorization", "Bearer $bearer")

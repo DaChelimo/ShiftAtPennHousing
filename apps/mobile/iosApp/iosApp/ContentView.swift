@@ -161,7 +161,18 @@ struct ShiftsRootView: View {
                         Task { _ = try? await repo.dropShift(assignmentId: assignmentId) }
                     }
                 )
-                case .settings: SettingsScreen(model: settingsModel, onSignOut: onSignOut)
+                case .settings: SettingsScreen(
+                    model: settingsModel,
+                    onSignOut: onSignOut,
+                    // Live host PATCHes `users-broadcast-subscription` (best-effort) while the
+                    // settings VM does the optimistic local toggle; demo (liveUserId == nil) =
+                    // local-only. The EF 403s an HM/BM subscribe; the next profile read reconciles.
+                    onToggleBroadcast: liveUserId == nil ? nil : { subscribed in
+                        guard let uid = liveUserId else { return }
+                        let repo = WorkerBackend.shared.profileRepository
+                        Task { _ = try? await repo.setBroadcastSubscription(userId: uid, subscribed: subscribed) }
+                    }
+                )
                 }
             }
         }
@@ -216,6 +227,7 @@ struct ShiftsRootView: View {
                 await prefsModel.activateLive(repo: WorkerBackend.shared.preferencesRepository, userId: uid)
                 await updatesModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
                 await ackModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
+                await settingsModel.activateLive(repo: WorkerBackend.shared.profileRepository, userId: uid)
             }
         }
     }

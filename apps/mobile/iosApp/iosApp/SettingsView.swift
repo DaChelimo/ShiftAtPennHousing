@@ -8,17 +8,36 @@ import Shared
 /// limits, and the Account group (Sign out). Selector ids match the Maestro contract.
 @MainActor
 final class SettingsObservable: ObservableObject {
-    let vm: SettingsViewModel
+    private(set) var vm: SettingsViewModel
     @Published var state: SettingsUiState
     private var task: Task<Void, Never>?
+    private var live = false
 
     init(vm: SettingsViewModel) {
         self.vm = vm
         self.state = vm.uiState.value
+        observe()
+    }
+
+    private func observe() {
+        task?.cancel()
         task = Task { [weak self] in
             guard let self else { return }
             for await s in self.vm.uiState { self.state = s }
         }
+    }
+
+    /// Live host: load the worker's real profile + broadcast subscription, rebuild the
+    /// VM, re-observe. Falls back to the demo profile (no swap) when the read fails.
+    /// `DemoFactory` supplies the app version Kotlin-side. Mirrors the Android
+    /// `MainActivity` live wiring and the ack/updates `activateLive` pattern.
+    func activateLive(repo: ProfileRepository, userId: String) async {
+        guard !live else { return }
+        live = true
+        guard let snapshot = try? await repo.fetchProfile(userId: userId), let snapshot else { return }
+        vm = DemoFactory.shared.settingsViewModel(snapshot: snapshot)
+        state = vm.uiState.value
+        observe()
     }
 
     deinit { task?.cancel() }
@@ -27,6 +46,10 @@ final class SettingsObservable: ObservableObject {
 struct SettingsScreen: View {
     @ObservedObject var model: SettingsObservable
     var onSignOut: () -> Void = {}
+    /// Live host PATCHes `users-broadcast-subscription` with the NEW desired state; demo
+    /// (nil) keeps the VM's optimistic local toggle only. Only the broadcast / "General
+    /// updates" channel is interactive — the three personal-notif rows stay disabled (§10.1).
+    var onToggleBroadcast: ((Bool) -> Void)? = nil
     @Environment(\.colorScheme) private var scheme
 
     private let themes: [ThemeChoice] = [.system, .light, .dark]
@@ -158,7 +181,16 @@ struct SettingsScreen: View {
                     Text(row.sub).font(ShiftFont.sans(12.5)).foregroundColor(c.ter)
                 }
                 Spacer(minLength: 0)
-                Toggle("", isOn: Binding(get: { row.on }, set: { _ in if row.interactive { model.vm.toggleBroadcast() } }))
+                Toggle("", isOn: Binding(get: { row.on }, set: { _ in
+                    // Only GENERAL_UPDATES is interactive. Flip the optimistic local state,
+                    // then PATCH the EF (live host) with the resulting subscription value.
+                    if row.interactive {
+                        model.vm.toggleBroadcast()
+                        let subscribed = model.vm.uiState.value.notifications
+                            .first { $0.channel == .generalUpdates }?.on ?? false
+                        onToggleBroadcast?(subscribed)
+                    }
+                }))
                     .labelsHidden().tint(c.blue).disabled(!row.interactive)
                     .accessibilityIdentifier(row.channel == .generalUpdates ? "settings_broadcast_toggle" : "")
             }

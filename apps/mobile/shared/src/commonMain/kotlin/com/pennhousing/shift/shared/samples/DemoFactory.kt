@@ -1,5 +1,6 @@
 package com.pennhousing.shift.shared.samples
 
+import com.pennhousing.shift.shared.data.ProfileSnapshot
 import com.pennhousing.shift.shared.model.FloatAck
 import com.pennhousing.shift.shared.notifications.NotificationItem
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
@@ -68,6 +69,15 @@ object DemoFactory {
 
     fun settingsViewModel(): SettingsViewModel =
         SettingsViewModel(DemoData.settingsProfile(), DemoData.DEMO_BROADCAST_SUBSCRIBED, DemoData.DEMO_APP_VERSION)
+
+    /**
+     * Live Settings VM from the worker's real profile + live broadcast subscription
+     * (own `users` / `user_roles` + `houses`, all RLS-readable) — mirrors the demo
+     * [settingsViewModel]. The app version stays the build constant. Android builds the
+     * live VM inline in `MainActivity`; iOS calls this from `SettingsObservable.activateLive`.
+     */
+    fun settingsViewModel(snapshot: ProfileSnapshot): SettingsViewModel =
+        SettingsViewModel(snapshot.profile, snapshot.broadcastSubscribed, DemoData.DEMO_APP_VERSION)
 
     val demoWeeklyHours: Double get() = DemoData.DEMO_WEEKLY_HOURS
 }

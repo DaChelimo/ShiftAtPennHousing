@@ -55,6 +55,9 @@ import com.pennhousing.shift.ui.theme.ShiftTheme
 fun SettingsTabContent(
     vm: SettingsViewModel,
     onSignOut: () -> Unit,
+    // Live host PATCHes `users-broadcast-subscription` with the NEW desired state; demo
+    // defaults to no live write (the VM still flips its optimistic local toggle).
+    onToggleBroadcast: (Boolean) -> Unit = {},
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val c = ShiftTheme.colors
@@ -69,7 +72,21 @@ fun SettingsTabContent(
         item {
             SettingsGroup("Notifications") {
                 state.notifications.forEachIndexed { i, row ->
-                    NotificationSettingRow(row, last = i == state.notifications.lastIndex, onToggle = { vm.toggleBroadcast() })
+                    NotificationSettingRow(
+                        row,
+                        last = i == state.notifications.lastIndex,
+                        onToggle = {
+                            // Only GENERAL_UPDATES is interactive (the row's `enabled` flag
+                            // gates the switch). Flip the optimistic local state, then PATCH
+                            // the EF with the resulting (synchronous) subscription value.
+                            vm.toggleBroadcast()
+                            val subscribed =
+                                vm.uiState.value.notifications
+                                    .first { it.channel == NotificationChannel.GENERAL_UPDATES }
+                                    .on
+                            onToggleBroadcast(subscribed)
+                        },
+                    )
                 }
             }
         }

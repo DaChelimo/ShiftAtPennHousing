@@ -143,6 +143,11 @@ fun ShiftsApp(
     // argument is the break shift's pool-row id (= its block assignment_id).
     onClaimBreak: (String) -> Unit = {},
     onDropBreak: (String) -> Unit = {},
+    // Live host PATCHes `users-broadcast-subscription` (best-effort) while the settings
+    // ViewModel still does the optimistic local toggle; demo defaults to no live write.
+    // The argument is the NEW desired subscription state. Only the broadcast / "General
+    // updates" channel is interactive — the three personal-notif rows stay disabled (§10.1).
+    onToggleBroadcast: (Boolean) -> Unit = {},
 ) {
     ShiftTheme {
         val state by shiftsVm.uiState.collectAsStateWithLifecycle()
@@ -228,7 +233,7 @@ fun ShiftsApp(
                         )
                     TAB_PREFS -> PreferencesTabContent(preferencesVm, onSubmitPreferences)
                     TAB_BREAK -> BreakClaimTabContent(breakClaimVm, onClaimBreak, onDropBreak)
-                    TAB_SETTINGS -> SettingsTabContent(settingsVm, onSignOut)
+                    TAB_SETTINGS -> SettingsTabContent(settingsVm, onSignOut, onToggleBroadcast)
                 }
             }
         }

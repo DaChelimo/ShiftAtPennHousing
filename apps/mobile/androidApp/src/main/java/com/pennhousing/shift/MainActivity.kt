@@ -30,6 +30,7 @@ import com.pennhousing.shift.shared.auth.AppBootstrap
 import com.pennhousing.shift.shared.auth.AuthSession
 import com.pennhousing.shift.shared.auth.DataSource
 import com.pennhousing.shift.shared.auth.StartDestination
+import com.pennhousing.shift.shared.data.ProfileSnapshot
 import com.pennhousing.shift.shared.data.WorkerBackend
 import com.pennhousing.shift.shared.data.WorkerSnapshot
 import com.pennhousing.shift.shared.model.FloatAck
@@ -243,10 +244,25 @@ private fun LiveShiftsRoot(
                 remember(livePeriod) { PreferencesViewModel(livePeriod ?: DemoData.preferencePeriod(now)) }
             // Break-claim still runs on the demo snapshot (break-period name not worker-readable).
             val breakClaimVm = remember { BreakClaimViewModel(DemoData.breakClaim(now)) }
-            // Settings runs on the demo profile until the profile read wires (users /
-            // user_roles / houses are RLS-readable; no purpose-built profile view yet).
+            // Settings: load the worker's real profile + live `broadcast_subscribed` (own
+            // users / user_roles + houses, all RLS-readable); fall back to the demo profile
+            // while the read is in flight. The broadcast toggle PATCHes the
+            // `users-broadcast-subscription` EF (best-effort) — it is the ONLY interactive
+            // notification channel (§10.1: personal float / shift-reminder / schedule-published
+            // notifications are mandatory and non-silenceable, shown always-on/disabled).
+            val profileRepo = remember { WorkerBackend.profileRepository }
+            val liveProfile by
+                produceState<ProfileSnapshot?>(initialValue = null, session.userId) {
+                    value = runCatching { profileRepo.fetchProfile(session.userId) }.getOrNull()
+                }
             val settingsVm =
-                remember { SettingsViewModel(DemoData.settingsProfile(), DemoData.DEMO_BROADCAST_SUBSCRIBED, DemoData.DEMO_APP_VERSION) }
+                remember(liveProfile) {
+                    SettingsViewModel(
+                        liveProfile?.profile ?: DemoData.settingsProfile(),
+                        liveProfile?.broadcastSubscribed ?: DemoData.DEMO_BROADCAST_SUBSCRIBED,
+                        DemoData.DEMO_APP_VERSION,
+                    )
+                }
             ShiftsApp(
                 shiftsVm = shiftsVm,
                 ackVm = ackVm,
@@ -310,6 +326,13 @@ private fun LiveShiftsRoot(
                     // drop EF (no break-specific drop RPC). The claimed break block's pool-row
                     // id is its block assignment_id. Optimistic locally; next snapshot reconciles.
                     prefsScope.launch { repo.dropShift(assignmentId) }
+                },
+                onToggleBroadcast = { subscribed ->
+                    // PATCH the real broadcast subscription → `users-broadcast-subscription`
+                    // (best-effort) while the settings ViewModel already flipped its optimistic
+                    // toggle. The EF rejects an HM/BM subscribe (403); the next profile read
+                    // reconciles. This is the ONLY user-toggleable notification channel.
+                    prefsScope.launch { profileRepo.setBroadcastSubscription(session.userId, subscribed) }
                 },
             )
         }

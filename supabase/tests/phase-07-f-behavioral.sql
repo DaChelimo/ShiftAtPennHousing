@@ -4,7 +4,7 @@
 
 BEGIN;
 
-SELECT plan(8);
+SELECT plan(11);
 
 INSERT INTO auth.users (id, instance_id, aud, role, email)
 VALUES
@@ -71,6 +71,46 @@ SELECT lives_ok(
        ARRAY['a000050f-0000-0000-0000-000000000005']::uuid[],
        'e000050f-0000-0000-0000-000000000001', current_setting('test.f.ref')::timestamptz) $$,
   'a floated_out home seat can be dropped (F-05-004)');
+
+-- ============================================================
+-- §5.5 Float-drop exception: a worker who is holding/covering a float may
+-- drop the FLOAT DESTINATION (the inbound seat they cover), not only their
+-- floated-out home seat (F-05-004, test 5). drop_shift must ALLOW it and
+-- vacate the row to vacant/temporary_drop so the orchestrator re-escalates
+-- the destination independently. (Escalation itself is the orchestrator's
+-- job, not drop_shift's — here we assert the drop is permitted and leaves a
+-- re-escalatable vacancy.)
+-- ============================================================
+-- Destination seats the floater covers at house-03 (non-home), >2h out so no
+-- direct-HMOD branch fires; one acknowledged (floated_in), one pending.
+INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount) VALUES
+  ('f000050f-0000-0000-0000-0000000000e1','house-03', current_setting('test.f.ref')::timestamptz + interval '3 hours', 1),
+  ('f000050f-0000-0000-0000-0000000000e2','house-03', current_setting('test.f.ref')::timestamptz + interval '3 hours 30 minutes', 1);
+
+INSERT INTO public.shift_block_assignments (assignment_id, block_id, user_id, status, vacancy_origin) VALUES
+  ('a000050f-0000-0000-0000-0000000000e1','f000050f-0000-0000-0000-0000000000e1','e000050f-0000-0000-0000-000000000001','floated_in','none'),
+  ('a000050f-0000-0000-0000-0000000000e2','f000050f-0000-0000-0000-0000000000e2','e000050f-0000-0000-0000-000000000001','pending_float_in','none');
+
+-- 6. The acknowledged float destination (floated_in) is droppable (§5.5).
+SELECT lives_ok(
+  $$ SELECT public.drop_shift(
+       ARRAY['a000050f-0000-0000-0000-0000000000e1']::uuid[],
+       'e000050f-0000-0000-0000-000000000001', current_setting('test.f.ref')::timestamptz) $$,
+  'float destination (floated_in) is droppable by the covering worker (§5.5)');
+
+-- 7. The drop leaves a re-escalatable vacancy (vacant / temporary_drop).
+SELECT is(
+  (SELECT status || '/' || vacancy_origin FROM public.shift_block_assignments
+     WHERE assignment_id = 'a000050f-0000-0000-0000-0000000000e1'),
+  'vacant/temporary_drop',
+  'dropped float destination is vacated for orchestrator re-escalation (§5.5)');
+
+-- 8. A pending (not-yet-acked) float destination (pending_float_in) is also droppable (§5.5).
+SELECT lives_ok(
+  $$ SELECT public.drop_shift(
+       ARRAY['a000050f-0000-0000-0000-0000000000e2']::uuid[],
+       'e000050f-0000-0000-0000-000000000001', current_setting('test.f.ref')::timestamptz) $$,
+  'pending float destination (pending_float_in) is droppable (§5.5)');
 
 -- ============================================================
 -- F3: ack-cadence snapshot on float assignment.

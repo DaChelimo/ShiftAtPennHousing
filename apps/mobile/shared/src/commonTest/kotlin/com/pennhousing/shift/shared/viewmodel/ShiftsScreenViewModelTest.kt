@@ -280,6 +280,19 @@ class ShiftsScreenViewModelTest {
     }
 
     @Test
+    fun workerHoldingAFloatCanDropTheOccurrence() {
+        // §5.5 float-drop exception: a worker who is holding/floating a shift may
+        // drop it. The FLOAT_OUT card surfaces a drop affordance (occurrence drop
+        // is offered; a single float occurrence is not a recurring slot so the
+        // permanent option stays off). The card lives in the droppable SCHEDULED
+        // subsection, so it is tappable into the drop sheet.
+        val o = dropOptionsFor(floatOut, breakProfile = false)
+        assertTrue(o.canDropOccurrence)
+        assertFalse(o.canDropPermanently)
+        assertEquals(MyShiftsSection.SCHEDULED, classifyMyShift(floatOut))
+    }
+
+    @Test
     fun dropFromNowMidShiftRoundsTheGapStartDownToTheBlockBoundary() {
         // §5.2: a drop-from-now at 17:51 of a 15:00–24:00 shift produces a 17:30–24:00 gap.
         val shift = MyShift("mid", harnwell, at("2026-01-15T15:00:00-05:00"), at("2026-01-16T00:00:00-05:00"), AssignmentKind.SCHEDULED)

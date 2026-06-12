@@ -26,6 +26,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -46,8 +47,10 @@ import com.pennhousing.shift.shared.calendar.CalendarAgenda
 import com.pennhousing.shift.shared.calendar.CalendarDayHeader
 import com.pennhousing.shift.shared.calendar.CalendarWeek
 import com.pennhousing.shift.shared.calendar.WeekDayCell
+import com.pennhousing.shift.shared.data.PermanentPickupScope
 import com.pennhousing.shift.shared.data.ToastNotification
 import com.pennhousing.shift.shared.model.MyShift
+import com.pennhousing.shift.shared.model.OpenFeed
 import com.pennhousing.shift.shared.model.OpenShift
 import com.pennhousing.shift.shared.notifications.NotificationCategory
 import com.pennhousing.shift.shared.notifications.NotificationRow
@@ -128,8 +131,16 @@ fun ShiftsApp(
     // the ViewModel still does the optimistic local move; demo defaults to no live write.
     onDropShift: (MyShift, Boolean) -> Unit = { _, _ -> },
     // Live host POSTs to `claim-shift` on confirm (best-effort) while the ViewModel still
-    // does the optimistic local pickup; demo defaults to no live write.
+    // does the optimistic local pickup; demo defaults to no live write. Used for WEEKLY
+    // openings only — permanent openings route through [onPickUpPermanent].
     onClaimShift: (OpenShift) -> Unit = {},
+    // Live host POSTs to the `permanent-pickup` EF on confirm of a PERMANENT opening
+    // (best-effort) — the real permanent-pickup path (the prior `claim-shift` permanent
+    // returned 501). The ViewModel still does the optimistic local pickup; demo = no write.
+    onPickUpPermanent: (OpenShift) -> Unit = {},
+    // Live host GETs the `permanent-pickup` dry-run SCOPE for the design's "Picking up N of
+    // M weeks · K skipped" confirmation; demo returns null (the sheet shows the plain note).
+    loadPermanentScope: suspend (OpenShift) -> PermanentPickupScope? = { null },
     // Live host POSTs the same `claim-shift` to reclaim a dropped-still-open shift
     // (its assignment_id is still vacant); demo defaults to no live write.
     onReclaimShift: (MyShift) -> Unit = {},
@@ -215,6 +226,8 @@ fun ShiftsApp(
                             breakProfile = breakProfile,
                             onClaimed = { claimSuccess = true },
                             onClaimShift = onClaimShift,
+                            onPickUpPermanent = onPickUpPermanent,
+                            loadPermanentScope = loadPermanentScope,
                         )
                     TAB_OTHER ->
                         OtherHousesTabContent(
@@ -224,6 +237,8 @@ fun ShiftsApp(
                             breakProfile = breakProfile,
                             onClaimed = { claimSuccess = true },
                             onClaimShift = onClaimShift,
+                            onPickUpPermanent = onPickUpPermanent,
+                            loadPermanentScope = loadPermanentScope,
                         )
                     TAB_CALENDAR -> CalendarTabContent(calendarVm)
                     TAB_UPDATES ->
@@ -434,6 +449,26 @@ private fun MyShiftCardState.toKitState(): ShiftState =
 // Tab 2 — Open Shifts in My House (§5.6 Tab 2 / §5.1).
 // ===================================================================
 
+/**
+ * Route a confirmed open-shift pickup to the right live write, then do the optimistic local
+ * move. A WEEKLY opening → `claim-shift` ([onClaimShift]); a PERMANENT opening → the
+ * `permanent-pickup` EF ([onPickUpPermanent], the real path — `claim-shift`'s permanent
+ * branch 501s). The ViewModel's optimistic [ShiftsScreenViewModel.claim] is the same local
+ * move for both (decision #13); the server stays authoritative and the next Realtime
+ * snapshot reconciles. Shared by Tab 2 and Tab 3.
+ */
+private fun confirmOpenShift(
+    shift: OpenShift,
+    vm: ShiftsScreenViewModel,
+    onClaimShift: (OpenShift) -> Unit,
+    onPickUpPermanent: (OpenShift) -> Unit,
+    onClaimed: () -> Unit,
+) {
+    if (shift.feed == OpenFeed.PERMANENT_OPENING) onPickUpPermanent(shift) else onClaimShift(shift)
+    vm.claim(shift)
+    onClaimed()
+}
+
 @Composable
 private fun HomeOpenTabContent(
     tab: HomeOpenShiftsTab,
@@ -442,6 +477,8 @@ private fun HomeOpenTabContent(
     breakProfile: Boolean,
     onClaimed: () -> Unit,
     onClaimShift: (OpenShift) -> Unit = {},
+    onPickUpPermanent: (OpenShift) -> Unit = {},
+    loadPermanentScope: suspend (OpenShift) -> PermanentPickupScope? = { null },
 ) {
     var claimTarget by remember { mutableStateOf<OpenShift?>(null) }
 
@@ -480,13 +517,8 @@ private fun HomeOpenTabContent(
             vm = vm,
             currentWeeklyHours = currentWeeklyHours,
             breakProfile = breakProfile,
-            onConfirmed = {
-                // Live host POSTs `claim-shift` (best-effort); the ViewModel does the
-                // optimistic local pickup. Server stays authoritative for cap/T-2h/FCFS.
-                onClaimShift(shift)
-                vm.claim(shift)
-                onClaimed()
-            },
+            loadPermanentScope = loadPermanentScope,
+            onConfirmed = { confirmOpenShift(shift, vm, onClaimShift, onPickUpPermanent, onClaimed) },
             onDismiss = { claimTarget = null },
         )
     }
@@ -559,11 +591,18 @@ private fun ClaimSheet(
     breakProfile: Boolean,
     onConfirmed: () -> Unit,
     onDismiss: () -> Unit,
+    loadPermanentScope: suspend (OpenShift) -> PermanentPickupScope? = { null },
 ) {
     val c = ShiftTheme.colors
     val claimable = vm.claimable(shift)
     val row = remember(shift, claimable) { shift.toRow(claimable) }
     val permanent = row.state == OpenShiftCardState.PERMANENT
+    // Dry-run the `permanent-pickup` EF so the confirm can show "Picking up N of M weeks ·
+    // K skipped" (§8.4.3). Null until loaded / on the demo path → the plain recurring note.
+    var permanentScope by remember(shift) { mutableStateOf<PermanentPickupScope?>(null) }
+    LaunchedEffect(shift, permanent) {
+        if (permanent) permanentScope = loadPermanentScope(shift)
+    }
     val meter =
         remember(shift, currentWeeklyHours, breakProfile) {
             claimMeter(currentWeeklyHours, hoursBetween(shift.start, shift.end), breakProfile)
@@ -587,7 +626,7 @@ private fun ClaimSheet(
                 }
             }
 
-            if (permanent) PermanentRecurringNote(row)
+            if (permanent) PermanentRecurringNote(row, permanentScope)
 
             ClaimHoursMeter(meter)
 
@@ -685,20 +724,40 @@ private fun ClaimHoursMeter(meter: ClaimMeter) {
     }
 }
 
-/** The recurring-slot note shown when picking up a permanent opening (design `ClaimSheet`). */
+/**
+ * The recurring-slot note shown when picking up a permanent opening (design `ClaimSheet`).
+ * When the `permanent-pickup` dry-run [scope] has resolved, it also shows the §8.4.3
+ * "Picking up N of M weeks · K skipped" line so the worker sees how the slot lands against
+ * their caps + existing shifts before committing; before that (or on the demo path) only
+ * the plain recurring summary shows.
+ */
 @Composable
-private fun PermanentRecurringNote(row: OpenShiftRow) {
+private fun PermanentRecurringNote(
+    row: OpenShiftRow,
+    scope: PermanentPickupScope?,
+) {
     val c = ShiftTheme.colors
     Column(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(c.permanent.tint)
-            .padding(horizontal = 13.dp, vertical = 12.dp),
+            .padding(horizontal = 13.dp, vertical = 12.dp)
+            .testTag("permanent_recurring_note"),
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         Text("Recurring · ${row.dayLabel} · ${row.timeLabel}", color = c.permanent.deep, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         row.meta?.let { Text("Repeats weekly — $it.", color = c.sec, fontSize = 12.5.sp) }
+        scope?.let {
+            val skipped = if (it.weeksSkipped > 0) " · ${it.weeksSkipped} skipped" else ""
+            Text(
+                "Picking up ${it.weeksPickedUp} of ${it.totalWeeksInScope} weeks$skipped",
+                color = c.permanent.deep,
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.testTag("permanent_pickup_scope"),
+            )
+        }
     }
 }
 
@@ -714,6 +773,8 @@ private fun OtherHousesTabContent(
     breakProfile: Boolean,
     onClaimed: () -> Unit,
     onClaimShift: (OpenShift) -> Unit = {},
+    onPickUpPermanent: (OpenShift) -> Unit = {},
+    loadPermanentScope: suspend (OpenShift) -> PermanentPickupScope? = { null },
 ) {
     var claimTarget by remember { mutableStateOf<OpenShift?>(null) }
 
@@ -752,13 +813,8 @@ private fun OtherHousesTabContent(
             vm = vm,
             currentWeeklyHours = currentWeeklyHours,
             breakProfile = breakProfile,
-            onConfirmed = {
-                // Live host POSTs `claim-shift` (best-effort); the ViewModel does the
-                // optimistic local pickup. Server stays authoritative for cap/T-2h/FCFS.
-                onClaimShift(shift)
-                vm.claim(shift)
-                onClaimed()
-            },
+            loadPermanentScope = loadPermanentScope,
+            onConfirmed = { confirmOpenShift(shift, vm, onClaimShift, onPickUpPermanent, onClaimed) },
             onDismiss = { claimTarget = null },
         )
     }

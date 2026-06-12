@@ -323,7 +323,22 @@ private fun LiveShiftsRoot(
                     // does the optimistic local pickup. The server is authoritative for the
                     // hours-cap, T-2h cutoff, cross-house eligibility and FCFS; the client
                     // gating was a pre-check. The next Realtime snapshot reconciles the UI.
+                    // WEEKLY openings only — permanent openings route through onPickUpPermanent.
                     prefsScope.launch { repo.claimShift(shift) }
+                },
+                onPickUpPermanent = { shift ->
+                    // POST the real permanent pickup → the `permanent-pickup` EF (best-effort).
+                    // This is the REAL path (the prior `claim-shift` permanent branch 501s); the
+                    // EF re-evaluates scope server-side (caps + conflicts, §8.4.3) and commits via
+                    // `permanent_pickup_slot`. The ViewModel already did the optimistic local
+                    // move; the next Realtime snapshot reconciles the full multi-week scope.
+                    prefsScope.launch { repo.permanentPickup(shift) }
+                },
+                loadPermanentScope = { shift ->
+                    // GET the `permanent-pickup` dry-run SCOPE for the "Picking up N of M weeks ·
+                    // K skipped" confirmation — read-only, no commit. Null on any failure → the
+                    // sheet falls back to the plain recurring note.
+                    repo.permanentPickupScope(shift)
                 },
                 onReclaimShift = { shift ->
                     // Reclaim a dropped-still-open shift via the SAME `claim-shift` EF

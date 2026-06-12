@@ -2,6 +2,7 @@ package com.pennhousing.shift.shared.network
 
 import com.pennhousing.shift.shared.platform.AppConfig
 import io.ktor.client.HttpClient
+import io.ktor.client.request.get
 import io.ktor.client.request.headers
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
@@ -59,6 +60,29 @@ class EdgeFunctionClient(
                     }
                     contentType(ContentType.Application.Json)
                     setBody(jsonBody)
+                }
+            EdgeResult(response.status.isSuccess(), response.status.value, response.bodyAsText())
+        }.getOrDefault(EdgeResult(false, 0, ""))
+    }
+
+    /**
+     * GET `<supabaseUrl>/functions/v1/<path>` — the same auth/headers as [invoke], for the
+     * few Edge Functions that expose a read-only/dry-run GET (e.g. `permanent-pickup`, whose
+     * GET returns the pickup SCOPE — assigned vs skipped weeks — without committing). The
+     * full query string is encoded into [path] by the caller. Returns `ok = true` on a 2xx;
+     * never throws (blank URL / transport failure → `(false, 0, "")`).
+     */
+    suspend fun get(path: String): EdgeResult {
+        val base = AppConfig.supabaseUrl
+        if (base.isBlank()) return EdgeResult(false, 0, "")
+        val bearer = AppConfig.accessTokenProvider() ?: AppConfig.supabaseAnonKey
+        return runCatching {
+            val response: HttpResponse =
+                http.get("$base/functions/v1/$path") {
+                    headers {
+                        append("apikey", AppConfig.supabaseAnonKey)
+                        append("Authorization", "Bearer $bearer")
+                    }
                 }
             EdgeResult(response.status.isSuccess(), response.status.value, response.bodyAsText())
         }.getOrDefault(EdgeResult(false, 0, ""))

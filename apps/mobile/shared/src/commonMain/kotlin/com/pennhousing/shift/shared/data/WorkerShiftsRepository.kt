@@ -96,21 +96,62 @@ class WorkerShiftsRepository(
      * omitted so the EF defaults it to the authenticated worker (self-initiated path).
      */
     suspend fun permanentDrop(shift: MyShift): EdgeResult {
-        val local = shift.start.toLocalDateTime(NEW_YORK)
-        // The EF maps weekday names through ['Sun','Mon',…], so Sunday is index 0 and
-        // Monday…Saturday are 1…6 (kotlinx `isoDayNumber`, with Sunday folded to 0).
-        val dayOfWeek = if (local.dayOfWeek == DayOfWeek.SUNDAY) 0 else local.dayOfWeek.isoDayNumber
-        val hh = local.hour.toString().padStart(2, '0')
-        val mm = local.minute.toString().padStart(2, '0')
+        val slot = slotFor(shift.house.id, shift.start)
         val body =
             Json.encodeToString(
                 PermanentDropRequest(
-                    houseId = shift.house.id,
-                    dayOfWeek = dayOfWeek,
-                    blockStartLocals = listOf("$hh:$mm"),
+                    houseId = slot.houseId,
+                    dayOfWeek = slot.dayOfWeek,
+                    blockStartLocals = slot.blockStartLocals,
                 ),
             )
         return edge.invoke("permanent-drop", body)
+    }
+
+    /**
+     * Dry-run the permanent pickup of [shift]'s recurring slot → the `permanent-pickup`
+     * Edge Function GET. Returns the SCOPE (assigned vs skipped weeks) the design's
+     * "Picking up N of M weeks · K skipped" confirmation reads, or `null` on any failure
+     * (blank URL / transport / non-2xx / unparseable) so the UI can fall back to a plain
+     * "Confirm pickup". No DB state changes — the commit is [permanentPickup].
+     *
+     * The slot is identified exactly as [permanentDrop] does: house + NY-local day-of-week
+     * (Sun=0) + the block's HH:MM start (invariant #6), passed as GET query params.
+     */
+    suspend fun permanentPickupScope(shift: OpenShift): PermanentPickupScope? {
+        val slot = shift.toSlot()
+        val query =
+            "house_id=${slot.houseId}&day_of_week=${slot.dayOfWeek}" +
+                "&block_start_locals=${slot.blockStartLocals.joinToString(",")}"
+        val result = edge.get("permanent-pickup?$query")
+        if (!result.ok) return null
+        return runCatching {
+            permanentPickupJson.decodeFromString<PermanentPickupResponse>(result.body).scope
+        }.getOrNull()
+    }
+
+    /**
+     * Commit the permanent pickup of [shift]'s recurring slot → the `permanent-pickup`
+     * Edge Function POST. This is the REAL permanent-pickup path (the prior `claim-shift`
+     * with `claim_type:'permanent'` returns 501). The EF re-evaluates the scope server-side
+     * (caps + conflicts, §8.4.3) and commits via `permanent_pickup_slot`, so the client is
+     * never authoritative; the POST response carries the committed `scope` (assigned /
+     * skipped weeks). Best-effort (the UI keeps its optimistic local move regardless);
+     * `EdgeResult.ok` reports the 2xx.
+     *
+     * Same slot identity as [permanentDrop] / [permanentPickupScope].
+     */
+    suspend fun permanentPickup(shift: OpenShift): EdgeResult {
+        val slot = shift.toSlot()
+        val body =
+            Json.encodeToString(
+                PermanentPickupRequest(
+                    houseId = slot.houseId,
+                    dayOfWeek = slot.dayOfWeek,
+                    blockStartLocals = slot.blockStartLocals,
+                ),
+            )
+        return edge.invoke("permanent-pickup", body)
     }
 
     /**
@@ -123,8 +164,9 @@ class WorkerShiftsRepository(
      * The SERVER is authoritative for the hours-cap, the T-2h cutoff, cross-house
      * eligibility (Harnwell training constraint — invariant #1) and FCFS conflict
      * resolution; the client cap/claimable gating stays a pre-check only. One feed row
-     * is one 30-minute block (invariant #5); permanent pickup (`claim_type:
-     * 'permanent'`) is out of scope here (the EF returns 501).
+     * is one 30-minute block (invariant #5). Permanent pickup goes through the dedicated
+     * [permanentPickup] (the `permanent-pickup` EF), NOT this temporary path (`claim-shift`
+     * with `claim_type:'permanent'` returns 501).
      */
     suspend fun claimShift(shift: OpenShift): EdgeResult =
         edge.invoke(
@@ -427,6 +469,69 @@ private data class PermanentDropRequest(
     @SerialName("day_of_week") val dayOfWeek: Int,
     @SerialName("block_start_locals") val blockStartLocals: List<String>,
 )
+
+/** `permanent-pickup` POST request — the same recurring-slot identity as the drop. */
+@Serializable
+private data class PermanentPickupRequest(
+    @SerialName("house_id") val houseId: String,
+    @SerialName("day_of_week") val dayOfWeek: Int,
+    @SerialName("block_start_locals") val blockStartLocals: List<String>,
+)
+
+/**
+ * A recurring slot identity (house + NY-local day-of-week + HH:MM block starts), the shape
+ * `permanent-drop` and `permanent-pickup` both key on. The EF maps weekday names through
+ * ['Sun','Mon',…], so Sunday is index 0 and Monday…Saturday are 1…6 (kotlinx `isoDayNumber`,
+ * with Sunday folded to 0). Timestamps are NY `timestamptz` (invariant #6).
+ */
+internal data class RecurringSlot(
+    val houseId: String,
+    val dayOfWeek: Int,
+    val blockStartLocals: List<String>,
+)
+
+internal fun slotFor(
+    houseId: String,
+    start: Instant,
+): RecurringSlot {
+    val local = start.toLocalDateTime(NEW_YORK)
+    val dayOfWeek = if (local.dayOfWeek == DayOfWeek.SUNDAY) 0 else local.dayOfWeek.isoDayNumber
+    val hh = local.hour.toString().padStart(2, '0')
+    val mm = local.minute.toString().padStart(2, '0')
+    return RecurringSlot(houseId = houseId, dayOfWeek = dayOfWeek, blockStartLocals = listOf("$hh:$mm"))
+}
+
+private fun OpenShift.toSlot(): RecurringSlot = slotFor(house.id, start)
+
+/**
+ * The `permanent-pickup` GET/POST response envelope — `{ scope }` on GET, `{ ...data, scope }`
+ * on POST. Only `scope` is read here (the design's N-of-M confirmation); the POST's RPC
+ * `data` fields are ignored (the next Realtime snapshot is authoritative for the week).
+ */
+@Serializable
+private data class PermanentPickupResponse(
+    val scope: PermanentPickupScope,
+)
+
+/**
+ * The pickup SCOPE returned by the `permanent-pickup` EF (the pure `evaluatePermanentPickup`
+ * result): how many semester weeks the recurring slot covers, and how each resolves against
+ * the worker's caps + existing shifts (§8.4.3). The design reads `totalWeeksInScope` (M),
+ * `weeksFullyAssigned + weeksPartiallyAssigned` (N picked up), and `weeksSkipped` (K skipped).
+ * Extra wire fields the UI does not surface are ignored (`ignoreUnknownKeys`).
+ */
+@Serializable
+data class PermanentPickupScope(
+    @SerialName("totalWeeksInScope") val totalWeeksInScope: Int = 0,
+    @SerialName("weeksFullyAssigned") val weeksFullyAssigned: Int = 0,
+    @SerialName("weeksPartiallyAssigned") val weeksPartiallyAssigned: Int = 0,
+    @SerialName("weeksSkipped") val weeksSkipped: Int = 0,
+) {
+    /** Weeks the pickup takes at least one occurrence in — the "N" in "N of M weeks". */
+    val weeksPickedUp: Int get() = weeksFullyAssigned + weeksPartiallyAssigned
+}
+
+private val permanentPickupJson = Json { ignoreUnknownKeys = true }
 
 private fun JsonObject.toToast(): ToastNotification? {
     val title = this["title"]?.jsonPrimitive?.content ?: return null

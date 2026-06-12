@@ -197,18 +197,35 @@ struct ShiftsRootView: View {
             })
         }
         .sheet(item: $claimTarget) { shift in
-            ClaimFlowSheet(vm: model.vm, shift: shift, currentWeeklyHours: DemoFactory.shared.demoWeeklyHours) {
-                // Live host POSTs `claim-shift` (best-effort) while the ViewModel does the
-                // optimistic local pickup. The server is authoritative for the hours-cap,
-                // T-2h cutoff, cross-house eligibility and FCFS; client gating was a
-                // pre-check. The next Realtime snapshot reconciles the UI. Demo = local-only.
-                if liveUserId != nil {
+            ClaimFlowSheet(
+                vm: model.vm,
+                shift: shift,
+                currentWeeklyHours: DemoFactory.shared.demoWeeklyHours,
+                // Live host GETs the `permanent-pickup` dry-run SCOPE for the "Picking up N of
+                // M weeks · K skipped" confirmation; demo (no live user) → nil = plain note.
+                loadPermanentScope: liveUserId == nil ? nil : { s in
                     let repo = WorkerBackend.shared.shiftsRepository
-                    Task { _ = try? await repo.claimShift(shift: shift) }
+                    return try? await repo.permanentPickupScope(shift: s)
+                },
+                onConfirmed: {
+                    // Live host POSTs the real pickup (best-effort) while the ViewModel does the
+                    // optimistic local pickup. A WEEKLY opening → `claim-shift`; a PERMANENT
+                    // opening → the `permanent-pickup` EF (the real path — `claim-shift`'s
+                    // permanent branch 501s). Server stays authoritative for cap/T-2h/FCFS and
+                    // the multi-week §8.4.3 scope; the next Realtime snapshot reconciles. Demo =
+                    // local-only.
+                    if liveUserId != nil {
+                        let repo = WorkerBackend.shared.shiftsRepository
+                        if shift.feed == .permanentOpening {
+                            Task { _ = try? await repo.permanentPickup(shift: shift) }
+                        } else {
+                            Task { _ = try? await repo.claimShift(shift: shift) }
+                        }
+                    }
+                    model.vm.claim(shift: shift)
+                    claimSucceeded = true
                 }
-                model.vm.claim(shift: shift)
-                claimSucceeded = true
-            }
+            )
         }
         .sheet(isPresented: $showAck) {
             // Live host POSTs `acknowledge-float` / `decline-float` (best-effort) when the
@@ -697,10 +714,13 @@ private struct ClaimFlowSheet: View {
     let vm: ShiftsScreenViewModel
     let shift: OpenShift
     let currentWeeklyHours: Double
+    /// Live host GETs the `permanent-pickup` dry-run SCOPE; nil on the demo path → plain note.
+    var loadPermanentScope: ((OpenShift) async -> PermanentPickupScope?)? = nil
     let onConfirmed: () -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
     @State private var warningAccepted = false
+    @State private var permanentScope: PermanentPickupScope?
 
     var body: some View {
         let c = ShiftColors.resolve(scheme)
@@ -731,7 +751,16 @@ private struct ClaimFlowSheet: View {
                     }
                 }
 
-                if permanent { PermanentRecurringNote(row: row) }
+                if permanent {
+                    PermanentRecurringNote(row: row, scope: permanentScope)
+                        .task {
+                            // Dry-run the pickup so the confirm shows "Picking up N of M weeks ·
+                            // K skipped" (§8.4.3). Nil until loaded / demo → just the plain note.
+                            if let load = loadPermanentScope {
+                                permanentScope = await load(shift)
+                            }
+                        }
+                }
 
                 ClaimHoursMeter(meter: meter)
 
@@ -805,8 +834,12 @@ private struct ClaimHoursMeter: View {
 }
 
 /// The recurring-slot note shown when picking up a permanent opening (design `ClaimSheet`).
+/// When the `permanent-pickup` dry-run [scope] has resolved, it adds the §8.4.3 "Picking up
+/// N of M weeks · K skipped" line so the worker sees how the slot lands against their caps +
+/// existing shifts before committing; before that (or on the demo path) only the plain note.
 private struct PermanentRecurringNote: View {
     let row: OpenShiftRow
+    var scope: PermanentPickupScope?
     @Environment(\.colorScheme) private var scheme
     var body: some View {
         let c = ShiftColors.resolve(scheme)
@@ -815,6 +848,12 @@ private struct PermanentRecurringNote: View {
                 .font(ShiftFont.sans(13, .semibold)).foregroundColor(c.permanent.deep)
             if let meta = row.meta {
                 Text("Repeats weekly — \(meta).").font(ShiftFont.sans(12.5)).foregroundColor(c.sec)
+            }
+            if let scope {
+                let skipped = scope.weeksSkipped > 0 ? " · \(scope.weeksSkipped) skipped" : ""
+                Text("Picking up \(scope.weeksPickedUp) of \(scope.totalWeeksInScope) weeks\(skipped)")
+                    .font(ShiftFont.sans(12.5, .semibold)).foregroundColor(c.permanent.deep)
+                    .accessibilityIdentifier("permanent_pickup_scope")
             }
         }
         .padding(.horizontal, 13).padding(.vertical, 12)

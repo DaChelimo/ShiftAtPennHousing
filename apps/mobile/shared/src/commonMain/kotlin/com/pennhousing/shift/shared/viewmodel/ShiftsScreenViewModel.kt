@@ -16,12 +16,14 @@ import com.pennhousing.shift.shared.shifts.buildMyShiftsTab
 import com.pennhousing.shift.shared.shifts.buildOtherHousesTab
 import com.pennhousing.shift.shared.shifts.coalesceMyShifts
 import com.pennhousing.shift.shared.shifts.coalesceOpenShifts
+import com.pennhousing.shift.shared.shifts.PartialClaimPlan
 import com.pennhousing.shift.shared.shifts.PartialDropPlan
 import com.pennhousing.shift.shared.shifts.blockIndexAt
 import com.pennhousing.shift.shared.shifts.dropOptionsFor
 import com.pennhousing.shift.shared.shifts.evaluateClaimCap
 import com.pennhousing.shift.shared.shifts.hoursBetween
 import com.pennhousing.shift.shared.shifts.isClaimable
+import com.pennhousing.shift.shared.shifts.planPartialClaim
 import com.pennhousing.shift.shared.shifts.planPartialDrop
 import com.pennhousing.shift.shared.shifts.planTemporaryDrop
 import com.pennhousing.shift.shared.shifts.reclaimDroppedShift
@@ -107,6 +109,13 @@ class ShiftsScreenViewModel(
 
     /** The block index containing `now` (mid-shift "drop from now"), or null. */
     fun dropFromNowIndex(shift: MyShift): Int? = blockIndexAt(shift, now)
+
+    /** §5.3 partial claim (T2-10): plan blocks [fromBlock, toBlock) of an open card. */
+    fun planClaimRange(
+        shift: OpenShift,
+        fromBlock: Int,
+        toBlock: Int,
+    ): PartialClaimPlan = planPartialClaim(shift, fromBlock, toBlock)
 
     /**
      * Optimistic local pickup: move an open shift into the worker's week as a

@@ -65,9 +65,11 @@ import com.pennhousing.shift.shared.shifts.MyShiftsTab
 import com.pennhousing.shift.shared.shifts.OpenShiftCardState
 import com.pennhousing.shift.shared.shifts.OpenShiftRow
 import com.pennhousing.shift.shared.shifts.OtherHousesTab
+import com.pennhousing.shift.shared.shifts.PartialClaimPlan
 import com.pennhousing.shift.shared.shifts.PartialDropPlan
 import com.pennhousing.shift.shared.shifts.claimMeter
 import com.pennhousing.shift.shared.shifts.hoursBetween
+import com.pennhousing.shift.shared.shifts.subOpenShiftFor
 import com.pennhousing.shift.shared.shifts.subShiftFor
 import com.pennhousing.shift.shared.shifts.toRow
 import com.pennhousing.shift.shared.shifts.weeklyHoursSummary
@@ -535,7 +537,7 @@ private fun HomeOpenTabContent(
             currentWeeklyHours = currentWeeklyHours,
             breakProfile = breakProfile,
             loadPermanentScope = loadPermanentScope,
-            onConfirmed = { confirmOpenShift(shift, vm, onClaimShift, onPickUpPermanent, onClaimed) },
+            onConfirmed = { effective -> confirmOpenShift(effective, vm, onClaimShift, onPickUpPermanent, onClaimed) },
             onDismiss = { claimTarget = null },
         )
     }
@@ -599,6 +601,13 @@ private fun OpenShiftCardState.toKitState(): ShiftState =
  * hard-cap claim disables the confirm. On confirm the sheet dismisses and the
  * screen shows the `claim_success` toast — the picked-up shift is already in My
  * Shifts (the optimistic [ShiftsScreenViewModel.claim], decision #13).
+ *
+ * T2-10 — a WEEKLY opening that coalesces several 30-min blocks gains a "How much
+ * can you cover?" block-range selector (default: the whole opening, so the Maestro
+ * 02 whole-claim path is unchanged). The hours meter + cap gating recompute from
+ * the SELECTED span, and confirm claims only the selected blocks ([onConfirmed]
+ * receives the effective — whole or sub — open shift). A permanent opening always
+ * takes the whole recurring slot (§8.4.3).
  */
 @Composable
 private fun ClaimSheet(
@@ -606,7 +615,7 @@ private fun ClaimSheet(
     vm: ShiftsScreenViewModel,
     currentWeeklyHours: Double,
     breakProfile: Boolean,
-    onConfirmed: () -> Unit,
+    onConfirmed: (OpenShift) -> Unit,
     onDismiss: () -> Unit,
     loadPermanentScope: suspend (OpenShift) -> PermanentPickupScope? = { null },
 ) {
@@ -620,9 +629,20 @@ private fun ClaimSheet(
     LaunchedEffect(shift, permanent) {
         if (permanent) permanentScope = loadPermanentScope(shift)
     }
+
+    // §5.3 partial claim (T2-10) — block indexes on the opening's grid, [from, to).
+    val blockCount = shift.blockIds.size
+    var rangeFrom by remember(shift) { mutableIntStateOf(0) }
+    var rangeTo by remember(shift) { mutableIntStateOf(blockCount) }
+    val claimPlan = vm.planClaimRange(shift, rangeFrom, rangeTo)
+    // The shift the confirm actually claims: the selection for a weekly opening,
+    // always the whole slot for a permanent pickup.
+    val effective = if (permanent || claimPlan.wholeShift) shift else subOpenShiftFor(shift, claimPlan)
+
+    // Meter + cap gating recompute from the SELECTED span (§5.3).
     val meter =
-        remember(shift, currentWeeklyHours, breakProfile) {
-            claimMeter(currentWeeklyHours, hoursBetween(shift.start, shift.end), breakProfile)
+        remember(shift, claimPlan, currentWeeklyHours, breakProfile) {
+            claimMeter(currentWeeklyHours, hoursBetween(effective.start, effective.end), breakProfile)
         }
     val overHard = meter.verdict == ClaimCapVerdict.HARD_CAP_BLOCKED
     val overSoft = meter.verdict == ClaimCapVerdict.SOFT_CAP_WARNING
@@ -644,6 +664,19 @@ private fun ClaimSheet(
             }
 
             if (permanent) PermanentRecurringNote(row, permanentScope)
+
+            if (!permanent && blockCount > 1) {
+                ClaimRangeSelector(
+                    plan = claimPlan,
+                    blockCount = blockCount,
+                    rangeFrom = rangeFrom,
+                    rangeTo = rangeTo,
+                    onRange = { from, to ->
+                        rangeFrom = from
+                        rangeTo = to
+                    },
+                )
+            }
 
             ClaimHoursMeter(meter)
 
@@ -673,9 +706,13 @@ private fun ClaimSheet(
                     )
                 } else {
                     ShiftButton(
-                        if (permanent) "Confirm pickup" else "Claim shift",
+                        when {
+                            permanent -> "Confirm pickup"
+                            !claimPlan.wholeShift -> "Claim ${claimPlan.rangeLabel}"
+                            else -> "Claim shift"
+                        },
                         onClick = {
-                            onConfirmed()
+                            onConfirmed(effective)
                             onDismiss()
                         },
                         modifier = Modifier.weight(1f).testTag("claim_confirm_button"),
@@ -684,6 +721,50 @@ private fun ClaimSheet(
                 }
             }
         }
+    }
+}
+
+/**
+ * The §5.3 "How much can you cover?" block-range selector (T2-10): a stepped range
+ * slider over the opening's 30-min blocks with a live "17:30 – 19:00 · 1h 30m"
+ * summary. Defaults to the whole opening.
+ */
+@Composable
+private fun ClaimRangeSelector(
+    plan: PartialClaimPlan,
+    blockCount: Int,
+    rangeFrom: Int,
+    rangeTo: Int,
+    onRange: (Int, Int) -> Unit,
+) {
+    val c = ShiftTheme.colors
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(c.surface)
+            .border(1.dp, c.divider, RoundedCornerShape(14.dp))
+            .padding(horizontal = 13.dp, vertical = 11.dp)
+            .testTag("claim_range_selector"),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text("How much can you cover?", color = c.sec, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        Text(
+            "${plan.rangeLabel} · ${plan.durationLabel}" + if (plan.wholeShift) " · whole shift" else "",
+            style = ShiftTheme.type.monoTime.copy(fontSize = 13.5.sp),
+            color = c.ink,
+            modifier = Modifier.testTag("claim_range_label"),
+        )
+        RangeSlider(
+            value = rangeFrom.toFloat()..rangeTo.toFloat(),
+            onValueChange = { range ->
+                val from = range.start.toInt().coerceIn(0, blockCount - 1)
+                val to = range.endInclusive.toInt().coerceIn(from + 1, blockCount)
+                onRange(from, to)
+            },
+            valueRange = 0f..blockCount.toFloat(),
+            steps = (blockCount - 1).coerceAtLeast(0),
+        )
     }
 }
 
@@ -831,7 +912,7 @@ private fun OtherHousesTabContent(
             currentWeeklyHours = currentWeeklyHours,
             breakProfile = breakProfile,
             loadPermanentScope = loadPermanentScope,
-            onConfirmed = { confirmOpenShift(shift, vm, onClaimShift, onPickUpPermanent, onClaimed) },
+            onConfirmed = { effective -> confirmOpenShift(effective, vm, onClaimShift, onPickUpPermanent, onClaimed) },
             onDismiss = { claimTarget = null },
         )
     }

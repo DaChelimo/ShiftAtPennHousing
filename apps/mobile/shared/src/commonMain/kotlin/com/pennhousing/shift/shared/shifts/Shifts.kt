@@ -322,6 +322,76 @@ fun subShiftFor(
         blockIds = plan.blockIds,
     )
 
+// ===================================================================
+// Partial claim (§5.3, T2-10 — design-extra; spec §5.3 defines whole-claim,
+// the user opted to build the sub-range "How much can you cover?" selector).
+// ===================================================================
+
+/**
+ * The plan for claiming blocks [fromBlock, toBlock) of a coalesced OPEN card:
+ * the selected vacant block `assignment_id`s (each claimed per-block through
+ * `claim-shift` — FCFS stays server-side), the covered span, and precomputed
+ * NY-anchored labels (see [PartialDropPlan]). The claim-cap meter recomputes
+ * from this span, so a partial claim only counts the hours actually taken.
+ */
+data class PartialClaimPlan(
+    val blockIds: List<String>,
+    val claimStart: Instant,
+    val claimEnd: Instant,
+    val wholeShift: Boolean,
+    val rangeLabel: String, // "17:30 – 19:00"
+    val durationLabel: String, // "1h 30m"
+    val claimStartLabel: String, // "17:30"
+    val claimEndLabel: String, // "19:00"
+)
+
+/**
+ * Plan a claim of blocks [fromBlock, toBlock) (indexes on the opening's own
+ * 30-min grid, [toBlock] exclusive; clamped non-empty). A card whose `blockIds`
+ * don't sub-divide always plans the whole opening — partial selection needs real
+ * per-block ids to target. Claimability (T-2h) is the CARD's verdict; a partial
+ * range never extends it.
+ */
+fun planPartialClaim(
+    shift: OpenShift,
+    fromBlock: Int,
+    toBlock: Int,
+): PartialClaimPlan {
+    val n = shift.blockIds.size
+    val from = fromBlock.coerceIn(0, n - 1)
+    val to = toBlock.coerceIn(from + 1, n)
+    val claimStart = shift.start + BLOCK * from
+    // Anchor at the SHIFT end and walk back, so a 1-id span plans the whole opening.
+    val claimEnd = shift.end - BLOCK * (n - to)
+    return PartialClaimPlan(
+        blockIds = shift.blockIds.subList(from, to),
+        claimStart = claimStart,
+        claimEnd = claimEnd,
+        wholeShift = from == 0 && to == n,
+        rangeLabel = formatTimeRange(claimStart, claimEnd),
+        durationLabel = formatDuration(claimStart, claimEnd),
+        claimStartLabel = formatBlockTime(claimStart),
+        claimEndLabel = formatBlockTime(claimEnd),
+    )
+}
+
+/**
+ * The open sub-shift covering [plan]'s selected range — what the optimistic
+ * [claim][com.pennhousing.shift.shared.viewmodel.ShiftsScreenViewModel.claim] takes
+ * and what the live per-block claim posts. Keeps feed/home-house identity; the id
+ * is the first selected block (a real vacant `assignment_id`).
+ */
+fun subOpenShiftFor(
+    shift: OpenShift,
+    plan: PartialClaimPlan,
+): OpenShift =
+    shift.copy(
+        id = plan.blockIds.first(),
+        start = plan.claimStart,
+        end = plan.claimEnd,
+        blockIds = plan.blockIds,
+    )
+
 /** Optimistic local section move: flag the shift as dropped-still-open (decision #13). */
 fun applyTemporaryDrop(
     shifts: List<MyShift>,

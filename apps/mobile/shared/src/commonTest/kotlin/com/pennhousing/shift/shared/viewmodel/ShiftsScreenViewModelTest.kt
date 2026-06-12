@@ -436,6 +436,34 @@ class ShiftsScreenViewModelTest {
         assertEquals(card.end, picked.end)
     }
 
+    @Test
+    fun partialClaimTakesOnlyTheSelectedBlocksAndTheRestStaysOpen() {
+        // §5.3 partial claim (T2-10): claiming the first 2 blocks of a 4-block
+        // opening leaves the trailing 2 blocks as their own open card.
+        val openRun =
+            (0 until 4).map { i ->
+                OpenShift(
+                    id = "op-$i",
+                    house = harnwell,
+                    start = at("2026-01-15T14:00:00-05:00") + (i * 30).minutes,
+                    end = at("2026-01-15T14:00:00-05:00") + ((i + 1) * 30).minutes,
+                    feed = OpenFeed.WEEKLY,
+                    homeHouse = true,
+                )
+            }
+        val m = ShiftsScreenViewModel(emptyList(), openRun, noon)
+        val card = m.uiState.value.homeOpen.weekly.single()
+        val plan = m.planClaimRange(card, 0, 2)
+        m.claim(com.pennhousing.shift.shared.shifts.subOpenShiftFor(card, plan))
+        val remaining = m.uiState.value.homeOpen.weekly.single()
+        assertEquals(listOf("op-2", "op-3"), remaining.blockIds)
+        assertEquals(at("2026-01-15T15:00:00-05:00"), remaining.start)
+        val picked = m.uiState.value.myShifts.pickedUp.single()
+        assertEquals(listOf("op-0", "op-1"), picked.blockIds)
+        assertEquals(at("2026-01-15T14:00:00-05:00"), picked.start)
+        assertEquals(at("2026-01-15T15:00:00-05:00"), picked.end)
+    }
+
     // ===================================================================
     // Tab selection.
     // ===================================================================

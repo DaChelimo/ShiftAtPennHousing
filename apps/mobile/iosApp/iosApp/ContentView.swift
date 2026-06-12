@@ -229,22 +229,23 @@ struct ShiftsRootView: View {
                     let repo = WorkerBackend.shared.shiftsRepository
                     return try? await repo.permanentPickupScope(shift: s)
                 },
-                onConfirmed: {
+                onConfirmed: { effective in
                     // Live host POSTs the real pickup (best-effort) while the ViewModel does the
-                    // optimistic local pickup. A WEEKLY opening → `claim-shift`; a PERMANENT
+                    // optimistic local pickup. A WEEKLY opening → `claim-shift` (per selected
+                    // block — `effective` is the §5.3 partial selection, T2-10); a PERMANENT
                     // opening → the `permanent-pickup` EF (the real path — `claim-shift`'s
                     // permanent branch 501s). Server stays authoritative for cap/T-2h/FCFS and
                     // the multi-week §8.4.3 scope; the next Realtime snapshot reconciles. Demo =
                     // local-only.
                     if liveUserId != nil {
                         let repo = WorkerBackend.shared.shiftsRepository
-                        if shift.feed == .permanentOpening {
-                            Task { _ = try? await repo.permanentPickup(shift: shift) }
+                        if effective.feed == .permanentOpening {
+                            Task { _ = try? await repo.permanentPickup(shift: effective) }
                         } else {
-                            Task { _ = try? await repo.claimShift(shift: shift) }
+                            Task { _ = try? await repo.claimShift(shift: effective) }
                         }
                     }
-                    model.vm.claim(shift: shift)
+                    model.vm.claim(shift: effective)
                     claimSucceeded = true
                 }
             )
@@ -766,20 +767,33 @@ private struct ClaimFlowSheet: View {
     let currentWeeklyHours: Double
     /// Live host GETs the `permanent-pickup` dry-run SCOPE; nil on the demo path → plain note.
     var loadPermanentScope: ((OpenShift) async -> PermanentPickupScope?)? = nil
-    let onConfirmed: () -> Void
+    /// Receives the EFFECTIVE open shift — the §5.3 partial selection for a weekly
+    /// opening (T2-10), or the whole card (permanent pickups always take the slot).
+    let onConfirmed: (OpenShift) -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
     @State private var warningAccepted = false
     @State private var permanentScope: PermanentPickupScope?
+    // §5.3 partial range (T2-10) — block indexes on the opening's own grid, [from, to).
+    // rangeTo < 0 means "whole opening" (the default; planClaimRange clamps).
+    @State private var rangeFrom = 0
+    @State private var rangeTo = -1
+
+    private var blockCount: Int { shift.blockIds.count }
+    private var effectiveTo: Int { rangeTo < 0 ? blockCount : rangeTo }
 
     var body: some View {
         let c = ShiftColors.resolve(scheme)
         let claimable = vm.claimable(shift: shift)
         let row = shift.toRow(claimable: claimable)
         let permanent = isPermanentOpen(row.state)
+        let plan = vm.planClaimRange(shift: shift, fromBlock: Int32(rangeFrom), toBlock: Int32(effectiveTo))
+        // The shift the confirm actually claims; the meter + cap gating recompute
+        // from this SELECTED span (§5.3).
+        let effective = (permanent || plan.wholeShift) ? shift : subOpenShiftFor(shift: shift, plan: plan)
         let meter = claimMeter(
             currentWeeklyHours: currentWeeklyHours,
-            addedHours: hoursBetween(start: shift.start, end: shift.end),
+            addedHours: hoursBetween(start: effective.start, end: effective.end),
             breakProfile: false
         )
         let overHard = meter.verdict.isBlocked
@@ -812,6 +826,10 @@ private struct ClaimFlowSheet: View {
                         }
                 }
 
+                if !permanent && blockCount > 1 {
+                    claimRangeSelector(plan, c)
+                }
+
                 ClaimHoursMeter(meter: meter)
 
                 if overSoft {
@@ -837,9 +855,11 @@ private struct ClaimFlowSheet: View {
                             .accessibilityIdentifier("soft_cap_confirm_button")
                     } else {
                         ShiftButton(
-                            title: permanent ? "Confirm pickup" : "Claim shift",
+                            title: permanent
+                                ? "Confirm pickup"
+                                : (plan.wholeShift ? "Claim shift" : "Claim \(plan.rangeLabel)"),
                             action: {
-                                onConfirmed()
+                                onConfirmed(effective)
                                 dismiss()
                             },
                             fullWidth: true
@@ -850,6 +870,32 @@ private struct ClaimFlowSheet: View {
                 }
             }
         }
+    }
+
+    /// The §5.3 "How much can you cover?" block-range selector (T2-10): From/Until
+    /// steppers over the opening's 30-min block boundaries with a live summary.
+    /// Defaults to the whole opening.
+    private func claimRangeSelector(_ plan: PartialClaimPlan, _ c: ShiftColors) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("How much can you cover?").font(ShiftFont.sans(13, .medium)).foregroundColor(c.sec)
+            Text("\(plan.rangeLabel) · \(plan.durationLabel)\(plan.wholeShift ? " · whole shift" : "")")
+                .font(ShiftFont.mono(13.5, .semibold)).monospacedDigit().foregroundColor(c.ink)
+                .accessibilityIdentifier("claim_range_label")
+            Stepper("From \(plan.claimStartLabel)", value: $rangeFrom, in: 0...(effectiveTo - 1))
+                .font(ShiftFont.sans(13)).foregroundColor(c.sec)
+            Stepper(
+                "Until \(plan.claimEndLabel)",
+                value: Binding(get: { effectiveTo }, set: { rangeTo = $0 }),
+                in: (rangeFrom + 1)...blockCount
+            )
+            .font(ShiftFont.sans(13)).foregroundColor(c.sec)
+        }
+        .padding(.horizontal, 13).padding(.vertical, 11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(c.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(c.divider, lineWidth: 1))
+        .accessibilityIdentifier("claim_range_selector")
     }
 }
 

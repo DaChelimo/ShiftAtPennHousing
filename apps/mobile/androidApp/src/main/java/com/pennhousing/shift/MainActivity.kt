@@ -36,6 +36,7 @@ import com.pennhousing.shift.shared.data.BreakRepository
 import com.pennhousing.shift.shared.data.ProfileSnapshot
 import com.pennhousing.shift.shared.data.WorkerBackend
 import com.pennhousing.shift.shared.data.WorkerSnapshot
+import com.pennhousing.shift.shared.house.HouseScheduleSnapshot
 import com.pennhousing.shift.shared.model.FloatAck
 import com.pennhousing.shift.shared.notifications.IncomingSwap
 import com.pennhousing.shift.shared.notifications.NotificationItem
@@ -47,6 +48,7 @@ import com.pennhousing.shift.shared.samples.DemoData
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
 import com.pennhousing.shift.shared.viewmodel.BreakClaimViewModel
 import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
+import com.pennhousing.shift.shared.viewmodel.HouseScheduleViewModel
 import com.pennhousing.shift.shared.viewmodel.PreferencesViewModel
 import com.pennhousing.shift.shared.viewmodel.SettingsViewModel
 import com.pennhousing.shift.shared.viewmodel.ShiftsScreenViewModel
@@ -115,6 +117,7 @@ private fun DemoRoot() {
     val ackVm = remember { AckDeclineViewModel(pendingFloat, now) }
     val updatesVm = remember { UpdatesViewModel(DemoData.notifications(now), now) }
     val calendarVm = remember { CalendarViewModel(snapshot.myShifts, now) }
+    val houseVm = remember { HouseScheduleViewModel(DemoData.houseSchedule(now), now) }
     val preferencesVm = remember { PreferencesViewModel(DemoData.preferencePeriod(now)) }
     val breakClaimVm = remember { BreakClaimViewModel(DemoData.breakClaim(now)) }
     val settingsVm =
@@ -124,6 +127,7 @@ private fun DemoRoot() {
         ackVm = ackVm,
         updatesVm = updatesVm,
         calendarVm = calendarVm,
+        houseVm = houseVm,
         preferencesVm = preferencesVm,
         breakClaimVm = breakClaimVm,
         settingsVm = settingsVm,
@@ -266,6 +270,16 @@ private fun LiveShiftsRoot(
                     value = runCatching { repo.fetchCalendarClosedDays(session.userId) }.getOrDefault(emptySet())
                 }
             val calendarVm = remember(snapshot, closedDays) { CalendarViewModel(snapshot.myShifts, now, closedDays) }
+            // House schedule (§11.4, T3b): the home house's week grid with contacts
+            // (full-directory ruling). Falls back to the demo snapshot while loading.
+            val liveHouseSchedule by
+                produceState<HouseScheduleSnapshot?>(initialValue = null, session.userId) {
+                    value = runCatching { repo.fetchHouseSchedule(session.userId) }.getOrNull()
+                }
+            val houseVm =
+                remember(liveHouseSchedule) {
+                    HouseScheduleViewModel(liveHouseSchedule ?: DemoData.houseSchedule(now), now)
+                }
             // Preferences: load the worker's real active period (scheduling_periods now
             // worker-readable — migration 20260610000001); fall back to the demo period
             // while loading or when no period is open. Submit POSTs to `submit-preferences`.
@@ -329,6 +343,7 @@ private fun LiveShiftsRoot(
                 ackVm = ackVm,
                 updatesVm = updatesVm,
                 calendarVm = calendarVm,
+                houseVm = houseVm,
                 preferencesVm = preferencesVm,
                 breakClaimVm = breakClaimVm,
                 settingsVm = settingsVm,

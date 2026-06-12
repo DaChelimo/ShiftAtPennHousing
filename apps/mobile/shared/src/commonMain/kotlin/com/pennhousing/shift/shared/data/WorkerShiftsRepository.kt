@@ -1,6 +1,9 @@
 package com.pennhousing.shift.shared.data
 
+import com.pennhousing.shift.shared.calendar.calendarWeekBounds
 import com.pennhousing.shift.shared.calendar.calendarWeekDates
+import com.pennhousing.shift.shared.house.HouseScheduleSnapshot
+import com.pennhousing.shift.shared.house.HouseSeat
 import com.pennhousing.shift.shared.model.AssignmentKind
 import com.pennhousing.shift.shared.model.FloatAck
 import com.pennhousing.shift.shared.model.House
@@ -345,6 +348,49 @@ class WorkerShiftsRepository(
             }.toSet()
     }
 
+    /**
+     * The worker's HOME-house schedule for this NY week (§11.4, T3b) — the
+     * `house_schedule_grid` read model (security_invoker: RLS scopes rows to the
+     * caller's home house; names/phones ride along via `worker_directory`, the
+     * full-contact directory per the 2026-06-12 ruling). Returns null when the
+     * profile/grid cannot be read (the caller falls back to the demo snapshot).
+     *
+     * Range: `start_at >= weekStart` is filtered server-side; the upper bound is
+     * enforced in Kotlin — supabase-kt drops a second filter on the SAME column
+     * (known gotcha), and the open-ended tail is small. Reading the wall clock
+     * here is fine (host/data layer).
+     */
+    suspend fun fetchHouseSchedule(userId: String): HouseScheduleSnapshot? {
+        val houseId =
+            runCatching {
+                supabase
+                    .from(TABLE_USERS)
+                    .select(Columns.list("home_house_id")) { filter { eq("user_id", userId) } }
+                    .decodeSingleOrNull<HomeHouseRow>()
+                    ?.homeHouseId
+            }.getOrNull() ?: return null
+        val (weekStart, weekEnd) = calendarWeekBounds(kotlin.time.Clock.System.now())
+        val rows =
+            runCatching {
+                supabase
+                    .from(VIEW_HOUSE_GRID)
+                    .select {
+                        filter {
+                            eq("house_id", houseId)
+                            gte("start_at", weekStart.toString())
+                        }
+                    }
+                    .decodeList<HouseGridRow>()
+            }.getOrNull() ?: return null
+        val seats =
+            rows
+                .map { it.toSeat() }
+                .filter { it.start < weekEnd } // upper bound enforced client-side (same-column-filter gotcha)
+        val houseName = rows.firstOrNull()?.houseName ?: houseId
+        val deskPhone = rows.firstOrNull { it.deskPhone != null }?.deskPhone
+        return HouseScheduleSnapshot(houseName = houseName, deskPhone = deskPhone, seats = seats)
+    }
+
     suspend fun fetchWorkerWeek(userId: String): WorkerSnapshot {
         val myShifts =
             supabase
@@ -500,8 +546,37 @@ class WorkerShiftsRepository(
         const val TABLE_FLOAT_ASSIGNMENTS = "float_assignments"
         const val TABLE_USERS = "users"
         const val TABLE_SWAP_REQUESTS = "swap_requests"
+        const val VIEW_HOUSE_GRID = "house_schedule_grid"
     }
 }
+
+/** One `house_schedule_grid` row (T3b wire shape) → [HouseSeat]. */
+@Serializable
+internal data class HouseGridRow(
+    val id: String,
+    @SerialName("house_name") val houseName: String,
+    @SerialName("desk_phone") val deskPhone: String? = null,
+    @SerialName("start_at") val startAt: String,
+    @SerialName("end_at") val endAt: String,
+    val status: String,
+    @SerialName("is_float") val isFloat: Boolean = false,
+    @SerialName("user_id") val userId: String? = null,
+    @SerialName("worker_name") val workerName: String? = null,
+    @SerialName("worker_phone") val workerPhone: String? = null,
+)
+
+internal fun HouseGridRow.toSeat(): HouseSeat =
+    HouseSeat(
+        id = id,
+        start = Instant.parse(startAt),
+        end = Instant.parse(endAt),
+        vacant = status.equals("vacant", ignoreCase = true),
+        pending = status.equals("pending_float_in", ignoreCase = true),
+        floatIn = status.equals("floated_in", ignoreCase = true) || status.equals("pending_float_in", ignoreCase = true),
+        userId = userId,
+        workerName = workerName,
+        workerPhone = workerPhone,
+    )
 
 /** The worker's own pending counterparty `swap_requests` row (T3a wire shape). */
 @Serializable

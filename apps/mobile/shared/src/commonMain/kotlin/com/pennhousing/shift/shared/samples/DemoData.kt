@@ -3,6 +3,8 @@ package com.pennhousing.shift.shared.samples
 import com.pennhousing.shift.shared.breakclaim.BreakClaimSnapshot
 import com.pennhousing.shift.shared.breakclaim.BreakShift
 import com.pennhousing.shift.shared.data.WorkerSnapshot
+import com.pennhousing.shift.shared.house.HouseScheduleSnapshot
+import com.pennhousing.shift.shared.house.HouseSeat
 import com.pennhousing.shift.shared.model.AssignmentKind
 import com.pennhousing.shift.shared.model.FloatAck
 import com.pennhousing.shift.shared.model.House
@@ -246,6 +248,48 @@ object DemoData {
             infoBody = "First-come, first-served · 40h hard cap · drop back to the pool until T-1d.",
             shifts = listOf(slot(1, 8), slot(2, 12), slot(3, 16), slot(4, 20)),
             initiallyClaimedIds = emptySet(),
+        )
+    }
+
+    // ── House schedule (§11.4, T3b) ──────────────────────────────────────────────
+
+    /**
+     * A deterministic home-house grid for today: a housemate covering the
+     * afternoon (with a phone — the §11.4 contact lookup), a pending floater,
+     * and an open evening gap. Per-30-min seats (the live `house_schedule_grid`
+     * shape); the pure builder coalesces them into roster rows.
+     */
+    fun houseSchedule(now: Instant): HouseScheduleSnapshot {
+        val base = roundDownToBlock(now)
+        fun seats(
+            prefix: String,
+            start: Instant,
+            blocks: Int,
+            name: String?,
+            phone: String?,
+            vacant: Boolean = false,
+            pending: Boolean = false,
+        ): List<HouseSeat> =
+            (0 until blocks).map { i ->
+                HouseSeat(
+                    id = "$prefix.$i",
+                    start = start + (i * 30).minutes,
+                    end = start + ((i + 1) * 30).minutes,
+                    vacant = vacant,
+                    pending = pending,
+                    floatIn = pending,
+                    userId = if (name != null) "u-$prefix" else null,
+                    workerName = name,
+                    workerPhone = phone,
+                )
+            }
+        return HouseScheduleSnapshot(
+            houseName = "Harnwell",
+            deskPhone = "+1 215 555 0142",
+            seats =
+                seats("hg-m", base + 2.hours, 8, "Maya R.", "+1 215 555 0101") +
+                    seats("hg-f", base + 4.hours, 4, "Jordan K.", "+1 215 555 0102", pending = true) +
+                    seats("hg-v", base + 6.hours, 4, name = null, phone = null, vacant = true),
         )
     }
 

@@ -1,5 +1,7 @@
 package com.pennhousing.shift.ui
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -39,6 +41,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -50,6 +53,7 @@ import com.pennhousing.shift.shared.calendar.CalendarWeek
 import com.pennhousing.shift.shared.calendar.WeekDayCell
 import com.pennhousing.shift.shared.data.PermanentPickupScope
 import com.pennhousing.shift.shared.data.ToastNotification
+import com.pennhousing.shift.shared.house.HouseRosterRow
 import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.model.OpenFeed
 import com.pennhousing.shift.shared.model.OpenShift
@@ -76,6 +80,7 @@ import com.pennhousing.shift.shared.shifts.weeklyHoursSummary
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
 import com.pennhousing.shift.shared.viewmodel.BreakClaimViewModel
 import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
+import com.pennhousing.shift.shared.viewmodel.HouseScheduleViewModel
 import com.pennhousing.shift.shared.viewmodel.PreferencesViewModel
 import com.pennhousing.shift.shared.viewmodel.SettingsViewModel
 import com.pennhousing.shift.shared.viewmodel.ShiftsScreenViewModel
@@ -106,6 +111,7 @@ private const val TAB_UPDATES = 4
 private const val TAB_PREFS = 5
 private const val TAB_BREAK = 6
 private const val TAB_SETTINGS = 7
+private const val TAB_HOUSE = 8 // §11.4 house schedule (T3b) — rendered after Calendar
 
 /**
  * Phase 13a — the worker's Shifts screen (BEHAVIORAL_SPECIFICATION.md §5.6).
@@ -122,6 +128,7 @@ fun ShiftsApp(
     ackVm: AckDeclineViewModel,
     updatesVm: UpdatesViewModel,
     calendarVm: CalendarViewModel,
+    houseVm: HouseScheduleViewModel,
     preferencesVm: PreferencesViewModel,
     breakClaimVm: BreakClaimViewModel,
     settingsVm: SettingsViewModel,
@@ -220,6 +227,9 @@ fun ShiftsApp(
                     SpecTab("Calendar", "tab_calendar", selectedIndex == TAB_CALENDAR) {
                         selectedIndex = TAB_CALENDAR
                     }
+                    SpecTab("House", "tab_house", selectedIndex == TAB_HOUSE) {
+                        selectedIndex = TAB_HOUSE
+                    }
                     SpecTab("Updates", "tab_updates", selectedIndex == TAB_UPDATES) {
                         selectedIndex = TAB_UPDATES
                     }
@@ -259,6 +269,7 @@ fun ShiftsApp(
                             loadPermanentScope = loadPermanentScope,
                         )
                     TAB_CALENDAR -> CalendarTabContent(calendarVm)
+                    TAB_HOUSE -> HouseTabContent(houseVm)
                     TAB_UPDATES ->
                         UpdatesTabContent(
                             feed = updatesState.feed,
@@ -1359,6 +1370,191 @@ private fun AgendaShiftCard(
         durationLabel = row.durationLabel,
         active = active,
     )
+}
+
+// ===================================================================
+// House tab — §11.4 home-house schedule + contact lookup (T3b).
+// ===================================================================
+
+/**
+ * The home-house schedule (§11.4, T3b): who covers each desk block this week.
+ * Same Mon–Sun strip as the personal calendar (dots = days with seats); the
+ * day's roster rows are coalesced same-seat runs from the `house_schedule_grid`
+ * read model. Tapping a staffed row opens the contact sheet (worker name +
+ * phone per the full-directory ruling, plus the house desk phone).
+ */
+@Composable
+private fun HouseTabContent(vm: HouseScheduleViewModel) {
+    val state by vm.uiState.collectAsStateWithLifecycle()
+    val c = ShiftTheme.colors
+    var contactTarget by remember { mutableStateOf<HouseRosterRow?>(null) }
+
+    Column(Modifier.fillMaxSize().background(c.bg).testTag("house_screen")) {
+        HouseHeaderCard(state.houseName, state.deskPhone)
+        WeekStrip(state.week, state.selectedDayIndex, vm::selectDay)
+        if (state.day.isEmpty) {
+            EmptyState(
+                title = "No desk shifts this day",
+                icon = ShiftIcons.Building,
+                body = "Nothing scheduled at ${state.houseName} on this day.",
+            )
+        } else {
+            LazyColumn(
+                Modifier.fillMaxSize().testTag("house_roster"),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 24.dp),
+            ) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        state.day.rows.forEach { row ->
+                            HouseRosterRowCard(row, onTap = { if (!row.vacant) contactTarget = row })
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    contactTarget?.let { row ->
+        ContactSheet(row = row, deskPhone = state.deskPhone, onDismiss = { contactTarget = null })
+    }
+}
+
+/** House name + desk phone header (the §11.4 "call the desk" affordance). */
+@Composable
+private fun HouseHeaderCard(
+    houseName: String,
+    deskPhone: String?,
+) {
+    val c = ShiftTheme.colors
+    val context = LocalContext.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(c.surface)
+            .border(1.dp, c.divider, RoundedCornerShape(14.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        HouseBadge(houseName.take(1), MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.primary)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text(houseName, color = c.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                deskPhone?.let { "Desk · $it" } ?: "House schedule",
+                color = c.sec,
+                fontSize = 13.sp,
+            )
+        }
+        if (deskPhone != null) {
+            ShiftButton(
+                "Call desk",
+                onClick = { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$deskPhone"))) },
+                modifier = Modifier.testTag("house_call_desk"),
+                variant = ButtonVariant.Tonal,
+                size = ButtonSize.Sm,
+            )
+        }
+    }
+}
+
+/** One roster row: time + duration, worker (or "Open shift"), state tags. */
+@Composable
+private fun HouseRosterRowCard(
+    row: HouseRosterRow,
+    onTap: () -> Unit,
+) {
+    val c = ShiftTheme.colors
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(if (row.vacant) c.surfaceVar else c.surface)
+            .border(1.dp, if (row.active) MaterialTheme.colorScheme.primary else c.divider, shape)
+            .clickable(enabled = !row.vacant, onClick = onTap)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+            .testTag("house_roster_row"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(row.timeLabel, style = ShiftTheme.type.monoTime, color = c.ink)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    row.workerName ?: "Open shift",
+                    color = if (row.vacant) c.ter else c.sec,
+                    fontSize = 13.5.sp,
+                    fontWeight = if (row.vacant) FontWeight.Normal else FontWeight.Medium,
+                )
+                if (row.pending) {
+                    Text("Pending float", color = c.pending, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                } else if (row.floatIn) {
+                    Text("Float in", color = c.floatIn.accent, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+        Text(row.durationLabel, style = ShiftTheme.type.monoId.copy(fontSize = 12.sp), color = c.ter)
+        if (!row.vacant && row.workerPhone != null) {
+            Icon(
+                ShiftIcons.Phone,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+    }
+}
+
+/**
+ * The §11.4 contact sheet: who covers the run + a call affordance (the worker's
+ * phone via the full-directory ruling; the desk phone as the fallback line).
+ */
+@Composable
+private fun ContactSheet(
+    row: HouseRosterRow,
+    deskPhone: String?,
+    onDismiss: () -> Unit,
+) {
+    val c = ShiftTheme.colors
+    val context = LocalContext.current
+    ShiftBottomSheet(onDismiss = onDismiss, title = row.workerName ?: "Shift") {
+        Column(
+            Modifier.fillMaxWidth().testTag("contact_sheet"),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                HouseBadge((row.workerName ?: "?").take(1), c.surfaceVar, c.ink)
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(row.timeLabel, style = ShiftTheme.type.monoTime, color = c.ink)
+                    Text(
+                        row.workerPhone ?: "No phone on file",
+                        color = c.sec,
+                        fontSize = 13.5.sp,
+                        modifier = Modifier.testTag("contact_phone"),
+                    )
+                }
+            }
+            row.workerPhone?.let { phone ->
+                ShiftButton(
+                    "Call ${row.workerName ?: "worker"}",
+                    onClick = { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone"))) },
+                    modifier = Modifier.fillMaxWidth().testTag("contact_call_button"),
+                    fullWidth = true,
+                )
+            }
+            deskPhone?.let { phone ->
+                ShiftButton(
+                    "Call the desk · $phone",
+                    onClick = { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone"))) },
+                    modifier = Modifier.fillMaxWidth().testTag("contact_call_desk"),
+                    variant = ButtonVariant.Outlined,
+                    fullWidth = true,
+                )
+            }
+        }
+    }
 }
 
 // ===================================================================

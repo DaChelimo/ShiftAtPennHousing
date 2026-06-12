@@ -2,6 +2,7 @@ package com.pennhousing.shift.shared.samples
 
 import com.pennhousing.shift.shared.breakclaim.BreakClaimSnapshot
 import com.pennhousing.shift.shared.data.ProfileSnapshot
+import com.pennhousing.shift.shared.house.HouseScheduleSnapshot
 import com.pennhousing.shift.shared.model.FloatAck
 import com.pennhousing.shift.shared.notifications.IncomingSwap
 import com.pennhousing.shift.shared.notifications.NotificationItem
@@ -10,6 +11,7 @@ import com.pennhousing.shift.shared.notifications.withPendingFloatEntry
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
 import com.pennhousing.shift.shared.viewmodel.BreakClaimViewModel
 import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
+import com.pennhousing.shift.shared.viewmodel.HouseScheduleViewModel
 import com.pennhousing.shift.shared.viewmodel.PreferencesViewModel
 import com.pennhousing.shift.shared.viewmodel.SettingsViewModel
 import com.pennhousing.shift.shared.viewmodel.ShiftsScreenViewModel
@@ -104,6 +106,19 @@ object DemoFactory {
         val now = now()
         return CalendarViewModel(DemoData.snapshot(now).myShifts, now)
     }
+
+    fun houseScheduleViewModel(): HouseScheduleViewModel {
+        val now = now()
+        return HouseScheduleViewModel(DemoData.houseSchedule(now), now)
+    }
+
+    /**
+     * Live house-schedule VM from the worker's real `house_schedule_grid` snapshot
+     * (§11.4, T3b) — supplies `now` Kotlin-side (no Instant across the Swift
+     * bridge). iOS calls this from `HouseObservable.activateLive`; Android builds
+     * the live VM inline in `MainActivity`.
+     */
+    fun houseScheduleViewModel(snapshot: HouseScheduleSnapshot): HouseScheduleViewModel = HouseScheduleViewModel(snapshot, now())
 
     /**
      * Calendar VM with the worker's LIVE closed-house days (§3.4/§11.3, T2-12c) —

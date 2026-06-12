@@ -10,9 +10,12 @@ import com.pennhousing.shift.shared.shifts.formatBlockTime
 import com.pennhousing.shift.shared.shifts.toRow
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus
+import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
 
@@ -83,11 +86,27 @@ private fun weekDayIndex(
     shift: MyShift,
     monday: LocalDate,
     zone: TimeZone,
+): Int? = weekDayIndexOf(shift.start, monday, zone)
+
+private fun weekDayIndexOf(
+    start: Instant,
+    monday: LocalDate,
+    zone: TimeZone,
 ): Int? {
-    val d = shift.start.toLocalDateTime(zone).date
+    val d = start.toLocalDateTime(zone).date
     val idx = d.dayOfWeek.ordinal
     return if (d == monday.plus(idx, DateTimeUnit.DAY)) idx else null
 }
+
+/**
+ * The Mon–Sun index (0..6) of [start] IFF it falls in [now]'s NY week, else null —
+ * the public form the house-schedule builders use to place seats on the strip.
+ */
+fun weekDayIndexInWeekOf(
+    start: Instant,
+    now: Instant,
+    zone: TimeZone = NEW_YORK,
+): Int? = weekDayIndexOf(start, mondayOf(now, zone), zone)
 
 /**
  * The Mon–Sun strip for [now]'s week, with a dot on days that have shifts.
@@ -134,6 +153,23 @@ fun calendarWeekDates(
 ): List<String> {
     val monday = mondayOf(now, zone)
     return (0 until DAYS_IN_WEEK).map { monday.plus(it, DateTimeUnit.DAY).toString() }
+}
+
+/**
+ * The [Mon 00:00, next-Mon 00:00) instant bounds of [now]'s NY week — the range
+ * the data layer queries for week-scoped reads (e.g. the §11.4 house grid).
+ * Computed via LocalDate arithmetic then converted, so DST weeks bound correctly.
+ */
+fun calendarWeekBounds(
+    now: Instant,
+    zone: TimeZone = NEW_YORK,
+): Pair<Instant, Instant> {
+    val monday = mondayOf(now, zone)
+    val nextMonday = monday.plus(DAYS_IN_WEEK, DateTimeUnit.DAY)
+    return Pair(
+        LocalDateTime(monday, LocalTime(0, 0)).toInstant(zone),
+        LocalDateTime(nextMonday, LocalTime(0, 0)).toInstant(zone),
+    )
 }
 
 /**

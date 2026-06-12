@@ -147,7 +147,43 @@ final class AckHostObservable: ObservableObject {
     }
 }
 
-private enum Tab: Int { case mine, home, other, calendar, updates, preferences, breakShifts, settings }
+private enum Tab: Int { case mine, home, other, calendar, house, updates, preferences, breakShifts, settings }
+
+/// Observes the §11.4 house-schedule `StateFlow` (T3b). Demo by default; the live
+/// host calls `activateLive` to swap in the worker's real `house_schedule_grid`
+/// snapshot (home-house scoped via RLS; contacts via the full-directory ruling).
+@MainActor
+final class HouseObservable: ObservableObject {
+    private(set) var vm: HouseScheduleViewModel
+    @Published var state: HouseScheduleUiState
+    private var task: Task<Void, Never>?
+    private var live = false
+
+    init(vm: HouseScheduleViewModel) {
+        self.vm = vm
+        self.state = vm.uiState.value
+        subscribe()
+    }
+
+    private func subscribe() {
+        task?.cancel()
+        state = vm.uiState.value
+        task = Task { [weak self] in
+            guard let self else { return }
+            for await s in self.vm.uiState { self.state = s }
+        }
+    }
+
+    func activateLive(repo: WorkerShiftsRepository, userId: String) async {
+        guard !live else { return }
+        live = true
+        guard let snapshot = try? await repo.fetchHouseSchedule(userId: userId), let snapshot else { return }
+        vm = DemoFactory.shared.houseScheduleViewModel(snapshot: snapshot)
+        subscribe()
+    }
+
+    deinit { task?.cancel() }
+}
 
 struct ShiftsRootView: View {
     /// Optional sign-out hook from the live host (demo passes nil → no-op).
@@ -158,6 +194,7 @@ struct ShiftsRootView: View {
 
     @StateObject private var model = ShiftsObservable(vm: DemoFactory.shared.shiftsViewModel())
     @StateObject private var calendarModel = CalendarObservable(vm: DemoFactory.shared.calendarViewModel())
+    @StateObject private var houseModel = HouseObservable(vm: DemoFactory.shared.houseScheduleViewModel())
     @StateObject private var prefsModel = PreferencesObservable(vm: DemoFactory.shared.preferencesViewModel())
     @StateObject private var breakModel = BreakClaimObservable(vm: DemoFactory.shared.breakClaimViewModel())
     @StateObject private var settingsModel = SettingsObservable(vm: DemoFactory.shared.settingsViewModel())
@@ -192,6 +229,7 @@ struct ShiftsRootView: View {
                 case .home: homeOpen
                 case .other: otherHouses
                 case .calendar: calendarTab
+                case .house: houseTab
                 case .updates: updates
                 case .preferences: PreferencesScreen(model: prefsModel)
                 case .breakShifts: BreakClaimScreen(
@@ -305,6 +343,8 @@ struct ShiftsRootView: View {
                 await settingsModel.activateLive(repo: WorkerBackend.shared.profileRepository, userId: uid)
                 // Closed-house days for the calendar strip (§3.4/§11.3, T2-12c).
                 await calendarModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
+                // The home-house grid + contacts (§11.4, T3b).
+                await houseModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
                 // Live break context (name + window + "only Harnwell open") + the §4.4
                 // opt-out state from the worker-readable `break_periods` / `break_optouts`;
                 // the pool stays demo-backed (T2-2a/T2-2b).
@@ -322,6 +362,7 @@ struct ShiftsRootView: View {
                 tabButton("Open · My House", "tab_open_home", .home)
                 tabButton("Open · Other", "tab_open_other", .other)
                 tabButton("Calendar", "tab_calendar", .calendar)
+                tabButton("House", "tab_house", .house)
                 tabButton("Updates", "tab_updates", .updates)
                 tabButton("Preferences", "tab_preferences", .preferences)
                 tabButton("Break shifts", "tab_break", .breakShifts)
@@ -339,7 +380,7 @@ struct ShiftsRootView: View {
             case .mine: model.vm.selectTab(tab: .myShifts)
             case .home: model.vm.selectTab(tab: .openHome)
             case .other: model.vm.selectTab(tab: .openOther)
-            case .calendar, .updates, .preferences, .breakShifts, .settings: break
+            case .calendar, .house, .updates, .preferences, .breakShifts, .settings: break
             }
         }) {
             Text(title)
@@ -677,6 +718,130 @@ struct ShiftsRootView: View {
         .foregroundColor(c.floatOut.deep)
         .background(c.floatOut.badge)
         .clipShape(Capsule())
+    }
+
+    // MARK: House — §11.4 home-house schedule + contact lookup (T3b)
+
+    @State private var contactTarget: HouseRosterRow?
+
+    private var houseTab: some View {
+        let c = ShiftColors.resolve(scheme)
+        let st = houseModel.state
+        return VStack(alignment: .leading, spacing: 0) {
+            houseHeaderCard(st, c)
+            houseWeekStrip(st.week, Int(st.selectedDayIndex), c)
+            if st.day.isEmpty {
+                EmptyState(
+                    title: "No desk shifts this day",
+                    systemIcon: ShiftIcons.building,
+                    bodyText: "Nothing scheduled at \(st.houseName) on this day."
+                )
+                .padding(.top, 8)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(st.day.rows, id: \.id) { row in
+                        houseRosterRow(row, c)
+                    }
+                }
+                .padding(.horizontal, 16).padding(.top, 6)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("house_screen")
+        .sheet(item: $contactTarget) { row in
+            ContactSheetView(row: row, deskPhone: houseModel.state.deskPhone)
+        }
+    }
+
+    private func houseHeaderCard(_ st: HouseScheduleUiState, _ c: ShiftColors) -> some View {
+        HStack(spacing: 12) {
+            HouseBadge(initial: String(st.houseName.prefix(1)), bg: c.blueContainer, fg: c.blue)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(st.houseName).font(ShiftFont.sans(15, .semibold)).foregroundColor(c.ink)
+                Text(st.deskPhone.map { "Desk · \($0)" } ?? "House schedule")
+                    .font(ShiftFont.sans(13)).foregroundColor(c.sec)
+            }
+            Spacer(minLength: 0)
+            if let desk = st.deskPhone {
+                ShiftButton(title: "Call desk", action: { dial(desk) }, variant: .tonal, size: .sm)
+                    .accessibilityIdentifier("house_call_desk")
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .background(c.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(c.divider, lineWidth: 1))
+        .padding(.horizontal, 16).padding(.vertical, 8)
+    }
+
+    /// The same Mon–Sun strip as the calendar, driving the house VM's selectDay.
+    private func houseWeekStrip(_ week: CalendarWeek, _ selected: Int, _ c: ShiftColors) -> some View {
+        HStack(spacing: 2) {
+            ForEach(week.days, id: \.index) { day in
+                Button(action: { houseModel.vm.selectDay(index: day.index) }) {
+                    VStack(spacing: 4) {
+                        Text(day.dayLetter).font(ShiftFont.sans(11, .semibold)).foregroundColor(c.ter)
+                        ZStack {
+                            Circle().fill(Int(day.index) == selected ? c.blue : Color.clear).frame(width: 34, height: 34)
+                            if day.isToday && Int(day.index) != selected {
+                                Circle().strokeBorder(c.blue, lineWidth: 1.5).frame(width: 34, height: 34)
+                            }
+                            Text(day.dateLabel)
+                                .font(ShiftFont.sans(14, day.isToday ? .bold : .medium))
+                                .foregroundColor(Int(day.index) == selected ? .white : c.ink)
+                        }
+                        Circle().fill(day.hasShifts ? c.blue : Color.clear).frame(width: 5, height: 5)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("house_day_cell")
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 2)
+        .accessibilityIdentifier("house_week_strip")
+    }
+
+    private func houseRosterRow(_ row: HouseRosterRow, _ c: ShiftColors) -> some View {
+        Button(action: { if !row.vacant { contactTarget = row } }) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.timeLabel).font(ShiftType.monoTime).monospacedDigit().foregroundColor(c.ink)
+                    HStack(spacing: 6) {
+                        Text(row.workerName ?? "Open shift")
+                            .font(ShiftFont.sans(13.5, row.vacant ? .regular : .medium))
+                            .foregroundColor(row.vacant ? c.ter : c.sec)
+                        if row.pending {
+                            Text("Pending float").font(ShiftFont.sans(11.5, .semibold)).foregroundColor(c.pending)
+                        } else if row.floatIn {
+                            Text("Float in").font(ShiftFont.sans(11.5, .semibold)).foregroundColor(c.floatIn.accent)
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+                Text(row.durationLabel).font(ShiftType.monoId).monospacedDigit().foregroundColor(c.ter)
+                if !row.vacant && row.workerPhone != nil {
+                    Image(systemName: ShiftIcons.phone).font(.system(size: 14)).foregroundColor(c.blue)
+                }
+            }
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(row.vacant ? c.surfaceVar : c.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(row.active ? c.blue : c.divider, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("house_roster_row")
+    }
+
+    private func dial(_ phone: String) {
+        let digits = phone.filter { !$0.isWhitespace }
+        if let url = URL(string: "tel://\(digits)") {
+            UIApplication.shared.open(url)
+        }
     }
 
     // MARK: Calendar — agenda-first Personal Calendar (current week only)
@@ -1243,9 +1408,52 @@ private struct DropScopeOption: View {
     }
 }
 
+/// The §11.4 contact sheet (T3b): who covers the run + call affordances — the
+/// worker's phone (full-directory ruling) and the house desk phone.
+private struct ContactSheetView: View {
+    let row: HouseRosterRow
+    let deskPhone: String?
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let c = ShiftColors.resolve(scheme)
+        ShiftSheet(title: row.workerName ?? "Shift", onClose: { dismiss() }) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    HouseBadge(initial: String((row.workerName ?? "?").prefix(1)), bg: c.surfaceVar, fg: c.ink)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(row.timeLabel).font(ShiftType.monoTime).monospacedDigit().foregroundColor(c.ink)
+                        Text(row.workerPhone ?? "No phone on file")
+                            .font(ShiftFont.sans(13.5)).foregroundColor(c.sec)
+                            .accessibilityIdentifier("contact_phone")
+                    }
+                }
+                if let phone = row.workerPhone {
+                    ShiftButton(title: "Call \(row.workerName ?? "worker")", action: { dial(phone) }, fullWidth: true)
+                        .accessibilityIdentifier("contact_call_button")
+                }
+                if let desk = deskPhone {
+                    ShiftButton(title: "Call the desk · \(desk)", action: { dial(desk) }, variant: .outlined, fullWidth: true)
+                        .accessibilityIdentifier("contact_call_desk")
+                }
+            }
+            .accessibilityIdentifier("contact_sheet")
+        }
+    }
+
+    private func dial(_ phone: String) {
+        let digits = phone.filter { !$0.isWhitespace }
+        if let url = URL(string: "tel://\(digits)") {
+            UIApplication.shared.open(url)
+        }
+    }
+}
+
 // `sheet(item:)` needs Identifiable; the model ids are stable.
 extension MyShift: Identifiable {}
 extension OpenShift: Identifiable {}
+extension HouseRosterRow: Identifiable {}
 
 #Preview {
     ShiftsRootView()

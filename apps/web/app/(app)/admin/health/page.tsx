@@ -1,12 +1,13 @@
 import { redirect } from 'next/navigation';
 
+import { Card } from '../../../../components/ui/Card';
 import { EmptyState } from '../../../../components/ui/EmptyState';
 import { Notification } from '../../../../components/ui/Notification';
 import { PageHead } from '../../../../components/ui/PageHead';
 import { Tag } from '../../../../components/ui/Tag';
 import { getSessionUser, isHouseAdmin } from '../../../../lib/auth';
 import { isProjectAdministrator } from '../../../../lib/data/config';
-import { getOrchestratorHealth } from '../../../../lib/data/health';
+import { getOrchestratorHealth, getPushDeliveryHealth } from '../../../../lib/data/health';
 
 export default async function HealthPage() {
   const user = await getSessionUser();
@@ -18,10 +19,13 @@ export default async function HealthPage() {
       <PageHead
         eyebrow="System"
         title="Orchestrator health"
-        sub="The most recent once-per-minute orchestrator tick (§6.12)."
+        sub="The most recent once-per-minute orchestrator tick, plus per-integration health (§6.12)."
       />
       {authorized ? (
-        <HealthSummary />
+        <div className="col gap-5">
+          <HealthSummary />
+          <IntegrationsGrid />
+        </div>
       ) : (
         <Notification kind="warning" title="Administrators only" testId="health-unauthorized">
           403 — this page is restricted to administrators.
@@ -90,11 +94,92 @@ async function HealthSummary() {
           </span>
         </div>
       </div>
-
-      <Notification kind="info" title="Integration status not instrumented">
-        Per-integration health (SMS / Allied / SSO / SIS) isn&apos;t recorded in this build — only
-        the orchestrator tick above is tracked (DESIGN_TOKENS.md §6).
-      </Notification>
     </div>
   );
+}
+
+const NOT_CONFIGURED_INTEGRATIONS = [
+  { id: 'sms', name: 'SMS' },
+  { id: 'allied', name: 'Allied dispatch' },
+  { id: 'sso', name: 'SSO' },
+  { id: 'sis', name: 'SIS' },
+] as const;
+
+// Per-integration health cards (§6.12). Push delivery is the only integration
+// instrumented in this build; the rest render an explicit "Not configured" card
+// rather than a fabricated health signal.
+async function IntegrationsGrid() {
+  const push = await getPushDeliveryHealth();
+  const pushHealthy =
+    push.backlog === 0 ||
+    (push.oldestPendingAgeMs !== null && push.oldestPendingAgeMs < 5 * 60_000);
+
+  return (
+    <div className="col gap-3">
+      <span className="t-label" style={{ color: 'var(--text-secondary)' }}>
+        Integrations
+      </span>
+
+      <Card pad data-testid="health-push-card">
+        <div className="col gap-3">
+          <div className="row gap-2 between">
+            <span className="t-h3">Push delivery</span>
+            {pushHealthy ? (
+              <Tag kind="green" icon="checkCircle">
+                Healthy
+              </Tag>
+            ) : (
+              <Tag kind="amber" icon="warnFill">
+                Backed up
+              </Tag>
+            )}
+          </div>
+          <div className="kv-list">
+            <div className="kv">
+              <span className="t-label">Backlog (undelivered, due)</span>
+              <span className="t-mono">{push.backlog}</span>
+            </div>
+            <div className="kv">
+              <span className="t-label">Oldest pending</span>
+              <span className="t-mono">
+                {push.oldestPendingAgeMs === null ? '—' : formatAgo(push.oldestPendingAgeMs)}
+              </span>
+            </div>
+            <div className="kv">
+              <span className="t-label">Registered device tokens</span>
+              <span className="t-mono">
+                {push.tokens.total} ({push.tokens.android} android / {push.tokens.ios} ios)
+              </span>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+        {NOT_CONFIGURED_INTEGRATIONS.map((integration) => (
+          <Card pad key={integration.id} data-testid={`health-not-configured-${integration.id}`}>
+            <div className="col gap-2">
+              <div className="row gap-2 between">
+                <span className="t-h3">{integration.name}</span>
+                <Tag kind="gray">Not configured</Tag>
+              </div>
+              <span className="t-helper">
+                No integration is wired in this build — health is not instrumented.
+              </span>
+            </div>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Relative age for the oldest undelivered notification, e.g. "4m ago".
+function formatAgo(ageMs: number): string {
+  const mins = Math.max(0, Math.floor(ageMs / 60_000));
+  if (mins < 1) return '<1m ago';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ${mins % 60}m ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }

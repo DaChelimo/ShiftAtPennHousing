@@ -2,6 +2,7 @@ package com.pennhousing.shift.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -27,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -63,6 +66,10 @@ fun BreakClaimTabContent(
     // the break shift's pool-row id (= its block assignment_id).
     onClaimBreak: (String) -> Unit = {},
     onDropBreak: (String) -> Unit = {},
+    // Live host writes the §4.4 "no break hours" opt-out (own `break_optouts` row,
+    // insert/delete) DIRECTLY via Postgrest while the picker flips its optimistic
+    // opted-out state; demo defaults to no live write. Argument = the NEW opted-out state.
+    onToggleBreakOptOut: (Boolean) -> Unit = {},
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val c = ShiftTheme.colors
@@ -90,7 +97,21 @@ fun BreakClaimTabContent(
         BreakInfoCard(state.infoTitle, state.infoBody)
         BreakHoursMeterView(state.list.meter)
 
-        if (state.list.isEmpty) {
+        // §4.4 "no break hours" opt-out — the break analogue of the preferences no-hours
+        // control. When opted out the worker won't be scheduled this break; the claimable
+        // pool collapses to the opted-out empty state below.
+        BreakOptOutToggle(
+            optedOut = state.optedOut,
+            onToggle = { onToggleBreakOptOut(vm.toggleOptedOut()) },
+        )
+
+        if (state.optedOut) {
+            EmptyState(
+                title = "No break hours",
+                icon = ShiftIcons.Ban,
+                body = "You won't be scheduled this break. Untick \"no break hours\" to claim shifts.",
+            )
+        } else if (state.list.isEmpty) {
             EmptyState(
                 title = "No break shifts open",
                 icon = ShiftIcons.Coffee,
@@ -201,6 +222,43 @@ private fun BreakHoursMeterView(meter: BreakHoursMeter) {
         Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(50)).background(c.surfaceVar)) {
             Box(Modifier.fillMaxWidth(meter.fraction.toFloat()).height(6.dp).clip(RoundedCornerShape(50)).background(barColor))
         }
+    }
+}
+
+/**
+ * The §4.4 "no break hours" opt-out tick — the break analogue of the preferences
+ * no-hours control (same checkbox affordance). Ticking it opts the worker out of break
+ * hours; unticking opts back in. The break accent (golden) keeps it on-theme.
+ */
+@Composable
+private fun BreakOptOutToggle(
+    optedOut: Boolean,
+    onToggle: () -> Unit,
+) {
+    val c = ShiftTheme.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onToggle)
+            .testTag("break_no_hours_toggle"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
+        Box(
+            Modifier
+                .size(22.dp)
+                .clip(RoundedCornerShape(7.dp))
+                .background(if (optedOut) c.breakShift.accent else Color.Transparent)
+                .border(1.5.dp, if (optedOut) c.breakShift.accent else c.outline, RoundedCornerShape(7.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (optedOut) {
+                Icon(ShiftIcons.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+            }
+        }
+        Text("I have no hours this break", color = c.sec, fontSize = 13.5.sp, fontWeight = FontWeight.Medium)
     }
 }
 

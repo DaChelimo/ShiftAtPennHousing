@@ -65,6 +65,14 @@ data class BreakClaimSnapshot(
     val infoBody: String,
     val shifts: List<BreakShift>,
     val initiallyClaimedIds: Set<String> = emptySet(),
+    // §4.4 per-break "no break hours" opt-out — the break analogue of the regular-year
+    // no-hours control (`period_targets.opted_out`). True when the worker has a row in
+    // `break_optouts` for the active break (presence of the row IS the opt-out — there is
+    // no flag column). When opted out the worker won't be scheduled this break and the
+    // claim list reflects the opted-out state (no claimable rows, like preferences' empty
+    // opted-out state). The opt-out targets the ACTIVE break ([breakId]).
+    val breakId: String? = null,
+    val initiallyOptedOut: Boolean = false,
 )
 
 /**
@@ -123,6 +131,21 @@ fun BreakClaimSnapshot.withContext(context: BreakContextCopy): BreakClaimSnapsho
         profileContext = context.profileContext,
         infoTitle = context.infoTitle,
         infoBody = context.infoBody,
+    )
+
+/**
+ * Overlay the live ACTIVE-break identity + current opt-out state onto a (demo) snapshot.
+ * The host calls this when the live `break_periods` + `break_optouts` reads resolve so the
+ * §4.4 toggle targets the real break row; the (still demo-backed) pool + claimed set are
+ * untouched. Both platforms share it so the Android/iOS merge stays identical.
+ */
+fun BreakClaimSnapshot.withOptOut(
+    breakId: String,
+    optedOut: Boolean,
+): BreakClaimSnapshot =
+    copy(
+        breakId = breakId,
+        initiallyOptedOut = optedOut,
     )
 
 /** The "This week — Xh / 40h" hard-cap meter atop the picker. */
@@ -199,20 +222,37 @@ data class BreakClaimList(
     val rows: List<BreakShiftRow>,
     val claimedHours: Double,
     val meter: BreakHoursMeter,
+    // §4.4 — when the worker opted out of break hours, the picker shows the opted-out
+    // empty state (no claimable rows) instead of the pool, mirroring the preferences
+    // no-hours empty state. The opt-out is the only mutable break-level state besides the
+    // claimed set.
+    val optedOut: Boolean = false,
 ) {
     val isEmpty: Boolean get() = rows.isEmpty()
 }
 
 /**
- * Build the picker for the current [claimedIds]: every pool shift as a row (Claim /
- * Drop), the summed hours of the claimed ones, and the 40h hard-cap meter over them.
+ * Build the picker for the current [claimedIds] and [optedOut] state. When [optedOut] the
+ * worker won't be scheduled this break (§4.4), so the rows are suppressed (empty list) and
+ * the meter reads 0h — the screen renders the opted-out empty state. Otherwise: every pool
+ * shift as a row (Claim / Drop), the summed hours of the claimed ones, and the 40h
+ * hard-cap meter over them.
  */
 fun buildBreakClaimList(
     snapshot: BreakClaimSnapshot,
     claimedIds: Set<String>,
+    optedOut: Boolean = false,
     cap: Double = BREAK_HOURS_CAP,
     zone: TimeZone = NEW_YORK,
 ): BreakClaimList {
+    if (optedOut) {
+        return BreakClaimList(
+            rows = emptyList(),
+            claimedHours = 0.0,
+            meter = buildBreakHoursMeter(0.0, cap),
+            optedOut = true,
+        )
+    }
     val sorted = snapshot.shifts.sortedBy { it.start }
     val claimedHours =
         sorted.filter { it.id in claimedIds }.sumOf { hoursBetween(it.start, it.end) }
@@ -221,5 +261,6 @@ fun buildBreakClaimList(
         rows = sorted.map { it.toRow(claimedByMe = it.id in claimedIds, atCap = meter.atCap, zone = zone) },
         claimedHours = claimedHours,
         meter = meter,
+        optedOut = false,
     )
 }

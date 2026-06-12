@@ -6,11 +6,14 @@ import com.pennhousing.shift.shared.shifts.NEW_YORK
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.postgrest.query.Count
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlin.time.Clock
 
 /**
@@ -28,10 +31,28 @@ import kotlin.time.Clock
  * by [breakContextCopy] (the live-vs-derivable logic). The claimable POOL itself is
  * still demo-backed — surfacing live `worker_open_shifts` break rows is a larger wiring,
  * deferred. There is no per-worker scoping: a break period is not owned by a worker.
+ *
+ * OPT-OUT (§4.4, T2-2b) — the per-break "no break hours" control, the break analogue of
+ * the regular-year no-hours opt-out (`period_targets.opted_out`). The `break_optouts`
+ * table (PK `(break_id, user_id)`, only `opted_out_at`) carries NO flag column: the
+ * PRESENCE of the worker's own row IS the opt-out. So the write is insert-on-opt-out /
+ * delete-on-opt-in (idempotent upsert with `ignoreDuplicates`), and the read is "does my
+ * own row exist". Worker RLS already permits select/insert/update/delete of OWN rows
+ * (migration 20260531000002:36-59), so these go DIRECTLY through Postgrest — no EF/RPC.
  */
 class BreakRepository(
     private val supabase: SupabaseClient,
 ) {
+
+    /**
+     * The active break's identity ([breakId]) + its live descriptive copy ([context]),
+     * or null when there is no current/upcoming break (the caller keeps the demo copy).
+     * The id is needed to target the §4.4 opt-out at the active break.
+     */
+    data class ActiveBreak(
+        val breakId: String,
+        val context: BreakContextCopy,
+    )
 
     /**
      * The live descriptive copy for the active break, or null when there is no current
@@ -40,23 +61,86 @@ class BreakRepository(
      * candidates. The clock read lives here in the (untested) data layer, never in the
      * pure `breakContextCopy` it calls.
      */
-    suspend fun fetchActiveBreakContext(): BreakContextCopy? {
+    suspend fun fetchActiveBreakContext(): BreakContextCopy? = fetchActiveBreak()?.context
+
+    /**
+     * The active break (id + derived copy) — the soonest break that has not yet ended
+     * ([asOf] ≤ end_date), ordered by start_date ascending. Returns the [breakId] too so
+     * the §4.4 opt-out toggle can target it. Null when there is no current/upcoming break.
+     */
+    suspend fun fetchActiveBreak(): ActiveBreak? {
         val asOf = Clock.System.now().toLocalDateTime(NEW_YORK).date
         val candidates =
             supabase
                 .from("break_periods")
-                .select(Columns.list("break_name", "break_type", "start_date", "end_date")) {
+                .select(Columns.list("break_id", "break_name", "break_type", "start_date", "end_date")) {
                     filter { gte("end_date", asOf.toString()) }
                     order("start_date", Order.ASCENDING)
                 }
                 .decodeList<BreakPeriodRow>()
         val active = candidates.firstOrNull() ?: return null
-        return breakContextCopy(
-            breakName = active.breakName,
-            breakType = active.breakType,
-            startDate = LocalDate.parse(active.startDate),
-            endDate = LocalDate.parse(active.endDate),
+        return ActiveBreak(
+            breakId = active.breakId,
+            context =
+                breakContextCopy(
+                    breakName = active.breakName,
+                    breakType = active.breakType,
+                    startDate = LocalDate.parse(active.startDate),
+                    endDate = LocalDate.parse(active.endDate),
+                ),
         )
+    }
+
+    /**
+     * Whether [userId] has opted out of break hours for [breakId] (§4.4): true when the
+     * worker's own `break_optouts` row exists. RLS scopes the read to own rows; we filter
+     * on both keys defensively and ask for an exact count.
+     */
+    suspend fun fetchBreakOptOut(
+        userId: String,
+        breakId: String,
+    ): Boolean {
+        val count =
+            supabase
+                .from("break_optouts")
+                .select(Columns.list("user_id")) {
+                    filter {
+                        eq("break_id", breakId)
+                        eq("user_id", userId)
+                    }
+                    count(Count.EXACT)
+                }
+                .countOrNull() ?: 0L
+        return count > 0L
+    }
+
+    /**
+     * Set the §4.4 break opt-out for [userId] on [breakId]: insert the own row when
+     * [optedOut], delete it when not. Idempotent — re-opting-out is an `ignoreDuplicates`
+     * upsert (the PK is `(break_id, user_id)`), re-opting-in deletes a possibly-absent
+     * row. `opted_out_at` defaults server-side. Worker RLS allows the own-row write.
+     */
+    suspend fun setBreakOptOut(
+        userId: String,
+        breakId: String,
+        optedOut: Boolean,
+    ) {
+        val table = supabase.from("break_optouts")
+        if (optedOut) {
+            table.upsert(
+                buildJsonObject {
+                    put("break_id", breakId)
+                    put("user_id", userId)
+                },
+            ) { ignoreDuplicates = true }
+        } else {
+            table.delete {
+                filter {
+                    eq("break_id", breakId)
+                    eq("user_id", userId)
+                }
+            }
+        }
     }
 }
 
@@ -64,6 +148,7 @@ class BreakRepository(
 
 @Serializable
 private data class BreakPeriodRow(
+    @SerialName("break_id") val breakId: String,
     @SerialName("break_name") val breakName: String,
     @SerialName("break_type") val breakType: String,
     @SerialName("start_date") val startDate: String,

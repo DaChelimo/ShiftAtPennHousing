@@ -154,6 +154,10 @@ fun ShiftsApp(
     // argument is the break shift's pool-row id (= its block assignment_id).
     onClaimBreak: (String) -> Unit = {},
     onDropBreak: (String) -> Unit = {},
+    // Live host writes the §4.4 "no break hours" opt-out (own `break_optouts` row, insert/
+    // delete) DIRECTLY via Postgrest while the picker flips its optimistic opted-out state;
+    // demo defaults to no live write. The argument is the NEW desired opted-out state.
+    onToggleBreakOptOut: (Boolean) -> Unit = {},
     // Live host PATCHes `users-broadcast-subscription` (best-effort) while the settings
     // ViewModel still does the optimistic local toggle; demo defaults to no live write.
     // The argument is the NEW desired subscription state. Only the broadcast / "General
@@ -257,7 +261,7 @@ fun ShiftsApp(
                             },
                         )
                     TAB_PREFS -> PreferencesTabContent(preferencesVm, onSubmitPreferences)
-                    TAB_BREAK -> BreakClaimTabContent(breakClaimVm, onClaimBreak, onDropBreak)
+                    TAB_BREAK -> BreakClaimTabContent(breakClaimVm, onClaimBreak, onDropBreak, onToggleBreakOptOut)
                     TAB_SETTINGS -> SettingsTabContent(settingsVm, onSignOut, onToggleBroadcast)
                 }
             }

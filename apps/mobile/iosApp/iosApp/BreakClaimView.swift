@@ -30,15 +30,21 @@ final class BreakClaimObservable: ObservableObject {
         }
     }
 
-    /// Live host: load the active break's descriptive context from the worker-readable
-    /// `break_periods` (migration 20260611000002), overlay it onto the (still demo-backed)
-    /// pool snapshot, and swap the VM. Falls back to the demo copy (no swap) when there is
-    /// no current/upcoming break.
-    func activateLive(repo: BreakRepository) async {
+    /// Live host: load the active break (id + descriptive context) from the worker-readable
+    /// `break_periods` (migration 20260611000002) plus the worker's current §4.4 opt-out
+    /// state (own `break_optouts` row), overlay both onto the (still demo-backed) pool
+    /// snapshot, and swap the VM. Falls back to the demo copy (no swap) when there is no
+    /// current/upcoming break.
+    func activateLive(repo: BreakRepository, userId: String) async {
         guard !activated else { return }
         activated = true
-        guard let context = try? await repo.fetchActiveBreakContext(), let context else { return }
-        let snapshot = DemoFactory.shared.breakClaimSnapshot().doWithContext(context: context)
+        guard let active = try? await repo.fetchActiveBreak(), let active else { return }
+        // `fetchBreakOptOut` is a suspend fun returning Kotlin Boolean → SKIE boxes it as
+        // `KotlinBoolean`; unwrap to a Swift Bool (default false on any read failure).
+        let optedOut = (try? await repo.fetchBreakOptOut(userId: userId, breakId: active.breakId))?.boolValue ?? false
+        let snapshot = DemoFactory.shared.breakClaimSnapshot()
+            .doWithContext(context: active.context)
+            .doWithOptOut(breakId: active.breakId, optedOut: optedOut)
         vm = BreakClaimViewModel(snapshot: snapshot)
         state = vm.uiState.value
         observe()
@@ -52,6 +58,10 @@ struct BreakClaimScreen: View {
     /// the break shift's pool-row id (= its block assignment_id).
     var onClaim: ((String) -> Void)? = nil
     var onDrop: ((String) -> Void)? = nil
+    /// Live host writes the §4.4 "no break hours" opt-out (own `break_optouts` row,
+    /// insert/delete) DIRECTLY via Postgrest while the picker flips its optimistic
+    /// opted-out state; demo passes `nil` (local-only). Argument = the NEW opted-out state.
+    var onToggleOptOut: ((Bool) -> Void)? = nil
     @Environment(\.colorScheme) private var scheme
     @State private var showToast = false
 
@@ -71,8 +81,15 @@ struct BreakClaimScreen: View {
 
             infoCard(st.infoTitle, st.infoBody, c)
             hoursMeter(st.list.meter, c)
+            optOutToggle(st.optedOut, c)
 
-            if st.list.isEmpty {
+            if st.optedOut {
+                EmptyState(
+                    title: "No break hours",
+                    systemIcon: ShiftIcons.ban,
+                    bodyText: "You won't be scheduled this break. Untick \"no break hours\" to claim shifts."
+                )
+            } else if st.list.isEmpty {
                 EmptyState(
                     title: "No break shifts open",
                     systemIcon: ShiftIcons.coffee,
@@ -133,6 +150,35 @@ struct BreakClaimScreen: View {
         }
         .padding(.horizontal, 16).padding(.vertical, 8)
         .accessibilityIdentifier("break_hours_meter")
+    }
+
+    /// The §4.4 "no break hours" opt-out tick — the break analogue of the preferences
+    /// no-hours control (same checkbox affordance, golden break accent). Flips the VM's
+    /// optimistic opted-out state, then the live host persists the own `break_optouts` row.
+    private func optOutToggle(_ optedOut: Bool, _ c: ShiftColors) -> some View {
+        Button(action: {
+            let now = model.vm.toggleOptedOut()
+            onToggleOptOut?(now)
+        }) {
+            HStack(spacing: 9) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(optedOut ? c.breakShift.accent : Color.clear)
+                        .frame(width: 22, height: 22)
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(optedOut ? c.breakShift.accent : c.outline, lineWidth: 1.5)
+                        .frame(width: 22, height: 22)
+                    if optedOut {
+                        Image(systemName: ShiftIcons.check).font(.system(size: 12, weight: .bold)).foregroundColor(.white)
+                    }
+                }
+                Text("I have no hours this break").font(ShiftFont.sans(13.5, .medium)).foregroundColor(c.sec)
+                Spacer(minLength: 0)
+            }
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 16).padding(.vertical, 6)
+        .accessibilityIdentifier("break_no_hours_toggle")
     }
 
     private func breakCard(_ row: BreakShiftRow) -> some View {

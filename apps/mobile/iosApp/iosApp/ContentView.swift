@@ -177,6 +177,15 @@ struct ShiftsRootView: View {
                     onDrop: liveUserId == nil ? nil : { assignmentId in
                         let repo = WorkerBackend.shared.shiftsRepository
                         Task { _ = try? await repo.dropShift(assignmentId: assignmentId) }
+                    },
+                    // Live host writes the §4.4 "no break hours" opt-out (own `break_optouts`
+                    // row, insert/delete) DIRECTLY via Postgrest while the picker flips its
+                    // optimistic state; demo (liveUserId == nil) = local-only. Targets the
+                    // active break id surfaced by `activateLive` (no-op when none loaded).
+                    onToggleOptOut: liveUserId == nil ? nil : { optedOut in
+                        guard let uid = liveUserId, let bid = breakModel.vm.breakId else { return }
+                        let repo = WorkerBackend.shared.breakRepository
+                        Task { _ = try? await repo.setBreakOptOut(userId: uid, breakId: bid, optedOut: optedOut) }
                     }
                 )
                 case .settings: SettingsScreen(
@@ -263,9 +272,10 @@ struct ShiftsRootView: View {
                 await updatesModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
                 await ackModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
                 await settingsModel.activateLive(repo: WorkerBackend.shared.profileRepository, userId: uid)
-                // Live break context (name + window + "only Harnwell open") from the
-                // worker-readable `break_periods`; the pool stays demo-backed (T2-2a).
-                await breakModel.activateLive(repo: WorkerBackend.shared.breakRepository)
+                // Live break context (name + window + "only Harnwell open") + the §4.4
+                // opt-out state from the worker-readable `break_periods` / `break_optouts`;
+                // the pool stays demo-backed (T2-2a/T2-2b).
+                await breakModel.activateLive(repo: WorkerBackend.shared.breakRepository, userId: uid)
             }
         }
     }

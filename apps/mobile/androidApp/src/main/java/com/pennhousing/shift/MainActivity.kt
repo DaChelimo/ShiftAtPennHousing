@@ -30,8 +30,9 @@ import com.pennhousing.shift.shared.auth.AppBootstrap
 import com.pennhousing.shift.shared.auth.AuthSession
 import com.pennhousing.shift.shared.auth.DataSource
 import com.pennhousing.shift.shared.auth.StartDestination
-import com.pennhousing.shift.shared.breakclaim.BreakContextCopy
 import com.pennhousing.shift.shared.breakclaim.withContext
+import com.pennhousing.shift.shared.breakclaim.withOptOut
+import com.pennhousing.shift.shared.data.BreakRepository
 import com.pennhousing.shift.shared.data.ProfileSnapshot
 import com.pennhousing.shift.shared.data.WorkerBackend
 import com.pennhousing.shift.shared.data.WorkerSnapshot
@@ -261,15 +262,27 @@ private fun LiveShiftsRoot(
             // claimable POOL itself is still demo-backed (live `worker_open_shifts` break
             // rows are a larger wiring, deferred). Fall back to the demo copy while the
             // read is in flight or when no break is current/upcoming.
+            // The active break's identity + copy + the worker's current §4.4 opt-out (a row
+            // in `break_optouts` → opted out). The id lets the no-break-hours toggle target
+            // the real break; the toggle write goes DIRECTLY through Postgrest (worker RLS
+            // already permits the own-row insert/delete — no EF). All best-effort: a null
+            // read keeps the demo copy and a non-opted-out, no-id snapshot.
             val breakRepo = remember { WorkerBackend.breakRepository }
-            val liveBreakContext by
-                produceState<BreakContextCopy?>(initialValue = null, session.userId) {
-                    value = runCatching { breakRepo.fetchActiveBreakContext() }.getOrNull()
+            val liveBreak by
+                produceState<BreakRepository.ActiveBreak?>(initialValue = null, session.userId) {
+                    value = runCatching { breakRepo.fetchActiveBreak() }.getOrNull()
+                }
+            val liveBreakOptedOut by
+                produceState(initialValue = false, liveBreak, session.userId) {
+                    val bid = liveBreak?.breakId ?: return@produceState
+                    value = runCatching { breakRepo.fetchBreakOptOut(session.userId, bid) }.getOrDefault(false)
                 }
             val breakClaimVm =
-                remember(liveBreakContext) {
+                remember(liveBreak, liveBreakOptedOut) {
                     val demo = DemoData.breakClaim(now)
-                    val snapshot = liveBreakContext?.let { demo.withContext(it) } ?: demo
+                    val withCopy = liveBreak?.let { demo.withContext(it.context) } ?: demo
+                    val snapshot =
+                        liveBreak?.let { withCopy.withOptOut(it.breakId, liveBreakOptedOut) } ?: withCopy
                     BreakClaimViewModel(snapshot)
                 }
             // Settings: load the worker's real profile + live `broadcast_subscribed` (own
@@ -369,6 +382,15 @@ private fun LiveShiftsRoot(
                     // drop EF (no break-specific drop RPC). The claimed break block's pool-row
                     // id is its block assignment_id. Optimistic locally; next snapshot reconciles.
                     prefsScope.launch { repo.dropShift(assignmentId) }
+                },
+                onToggleBreakOptOut = { optedOut ->
+                    // Persist the §4.4 "no break hours" opt-out → insert/delete the worker's own
+                    // `break_optouts` row DIRECTLY via Postgrest (worker RLS permits it — no EF),
+                    // best-effort, while the picker already flipped its optimistic opted-out state.
+                    // Targets the ACTIVE break id; a no-op when no live break is loaded (demo).
+                    breakClaimVm.breakId?.let { bid ->
+                        prefsScope.launch { breakRepo.setBreakOptOut(session.userId, bid, optedOut) }
+                    }
                 },
                 onToggleBroadcast = { subscribed ->
                     // PATCH the real broadcast subscription → `users-broadcast-subscription`

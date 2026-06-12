@@ -202,4 +202,63 @@ class BreakClaimTest {
         assertEquals(live.profileContext, merged.profileContext)
         assertEquals(snapshot().shifts.size, merged.shifts.size)
     }
+
+    // ----- §4.4 "no break hours" opt-out (T2-2b) -----
+
+    @Test fun opted_out_list_is_empty_and_flagged() {
+        // Opting out suppresses the whole pool: the opted-out empty state shows instead.
+        val list = buildBreakClaimList(snapshot(), claimedIds = emptySet(), optedOut = true)
+        assertTrue(list.optedOut)
+        assertTrue(list.isEmpty)
+        assertEquals(0.0, list.claimedHours, 1e-9)
+        assertEquals("0h", list.meter.currentLabel)
+    }
+
+    @Test fun not_opted_out_list_still_shows_pool() {
+        val list = buildBreakClaimList(snapshot(), claimedIds = emptySet(), optedOut = false)
+        assertFalse(list.optedOut)
+        assertFalse(list.isEmpty)
+        assertEquals(3, list.rows.size)
+    }
+
+    @Test fun with_opt_out_overlays_break_id_and_state_keeps_pool() {
+        val merged = snapshot().withOptOut(breakId = "winter-2026", optedOut = true)
+        assertEquals("winter-2026", merged.breakId)
+        assertTrue(merged.initiallyOptedOut)
+        // Pool + copy preserved.
+        assertEquals(snapshot().shifts.size, merged.shifts.size)
+        assertEquals(snapshot().infoTitle, merged.infoTitle)
+    }
+
+    @Test fun viewmodel_seeds_opted_out_and_exposes_break_id() {
+        val vm = BreakClaimViewModel(snapshot().withOptOut("bk-period", optedOut = true))
+        assertTrue(vm.uiState.value.optedOut)
+        assertTrue(vm.uiState.value.list.isEmpty)
+        assertEquals("bk-period", vm.breakId)
+    }
+
+    @Test fun viewmodel_toggle_opt_out_flips_list_and_returns_new_state() {
+        val vm = BreakClaimViewModel(snapshot())
+        assertFalse(vm.uiState.value.optedOut)
+        assertFalse(vm.uiState.value.list.isEmpty)
+
+        val nowOptedOut = vm.toggleOptedOut()
+        assertTrue(nowOptedOut)
+        assertTrue(vm.uiState.value.optedOut)
+        assertTrue(vm.uiState.value.list.isEmpty) // pool suppressed
+
+        val nowOptedIn = vm.toggleOptedOut()
+        assertFalse(nowOptedIn)
+        assertFalse(vm.uiState.value.optedOut)
+        assertFalse(vm.uiState.value.list.isEmpty) // pool restored
+    }
+
+    @Test fun viewmodel_claim_is_noop_while_opted_out() {
+        val vm = BreakClaimViewModel(snapshot().withOptOut("bk-period", optedOut = true))
+        vm.claim("bk-1")
+        assertEquals(0.0, vm.uiState.value.list.claimedHours, 1e-9)
+        // Opting back in keeps the (still un-claimed) pool — the opted-out claim was ignored.
+        vm.toggleOptedOut()
+        assertFalse(vm.uiState.value.list.rows.first { it.id == "bk-1" }.claimedByMe)
+    }
 }

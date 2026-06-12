@@ -6,6 +6,7 @@ import com.pennhousing.shift.shared.shifts.formatBlockTime
 import com.pennhousing.shift.shared.shifts.formatDayLabel
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
 
 /*
@@ -117,6 +118,7 @@ fun withPendingFloatEntry(
             unread = true,
             urgent = true,
             floatId = pendingFloatId,
+            floatStart = pendingFloatStart,
         )
 }
 
@@ -131,6 +133,8 @@ data class NotificationItem(
     val urgent: Boolean = false,
     /** Non-null → the actionable pending-float entry; tapping it opens the ack hero (§7). */
     val floatId: String? = null,
+    /** The pending float's start — drives the row's live ack countdown (D7). */
+    val floatStart: Instant? = null,
     /** Non-null → a pending swap entry (§8.2, T3a) — the row offers swap actions. */
     val swapId: String? = null,
     /**
@@ -155,6 +159,8 @@ data class NotificationRow(
     val urgent: Boolean,
     /** This row is the pending-float entry (carries the `pending_float_notification` selector). */
     val opensAck: Boolean,
+    /** D7 — "Respond by 16:52 · 1h 49m left" on the pending-float row; null otherwise. */
+    val ackCountdownLabel: String? = null,
     /** Non-null → the row renders swap actions (T3a incoming / D4 outgoing). */
     val swapId: String? = null,
     /** Accept offered (temporary swaps only — see [NotificationItem.swapAcceptable]). */
@@ -162,6 +168,28 @@ data class NotificationRow(
     /** Own outgoing pending swap → the row offers Cancel (void) instead of Accept/Decline. */
     val swapOutgoing: Boolean = false,
 )
+
+/**
+ * D7 — the pending-float row's live ack countdown: the §7 deadline is T-10m
+ * before the float start (phase-12 cadence). "Respond by HH:mm · Xh Ym left"
+ * while open; "Ack window closed" past it; null when the row carries no float
+ * start (e.g. a raw notification row whose payload has no start).
+ */
+fun ackCountdownLabel(
+    floatId: String?,
+    floatStart: Instant?,
+    now: Instant,
+    zone: TimeZone = NEW_YORK,
+): String? {
+    if (floatId == null || floatStart == null) return null
+    val deadline = floatStart - 10.minutes
+    if (now >= deadline) return "Ack window closed"
+    val left = deadline - now
+    val h = left.inWholeMinutes / 60
+    val m = left.inWholeMinutes % 60
+    val leftLabel = if (h > 0) "${h}h ${m}m left" else "${m}m left"
+    return "Respond by ${formatBlockTime(deadline, zone)} · $leftLabel"
+}
 
 /** "18:36" when the notification is from today (NY), else the short day-of-week ("Mon"). */
 fun notificationTimeLabel(
@@ -188,6 +216,7 @@ fun NotificationItem.toRow(
         unread = unread,
         urgent = urgent,
         opensAck = floatId != null,
+        ackCountdownLabel = ackCountdownLabel(floatId, floatStart, now, zone),
         swapId = swapId,
         swapAcceptable = swapAcceptable,
         swapOutgoing = swapOutgoing,

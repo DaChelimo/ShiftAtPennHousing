@@ -33,6 +33,8 @@ import com.pennhousing.shift.shared.auth.StartDestination
 import com.pennhousing.shift.shared.ack.parseFloatAckDeepLink
 import com.pennhousing.shift.shared.breakclaim.withContext
 import com.pennhousing.shift.shared.breakclaim.withOptOut
+import com.pennhousing.shift.shared.data.parseProjectedHours
+import com.pennhousing.shift.shared.data.withLivePoolFor
 import com.pennhousing.shift.shared.data.BreakRepository
 import com.pennhousing.shift.shared.data.ProfileSnapshot
 import com.pennhousing.shift.shared.data.WorkerBackend
@@ -333,12 +335,16 @@ private fun LiveShiftsRoot(
                     value = runCatching { breakRepo.fetchBreakOptOut(session.userId, bid) }.getOrDefault(false)
                 }
             val breakClaimVm =
-                remember(liveBreak, liveBreakOptedOut) {
+                remember(liveBreak, liveBreakOptedOut, snapshot) {
                     val demo = DemoData.breakClaim(now)
                     val withCopy = liveBreak?.let { demo.withContext(it.context) } ?: demo
-                    val snapshot =
-                        liveBreak?.let { withCopy.withOptOut(it.breakId, liveBreakOptedOut) } ?: withCopy
-                    BreakClaimViewModel(snapshot)
+                    // D6 — the pool itself is LIVE now: vacant break-window runs from the
+                    // worker's open feed + already-claimed runs from worker_my_shifts.
+                    val withPool =
+                        liveBreak?.let { withCopy.withLivePoolFor(snapshot, it) } ?: withCopy
+                    val breakSnapshot =
+                        liveBreak?.let { withPool.withOptOut(it.breakId, liveBreakOptedOut) } ?: withPool
+                    BreakClaimViewModel(breakSnapshot)
                 }
             // Settings: load the worker's real profile + live `broadcast_subscribed` (own
             // users / user_roles + houses, all RLS-readable); fall back to the demo profile
@@ -426,18 +432,19 @@ private fun LiveShiftsRoot(
                     prefsScope.launch { repo.declineFloat(floatId) }
                 },
                 onClaimBreak = { assignmentId ->
-                    // POST the real break claim → `break-claim` (best-effort) while the picker
-                    // does the optimistic local move. The server is authoritative for the 40h
-                    // break HARD cap and the Harnwell training constraint (invariant #1); the
-                    // client meter/gating was a pre-check. (The break pool itself is still
-                    // demo-backed until `break_periods` is worker-readable — T2-2.)
-                    prefsScope.launch { repo.claimBreak(assignmentId) }
+                    // POST the real break claim per-block (D6 — the live pool run carries its
+                    // blockIds) while the picker does the optimistic local move; the server
+                    // stays authoritative (40h HARD cap + Harnwell, invariant #1). The EF's
+                    // hours PROJECTION reconciles the meter (MATRIX §4.4 gap closed).
+                    prefsScope.launch {
+                        val result = repo.claimBreakBlocks(breakClaimVm.blockIdsFor(assignmentId))
+                        if (result.ok) breakClaimVm.reconcileHours(parseProjectedHours(result.body))
+                    }
                 },
                 onDropBreak = { assignmentId ->
-                    // POST the real break drop → `drop-shift` (best-effort); reuses the generic
-                    // drop EF (no break-specific drop RPC). The claimed break block's pool-row
-                    // id is its block assignment_id. Optimistic locally; next snapshot reconciles.
-                    prefsScope.launch { repo.dropShift(assignmentId) }
+                    // POST the real break drop → ONE `drop-shift` call covering the run's
+                    // blocks (no break-specific drop RPC). Optimistic locally.
+                    prefsScope.launch { repo.dropBlocks(breakClaimVm.blockIdsFor(assignmentId)) }
                 },
                 onToggleBreakOptOut = { optedOut ->
                     // Persist the §4.4 "no break hours" opt-out → insert/delete the worker's own

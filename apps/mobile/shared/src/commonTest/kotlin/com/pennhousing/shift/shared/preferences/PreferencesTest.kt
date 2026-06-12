@@ -40,11 +40,13 @@ class PreferencesTest {
         submitted: Boolean = false,
         target: Int = 16,
         optedOut: Boolean = false,
+        deadlinePassed: Boolean = false,
     ) = PreferencePeriod(
         periodId = "period-test",
         periodLabel = "Week of Jun 8",
         deadlineLabel = "Due Fri 17:00",
         submitted = submitted,
+        deadlinePassed = deadlinePassed,
         weekStart = weekStart,
         days = days,
         initialStatuses = mapOf("d2-b0" to PrefBrush.CANNOT, "d2-b2" to PrefBrush.PREFERRED),
@@ -197,5 +199,22 @@ class PreferencesTest {
     @Test fun viewmodel_context_label_combines_period_and_deadline() {
         val vm = PreferencesViewModel(period())
         assertEquals("WEEK OF JUN 8 · DUE FRI 17:00", vm.uiState.value.contextLabel)
+    }
+
+    // ----- deadline-expired lock (D9, §4.2) -----
+
+    @Test fun deadline_passed_without_submission_locks_the_grid_with_its_own_banner() {
+        val vm = com.pennhousing.shift.shared.viewmodel.PreferencesViewModel(period(deadlinePassed = true))
+        val state = vm.uiState.value
+        assertTrue(state.submitted) // the UI renders read-only
+        assertEquals("Deadline passed — preferences are locked", state.banner.title)
+        // Edits + submit are no-ops past the deadline (the RPC would reject anyway).
+        vm.paint("d2-b1")
+        assertTrue(vm.uiState.value.banner.title.startsWith("Deadline passed"))
+    }
+
+    @Test fun submitted_state_wins_over_deadline_passed() {
+        val banner = buildPreferenceBanner(period(submitted = true, deadlinePassed = true))
+        assertEquals("Submitted · read-only", banner.title)
     }
 }

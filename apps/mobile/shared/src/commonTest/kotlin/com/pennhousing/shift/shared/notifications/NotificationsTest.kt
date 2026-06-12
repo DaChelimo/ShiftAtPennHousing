@@ -272,4 +272,33 @@ class NotificationsTest {
         val merged = withOutgoingSwapEntries(incoming, listOf(swap("s-7", "shift_swap")))
         assertEquals(1, merged.size)
     }
+
+    // ----- pending-float ack countdown (D7 — §7 T-10m deadline) -----
+
+    @Test fun countdown_renders_while_the_ack_window_is_open() {
+        // Float at 22:00 → deadline 21:50; now 20:00 → 1h 50m left.
+        val label = ackCountdownLabel("f-1", at("2026-01-15T22:00:00-05:00"), now)
+        assertEquals("Respond by 21:50 · 1h 50m left", label)
+    }
+
+    @Test fun countdown_closes_at_the_t_minus_10_deadline() {
+        val start = at("2026-01-15T20:05:00-05:00") // deadline 19:55 < now 20:00
+        assertEquals("Ack window closed", ackCountdownLabel("f-1", start, now))
+    }
+
+    @Test fun countdown_is_null_without_a_float_or_start() {
+        assertEquals(null, ackCountdownLabel(null, at("2026-01-15T22:00:00-05:00"), now))
+        assertEquals(null, ackCountdownLabel("f-1", null, now))
+    }
+
+    @Test fun pending_float_row_carries_the_countdown() {
+        val merged =
+            withPendingFloatEntry(
+                items = emptyList(),
+                pendingFloatId = "f-9",
+                pendingFloatStart = at("2026-01-15T22:00:00-05:00"),
+            )
+        val row = merged.single().toRow(now)
+        assertEquals("Respond by 21:50 · 1h 50m left", row.ackCountdownLabel)
+    }
 }

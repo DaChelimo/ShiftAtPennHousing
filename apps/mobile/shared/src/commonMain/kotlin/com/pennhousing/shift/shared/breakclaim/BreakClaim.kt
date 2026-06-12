@@ -1,7 +1,12 @@
 package com.pennhousing.shift.shared.breakclaim
 
 import com.pennhousing.shift.shared.model.House
+import com.pennhousing.shift.shared.model.MyShift
+import com.pennhousing.shift.shared.model.OpenFeed
+import com.pennhousing.shift.shared.model.OpenShift
 import com.pennhousing.shift.shared.shifts.BREAK_HOURS_CAP
+import com.pennhousing.shift.shared.shifts.coalesceMyShifts
+import com.pennhousing.shift.shared.shifts.coalesceOpenShifts
 import com.pennhousing.shift.shared.shifts.MONTH_SHORT
 import com.pennhousing.shift.shared.shifts.NEW_YORK
 import com.pennhousing.shift.shared.shifts.formatDuration
@@ -10,6 +15,7 @@ import com.pennhousing.shift.shared.shifts.formatTimeRange
 import com.pennhousing.shift.shared.shifts.hoursBetween
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
 
 /*
@@ -52,6 +58,9 @@ data class BreakShift(
     val house: House,
     val start: Instant,
     val end: Instant,
+    // The constituent 30-min block assignment_ids (one per block, invariant #5) — a
+    // coalesced live run carries all of them so claim/drop target every block.
+    val blockIds: List<String> = listOf(id),
 )
 
 /**
@@ -147,6 +156,47 @@ fun BreakClaimSnapshot.withOptOut(
         breakId = breakId,
         initiallyOptedOut = optedOut,
     )
+
+/**
+ * Overlay the LIVE break pool onto a snapshot (D6 — closes the "pool still
+ * demo-backed" gap): claimable runs come from the worker's open feed
+ * (`worker_open_shifts` weekly rows whose NY date falls inside the break
+ * window, coalesced into spans), and the worker's already-claimed runs from
+ * `worker_my_shifts` break rows. Replaces the demo pool + claimed set; the
+ * descriptive copy / opt-out fields are untouched.
+ */
+fun BreakClaimSnapshot.withLivePool(
+    openShifts: List<OpenShift>,
+    myShifts: List<MyShift>,
+    startDate: LocalDate,
+    endDate: LocalDate,
+    zone: TimeZone = NEW_YORK,
+): BreakClaimSnapshot {
+    fun inWindow(start: Instant): Boolean {
+        val d = start.toLocalDateTime(zone).date
+        return d in startDate..endDate
+    }
+    val pool =
+        coalesceOpenShifts(openShifts)
+            .filter { it.feed == OpenFeed.WEEKLY && inWindow(it.start) }
+            .map { BreakShift(it.id, it.house, it.start, it.end, it.blockIds) }
+    val mine =
+        coalesceMyShifts(myShifts)
+            .filter { it.breakShift && !it.droppedStillOpen && inWindow(it.start) }
+            .map { BreakShift(it.id, it.house, it.start, it.end, it.blockIds) }
+    return copy(
+        shifts = (pool + mine).sortedBy { it.start },
+        initiallyClaimedIds = mine.map { it.id }.toSet(),
+    )
+}
+
+/** NY-fixed convenience for the Swift bridge (Kotlin default args don't export). */
+fun BreakClaimSnapshot.withLivePoolNy(
+    openShifts: List<OpenShift>,
+    myShifts: List<MyShift>,
+    startDate: LocalDate,
+    endDate: LocalDate,
+): BreakClaimSnapshot = withLivePool(openShifts, myShifts, startDate, endDate)
 
 /** The "This week — Xh / 40h" hard-cap meter atop the picker. */
 data class BreakHoursMeter(

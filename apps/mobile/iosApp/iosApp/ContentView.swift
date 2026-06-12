@@ -254,12 +254,21 @@ struct ShiftsRootView: View {
                     // local-only. The break pool stays demo-backed until `break_periods` is
                     // worker-readable (T2-2); the server enforces the 40h hard cap + Harnwell.
                     onClaim: liveUserId == nil ? nil : { assignmentId in
+                        // D6 — claim the run per-block; the EF's hours projection
+                        // reconciles the meter (server-authoritative).
                         let repo = WorkerBackend.shared.shiftsRepository
-                        Task { _ = try? await repo.claimBreak(assignmentId: assignmentId) }
+                        let vm = breakModel.vm
+                        Task {
+                            let result = try? await repo.claimBreakBlocks(assignmentIds: vm.blockIdsFor(id: assignmentId))
+                            if let result, result.ok {
+                                vm.reconcileHours(projectedHours: parseProjectedHours(body: result.body))
+                            }
+                        }
                     },
                     onDrop: liveUserId == nil ? nil : { assignmentId in
                         let repo = WorkerBackend.shared.shiftsRepository
-                        Task { _ = try? await repo.dropShift(assignmentId: assignmentId) }
+                        let vm = breakModel.vm
+                        Task { _ = try? await repo.dropBlocks(assignmentIds: vm.blockIdsFor(id: assignmentId)) }
                     },
                     // Live host writes the §4.4 "no break hours" opt-out (own `break_optouts`
                     // row, insert/delete) DIRECTLY via Postgrest while the picker flips its
@@ -380,7 +389,11 @@ struct ShiftsRootView: View {
                 // Live break context (name + window + "only Harnwell open") + the §4.4
                 // opt-out state from the worker-readable `break_periods` / `break_optouts`;
                 // the pool stays demo-backed (T2-2a/T2-2b).
-                await breakModel.activateLive(repo: WorkerBackend.shared.breakRepository, userId: uid)
+                await breakModel.activateLive(
+                    repo: WorkerBackend.shared.breakRepository,
+                    shiftsRepo: WorkerBackend.shared.shiftsRepository,
+                    userId: uid
+                )
             }
         }
     }
@@ -705,6 +718,11 @@ struct ShiftsRootView: View {
                 }
                 if row.urgent { actionNeededTag(c) }
                 Text(row.body).font(ShiftFont.sans(13)).foregroundColor(c.sec).fixedSize(horizontal: false, vertical: true)
+                if let countdown = row.ackCountdownLabel {
+                    // D7 — the §7 T-10m ack deadline, live at feed-load time.
+                    Text(countdown).font(ShiftFont.sans(12, .semibold)).foregroundColor(c.pending)
+                        .accessibilityIdentifier("float_ack_countdown")
+                }
                 if let swapId = row.swapId {
                     // T3a — the counterparty action on an incoming swap (Accept only for
                     // temporary swaps; permanent acceptance needs the desk/web — §8.4).

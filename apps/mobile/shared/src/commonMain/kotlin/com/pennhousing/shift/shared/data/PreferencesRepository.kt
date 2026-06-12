@@ -157,6 +157,10 @@ class PreferencesRepository(
             periodLabel = period.periodName,
             deadlineLabel = period.preferenceDeadline?.let { dueLabel(it) },
             submitted = submitted,
+            // D9 (§4.2): a passed deadline locks the never-submitted grid client-side
+            // (the submit_preferences RPC rejects late writes server-side regardless).
+            deadlinePassed =
+                period.preferenceDeadline?.let { Instant.parse(it) < kotlin.time.Clock.System.now() } ?: false,
             weekStart = monday,
             days = days,
             initialStatuses = initialStatuses,

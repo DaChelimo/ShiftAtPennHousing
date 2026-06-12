@@ -35,16 +35,26 @@ final class BreakClaimObservable: ObservableObject {
     /// state (own `break_optouts` row), overlay both onto the (still demo-backed) pool
     /// snapshot, and swap the VM. Falls back to the demo copy (no swap) when there is no
     /// current/upcoming break.
-    func activateLive(repo: BreakRepository, userId: String) async {
+    func activateLive(repo: BreakRepository, shiftsRepo: WorkerShiftsRepository, userId: String) async {
         guard !activated else { return }
         activated = true
         guard let active = try? await repo.fetchActiveBreak(), let active else { return }
         // `fetchBreakOptOut` is a suspend fun returning Kotlin Boolean → SKIE boxes it as
         // `KotlinBoolean`; unwrap to a Swift Bool (default false on any read failure).
         let optedOut = (try? await repo.fetchBreakOptOut(userId: userId, breakId: active.breakId))?.boolValue ?? false
-        let snapshot = DemoFactory.shared.breakClaimSnapshot()
+        var snapshot = DemoFactory.shared.breakClaimSnapshot()
             .doWithContext(context: active.context)
-            .doWithOptOut(breakId: active.breakId, optedOut: optedOut)
+        // D6 — the pool itself is LIVE: vacant break-window runs from the worker's
+        // open feed + already-claimed runs from worker_my_shifts.
+        if let week = try? await shiftsRepo.fetchWorkerWeek(userId: userId) {
+            snapshot = snapshot.doWithLivePoolNy(
+                openShifts: week.openShifts,
+                myShifts: week.myShifts,
+                startDate: active.startDate,
+                endDate: active.endDate
+            )
+        }
+        snapshot = snapshot.doWithOptOut(breakId: active.breakId, optedOut: optedOut)
         vm = BreakClaimViewModel(snapshot: snapshot)
         state = vm.uiState.value
         observe()

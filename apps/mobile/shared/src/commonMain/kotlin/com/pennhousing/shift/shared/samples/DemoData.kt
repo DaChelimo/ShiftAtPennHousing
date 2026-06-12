@@ -126,6 +126,7 @@ object DemoData {
                 unread = true,
                 urgent = true,
                 floatId = "float-demo",
+                floatStart = now + 2.hours, // matches pendingFloat → live ack countdown (D7)
             ),
             NotificationItem(
                 id = "n-reminder",

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import com.pennhousing.shift.shared.breakclaim.BreakClaimList
 import com.pennhousing.shift.shared.breakclaim.BreakClaimSnapshot
 import com.pennhousing.shift.shared.breakclaim.buildBreakClaimList
+import com.pennhousing.shift.shared.breakclaim.buildBreakHoursMeter
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,20 +36,41 @@ class BreakClaimViewModel(
     private var claimedIds: Set<String> = snapshot.initiallyClaimedIds
     private var optedOut: Boolean = snapshot.initiallyOptedOut
 
+    // D6 — the server's authoritative hours projection (the `break-claim` EF's
+    // projected_hours). Null until a live claim responds; overrides the local sum.
+    private var serverHours: Double? = null
+
     /** The active break id the §4.4 opt-out targets (null in demo / no current break). */
     val breakId: String? get() = snapshot.breakId
 
     private val _uiState = MutableStateFlow(build())
     val uiState: StateFlow<BreakClaimUiState> = _uiState.asStateFlow()
 
-    private fun build(): BreakClaimUiState =
-        BreakClaimUiState(
+    private fun build(): BreakClaimUiState {
+        var list = buildBreakClaimList(snapshot, claimedIds, optedOut = optedOut)
+        serverHours?.let { hours ->
+            // The EF's projection wins over the local sum (it sees the whole week).
+            list = list.copy(claimedHours = hours, meter = buildBreakHoursMeter(hours))
+        }
+        return BreakClaimUiState(
             profileContext = snapshot.profileContext,
             infoTitle = snapshot.infoTitle,
             infoBody = snapshot.infoBody,
-            list = buildBreakClaimList(snapshot, claimedIds, optedOut = optedOut),
+            list = list,
             optedOut = optedOut,
         )
+    }
+
+    /** D6 — fold the `break-claim` EF's authoritative hours projection into the meter. */
+    fun reconcileHours(projectedHours: Double?) {
+        if (projectedHours == null) return
+        serverHours = projectedHours
+        _uiState.value = build()
+    }
+
+    /** The constituent block assignment_ids of a pool run (live claims/drops loop them). */
+    fun blockIdsFor(id: String): List<String> =
+        snapshot.shifts.firstOrNull { it.id == id }?.blockIds ?: listOf(id)
 
     /**
      * Optimistic local claim. No-op when opted out of break hours (§4.4), when already

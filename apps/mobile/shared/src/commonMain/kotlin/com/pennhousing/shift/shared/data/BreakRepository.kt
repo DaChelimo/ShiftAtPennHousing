@@ -1,6 +1,8 @@
 package com.pennhousing.shift.shared.data
 
+import com.pennhousing.shift.shared.breakclaim.BreakClaimSnapshot
 import com.pennhousing.shift.shared.breakclaim.BreakContextCopy
+import com.pennhousing.shift.shared.breakclaim.withLivePool
 import com.pennhousing.shift.shared.breakclaim.breakContextCopy
 import com.pennhousing.shift.shared.shifts.NEW_YORK
 import io.github.jan.supabase.SupabaseClient
@@ -40,6 +42,15 @@ import kotlin.time.Clock
  * own row exist". Worker RLS already permits select/insert/update/delete of OWN rows
  * (migration 20260531000002:36-59), so these go DIRECTLY through Postgrest — no EF/RPC.
  */
+/**
+ * D6 — overlay the LIVE break pool using the active break's window, without the
+ * host touching kotlinx-datetime types (androidApp has no direct dependency on it).
+ */
+fun BreakClaimSnapshot.withLivePoolFor(
+    week: WorkerSnapshot,
+    activeBreak: BreakRepository.ActiveBreak,
+): BreakClaimSnapshot = withLivePool(week.openShifts, week.myShifts, activeBreak.startDate, activeBreak.endDate)
+
 class BreakRepository(
     private val supabase: SupabaseClient,
 ) {
@@ -52,6 +63,9 @@ class BreakRepository(
     data class ActiveBreak(
         val breakId: String,
         val context: BreakContextCopy,
+        /** The break window (NY calendar dates) — the live pool filters to it (D6). */
+        val startDate: LocalDate,
+        val endDate: LocalDate,
     )
 
     /**
@@ -88,6 +102,8 @@ class BreakRepository(
                     startDate = LocalDate.parse(active.startDate),
                     endDate = LocalDate.parse(active.endDate),
                 ),
+            startDate = LocalDate.parse(active.startDate),
+            endDate = LocalDate.parse(active.endDate),
         )
     }
 

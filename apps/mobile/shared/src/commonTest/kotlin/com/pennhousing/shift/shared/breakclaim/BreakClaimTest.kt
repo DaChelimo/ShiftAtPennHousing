@@ -7,6 +7,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
 
 /**
@@ -260,5 +261,60 @@ class BreakClaimTest {
         // Opting back in keeps the (still un-claimed) pool — the opted-out claim was ignored.
         vm.toggleOptedOut()
         assertFalse(vm.uiState.value.list.rows.first { it.id == "bk-1" }.claimedByMe)
+    }
+
+    // ----- live pool overlay + projection reconcile (D6) -----
+
+    @Test fun live_pool_overlays_window_filtered_coalesced_runs_and_claimed_set() {
+        val h = com.pennhousing.shift.shared.model.House("harnwell", "Harnwell")
+        val inWindow = kotlin.time.Instant.parse("2026-12-21T08:00:00-05:00")
+        val outside = kotlin.time.Instant.parse("2026-12-01T08:00:00-05:00")
+        val open =
+            (0 until 4).map { i ->
+                com.pennhousing.shift.shared.model.OpenShift(
+                    id = "ob-$i", house = h,
+                    start = inWindow + (i * 30).minutes,
+                    end = inWindow + ((i + 1) * 30).minutes,
+                    feed = com.pennhousing.shift.shared.model.OpenFeed.WEEKLY, homeHouse = true,
+                )
+            } + com.pennhousing.shift.shared.model.OpenShift(
+                id = "out-1", house = h, start = outside,
+                end = outside + 30.minutes,
+                feed = com.pennhousing.shift.shared.model.OpenFeed.WEEKLY, homeHouse = true,
+            )
+        val mine =
+            (0 until 2).map { i ->
+                com.pennhousing.shift.shared.model.MyShift(
+                    id = "mb-$i", house = h,
+                    start = inWindow + (240 + i * 30).minutes,
+                    end = inWindow + (270 + i * 30).minutes,
+                    kind = com.pennhousing.shift.shared.model.AssignmentKind.SCHEDULED,
+                    breakShift = true,
+                )
+            }
+        val live =
+            snapshot().withLivePool(
+                openShifts = open,
+                myShifts = mine,
+                startDate = kotlinx.datetime.LocalDate(2026, 12, 20),
+                endDate = kotlinx.datetime.LocalDate(2027, 1, 4),
+            )
+        assertEquals(2, live.shifts.size) // one coalesced open run + one claimed run; out-of-window dropped
+        val pool = live.shifts.first { it.id == "ob-0" }
+        assertEquals(listOf("ob-0", "ob-1", "ob-2", "ob-3"), pool.blockIds)
+        assertEquals(setOf("mb-0"), live.initiallyClaimedIds) // claimed run keyed by first block
+    }
+
+    @Test fun view_model_reconciles_the_server_hours_projection_and_resolves_block_ids() {
+        val vm = com.pennhousing.shift.shared.viewmodel.BreakClaimViewModel(snapshot())
+        val before = vm.uiState.value.list.claimedHours
+        vm.reconcileHours(12.5)
+        assertEquals(12.5, vm.uiState.value.list.claimedHours)
+        assertEquals("12.5h", vm.uiState.value.list.meter.currentLabel)
+        vm.reconcileHours(null) // null projection → no change
+        assertEquals(12.5, vm.uiState.value.list.claimedHours)
+        assertEquals(before, before) // (sanity)
+        assertEquals(listOf("bk-1"), vm.blockIdsFor("bk-1")) // single-block default
+        assertEquals(listOf("nope"), vm.blockIdsFor("nope")) // unknown id falls back to itself
     }
 }

@@ -56,6 +56,10 @@ class PreferencesViewModel(
     private var optedOut: Boolean = period.optedOut
     private var submitted: Boolean = period.submitted
 
+    // D9 (§4.2): the deadline passed with no submission — every edit/submit is a no-op
+    // (the RPC would reject the late write anyway; the UI says so instead of failing).
+    private val deadlineLocked: Boolean = period.deadlinePassed && !period.submitted
+
     private val _uiState = MutableStateFlow(snapshot())
     val uiState: StateFlow<PreferencesUiState> = _uiState.asStateFlow()
 
@@ -68,7 +72,7 @@ class PreferencesViewModel(
             title = "Preferences",
             contextLabel = context,
             banner = buildPreferenceBanner(period.copy(submitted = submitted)),
-            submitted = submitted,
+            submitted = submitted || deadlineLocked,
             optedOut = optedOut,
             brush = brush,
             targetHours = target,
@@ -84,32 +88,32 @@ class PreferencesViewModel(
     }
 
     fun setBrush(value: PrefBrush) {
-        if (submitted) return
+        if (submitted || deadlineLocked) return
         brush = value
         _uiState.value = snapshot()
     }
 
     /** Paint one block with the current brush (no-op when read-only or opted out). */
     fun paint(blockId: String) {
-        if (submitted || optedOut) return
+        if (submitted || deadlineLocked || optedOut) return
         grid = grid.paint(blockId, brush)
         _uiState.value = snapshot()
     }
 
     fun incrementTarget() {
-        if (submitted || optedOut) return
+        if (submitted || deadlineLocked || optedOut) return
         target = clampTarget(target + PREF_TARGET_STEP, period.capHours)
         _uiState.value = snapshot()
     }
 
     fun decrementTarget() {
-        if (submitted || optedOut) return
+        if (submitted || deadlineLocked || optedOut) return
         target = clampTarget(target - PREF_TARGET_STEP, period.capHours)
         _uiState.value = snapshot()
     }
 
     fun toggleOptedOut() {
-        if (submitted) return
+        if (submitted || deadlineLocked) return
         optedOut = !optedOut
         _uiState.value = snapshot()
     }
@@ -119,7 +123,7 @@ class PreferencesViewModel(
 
     /** Optimistic local submit → the read-only "submitted" state (data-layer POST is TODO). */
     fun submit() {
-        if (submitted) return
+        if (submitted || deadlineLocked) return
         submitted = true
         _uiState.value = snapshot()
     }

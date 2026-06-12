@@ -1193,6 +1193,16 @@ private fun NotificationCard(
                 }
                 if (row.urgent) ActionNeededTag()
                 Text(row.body, color = c.sec, fontSize = 13.sp, lineHeight = 18.sp)
+                row.ackCountdownLabel?.let { countdown ->
+                    // D7 — the §7 T-10m ack deadline, live at feed-load time.
+                    Text(
+                        countdown,
+                        color = c.pending,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.testTag("float_ack_countdown"),
+                    )
+                }
                 row.swapId?.let { swapId ->
                     // T3a — the counterparty action on an incoming swap (Accept only for
                     // temporary swaps; a permanent acceptance needs the desk/web — §8.4).

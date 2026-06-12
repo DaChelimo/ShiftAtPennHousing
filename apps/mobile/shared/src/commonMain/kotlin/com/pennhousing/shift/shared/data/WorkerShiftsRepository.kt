@@ -247,6 +247,24 @@ class WorkerShiftsRepository(
         )
 
     /**
+     * Claim a coalesced break run per-block (D6 — the live pool is per-30-min-block;
+     * `claim_break_shift` keys on one assignment). Mirrors [claimBlocks]: a mid-run
+     * failure does not stop the rest; result = first failure, else last success. The
+     * last successful response's `projectedHours` is the authoritative meter value —
+     * read it with [parseProjectedHours].
+     */
+    suspend fun claimBreakBlocks(assignmentIds: List<String>): EdgeResult {
+        var last = EdgeResult(false, 0, "")
+        var firstFailure: EdgeResult? = null
+        for (id in assignmentIds) {
+            val result = claimBreak(id)
+            if (!result.ok && firstFailure == null) firstFailure = result
+            if (result.ok) last = result
+        }
+        return firstFailure ?: last
+    }
+
+    /**
      * The worker's CURRENT pending float, mapped to the pure [FloatAck] the ack/decline
      * modal renders, or `null` if none is outstanding. Worker-readable end-to-end:
      * `float_assignments` has an own-row SELECT policy (`user_id = auth.uid()`), and the
@@ -876,6 +894,20 @@ data class PermanentPickupScope(
 }
 
 private val permanentPickupJson = Json { ignoreUnknownKeys = true }
+
+/**
+ * The `break-claim` EF response's authoritative weekly-hours projection
+ * (`{ ..., currentHours, projectedHours }` — the `claim_hours_projection` RPC),
+ * or null when absent/unparseable. The picker meter reconciles to it (D6).
+ */
+fun parseProjectedHours(body: String): Double? =
+    runCatching {
+        Json { ignoreUnknownKeys = true }
+            .decodeFromString<JsonObject>(body)["projectedHours"]
+            ?.jsonPrimitive
+            ?.content
+            ?.toDoubleOrNull()
+    }.getOrNull()
 
 private fun JsonObject.toToast(): ToastNotification? {
     val title = this["title"]?.jsonPrimitive?.content ?: return null

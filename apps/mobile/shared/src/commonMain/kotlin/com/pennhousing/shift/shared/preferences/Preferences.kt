@@ -71,6 +71,8 @@ data class PreferencePeriod(
     val periodLabel: String,
     val deadlineLabel: String?,
     val submitted: Boolean,
+    /** D9 (§4.2): the deadline has passed with NO submission — the grid locks read-only. */
+    val deadlinePassed: Boolean = false,
     val weekStart: LocalDate,
     val days: List<List<PrefBlock>>,
     val initialStatuses: Map<String, PrefBrush> = emptyMap(),
@@ -228,18 +230,28 @@ data class PreferenceBanner(
 )
 
 fun buildPreferenceBanner(period: PreferencePeriod): PreferenceBanner =
-    if (period.submitted) {
-        PreferenceBanner(
-            tone = PrefBannerTone.SUCCESS,
-            title = "Submitted · read-only",
-            body = "Deadline passed. Your manager builds next week from these.",
-        )
-    } else {
-        PreferenceBanner(
-            tone = PrefBannerTone.INFO,
-            title = period.deadlineLabel?.let { "Submit by $it" } ?: "Submit before the deadline",
-            body = "Reminders go out as the deadline nears. You can edit until then.",
-        )
+    when {
+        period.submitted ->
+            PreferenceBanner(
+                tone = PrefBannerTone.SUCCESS,
+                title = "Submitted · read-only",
+                body = "Deadline passed. Your manager builds next week from these.",
+            )
+        // D9 (§4.2): never submitted AND the window closed — the RPC would reject a
+        // late write (preference_deadline_is_open), so the UI locks instead of
+        // silently failing.
+        period.deadlinePassed ->
+            PreferenceBanner(
+                tone = PrefBannerTone.INFO,
+                title = "Deadline passed — preferences are locked",
+                body = "The submission window closed. Your manager builds the week without them.",
+            )
+        else ->
+            PreferenceBanner(
+                tone = PrefBannerTone.INFO,
+                title = period.deadlineLabel?.let { "Submit by $it" } ?: "Submit before the deadline",
+                body = "Reminders go out as the deadline nears. You can edit until then.",
+            )
     }
 
 /** One {block_id, status} entry in the `submit-preferences` Edge-Function payload. */

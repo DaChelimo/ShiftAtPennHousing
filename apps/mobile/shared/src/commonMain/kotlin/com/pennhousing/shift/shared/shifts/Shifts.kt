@@ -232,6 +232,96 @@ fun planTemporaryDrop(
     )
 }
 
+// ===================================================================
+// Partial drop (§5.2, T2-11) — a sub-range of a coalesced card's blocks.
+// ===================================================================
+
+/**
+ * The plan for dropping blocks [fromBlock, toBlock) of a coalesced card (§5.2
+ * "SWs may drop a portion of a shift"): the selected block `assignment_id`s (what
+ * the live `drop-shift` call posts — one contiguous run), the resulting gap, and
+ * the same short-notice flag [planTemporaryDrop] computes (the WARNING anchors to
+ * the gap start, not the shift start). The NY-anchored labels are precomputed here
+ * so both front ends render them verbatim (and Swift needs no formatter calls).
+ */
+data class PartialDropPlan(
+    val blockIds: List<String>,
+    val gapStart: Instant,
+    val gapEnd: Instant,
+    val wholeShift: Boolean,
+    val shortNotice: Boolean,
+    val rangeLabel: String, // "17:30 – 19:00"
+    val durationLabel: String, // "1h 30m"
+    val gapStartLabel: String, // "17:30"
+    val gapEndLabel: String, // "19:00"
+)
+
+/**
+ * Plan a drop of blocks [fromBlock, toBlock) (block indexes on the shift's own
+ * 30-min grid, [toBlock] exclusive). Indexes are clamped to a non-empty range. A
+ * card whose `blockIds` don't sub-divide (a single hand-built span, e.g. legacy
+ * demo data) always plans the whole shift — partial selection needs real per-block
+ * ids to target.
+ */
+fun planPartialDrop(
+    shift: MyShift,
+    fromBlock: Int,
+    toBlock: Int,
+    now: Instant,
+): PartialDropPlan {
+    val n = shift.blockIds.size
+    val from = fromBlock.coerceIn(0, n - 1)
+    val to = toBlock.coerceIn(from + 1, n)
+    val gapStart = shift.start + BLOCK * from
+    // Anchor the gap end at the SHIFT end and walk back, so a 1-id multi-hour span
+    // (n=1) still plans gapEnd = shift.end rather than start + 30m.
+    val gapEnd = shift.end - BLOCK * (n - to)
+    return PartialDropPlan(
+        blockIds = shift.blockIds.subList(from, to),
+        gapStart = gapStart,
+        gapEnd = gapEnd,
+        wholeShift = from == 0 && to == n,
+        shortNotice = gapStart <= now + SHORT_NOTICE_WINDOW,
+        rangeLabel = formatTimeRange(gapStart, gapEnd),
+        durationLabel = formatDuration(gapStart, gapEnd),
+        gapStartLabel = formatBlockTime(gapStart),
+        gapEndLabel = formatBlockTime(gapEnd),
+    )
+}
+
+/**
+ * The index of the block containing [now] on the shift's own grid, or null when
+ * [now] is outside the shift — drives the §5.2 mid-shift "drop from now" quick
+ * action ("a drop initiated at 17:51 … produces a gap of 17:30–19:00": index 5 of
+ * a 15:00 shift). Duration arithmetic on instants (invariant #6).
+ */
+fun blockIndexAt(
+    shift: MyShift,
+    now: Instant,
+): Int? =
+    if (now < shift.start || now >= shift.end) {
+        null
+    } else {
+        ((now - shift.start).inWholeMinutes / BLOCK.inWholeMinutes).toInt()
+    }
+
+/**
+ * The displayed sub-shift covering [plan]'s selected range — what the live drop
+ * posts (its `blockIds` are the run `drop-shift` receives) and what the drop sheet
+ * summarizes. Keeps every treatment flag; the id is the first selected block
+ * (a real `assignment_id`, and the id the re-coalesced dropped card will carry).
+ */
+fun subShiftFor(
+    shift: MyShift,
+    plan: PartialDropPlan,
+): MyShift =
+    shift.copy(
+        id = plan.blockIds.first(),
+        start = plan.gapStart,
+        end = plan.gapEnd,
+        blockIds = plan.blockIds,
+    )
+
 /** Optimistic local section move: flag the shift as dropped-still-open (decision #13). */
 fun applyTemporaryDrop(
     shifts: List<MyShift>,

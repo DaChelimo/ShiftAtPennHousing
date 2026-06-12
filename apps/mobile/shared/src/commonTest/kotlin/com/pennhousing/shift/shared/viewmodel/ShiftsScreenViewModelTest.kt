@@ -399,6 +399,21 @@ class ShiftsScreenViewModelTest {
     }
 
     @Test
+    fun partialDropFlagsOnlyTheSelectedBlocksAndTheRestReCoalesce() {
+        // §5.2 partial drop (T2-11): dropping the middle 2 blocks of an 8-block card
+        // leaves TWO scheduled cards around ONE dropped-still-open card.
+        val m = ShiftsScreenViewModel(blockRun("2026-01-15T15:00:00-05:00", 8, "blk"), emptyList(), noon)
+        val card = m.uiState.value.myShifts.scheduled.single()
+        val plan = m.planDropRange(card, 3, 5) // 16:30–17:30
+        m.dropBlocks(plan.blockIds)
+        val after = m.uiState.value.myShifts
+        assertEquals(listOf("blk-3", "blk-4"), after.dropped.single().blockIds)
+        assertEquals(2, after.scheduled.size)
+        assertEquals(listOf("blk-0", "blk-1", "blk-2"), after.scheduled[0].blockIds)
+        assertEquals(listOf("blk-5", "blk-6", "blk-7"), after.scheduled[1].blockIds)
+    }
+
+    @Test
     fun claimingACoalescedOpenCardRemovesAllItsFeedBlocks() {
         val openRun =
             (0 until 4).map { i ->

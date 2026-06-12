@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryScrollableTabRow
+import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -64,8 +65,10 @@ import com.pennhousing.shift.shared.shifts.MyShiftsTab
 import com.pennhousing.shift.shared.shifts.OpenShiftCardState
 import com.pennhousing.shift.shared.shifts.OpenShiftRow
 import com.pennhousing.shift.shared.shifts.OtherHousesTab
+import com.pennhousing.shift.shared.shifts.PartialDropPlan
 import com.pennhousing.shift.shared.shifts.claimMeter
 import com.pennhousing.shift.shared.shifts.hoursBetween
+import com.pennhousing.shift.shared.shifts.subShiftFor
 import com.pennhousing.shift.shared.shifts.toRow
 import com.pennhousing.shift.shared.shifts.weeklyHoursSummary
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
@@ -1205,6 +1208,14 @@ private fun AgendaShiftCard(
  * `drop_*` selectors satisfy the Maestro contract. Both scopes drive the existing
  * optimistic-local [ShiftsScreenViewModel.drop] (decision #13); the §8.4 server
  * semantics of a permanent drop are a later step.
+ *
+ * T2-11 — when the displayed card coalesces several 30-min blocks, the occurrence
+ * scope gains a "How much to drop" block-range selector (defaulting to the whole
+ * shift, so the Maestro 03 whole-drop path is unchanged) + a mid-shift "From now"
+ * quick action (§5.2: a 17:51 drop opens a 17:30-anchored gap). The selected run
+ * is dropped via the same `drop-shift` EF (its `assignment_ids` array); the
+ * remaining blocks re-coalesce into their own card(s). The short-notice warning
+ * anchors to the SELECTED gap start.
  */
 @Composable
 private fun DropSheet(
@@ -1217,9 +1228,18 @@ private fun DropSheet(
     val c = ShiftTheme.colors
     val row = remember(shift) { shift.toRow() }
     val options = vm.dropOptions(shift, breakProfile)
-    val plan = vm.planDrop(shift, dropFromNow = false)
     var permanentScope by remember { mutableStateOf(false) }
     var acknowledged by remember { mutableStateOf(false) }
+
+    // §5.2 partial range — block indexes on the shift's own grid, [from, to).
+    val blockCount = shift.blockIds.size
+    var rangeFrom by remember(shift) { mutableIntStateOf(0) }
+    var rangeTo by remember(shift) { mutableIntStateOf(blockCount) }
+    val partialPlan = vm.planDropRange(shift, rangeFrom, rangeTo)
+    val fromNowIndex = remember(shift) { vm.dropFromNowIndex(shift) }
+    // Permanent scope always releases the WHOLE recurring slot; the short-notice
+    // check then anchors to the shift start, exactly as before.
+    val shortNotice = if (permanentScope) vm.planDrop(shift, dropFromNow = false).shortNotice else partialPlan.shortNotice
 
     ShiftBottomSheet(onDismiss = onDismiss, title = "Drop shift") {
         Column(
@@ -1254,7 +1274,21 @@ private fun DropSheet(
                 onClick = { if (options.canDropPermanently) permanentScope = true },
             )
 
-            if (plan.shortNotice && !acknowledged) {
+            if (!permanentScope && blockCount > 1) {
+                DropRangeSelector(
+                    plan = partialPlan,
+                    blockCount = blockCount,
+                    rangeFrom = rangeFrom,
+                    rangeTo = rangeTo,
+                    fromNowIndex = fromNowIndex,
+                    onRange = { from, to ->
+                        rangeFrom = from
+                        rangeTo = to
+                    },
+                )
+            }
+
+            if (shortNotice && !acknowledged) {
                 Column(Modifier.fillMaxWidth().testTag("drop_short_notice_warning"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ShiftBanner(
                         title = "Starts within 20 minutes",
@@ -1272,20 +1306,93 @@ private fun DropSheet(
             }
 
             ShiftButton(
-                if (permanentScope) "Drop permanently" else "Drop this week",
+                when {
+                    permanentScope -> "Drop permanently"
+                    !partialPlan.wholeShift -> "Drop ${partialPlan.rangeLabel}"
+                    else -> "Drop this week"
+                },
                 onClick = {
                     // Live host POSTs to `drop-shift` / `permanent-drop` (best-effort);
-                    // the ViewModel still does the optimistic local section move.
-                    onDrop(shift, permanentScope)
-                    vm.drop(shift.id)
+                    // the ViewModel still does the optimistic local section move. The
+                    // occurrence path posts the SELECTED sub-shift (its blockIds are the
+                    // contiguous run the EF receives) and flags only those blocks.
+                    if (permanentScope) {
+                        onDrop(shift, true)
+                        vm.drop(shift.id)
+                    } else {
+                        onDrop(subShiftFor(shift, partialPlan), false)
+                        vm.dropBlocks(partialPlan.blockIds)
+                    }
                     onDismiss()
                 },
                 modifier = Modifier.fillMaxWidth().testTag("drop_confirm_button"),
                 variant = ButtonVariant.DestructiveFilled,
                 fullWidth = true,
-                enabled = !plan.shortNotice || acknowledged,
+                enabled = !shortNotice || acknowledged,
             )
         }
+    }
+}
+
+/**
+ * The §5.2 "How much to drop" block-range selector (T2-11): a stepped range
+ * slider over the card's 30-min blocks with a live "17:30 – 19:00 · 1h 30m"
+ * summary, plus the mid-shift "From now" quick action when `now` falls inside
+ * the shift. Defaults to the whole shift.
+ */
+@Composable
+private fun DropRangeSelector(
+    plan: PartialDropPlan,
+    blockCount: Int,
+    rangeFrom: Int,
+    rangeTo: Int,
+    fromNowIndex: Int?,
+    onRange: (Int, Int) -> Unit,
+) {
+    val c = ShiftTheme.colors
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(c.surface)
+            .border(1.dp, c.divider, RoundedCornerShape(14.dp))
+            .padding(horizontal = 13.dp, vertical = 11.dp)
+            .testTag("drop_range_selector"),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("How much to drop", color = c.sec, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            if (fromNowIndex != null) {
+                Text(
+                    "From now",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier =
+                        Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onRange(fromNowIndex, blockCount) }
+                            .testTag("drop_from_now")
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+            }
+        }
+        Text(
+            "${plan.rangeLabel} · ${plan.durationLabel}" + if (plan.wholeShift) " · whole shift" else "",
+            style = ShiftTheme.type.monoTime.copy(fontSize = 13.5.sp),
+            color = c.ink,
+            modifier = Modifier.testTag("drop_range_label"),
+        )
+        RangeSlider(
+            value = rangeFrom.toFloat()..rangeTo.toFloat(),
+            onValueChange = { range ->
+                val from = range.start.toInt().coerceIn(0, blockCount - 1)
+                val to = range.endInclusive.toInt().coerceIn(from + 1, blockCount)
+                onRange(from, to)
+            },
+            valueRange = 0f..blockCount.toFloat(),
+            steps = (blockCount - 1).coerceAtLeast(0),
+        )
     }
 }
 

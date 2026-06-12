@@ -17,6 +17,7 @@ import com.pennhousing.shift.shared.preferences.PreferencePeriod
 import com.pennhousing.shift.shared.settings.SettingsProfile
 import com.pennhousing.shift.shared.shifts.MONTH_SHORT
 import com.pennhousing.shift.shared.shifts.NEW_YORK
+import com.pennhousing.shift.shared.shifts.roundDownToBlock
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
@@ -53,27 +54,55 @@ object DemoData {
     const val DEMO_WEEKLY_HOURS: Double = 8.0
 
     fun snapshot(now: Instant): WorkerSnapshot {
+        // Per-block rows on a 30-min grid — the SAME shape the live read models
+        // return (one row per block, parity CO). The coalescing layer renders each
+        // run as one card, so the screens look exactly as the old hand-built spans
+        // did, while the §5.2/§5.3 partial drop/claim selectors work in the demo.
+        val base = roundDownToBlock(now)
         val myShifts =
-            listOf(
-                MyShift("pk-1", quad, now + 2.days, now + 2.days + 2.hours, AssignmentKind.TEMP_PICKUP, crossHouse = true),
-                MyShift("sc-1", harnwell, now + 1.days, now + 1.days + 2.hours, AssignmentKind.SCHEDULED),
-                MyShift("pp-1", harnwell, now + 3.days, now + 3.days + 2.hours, AssignmentKind.PERMANENT_PICKUP),
-            )
+            perBlock(MyShift("pk-1", quad, base + 2.days, base + 2.days + 2.hours, AssignmentKind.TEMP_PICKUP, crossHouse = true)) +
+                perBlock(MyShift("sc-1", harnwell, base + 1.days, base + 1.days + 2.hours, AssignmentKind.SCHEDULED)) +
+                perBlock(MyShift("pp-1", harnwell, base + 3.days, base + 3.days + 2.hours, AssignmentKind.PERMANENT_PICKUP))
         val openShifts =
-            listOf(
-                OpenShift("hw-1", harnwell, now + 1.days, now + 1.days + 2.hours, OpenFeed.WEEKLY, homeHouse = true),
-                OpenShift(
-                    "hp-1",
-                    harnwell,
-                    now + 2.days,
-                    now + 2.days + 2.hours,
-                    OpenFeed.PERMANENT_OPENING,
-                    homeHouse = true,
-                    weeksRemaining = 6,
-                ),
-                OpenShift("qw-1", quad, now + 1.days, now + 1.days + 2.hours, OpenFeed.WEEKLY, homeHouse = false),
-            )
+            perBlock(OpenShift("hw-1", harnwell, base + 1.days, base + 1.days + 2.hours, OpenFeed.WEEKLY, homeHouse = true)) +
+                perBlock(
+                    OpenShift(
+                        "hp-1",
+                        harnwell,
+                        base + 2.days,
+                        base + 2.days + 2.hours,
+                        OpenFeed.PERMANENT_OPENING,
+                        homeHouse = true,
+                        weeksRemaining = 6,
+                    ),
+                ) +
+                perBlock(OpenShift("qw-1", quad, base + 1.days, base + 1.days + 2.hours, OpenFeed.WEEKLY, homeHouse = false))
         return WorkerSnapshot(myShifts = myShifts, openShifts = openShifts)
+    }
+
+    /** Split a hand-built span into its 30-min block rows (ids `id.0`, `id.1`, …). */
+    private fun perBlock(shift: MyShift): List<MyShift> {
+        val n = ((shift.end - shift.start).inWholeMinutes / 30).toInt()
+        return (0 until n).map { i ->
+            shift.copy(
+                id = "${shift.id}.$i",
+                start = shift.start + (i * 30).minutes,
+                end = shift.start + ((i + 1) * 30).minutes,
+                blockIds = listOf("${shift.id}.$i"),
+            )
+        }
+    }
+
+    private fun perBlock(shift: OpenShift): List<OpenShift> {
+        val n = ((shift.end - shift.start).inWholeMinutes / 30).toInt()
+        return (0 until n).map { i ->
+            shift.copy(
+                id = "${shift.id}.$i",
+                start = shift.start + (i * 30).minutes,
+                end = shift.start + ((i + 1) * 30).minutes,
+                blockIds = listOf("${shift.id}.$i"),
+            )
+        }
     }
 
     fun pendingFloat(now: Instant): FloatAck = FloatAck(floatId = "float-demo", destinationHouse = quad, floatStart = now + 2.hours)

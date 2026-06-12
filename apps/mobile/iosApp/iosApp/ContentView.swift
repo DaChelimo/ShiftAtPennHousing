@@ -925,12 +925,22 @@ private struct DropFlowSheet: View {
     @Environment(\.colorScheme) private var scheme
     @State private var permanentScope = false
     @State private var acknowledged = false
+    // §5.2 partial range (T2-11) — block indexes on the shift's own grid, [from, to).
+    // rangeTo < 0 means "whole shift" (the default; planDropRange clamps).
+    @State private var rangeFrom = 0
+    @State private var rangeTo = -1
+
+    private var blockCount: Int { shift.blockIds.count }
+    private var effectiveTo: Int { rangeTo < 0 ? blockCount : rangeTo }
 
     var body: some View {
         let c = ShiftColors.resolve(scheme)
         let row = shift.toRow()
         let options = vm.dropOptions(shift: shift, breakProfile: false)
-        let plan = vm.planDrop(shift: shift, dropFromNow: false)
+        let plan = vm.planDropRange(shift: shift, fromBlock: Int32(rangeFrom), toBlock: Int32(effectiveTo))
+        // Permanent scope always releases the WHOLE recurring slot (short-notice anchors
+        // to the shift start); the occurrence path anchors to the SELECTED gap start (§5.2).
+        let shortNotice = permanentScope ? vm.planDrop(shift: shift, dropFromNow: false).shortNotice : plan.shortNotice
         ShiftSheet(title: "Drop shift", onClose: { dismiss() }) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 12) {
@@ -955,7 +965,11 @@ private struct DropFlowSheet: View {
                     id: "drop_permanent_option"
                 ) { if options.canDropPermanently { permanentScope = true } }
 
-                if plan.shortNotice && !acknowledged {
+                if !permanentScope && blockCount > 1 {
+                    dropRangeSelector(plan, c)
+                }
+
+                if shortNotice && !acknowledged {
                     VStack(alignment: .leading, spacing: 8) {
                         ShiftBanner(
                             title: "Starts within 20 minutes",
@@ -969,15 +983,68 @@ private struct DropFlowSheet: View {
                 }
 
                 ShiftButton(
-                    title: permanentScope ? "Drop permanently" : "Drop this week",
-                    action: { onDrop?(shift, permanentScope); vm.drop(shiftId: shift.id); dismiss() },
+                    title: permanentScope
+                        ? "Drop permanently"
+                        : (plan.wholeShift ? "Drop this week" : "Drop \(plan.rangeLabel)"),
+                    action: {
+                        // The occurrence path drops the SELECTED sub-shift: its blockIds are
+                        // the contiguous run `drop-shift` posts, and only those blocks flip
+                        // locally — the rest re-coalesce into their own card(s).
+                        if permanentScope {
+                            onDrop?(shift, true)
+                            vm.drop(shiftId: shift.id)
+                        } else {
+                            onDrop?(subShiftFor(shift: shift, plan: plan), false)
+                            vm.dropBlocks(blockIds: plan.blockIds)
+                        }
+                        dismiss()
+                    },
                     variant: .destructiveFilled, fullWidth: true
                 )
-                .disabled(plan.shortNotice && !acknowledged)
+                .disabled(shortNotice && !acknowledged)
                 .accessibilityIdentifier("drop_confirm_button")
             }
             .accessibilityIdentifier("drop_options_sheet")
         }
+    }
+
+    /// The §5.2 "How much to drop" block-range selector (T2-11): From/Until steppers
+    /// over the card's 30-min block boundaries with a live "17:30 – 19:00 · 1h 30m"
+    /// summary, plus the mid-shift "From now" quick action. Defaults to the whole shift.
+    private func dropRangeSelector(_ plan: PartialDropPlan, _ c: ShiftColors) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("How much to drop").font(ShiftFont.sans(13, .medium)).foregroundColor(c.sec)
+                Spacer(minLength: 0)
+                if let idx = vm.dropFromNowIndex(shift: shift) {
+                    Button("From now") {
+                        rangeFrom = Int(truncating: idx)
+                        rangeTo = blockCount
+                    }
+                    .font(ShiftFont.sans(13, .semibold))
+                    .foregroundColor(c.blue)
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("drop_from_now")
+                }
+            }
+            Text("\(plan.rangeLabel) · \(plan.durationLabel)\(plan.wholeShift ? " · whole shift" : "")")
+                .font(ShiftFont.mono(13.5, .semibold)).monospacedDigit().foregroundColor(c.ink)
+                .accessibilityIdentifier("drop_range_label")
+            Stepper("From \(plan.gapStartLabel)", value: $rangeFrom, in: 0...(effectiveTo - 1))
+                .font(ShiftFont.sans(13)).foregroundColor(c.sec)
+            Stepper(
+                "Until \(plan.gapEndLabel)",
+                value: Binding(get: { effectiveTo }, set: { rangeTo = $0 }),
+                in: (rangeFrom + 1)...blockCount
+            )
+            .font(ShiftFont.sans(13)).foregroundColor(c.sec)
+        }
+        .padding(.horizontal, 13).padding(.vertical, 11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(c.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(c.divider, lineWidth: 1))
+        .accessibilityIdentifier("drop_range_selector")
     }
 }
 

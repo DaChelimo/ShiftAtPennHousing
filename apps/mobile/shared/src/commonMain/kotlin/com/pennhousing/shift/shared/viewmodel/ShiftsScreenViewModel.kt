@@ -16,10 +16,13 @@ import com.pennhousing.shift.shared.shifts.buildMyShiftsTab
 import com.pennhousing.shift.shared.shifts.buildOtherHousesTab
 import com.pennhousing.shift.shared.shifts.coalesceMyShifts
 import com.pennhousing.shift.shared.shifts.coalesceOpenShifts
+import com.pennhousing.shift.shared.shifts.PartialDropPlan
+import com.pennhousing.shift.shared.shifts.blockIndexAt
 import com.pennhousing.shift.shared.shifts.dropOptionsFor
 import com.pennhousing.shift.shared.shifts.evaluateClaimCap
 import com.pennhousing.shift.shared.shifts.hoursBetween
 import com.pennhousing.shift.shared.shifts.isClaimable
+import com.pennhousing.shift.shared.shifts.planPartialDrop
 import com.pennhousing.shift.shared.shifts.planTemporaryDrop
 import com.pennhousing.shift.shared.shifts.reclaimDroppedShift
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -95,6 +98,16 @@ class ShiftsScreenViewModel(
         dropFromNow: Boolean,
     ): DropPlan = planTemporaryDrop(shift, dropFromNow, now)
 
+    /** §5.2 partial drop: plan blocks [fromBlock, toBlock) of the displayed card. */
+    fun planDropRange(
+        shift: MyShift,
+        fromBlock: Int,
+        toBlock: Int,
+    ): PartialDropPlan = planPartialDrop(shift, fromBlock, toBlock, now)
+
+    /** The block index containing `now` (mid-shift "drop from now"), or null. */
+    fun dropFromNowIndex(shift: MyShift): Int? = blockIndexAt(shift, now)
+
     /**
      * Optimistic local pickup: move an open shift into the worker's week as a
      * this-week TEMP_PICKUP (cross-house iff it is not the home house). The server
@@ -124,6 +137,16 @@ class ShiftsScreenViewModel(
 
     fun drop(shiftId: String) {
         workerShifts = applyTemporaryDrop(workerShifts, displayedBlockIds(shiftId))
+        _uiState.value = snapshot(_uiState.value.selectedTab)
+    }
+
+    /**
+     * §5.2 partial drop: flag only the selected blocks; the remaining blocks
+     * re-coalesce into their own card(s) (a middle drop leaves two), and the
+     * dropped run re-coalesces into one dropped-still-open card.
+     */
+    fun dropBlocks(blockIds: List<String>) {
+        workerShifts = applyTemporaryDrop(workerShifts, blockIds.toSet())
         _uiState.value = snapshot(_uiState.value.selectedTab)
     }
 

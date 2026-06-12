@@ -4,6 +4,9 @@ Update the row (status / gate / commit) as the **last step** of every chunk. See
 
 Status legend: ☐ pending · ◐ in-progress · ☑ done (gate green) · ⚠ blocked/needs-decision
 
+> **▶ RESUMING? Read [`HANDOFF.md`](HANDOFF.md) first** — current state, locked decisions (incl. the
+> coalescing-build + swaps-minimal-slice rulings), exact remaining work in order, and the load-bearing gotchas.
+
 ## Track T1 — Wire existing backends + test
 
 | ID    | Chunk                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Status | Gate result                     | Commit    |
@@ -92,4 +95,4 @@ The local Supabase DB is a SHARED resource: **at most ONE DB-migration/reset chu
 
 - **KILL the emulator after a spot-check** (`adb -s emulator-5554 emu kill`). A leftover running emulator silently ballooned a normally-16s mobile Gradle build to **21min** (and OOM-failed it). If `:androidApp:assembleDebug` is suddenly minutes-long, check `adb devices` first.
 
-_Last updated: T1 COMPLETE (1-9 done) + T2-7 done. Spot-check verified claim+ack live. Next: T2-1 (read-model migration, DB stream) parallel with T1-10 (pending-float surfacing, no-DB)._
+_Last updated (HEAD `716b054`): **T1 complete + essentially all real T2 gaps done** (pgTAP 997→1265). Deferred: T2-13 (push-only surface), integration health cards (no source). **Decisions taken:** build the block-coalescing foundation + partial drop/claim (T2-10/T2-11); swaps = minimal accept/reject-from-feed slice only (defer initiate/void). **Next in order (see HANDOFF.md §3):** CO block-coalescing → T2-11 partial-drop → T2-10 partial-claim → T2-12c-mobile closed render → T3a-min accept/reject swap → **STOP at T3b (RLS decision)**. Run heavy mobile chunks in the main thread (5 subagent stalls on long mobile chunks). Emulator is killed; clean tree._

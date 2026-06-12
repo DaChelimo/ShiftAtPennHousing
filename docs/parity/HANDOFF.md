@@ -5,6 +5,13 @@ Companions: [`PLAN.md`](PLAN.md) (tracks/chunks), [`STATUS.md`](STATUS.md) (live
 verification log + gotchas), [`MATRIX.md`](MATRIX.md) (232 audited feature rows — note: ~4 rows
 turned out **stale/already-built**, see below).
 
+> **⟳ 2026-06-12 update:** §3's queue is now DONE — CO (`0650231`), T2-11 (`dd5846d`), T2-10
+> (`c2ea19d`), T2-12c-mobile (`ecfb458`), T3a-min (`952baf7`), polish (`b116f41`); mobile JVM
+> 186→234 green, iOS link green, demo-path emulator spot-check PASS (STATUS verification log).
+> **The program is BLOCKED on the T3b RLS ruling (§3's stop)**; optional remaining = TB backfill
+>
+> - the §5 Maestro/Playwright debts. The sections below describe the state BEFORE this session.
+
 ---
 
 ## 1. Current state (as of this handoff)

@@ -109,23 +109,27 @@ fun weekDayIndexInWeekOf(
 ): Int? = weekDayIndexOf(start, mondayOf(now, zone), zone)
 
 /**
- * The Mon–Sun strip for [now]'s week, with a dot on days that have shifts.
- * [closedDayIndexes] (0=Mon..6=Sun) marks dates the worker's HOME house is closed
- * (§3.4/§11.3 — the backend `house_closure` signal); the cells render the closed
- * treatment. Cross-house shifts on a closed home-house date still render.
+ * The Mon–Sun strip for [anchor]'s week (default: [now]'s — the current week),
+ * with a dot on days that have shifts. [closedDayIndexes] (0=Mon..6=Sun) marks
+ * dates the worker's HOME house is closed (§3.4/§11.3 — the backend
+ * `house_closure` signal); the cells render the closed treatment. Cross-house
+ * shifts on a closed home-house date still render.
+ *
+ * T3b-4 week navigation: a non-current-week [anchor] renders that week's strip;
+ * `isToday` marks the cell whose DATE is [now]'s NY date (so no cell is "today"
+ * on other weeks) and [CalendarWeek.todayIndex] is -1 there.
  */
 fun buildCalendarWeek(
     shifts: List<MyShift>,
     now: Instant,
     zone: TimeZone = NEW_YORK,
     closedDayIndexes: Set<Int> = emptySet(),
+    anchor: Instant = now,
 ): CalendarWeek {
-    val monday = mondayOf(now, zone)
-    val todayIndex = now
-        .toLocalDateTime(zone)
-        .date.dayOfWeek.ordinal
+    val monday = mondayOf(anchor, zone)
+    val today = now.toLocalDateTime(zone).date
     val hasShifts = BooleanArray(DAYS_IN_WEEK)
-    shifts.forEach { s -> weekDayIndex(s, monday, zone)?.let { hasShifts[it] = true } }
+    shifts.forEach { s -> weekDayIndexOf(s.start, monday, zone)?.let { hasShifts[it] = true } }
     val days =
         (0 until DAYS_IN_WEEK).map { i ->
             val d = monday.plus(i, DateTimeUnit.DAY)
@@ -134,13 +138,27 @@ fun buildCalendarWeek(
                 dayLetter = DOW_SHORT[i].take(1),
                 dateLabel = d.day.toString(),
                 hasShifts = hasShifts[i],
-                isToday = i == todayIndex,
+                isToday = d == today,
                 closed = i in closedDayIndexes,
             )
         }
     val sunday = monday.plus(6, DateTimeUnit.DAY)
     val range = "${MONTH_SHORT[monday.month.ordinal]} ${monday.day} – ${MONTH_SHORT[sunday.month.ordinal]} ${sunday.day}"
-    return CalendarWeek(rangeLabel = range, todayIndex = todayIndex, days = days)
+    return CalendarWeek(rangeLabel = range, todayIndex = days.indexOfFirst { it.isToday }, days = days)
+}
+
+/**
+ * Move a week [anchor] by [weeks] whole weeks (T3b-4 navigation) — LocalDate
+ * arithmetic, reconstructed at NOON local so a DST-transition midnight can never
+ * skew which week the result lands in (invariant #6).
+ */
+fun shiftWeekAnchor(
+    anchor: Instant,
+    weeks: Int,
+    zone: TimeZone = NEW_YORK,
+): Instant {
+    val date = anchor.toLocalDateTime(zone).date.plus(weeks * DAYS_IN_WEEK, DateTimeUnit.DAY)
+    return LocalDateTime(date, LocalTime(12, 0)).toInstant(zone)
 }
 
 /**
@@ -184,12 +202,13 @@ fun buildCalendarAgenda(
     now: Instant,
     zone: TimeZone = NEW_YORK,
     closedDayIndexes: Set<Int> = emptySet(),
+    anchor: Instant = now,
 ): CalendarAgenda {
-    val monday = mondayOf(now, zone)
-    val todayIndex = now
-        .toLocalDateTime(zone)
-        .date.dayOfWeek.ordinal
+    val monday = mondayOf(anchor, zone)
     val date = monday.plus(selectedDayIndex, DateTimeUnit.DAY)
+    // "Today" is a DATE comparison (T3b-4): on a navigated week no day is today,
+    // so the header shows the weekday and no NOW line is inserted.
+    val isToday = date == now.toLocalDateTime(zone).date
     // Coalesce first: the live snapshot is one row per 30-min block, and the agenda
     // (like the Shifts tabs) shows one card per displayed shift, not per block.
     val dayShifts =
@@ -205,13 +224,12 @@ fun buildCalendarAgenda(
         }
     val header =
         CalendarDayHeader(
-            title = if (selectedDayIndex == todayIndex) "Today" else DOW_SHORT[selectedDayIndex],
+            title = if (isToday) "Today" else DOW_SHORT[selectedDayIndex],
             dateLabel = "${MONTH_SHORT[date.month.ordinal]} ${date.day}",
             summary = summary,
             closed = selectedDayIndex in closedDayIndexes,
         )
 
-    val isToday = selectedDayIndex == todayIndex
     val nowLabel = "NOW · ${formatBlockTime(now, zone)}"
     val items = mutableListOf<CalendarAgendaItem>()
     var nowInserted = false

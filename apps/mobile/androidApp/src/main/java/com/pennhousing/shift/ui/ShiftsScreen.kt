@@ -1159,7 +1159,12 @@ private fun CalendarTabContent(vm: CalendarViewModel) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val c = ShiftTheme.colors
     Column(Modifier.fillMaxSize().background(c.bg).testTag("calendar_screen")) {
-        WeekHeaderCard(state.week.rangeLabel)
+        WeekHeaderCard(
+            rangeLabel = state.week.rangeLabel,
+            weekOffset = state.weekOffset,
+            onPreviousWeek = vm::previousWeek,
+            onNextWeek = vm::nextWeek,
+        )
         WeekStrip(state.week, state.selectedDayIndex, vm::selectDay)
         DayHeaderRow(state.agenda.header)
         if (state.agenda.isEmpty) {
@@ -1201,10 +1206,28 @@ private fun CalendarTabContent(vm: CalendarViewModel) {
     }
 }
 
-/** The static "this week" header (the design's week-picker card, sans picker — no other weeks). */
+/**
+ * The week-picker header (T3b-4): the shown week's range with prev/next chevrons.
+ * The title reads "This week" on the current week, else the offset direction —
+ * the underlying `worker_my_shifts` read is date-unbounded, so other weeks'
+ * shifts are already in the snapshot.
+ */
 @Composable
-private fun WeekHeaderCard(rangeLabel: String) {
+private fun WeekHeaderCard(
+    rangeLabel: String,
+    weekOffset: Int = 0,
+    onPreviousWeek: (() -> Unit)? = null,
+    onNextWeek: (() -> Unit)? = null,
+) {
     val c = ShiftTheme.colors
+    val title =
+        when {
+            weekOffset == 0 -> "This week"
+            weekOffset == 1 -> "Next week"
+            weekOffset == -1 -> "Last week"
+            weekOffset > 1 -> "In $weekOffset weeks"
+            else -> "${-weekOffset} weeks ago"
+        }
     Row(
         Modifier
             .fillMaxWidth()
@@ -1223,8 +1246,34 @@ private fun WeekHeaderCard(rangeLabel: String) {
             Icon(ShiftIcons.Calendar, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(19.dp))
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text("This week", color = c.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text(title, color = c.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
             Text(rangeLabel, color = c.sec, fontSize = 13.sp)
+        }
+        if (onPreviousWeek != null && onNextWeek != null) {
+            Icon(
+                ShiftIcons.ChevronLeft,
+                contentDescription = "Previous week",
+                tint = c.sec,
+                modifier =
+                    Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(onClick = onPreviousWeek)
+                        .testTag("calendar_prev_week")
+                        .padding(4.dp),
+            )
+            Icon(
+                ShiftIcons.ChevronRight,
+                contentDescription = "Next week",
+                tint = c.sec,
+                modifier =
+                    Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(onClick = onNextWeek)
+                        .testTag("calendar_next_week")
+                        .padding(4.dp),
+            )
         }
     }
 }

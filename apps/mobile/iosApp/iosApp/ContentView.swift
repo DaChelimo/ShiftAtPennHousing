@@ -850,7 +850,7 @@ struct ShiftsRootView: View {
         let c = ShiftColors.resolve(scheme)
         let st = calendarModel.state
         return VStack(alignment: .leading, spacing: 0) {
-            weekHeaderCard(st.week.rangeLabel, c)
+            weekHeaderCard(st.week.rangeLabel, Int(st.weekOffset), c)
             weekStrip(st.week, Int(st.selectedDayIndex), c)
             dayHeaderRow(st.agenda.header, c)
             if st.agenda.isEmpty {
@@ -896,18 +896,38 @@ struct ShiftsRootView: View {
         .accessibilityIdentifier("calendar_screen")
     }
 
-    /// The static "this week" header (the design's week-picker card sans picker — no other weeks).
-    private func weekHeaderCard(_ range: String, _ c: ShiftColors) -> some View {
-        HStack(spacing: 12) {
+    /// The week-picker header (T3b-4): the shown week's range + prev/next chevrons.
+    private func weekHeaderCard(_ range: String, _ weekOffset: Int, _ c: ShiftColors) -> some View {
+        let title: String
+        switch weekOffset {
+        case 0: title = "This week"
+        case 1: title = "Next week"
+        case -1: title = "Last week"
+        case let o where o > 1: title = "In \(o) weeks"
+        default: title = "\(-weekOffset) weeks ago"
+        }
+        return HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10, style: .continuous).fill(c.blueContainer).frame(width: 38, height: 38)
                 Image(systemName: ShiftIcons.calendar).font(.system(size: 19)).foregroundColor(c.blue)
             }
             VStack(alignment: .leading, spacing: 1) {
-                Text("This week").font(ShiftFont.sans(15, .semibold)).foregroundColor(c.ink)
+                Text(title).font(ShiftFont.sans(15, .semibold)).foregroundColor(c.ink)
                 Text(range).font(ShiftFont.sans(13)).foregroundColor(c.sec)
             }
             Spacer(minLength: 0)
+            Button(action: { calendarModel.vm.previousWeek() }) {
+                Image(systemName: "chevron.left").font(.system(size: 15, weight: .semibold)).foregroundColor(c.sec)
+                    .padding(6)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("calendar_prev_week")
+            Button(action: { calendarModel.vm.nextWeek() }) {
+                Image(systemName: "chevron.right").font(.system(size: 15, weight: .semibold)).foregroundColor(c.sec)
+                    .padding(6)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("calendar_next_week")
         }
         .padding(.horizontal, 14).padding(.vertical, 12)
         .background(c.surface)

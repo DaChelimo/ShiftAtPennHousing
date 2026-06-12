@@ -159,6 +159,62 @@ class CalendarTest {
         assertEquals("2026-01-18", dates.last()) // Sun
     }
 
+    // ----- week navigation (T3b-4) -----
+
+    @Test fun next_week_anchor_renders_that_week_with_no_today_cell() {
+        val anchor = shiftWeekAnchor(now, 1)
+        val w = buildCalendarWeek(all, now, anchor = anchor)
+        assertEquals("Jan 19 – Jan 25", w.rangeLabel)
+        assertEquals(listOf("19", "20", "21", "22", "23", "24", "25"), w.days.map { it.dateLabel })
+        assertFalse(w.days.any { it.isToday }) // today is not in next week
+        assertEquals(-1, w.todayIndex)
+        assertFalse(w.days.any { it.hasShifts }) // this-week fixtures don't place there
+    }
+
+    @Test fun next_week_agenda_places_that_weeks_shifts_and_has_no_now_line() {
+        val nextThu = shift("2026-01-22T09:00:00-05:00", "2026-01-22T11:00:00-05:00")
+        val anchor = shiftWeekAnchor(now, 1)
+        val a = buildCalendarAgenda(listOf(nextThu), selectedDayIndex = 3, now = now, anchor = anchor)
+        assertEquals("Thu", a.header.title) // a navigated week's Thursday is NOT "Today"
+        assertEquals("Jan 22", a.header.dateLabel)
+        assertEquals(1, a.items.count { it.shift != null })
+        assertTrue(a.items.none { it.nowLabel != null }) // no NOW line off the current day
+    }
+
+    @Test fun shift_week_anchor_moves_whole_weeks_dst_safely() {
+        // Across the 2026-03-08 spring-forward: +1 week from Thu Mar 5 lands on
+        // Thu Mar 12 (EDT), not skewed by the missing hour.
+        val beforeDst = at("2026-03-05T14:00:00-05:00")
+        val w = buildCalendarWeek(emptyList(), beforeDst, anchor = shiftWeekAnchor(beforeDst, 1))
+        assertEquals("Mar 9 – Mar 15", w.rangeLabel)
+        // And a round trip returns to the original week.
+        val back = shiftWeekAnchor(shiftWeekAnchor(now, 1), -1)
+        assertEquals("Jan 12 – Jan 18", buildCalendarWeek(emptyList(), now, anchor = back).rangeLabel)
+    }
+
+    @Test fun view_model_week_navigation_moves_the_strip_and_resets_selection() {
+        val vm = com.pennhousing.shift.shared.viewmodel.CalendarViewModel(all, now)
+        assertEquals(0, vm.uiState.value.weekOffset)
+        assertEquals(3, vm.uiState.value.selectedDayIndex) // Thu (today)
+        vm.nextWeek()
+        val next = vm.uiState.value
+        assertEquals(1, next.weekOffset)
+        assertEquals("Jan 19 – Jan 25", next.week.rangeLabel)
+        assertEquals(0, next.selectedDayIndex) // Monday on a navigated week
+        vm.previousWeek()
+        val home = vm.uiState.value
+        assertEquals(0, home.weekOffset)
+        assertEquals("Jan 12 – Jan 18", home.week.rangeLabel)
+        assertEquals(3, home.selectedDayIndex) // back to today
+    }
+
+    @Test fun closed_days_apply_only_to_the_current_week() {
+        val vm = com.pennhousing.shift.shared.viewmodel.CalendarViewModel(all, now, setOf(5))
+        assertTrue(vm.uiState.value.week.days[5].closed)
+        vm.nextWeek()
+        assertFalse(vm.uiState.value.week.days[5].closed) // no closure data off-week
+    }
+
     // ----- duration formatter -----
 
     @Test fun formats_hours_and_minutes() {

@@ -5,6 +5,7 @@ import com.pennhousing.shift.shared.calendar.CalendarAgenda
 import com.pennhousing.shift.shared.calendar.CalendarWeek
 import com.pennhousing.shift.shared.calendar.buildCalendarAgenda
 import com.pennhousing.shift.shared.calendar.buildCalendarWeek
+import com.pennhousing.shift.shared.calendar.shiftWeekAnchor
 import com.pennhousing.shift.shared.model.MyShift
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,36 +16,72 @@ data class CalendarUiState(
     val week: CalendarWeek,
     val selectedDayIndex: Int,
     val agenda: CalendarAgenda,
+    /** Weeks from the current one (0 = this week) — drives the header label (T3b-4). */
+    val weekOffset: Int = 0,
 )
 
 /**
  * Phase 13a — the Personal-Calendar ViewModel (agenda-first). A thin `StateFlow`
  * wrapper over the pure `calendar/` builders, in the [ShiftsScreenViewModel] shape
  * (synchronous, no `viewModelScope`). `now` is the load instant, injected once
- * (decision #17); the week is fixed (only the current week is exposed), and
- * [selectDay] moves the agenda within it. Same `MyShift` snapshot the Shifts screen
- * renders — no new data.
+ * (decision #17). [selectDay] moves the agenda within the shown week, and
+ * [previousWeek]/[nextWeek] move the shown week itself (T3b-4 — the underlying
+ * `worker_my_shifts` read is date-unbounded, so other weeks' shifts are already in
+ * the snapshot). Same `MyShift` snapshot the Shifts screen renders — no new data.
  */
 class CalendarViewModel(
     private val myShifts: List<MyShift>,
     private val now: Instant,
     // Mon..Sun indexes the worker's HOME house is closed (§3.4/§11.3) — the host
-    // resolves them via the `house_closure` RPC; empty on the demo path.
+    // resolves them via the `house_closure` RPC for the CURRENT week; navigated
+    // weeks render without the closed treatment (no per-week closure data).
     private val closedDayIndexes: Set<Int> = emptySet(),
 ) : ViewModel() {
-    private val week: CalendarWeek = buildCalendarWeek(myShifts, now, closedDayIndexes = closedDayIndexes)
+    private var weekOffset = 0
 
-    private val _uiState = MutableStateFlow(snapshot(week.todayIndex))
+    private val _uiState = MutableStateFlow(snapshot(buildWeek().todayIndex))
     val uiState: StateFlow<CalendarUiState> = _uiState.asStateFlow()
 
-    private fun snapshot(dayIndex: Int): CalendarUiState =
-        CalendarUiState(
-            week = week,
-            selectedDayIndex = dayIndex,
-            agenda = buildCalendarAgenda(myShifts, dayIndex, now, closedDayIndexes = closedDayIndexes),
+    private fun closedFor(offset: Int): Set<Int> = if (offset == 0) closedDayIndexes else emptySet()
+
+    private fun buildWeek(): CalendarWeek =
+        buildCalendarWeek(
+            myShifts,
+            now,
+            closedDayIndexes = closedFor(weekOffset),
+            anchor = shiftWeekAnchor(now, weekOffset),
         )
+
+    private fun snapshot(dayIndex: Int): CalendarUiState {
+        val week = buildWeek()
+        val day = dayIndex.coerceIn(0, week.days.size - 1)
+        return CalendarUiState(
+            week = week,
+            selectedDayIndex = day,
+            agenda =
+                buildCalendarAgenda(
+                    myShifts,
+                    day,
+                    now,
+                    closedDayIndexes = closedFor(weekOffset),
+                    anchor = shiftWeekAnchor(now, weekOffset),
+                ),
+            weekOffset = weekOffset,
+        )
+    }
 
     fun selectDay(index: Int) {
         _uiState.value = snapshot(index)
+    }
+
+    /** T3b-4: show the previous/next week. Selection resets to today (current week) or Monday. */
+    fun previousWeek() = selectWeek(weekOffset - 1)
+
+    fun nextWeek() = selectWeek(weekOffset + 1)
+
+    private fun selectWeek(offset: Int) {
+        weekOffset = offset
+        val week = buildWeek()
+        _uiState.value = snapshot(if (week.todayIndex >= 0) week.todayIndex else 0)
     }
 }

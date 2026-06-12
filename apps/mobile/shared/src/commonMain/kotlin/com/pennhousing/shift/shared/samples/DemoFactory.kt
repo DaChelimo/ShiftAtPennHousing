@@ -86,6 +86,17 @@ object DemoFactory {
         return CalendarViewModel(DemoData.snapshot(now).myShifts, now)
     }
 
+    /**
+     * Calendar VM with the worker's LIVE closed-house days (§3.4/§11.3, T2-12c) —
+     * the Mon..Sun indexes from `WorkerShiftsRepository.fetchCalendarClosedDays`.
+     * Supplies `now` Kotlin-side (no `kotlin.time.Instant` across the Swift bridge);
+     * the iOS week snapshot itself stays the demo one (parity with the iOS read path).
+     */
+    fun calendarViewModel(closedDayIndexes: Set<Int>): CalendarViewModel {
+        val now = now()
+        return CalendarViewModel(DemoData.snapshot(now).myShifts, now, closedDayIndexes)
+    }
+
     fun preferencesViewModel(): PreferencesViewModel = PreferencesViewModel(DemoData.preferencePeriod(now()))
 
     fun breakClaimViewModel(): BreakClaimViewModel = BreakClaimViewModel(breakClaimSnapshot())

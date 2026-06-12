@@ -1,5 +1,6 @@
 package com.pennhousing.shift.shared.data
 
+import com.pennhousing.shift.shared.calendar.calendarWeekDates
 import com.pennhousing.shift.shared.model.AssignmentKind
 import com.pennhousing.shift.shared.model.FloatAck
 import com.pennhousing.shift.shared.model.House
@@ -15,6 +16,7 @@ import com.pennhousing.shift.shared.shifts.NEW_YORK
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.rpc
 import io.github.jan.supabase.realtime.PostgresAction
 import io.github.jan.supabase.realtime.channel
@@ -304,6 +306,44 @@ class WorkerShiftsRepository(
     suspend fun declineFloat(floatId: String): EdgeResult =
         edge.invoke("decline-float", Json.encodeToString(FloatActionRequest(floatId = floatId)))
 
+    /**
+     * The Mon..Sun strip indexes of THIS week's dates on which the worker's home house
+     * is closed (§3.4/§11.3) — the mobile analogue of the web calendar's "Closed" cells
+     * (T2-12c). Resolution: the worker's own `home_house_id` (own-row `users` RLS), then
+     * one `house_closure(p_house_id, p_on_date)` call per visible date (SECURITY DEFINER,
+     * granted authenticated — `operating_calendar`/`staffing_patterns` are not directly
+     * worker-readable). Best-effort: any failure resolves that day to not-closed, and a
+     * missing profile to an empty set, so the calendar renders plainly rather than wrongly.
+     *
+     * Reading the wall clock here is fine — this is the host/data layer; the pure
+     * calendar builders receive the indexes as input.
+     */
+    suspend fun fetchCalendarClosedDays(userId: String): Set<Int> {
+        val houseId =
+            runCatching {
+                supabase
+                    .from(TABLE_USERS)
+                    .select(Columns.list("home_house_id")) { filter { eq("user_id", userId) } }
+                    .decodeSingleOrNull<HomeHouseRow>()
+                    ?.homeHouseId
+            }.getOrNull() ?: return emptySet()
+        return calendarWeekDates(kotlin.time.Clock.System.now())
+            .mapIndexedNotNull { index, isoDate ->
+                val closed =
+                    runCatching {
+                        supabase.postgrest
+                            .rpc(
+                                "house_closure",
+                                buildJsonObject {
+                                    put("p_house_id", houseId)
+                                    put("p_on_date", isoDate)
+                                },
+                            ).decodeAs<Boolean>()
+                    }.getOrDefault(false)
+                if (closed) index else null
+            }.toSet()
+    }
+
     suspend fun fetchWorkerWeek(userId: String): WorkerSnapshot {
         val myShifts =
             supabase
@@ -412,8 +452,15 @@ class WorkerShiftsRepository(
         const val VIEW_OPEN_SHIFTS = "worker_open_shifts"
         const val TABLE_NOTIFICATIONS = "notifications"
         const val TABLE_FLOAT_ASSIGNMENTS = "float_assignments"
+        const val TABLE_USERS = "users"
     }
 }
+
+/** The worker's own `home_house_id` (own-row `users` RLS) — for the closed-day lookup. */
+@Serializable
+internal data class HomeHouseRow(
+    @SerialName("home_house_id") val homeHouseId: String,
+)
 
 // ----- Wire rows (the client read-model views) → pure domain models. -----
 

@@ -30,20 +30,41 @@ final class ShiftsObservable: ObservableObject {
 }
 
 /// Observes the Personal-Calendar `StateFlow` (its `selectDay` mutates state, so —
-/// unlike the static Updates feed — it must be observed).
+/// unlike the static Updates feed — it must be observed). The live host calls
+/// `activateLive` to overlay the worker's closed-house days (§3.4/§11.3, T2-12c):
+/// it fetches the Mon..Sun closed indexes via the `house_closure` RPC and swaps in
+/// a VM built with them (re-subscribing the observation).
 @MainActor
 final class CalendarObservable: ObservableObject {
-    let vm: CalendarViewModel
+    private(set) var vm: CalendarViewModel
     @Published var state: CalendarUiState
     private var task: Task<Void, Never>?
+    private var live = false
 
     init(vm: CalendarViewModel) {
         self.vm = vm
         self.state = vm.uiState.value
+        subscribe()
+    }
+
+    private func subscribe() {
+        task?.cancel()
+        state = vm.uiState.value
         task = Task { [weak self] in
             guard let self else { return }
             for await s in self.vm.uiState { self.state = s }
         }
+    }
+
+    /// Live host: fetch the worker's closed-house day indexes (best-effort; an empty
+    /// set keeps the demo VM) and rebuild the calendar VM with them. `DemoFactory`
+    /// supplies `now` Kotlin-side; the Set flows Kotlin→Swift→Kotlin opaquely.
+    func activateLive(repo: WorkerShiftsRepository, userId: String) async {
+        guard !live else { return }
+        live = true
+        guard let closed = try? await repo.fetchCalendarClosedDays(userId: userId), !closed.isEmpty else { return }
+        vm = DemoFactory.shared.calendarViewModel(closedDayIndexes: closed)
+        subscribe()
     }
 
     deinit { task?.cancel() }
@@ -273,6 +294,8 @@ struct ShiftsRootView: View {
                 await updatesModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
                 await ackModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
                 await settingsModel.activateLive(repo: WorkerBackend.shared.profileRepository, userId: uid)
+                // Closed-house days for the calendar strip (§3.4/§11.3, T2-12c).
+                await calendarModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
                 // Live break context (name + window + "only Harnwell open") + the §4.4
                 // opt-out state from the worker-readable `break_periods` / `break_optouts`;
                 // the pool stays demo-backed (T2-2a/T2-2b).
@@ -628,12 +651,22 @@ struct ShiftsRootView: View {
             weekStrip(st.week, Int(st.selectedDayIndex), c)
             dayHeaderRow(st.agenda.header, c)
             if st.agenda.isEmpty {
-                EmptyState(
-                    title: "No shifts this day",
-                    systemIcon: ShiftIcons.calendar,
-                    bodyText: "Enjoy the day off — or browse Open Shifts to pick one up."
-                )
-                .padding(.top, 8)
+                if st.agenda.header.closed {
+                    // §3.4/§11.3 (T2-12c): the home house is closed this date.
+                    EmptyState(
+                        title: "House closed",
+                        systemIcon: ShiftIcons.building,
+                        bodyText: "Your house is closed this day — no desk shifts are scheduled."
+                    )
+                    .padding(.top, 8)
+                } else {
+                    EmptyState(
+                        title: "No shifts this day",
+                        systemIcon: ShiftIcons.calendar,
+                        bodyText: "Enjoy the day off — or browse Open Shifts to pick one up."
+                    )
+                    .padding(.top, 8)
+                }
             } else {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(Array(st.agenda.items.enumerated()), id: \.offset) { _, item in
@@ -695,14 +728,18 @@ struct ShiftsRootView: View {
             VStack(spacing: 4) {
                 Text(day.dayLetter).font(ShiftFont.sans(11, .semibold)).foregroundColor(c.ter)
                 ZStack {
-                    Circle().fill(selected ? c.blue : Color.clear).frame(width: 34, height: 34)
+                    // §3.4 closed-day cell (T2-12c) — muted fill behind the date.
+                    Circle()
+                        .fill(selected ? c.blue : (day.closed ? c.surfaceVar : Color.clear))
+                        .frame(width: 34, height: 34)
                     if day.isToday && !selected {
                         Circle().strokeBorder(c.blue, lineWidth: 1.5).frame(width: 34, height: 34)
                     }
                     Text(day.dateLabel)
                         .font(ShiftFont.sans(14, day.isToday ? .bold : .medium))
-                        .foregroundColor(selected ? .white : c.ink)
+                        .foregroundColor(selected ? .white : (day.closed ? c.ter : c.ink))
                 }
+                .accessibilityIdentifier(day.closed ? "calendar_closed_day" : "")
                 Circle().fill(day.hasShifts ? c.blue : Color.clear).frame(width: 5, height: 5)
             }
             .frame(maxWidth: .infinity)
@@ -716,6 +753,16 @@ struct ShiftsRootView: View {
             HStack(alignment: .bottom, spacing: 6) {
                 Text(header.title).font(ShiftFont.sans(17, .bold)).foregroundColor(c.ink)
                 Text("· \(header.dateLabel)").font(ShiftFont.sans(15, .medium)).foregroundColor(c.ter)
+                if header.closed {
+                    // §3.4/§11.3 — the home house is closed this date.
+                    Text("Closed")
+                        .font(ShiftFont.sans(11.5, .semibold))
+                        .foregroundColor(c.sec)
+                        .padding(.horizontal, 8).padding(.vertical, 2)
+                        .background(c.surfaceVar)
+                        .clipShape(Capsule())
+                        .accessibilityIdentifier("calendar_closed_chip")
+                }
             }
             Spacer()
             if let summary = header.summary {

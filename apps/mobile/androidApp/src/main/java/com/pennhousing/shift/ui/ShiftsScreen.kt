@@ -1106,11 +1106,21 @@ private fun CalendarTabContent(vm: CalendarViewModel) {
         WeekStrip(state.week, state.selectedDayIndex, vm::selectDay)
         DayHeaderRow(state.agenda.header)
         if (state.agenda.isEmpty) {
-            EmptyState(
-                title = "No shifts this day",
-                icon = ShiftIcons.Calendar,
-                body = "Enjoy the day off — or browse Open Shifts to pick one up.",
-            )
+            if (state.agenda.header.closed) {
+                // §3.4/§11.3 (T2-12c): the home house is closed this date — no
+                // blocks exist to work, so say so instead of "day off".
+                EmptyState(
+                    title = "House closed",
+                    icon = ShiftIcons.Building,
+                    body = "Your house is closed this day — no desk shifts are scheduled.",
+                )
+            } else {
+                EmptyState(
+                    title = "No shifts this day",
+                    icon = ShiftIcons.Calendar,
+                    body = "Enjoy the day off — or browse Open Shifts to pick one up.",
+                )
+            }
         } else {
             LazyColumn(
                 Modifier.fillMaxSize().testTag("calendar_agenda"),
@@ -1202,13 +1212,25 @@ private fun WeekDayCellView(
             Modifier
                 .size(34.dp)
                 .clip(RoundedCornerShape(50))
-                .background(if (selected) blue else Color.Transparent)
-                .then(if (day.isToday && !selected) Modifier.border(1.5.dp, blue, RoundedCornerShape(50)) else Modifier),
+                .background(
+                    when {
+                        selected -> blue
+                        day.closed -> c.surfaceVar // §3.4 closed-day cell — muted fill
+                        else -> Color.Transparent
+                    },
+                )
+                .then(if (day.isToday && !selected) Modifier.border(1.5.dp, blue, RoundedCornerShape(50)) else Modifier)
+                .then(if (day.closed) Modifier.testTag("calendar_closed_day") else Modifier),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 day.dateLabel,
-                color = if (selected) Color.White else c.ink,
+                color =
+                    when {
+                        selected -> Color.White
+                        day.closed -> c.ter
+                        else -> c.ink
+                    },
                 fontSize = 14.sp,
                 fontWeight = if (day.isToday) FontWeight.Bold else FontWeight.Medium,
             )
@@ -1231,6 +1253,21 @@ private fun DayHeaderRow(header: CalendarDayHeader) {
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(header.title, color = c.ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
             Text("· ${header.dateLabel}", color = c.ter, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            if (header.closed) {
+                // §3.4/§11.3 — the home house is closed this date.
+                Text(
+                    "Closed",
+                    color = c.sec,
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier =
+                        Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(c.surfaceVar)
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                            .testTag("calendar_closed_chip"),
+                )
+            }
         }
         header.summary?.let { Text(it, style = ShiftTheme.type.monoTime.copy(fontSize = 13.sp), color = c.sec) }
     }

@@ -127,6 +127,38 @@ class CalendarTest {
         assertEquals("10:00 – 14:00", a.items[0].shift?.timeLabel)
     }
 
+    // ----- closed-house days (§3.4/§11.3, T2-12c) -----
+
+    @Test fun closed_day_indexes_mark_strip_cells_and_the_selected_header() {
+        // Sat (index 5) closed: its strip cell flags closed; selecting it flags the
+        // header; other days are untouched.
+        val w = buildCalendarWeek(all, now, closedDayIndexes = setOf(5))
+        assertTrue(w.days[5].closed)
+        assertFalse(w.days[3].closed)
+        val closedAgenda = buildCalendarAgenda(all, selectedDayIndex = 5, now = now, closedDayIndexes = setOf(5))
+        assertTrue(closedAgenda.header.closed)
+        val openAgenda = buildCalendarAgenda(all, selectedDayIndex = 3, now = now, closedDayIndexes = setOf(5))
+        assertFalse(openAgenda.header.closed)
+    }
+
+    @Test fun closed_day_still_renders_cross_house_shifts() {
+        // §3.4: a home-house closure does not erase the worker's cross-house pickups —
+        // the Saturday Quad pickup renders even when Saturday is flagged closed.
+        val a = buildCalendarAgenda(all, selectedDayIndex = 5, now = now, closedDayIndexes = setOf(5))
+        assertTrue(a.header.closed)
+        assertFalse(a.isEmpty)
+        assertEquals(1, a.items.size)
+    }
+
+    @Test fun calendar_week_dates_are_the_iso_monday_to_sunday_of_nows_week() {
+        // The strings handed to the `house_closure(p_house_id, p_on_date)` RPC.
+        val dates = calendarWeekDates(now)
+        assertEquals(7, dates.size)
+        assertEquals("2026-01-12", dates.first()) // Mon
+        assertEquals("2026-01-15", dates[3]) // Thu (today)
+        assertEquals("2026-01-18", dates.last()) // Sun
+    }
+
     // ----- duration formatter -----
 
     @Test fun formats_hours_and_minutes() {

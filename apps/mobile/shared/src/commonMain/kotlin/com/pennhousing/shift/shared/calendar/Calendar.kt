@@ -31,13 +31,14 @@ import kotlin.time.Instant
 
 const val DAYS_IN_WEEK = 7
 
-/** One Mon–Sun strip cell. */
+/** One Mon–Sun strip cell. [closed] — the worker's home house is closed (§3.4/§11.3). */
 data class WeekDayCell(
     val index: Int,
     val dayLetter: String,
     val dateLabel: String,
     val hasShifts: Boolean,
     val isToday: Boolean,
+    val closed: Boolean = false,
 )
 
 data class CalendarWeek(
@@ -51,6 +52,8 @@ data class CalendarDayHeader(
     val dateLabel: String,
     /** "2 shifts · 6h" — null when the day is empty. */
     val summary: String?,
+    /** Home house closed this date (§3.4/§11.3) — the UI shows the "Closed" treatment. */
+    val closed: Boolean = false,
 )
 
 /** One agenda row: a [shift] (with [active] = in progress) OR the now-line ([nowLabel] non-null). */
@@ -86,11 +89,17 @@ private fun weekDayIndex(
     return if (d == monday.plus(idx, DateTimeUnit.DAY)) idx else null
 }
 
-/** The Mon–Sun strip for [now]'s week, with a dot on days that have shifts. */
+/**
+ * The Mon–Sun strip for [now]'s week, with a dot on days that have shifts.
+ * [closedDayIndexes] (0=Mon..6=Sun) marks dates the worker's HOME house is closed
+ * (§3.4/§11.3 — the backend `house_closure` signal); the cells render the closed
+ * treatment. Cross-house shifts on a closed home-house date still render.
+ */
 fun buildCalendarWeek(
     shifts: List<MyShift>,
     now: Instant,
     zone: TimeZone = NEW_YORK,
+    closedDayIndexes: Set<Int> = emptySet(),
 ): CalendarWeek {
     val monday = mondayOf(now, zone)
     val todayIndex = now
@@ -107,11 +116,24 @@ fun buildCalendarWeek(
                 dateLabel = d.day.toString(),
                 hasShifts = hasShifts[i],
                 isToday = i == todayIndex,
+                closed = i in closedDayIndexes,
             )
         }
     val sunday = monday.plus(6, DateTimeUnit.DAY)
     val range = "${MONTH_SHORT[monday.month.ordinal]} ${monday.day} – ${MONTH_SHORT[sunday.month.ordinal]} ${sunday.day}"
     return CalendarWeek(rangeLabel = range, todayIndex = todayIndex, days = days)
+}
+
+/**
+ * The 7 ISO dates (yyyy-MM-dd, Mon..Sun) of [now]'s NY week — what the host hands
+ * the `house_closure(p_house_id, p_on_date)` RPC for the visible strip.
+ */
+fun calendarWeekDates(
+    now: Instant,
+    zone: TimeZone = NEW_YORK,
+): List<String> {
+    val monday = mondayOf(now, zone)
+    return (0 until DAYS_IN_WEEK).map { monday.plus(it, DateTimeUnit.DAY).toString() }
 }
 
 /**
@@ -125,6 +147,7 @@ fun buildCalendarAgenda(
     selectedDayIndex: Int,
     now: Instant,
     zone: TimeZone = NEW_YORK,
+    closedDayIndexes: Set<Int> = emptySet(),
 ): CalendarAgenda {
     val monday = mondayOf(now, zone)
     val todayIndex = now
@@ -149,6 +172,7 @@ fun buildCalendarAgenda(
             title = if (selectedDayIndex == todayIndex) "Today" else DOW_SHORT[selectedDayIndex],
             dateLabel = "${MONTH_SHORT[date.month.ordinal]} ${date.day}",
             summary = summary,
+            closed = selectedDayIndex in closedDayIndexes,
         )
 
     val isToday = selectedDayIndex == todayIndex

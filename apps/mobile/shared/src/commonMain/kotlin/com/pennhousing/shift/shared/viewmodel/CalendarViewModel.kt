@@ -28,14 +28,21 @@ data class CalendarUiState(
 class CalendarViewModel(
     private val myShifts: List<MyShift>,
     private val now: Instant,
+    // Mon..Sun indexes the worker's HOME house is closed (§3.4/§11.3) — the host
+    // resolves them via the `house_closure` RPC; empty on the demo path.
+    private val closedDayIndexes: Set<Int> = emptySet(),
 ) : ViewModel() {
-    private val week: CalendarWeek = buildCalendarWeek(myShifts, now)
+    private val week: CalendarWeek = buildCalendarWeek(myShifts, now, closedDayIndexes = closedDayIndexes)
 
     private val _uiState = MutableStateFlow(snapshot(week.todayIndex))
     val uiState: StateFlow<CalendarUiState> = _uiState.asStateFlow()
 
     private fun snapshot(dayIndex: Int): CalendarUiState =
-        CalendarUiState(week = week, selectedDayIndex = dayIndex, agenda = buildCalendarAgenda(myShifts, dayIndex, now))
+        CalendarUiState(
+            week = week,
+            selectedDayIndex = dayIndex,
+            agenda = buildCalendarAgenda(myShifts, dayIndex, now, closedDayIndexes = closedDayIndexes),
+        )
 
     fun selectDay(index: Int) {
         _uiState.value = snapshot(index)

@@ -245,7 +245,14 @@ private fun LiveShiftsRoot(
                         now,
                     )
                 }
-            val calendarVm = remember(snapshot) { CalendarViewModel(snapshot.myShifts, now) }
+            // Closed-house days (§3.4/§11.3, T2-12c): the worker's home house may be
+            // closed on some of this week's dates — `house_closure` RPC per visible
+            // date (best-effort; empty while loading / on failure → plain calendar).
+            val closedDays by
+                produceState(initialValue = emptySet<Int>(), session.userId) {
+                    value = runCatching { repo.fetchCalendarClosedDays(session.userId) }.getOrDefault(emptySet())
+                }
+            val calendarVm = remember(snapshot, closedDays) { CalendarViewModel(snapshot.myShifts, now, closedDays) }
             // Preferences: load the worker's real active period (scheduling_periods now
             // worker-readable — migration 20260610000001); fall back to the demo period
             // while loading or when no period is open. Submit POSTs to `submit-preferences`.

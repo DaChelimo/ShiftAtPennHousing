@@ -103,4 +103,25 @@ class UpdatesViewModelTest {
         assertFalse(vm.uiState.value.hasUnread)
         assertTrue(vm.markAllRead().isEmpty())
     }
+
+    // ----- incoming swap resolution (T3a) -----
+
+    @Test fun resolve_swap_removes_the_actionable_entry_and_keeps_the_rest() {
+        val swapEntry =
+            item("n-swap", "2026-01-15T18:00:00-05:00", unread = true).copy(swapId = "s-1", swapAcceptable = true)
+        val other = item("a", "2026-01-15T17:00:00-05:00", unread = true)
+        val vm = vm(listOf(swapEntry, other))
+        assertEquals(2, vm.uiState.value.feed.today.size)
+        vm.resolveSwap("s-1")
+        val rows = vm.uiState.value.feed.today
+        assertEquals(listOf("a"), rows.map { it.id })
+        assertTrue(rows.none { it.swapId != null })
+    }
+
+    @Test fun resolve_swap_is_idempotent_for_unknown_ids() {
+        val vm = vm(listOf(item("a", "2026-01-15T17:00:00-05:00", unread = false)))
+        val before = vm.uiState.value
+        vm.resolveSwap("nope")
+        assertEquals(before, vm.uiState.value)
+    }
 }

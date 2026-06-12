@@ -133,6 +133,19 @@ object DemoData {
                 createdAt = now - 15.minutes,
                 unread = true,
             ),
+            // An incoming pending swap (T3a) — the row offers Accept/Decline; the demo
+            // resolves it locally (the live path POSTs accept-swap / reject-swap).
+            NotificationItem(
+                id = "n-swap",
+                category = NotificationCategory.SWAP,
+                title = "Swap request — Shift swap",
+                body = "A housemate proposed a swap with you. Respond before it expires.",
+                createdAt = now - 30.minutes,
+                unread = true,
+                urgent = true,
+                swapId = "swap-demo",
+                swapAcceptable = true,
+            ),
             NotificationItem(
                 id = "n-removed",
                 category = NotificationCategory.SHIFT_REMOVED,

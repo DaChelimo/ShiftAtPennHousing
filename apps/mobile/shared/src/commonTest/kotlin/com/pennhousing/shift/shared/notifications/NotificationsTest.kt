@@ -203,4 +203,53 @@ class NotificationsTest {
         val items = listOf(item("a", "2026-01-15T18:00:00-05:00"))
         assertEquals(items, withPendingFloatEntry(items, pendingFloatId = null, pendingFloatStart = null))
     }
+
+    // ----- incoming swap entries (§8.2, T3a minimal slice) -----
+
+    private fun swap(
+        swapId: String,
+        swapType: String,
+    ) = IncomingSwap(
+        swapId = swapId,
+        swapType = swapType,
+        createdAt = at("2026-01-15T18:30:00-05:00"),
+        expiresAt = at("2026-01-16T18:30:00-05:00"),
+    )
+
+    @Test fun incoming_temporary_swap_synthesizes_an_urgent_acceptable_entry() {
+        val merged = withIncomingSwapEntries(emptyList(), listOf(swap("s-1", "shift_swap")))
+        val entry = merged.single()
+        assertEquals(NotificationCategory.SWAP, entry.category)
+        assertEquals("s-1", entry.swapId)
+        assertTrue(entry.swapAcceptable)
+        assertTrue(entry.urgent)
+        assertTrue(entry.unread)
+        assertEquals("Swap request — Shift swap", entry.title)
+        // a float swap is also a plain {swap_id} acceptance
+        assertTrue(withIncomingSwapEntries(emptyList(), listOf(swap("s-2", "float_swap"))).single().swapAcceptable)
+    }
+
+    @Test fun incoming_permanent_swap_offers_decline_only() {
+        // §8.4: a permanent acceptance must enumerate affected assignments — not
+        // computed by this slice, so Accept is withheld (Decline remains).
+        val entry = withIncomingSwapEntries(emptyList(), listOf(swap("s-3", "permanent_swap"))).single()
+        assertEquals("s-3", entry.swapId)
+        assertFalse(entry.swapAcceptable)
+        assertTrue(entry.urgent)
+    }
+
+    @Test fun incoming_swap_entry_is_not_duplicated_when_already_represented() {
+        val existing = item("n-s", "2026-01-15T18:00:00-05:00", category = NotificationCategory.SWAP).copy(swapId = "s-1")
+        val merged = withIncomingSwapEntries(listOf(existing), listOf(swap("s-1", "shift_swap")))
+        assertEquals(1, merged.size)
+        assertEquals(1, merged.count { it.swapId == "s-1" })
+    }
+
+    @Test fun swap_row_carries_the_action_fields() {
+        val entry = withIncomingSwapEntries(emptyList(), listOf(swap("s-1", "shift_swap"))).single()
+        val row = entry.toRow(now)
+        assertEquals("s-1", row.swapId)
+        assertTrue(row.swapAcceptable)
+        assertFalse(row.opensAck) // a swap entry never opens the float ack hero
+    }
 }

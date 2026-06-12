@@ -58,4 +58,18 @@ class UpdatesViewModel(
         _uiState.value = UpdatesUiState(buildUpdatesFeed(items, now))
         return toMark
     }
+
+    /**
+     * Optimistic local resolution of an incoming swap entry (T3a): the worker tapped
+     * Accept or Decline, so the actionable row leaves the feed immediately (the live
+     * host fires the `accept-swap` / `reject-swap` EF best-effort; the server stays
+     * authoritative and the next snapshot reconciles). Idempotent — an unknown
+     * [swapId] leaves the feed unchanged.
+     */
+    fun resolveSwap(swapId: String) {
+        val remaining = items.filterNot { it.swapId == swapId }
+        if (remaining.size == items.size) return
+        items = remaining
+        _uiState.value = UpdatesUiState(buildUpdatesFeed(items, now))
+    }
 }

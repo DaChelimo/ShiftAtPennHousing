@@ -37,7 +37,9 @@ import com.pennhousing.shift.shared.data.ProfileSnapshot
 import com.pennhousing.shift.shared.data.WorkerBackend
 import com.pennhousing.shift.shared.data.WorkerSnapshot
 import com.pennhousing.shift.shared.model.FloatAck
+import com.pennhousing.shift.shared.notifications.IncomingSwap
 import com.pennhousing.shift.shared.notifications.NotificationItem
+import com.pennhousing.shift.shared.notifications.withIncomingSwapEntries
 import com.pennhousing.shift.shared.notifications.withPendingFloatEntry
 import com.pennhousing.shift.shared.platform.AppConfig
 import com.pennhousing.shift.shared.preferences.PreferencePeriod
@@ -232,15 +234,26 @@ private fun LiveShiftsRoot(
                 produceState<List<NotificationItem>?>(initialValue = null, session.userId) {
                     value = runCatching { repo.fetchNotifications(session.userId) }.getOrNull()
                 }
+            // Incoming pending swaps (§8.2, T3a): the worker's own counterparty
+            // `swap_requests` rows — `create-swap` writes no notification row, so the
+            // feed synthesizes the actionable entries via `withIncomingSwapEntries`.
+            val liveIncomingSwaps by
+                produceState(initialValue = emptyList<IncomingSwap>(), session.userId) {
+                    value = runCatching { repo.fetchIncomingSwaps(session.userId) }.getOrDefault(emptyList())
+                }
             val updatesVm =
-                remember(liveNotifications, livePendingFloat) {
+                remember(liveNotifications, livePendingFloat, liveIncomingSwaps) {
                     val base = liveNotifications ?: DemoData.notifications(now)
                     UpdatesViewModel(
-                        withPendingFloatEntry(
-                            items = base,
-                            pendingFloatId = livePendingFloat?.floatId,
-                            pendingFloatStart = livePendingFloat?.floatStart,
-                            destinationHouseName = livePendingFloat?.destinationHouse?.name,
+                        withIncomingSwapEntries(
+                            items =
+                                withPendingFloatEntry(
+                                    items = base,
+                                    pendingFloatId = livePendingFloat?.floatId,
+                                    pendingFloatStart = livePendingFloat?.floatStart,
+                                    destinationHouseName = livePendingFloat?.destinationHouse?.name,
+                                ),
+                            swaps = liveIncomingSwaps,
                         ),
                         now,
                     )
@@ -411,6 +424,18 @@ private fun LiveShiftsRoot(
                     // `mark_notification_read` RPC (best-effort) while the Updates ViewModel
                     // already cleared the dots optimistically. No new backend RPC (T2-8).
                     prefsScope.launch { repo.markAllRead(session.userId, unreadIds) }
+                },
+                onAcceptSwap = { swapId ->
+                    // POST the real acceptance → `accept-swap` (best-effort; temporary swaps
+                    // only — the feed never offers Accept on a permanent entry). The server
+                    // re-checks pending/expiry atomically (§8.2); the feed entry already
+                    // resolved optimistically and the next snapshot reconciles.
+                    prefsScope.launch { repo.acceptSwap(swapId) }
+                },
+                onRejectSwap = { swapId ->
+                    // POST the real decline → `reject-swap` (best-effort; idempotent — a
+                    // non-pending swap 409s `not_pending` and nothing changes server-side).
+                    prefsScope.launch { repo.rejectSwap(swapId) }
                 },
             )
         }

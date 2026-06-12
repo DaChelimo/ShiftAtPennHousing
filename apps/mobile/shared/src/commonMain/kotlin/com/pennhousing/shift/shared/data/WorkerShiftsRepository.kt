@@ -9,6 +9,7 @@ import com.pennhousing.shift.shared.model.OpenFeed
 import com.pennhousing.shift.shared.model.OpenShift
 import com.pennhousing.shift.shared.network.EdgeFunctionClient
 import com.pennhousing.shift.shared.network.EdgeResult
+import com.pennhousing.shift.shared.notifications.IncomingSwap
 import com.pennhousing.shift.shared.notifications.NotificationItem
 import com.pennhousing.shift.shared.notifications.notificationFromPayload
 import com.pennhousing.shift.shared.shifts.BLOCK
@@ -392,6 +393,51 @@ class WorkerShiftsRepository(
             .map { it.toModel() }
 
     /**
+     * The worker's INCOMING pending swaps (§8.2, T3a) — own `swap_requests` rows where
+     * the worker is the counterparty and the swap is still pending (own-row RLS:
+     * "users can select own swap requests"). `create-swap` inserts no notification row
+     * for the counterparty, so the Updates feed synthesizes entries from these via the
+     * pure `withIncomingSwapEntries`.
+     */
+    suspend fun fetchIncomingSwaps(userId: String): List<IncomingSwap> =
+        supabase
+            .from(TABLE_SWAP_REQUESTS)
+            .select(Columns.list("swap_id", "swap_type", "created_at", "expires_at")) {
+                filter {
+                    eq("counterparty_user_id", userId)
+                    eq("status", "pending")
+                }
+            }
+            .decodeList<SwapRequestRow>()
+            .map {
+                IncomingSwap(
+                    swapId = it.swapId,
+                    swapType = it.swapType,
+                    createdAt = Instant.parse(it.createdAt),
+                    expiresAt = Instant.parse(it.expiresAt),
+                )
+            }
+
+    /**
+     * Accept an incoming TEMPORARY swap (§8.2) → the `accept-swap` Edge Function with a
+     * plain `{ swap_id }` (the EF resolves the worker from the JWT and runs the atomic
+     * `accept_swap` RPC; expiry/ownership re-checked server-side). Permanent swaps need
+     * `affected_assignment_ids` (§8.4 `apply_permanent_swap`) which this minimal slice
+     * does not compute — the feed offers Decline only for those. Best-effort (the feed
+     * already resolved the entry optimistically); `EdgeResult.ok` reports the 2xx.
+     */
+    suspend fun acceptSwap(swapId: String): EdgeResult =
+        edge.invoke("accept-swap", Json.encodeToString(SwapActionRequest(swapId = swapId)))
+
+    /**
+     * Decline an incoming swap → the `reject-swap` Edge Function (`{ swap_id }`; the EF
+     * flips the worker's own pending counterparty row to 'rejected' — idempotent, a
+     * non-pending swap 409s `not_pending`). Best-effort, mirroring [acceptSwap].
+     */
+    suspend fun rejectSwap(swapId: String): EdgeResult =
+        edge.invoke("reject-swap", Json.encodeToString(SwapActionRequest(swapId = swapId)))
+
+    /**
      * Mark ONE notification read (§10.1) → the `mark_notification_read` RPC. Called DIRECTLY
      * via Postgrest (not an Edge Function): the RPC is `SECURITY DEFINER` and GRANTed to
      * `authenticated` (migration 20260601000001), so the worker's JWT can invoke it through
@@ -453,8 +499,18 @@ class WorkerShiftsRepository(
         const val TABLE_NOTIFICATIONS = "notifications"
         const val TABLE_FLOAT_ASSIGNMENTS = "float_assignments"
         const val TABLE_USERS = "users"
+        const val TABLE_SWAP_REQUESTS = "swap_requests"
     }
 }
+
+/** The worker's own pending counterparty `swap_requests` row (T3a wire shape). */
+@Serializable
+internal data class SwapRequestRow(
+    @SerialName("swap_id") val swapId: String,
+    @SerialName("swap_type") val swapType: String,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("expires_at") val expiresAt: String,
+)
 
 /** The worker's own `home_house_id` (own-row `users` RLS) — for the closed-day lookup. */
 @Serializable
@@ -577,6 +633,12 @@ private data class ClaimShiftRequest(
 @Serializable
 private data class FloatActionRequest(
     @SerialName("float_id") val floatId: String,
+)
+
+/** `accept-swap` / `reject-swap` request — the incoming swap id (T3a minimal slice). */
+@Serializable
+private data class SwapActionRequest(
+    @SerialName("swap_id") val swapId: String,
 )
 
 /** `permanent-drop` request — the recurring slot, by house + NY-local day + HH:MM start. */

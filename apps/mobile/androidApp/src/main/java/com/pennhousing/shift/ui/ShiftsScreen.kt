@@ -172,6 +172,11 @@ fun ShiftsApp(
     // `mark_notification_read` RPC (best-effort) when "Mark all read" is tapped; the Updates
     // ViewModel does the optimistic local clear. Demo defaults to local-only (no write).
     onMarkAllRead: (List<String>) -> Unit = {},
+    // Live host POSTs `accept-swap` / `reject-swap` (best-effort) when an incoming swap
+    // entry's Accept/Decline is tapped (T3a); the Updates ViewModel already resolved the
+    // entry optimistically. Demo defaults to local-only. The argument is the swap id.
+    onAcceptSwap: (String) -> Unit = {},
+    onRejectSwap: (String) -> Unit = {},
 ) {
     ShiftTheme {
         val state by shiftsVm.uiState.collectAsStateWithLifecycle()
@@ -263,6 +268,16 @@ fun ShiftsApp(
                                 // Optimistic local clear (returns the ids that were unread),
                                 // then best-effort live persist via the host callback.
                                 onMarkAllRead(updatesVm.markAllRead())
+                            },
+                            // T3a — incoming swap: optimistic local resolve (the row leaves
+                            // the feed), then the best-effort live POST via the host callback.
+                            onAcceptSwap = { swapId ->
+                                updatesVm.resolveSwap(swapId)
+                                onAcceptSwap(swapId)
+                            },
+                            onRejectSwap = { swapId ->
+                                updatesVm.resolveSwap(swapId)
+                                onRejectSwap(swapId)
                             },
                         )
                     TAB_PREFS -> PreferencesTabContent(preferencesVm, onSubmitPreferences)
@@ -939,6 +954,8 @@ private fun UpdatesTabContent(
     hasUnread: Boolean,
     onOpenAck: () -> Unit,
     onMarkAllRead: () -> Unit,
+    onAcceptSwap: (String) -> Unit = {},
+    onRejectSwap: (String) -> Unit = {},
 ) {
     if (feed.isEmpty) {
         Column(Modifier.fillMaxSize().background(ShiftTheme.colors.bg).padding(top = 40.dp)) {
@@ -959,10 +976,10 @@ private fun UpdatesTabContent(
             item { MarkAllReadHeader(onMarkAllRead) }
         }
         if (feed.today.isNotEmpty()) {
-            item { NotificationGroup("Today", feed.today, onOpenAck) }
+            item { NotificationGroup("Today", feed.today, onOpenAck, onAcceptSwap, onRejectSwap) }
         }
         if (feed.earlier.isNotEmpty()) {
-            item { NotificationGroup("Earlier", feed.earlier, onOpenAck) }
+            item { NotificationGroup("Earlier", feed.earlier, onOpenAck, onAcceptSwap, onRejectSwap) }
         }
     }
 }
@@ -1000,10 +1017,12 @@ private fun NotificationGroup(
     title: String,
     rows: List<NotificationRow>,
     onOpenAck: () -> Unit,
+    onAcceptSwap: (String) -> Unit = {},
+    onRejectSwap: (String) -> Unit = {},
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         SectionHeader(title)
-        rows.forEach { NotificationCard(it, onOpenAck) }
+        rows.forEach { NotificationCard(it, onOpenAck, onAcceptSwap, onRejectSwap) }
     }
 }
 
@@ -1012,6 +1031,8 @@ private fun NotificationGroup(
 private fun NotificationCard(
     row: NotificationRow,
     onOpenAck: () -> Unit,
+    onAcceptSwap: (String) -> Unit = {},
+    onRejectSwap: (String) -> Unit = {},
 ) {
     val c = ShiftTheme.colors
     val (icon, accent) =
@@ -1028,6 +1049,7 @@ private fun NotificationCard(
     var box = Modifier.fillMaxWidth().clip(shape).background(if (row.urgent) c.floatSoft else c.surface)
     box = if (row.urgent) box else box.border(1.dp, c.divider, shape)
     if (row.opensAck) box = box.clickable(onClick = onOpenAck).testTag("pending_float_notification")
+    if (row.swapId != null) box = box.testTag("swap_request_notification")
 
     Box(box) {
         if (row.urgent) {
@@ -1062,6 +1084,27 @@ private fun NotificationCard(
                 }
                 if (row.urgent) ActionNeededTag()
                 Text(row.body, color = c.sec, fontSize = 13.sp, lineHeight = 18.sp)
+                row.swapId?.let { swapId ->
+                    // T3a — the counterparty action on an incoming swap. Accept only for
+                    // temporary swaps (a permanent acceptance needs the desk/web — §8.4).
+                    Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (row.swapAcceptable) {
+                            ShiftButton(
+                                "Accept",
+                                onClick = { onAcceptSwap(swapId) },
+                                modifier = Modifier.testTag("swap_accept_button"),
+                                size = ButtonSize.Sm,
+                            )
+                        }
+                        ShiftButton(
+                            "Decline",
+                            onClick = { onRejectSwap(swapId) },
+                            modifier = Modifier.testTag("swap_reject_button"),
+                            variant = ButtonVariant.Outlined,
+                            size = ButtonSize.Sm,
+                        )
+                    }
+                }
             }
             Text(row.timeLabel, style = ShiftTheme.type.monoId.copy(fontSize = 11.5.sp), color = c.ter)
         }

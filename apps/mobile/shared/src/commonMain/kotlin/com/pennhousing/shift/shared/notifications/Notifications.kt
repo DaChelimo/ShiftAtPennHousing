@@ -3,6 +3,7 @@ package com.pennhousing.shift.shared.notifications
 import com.pennhousing.shift.shared.shifts.DOW_SHORT
 import com.pennhousing.shift.shared.shifts.NEW_YORK
 import com.pennhousing.shift.shared.shifts.formatBlockTime
+import com.pennhousing.shift.shared.shifts.formatDayLabel
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
@@ -130,6 +131,15 @@ data class NotificationItem(
     val urgent: Boolean = false,
     /** Non-null → the actionable pending-float entry; tapping it opens the ack hero (§7). */
     val floatId: String? = null,
+    /** Non-null → an INCOMING pending swap (§8.2, T3a) — the row offers Accept/Decline. */
+    val swapId: String? = null,
+    /**
+     * Accept is offered on this entry. Temporary (shift/float) swaps accept with a
+     * plain `{swap_id}`; a PERMANENT swap's acceptance must enumerate the affected
+     * future assignments (§8.4 `apply_permanent_swap`), which this minimal slice does
+     * not compute — those entries offer Decline only.
+     */
+    val swapAcceptable: Boolean = false,
 )
 
 /** A fully-formatted Updates row — the UI renders this directly. */
@@ -143,6 +153,10 @@ data class NotificationRow(
     val urgent: Boolean,
     /** This row is the pending-float entry (carries the `pending_float_notification` selector). */
     val opensAck: Boolean,
+    /** Non-null → the row renders the swap Accept/Decline actions (T3a). */
+    val swapId: String? = null,
+    /** Accept offered (temporary swaps only — see [NotificationItem.swapAcceptable]). */
+    val swapAcceptable: Boolean = false,
 )
 
 /** "18:36" when the notification is from today (NY), else the short day-of-week ("Mon"). */
@@ -170,7 +184,76 @@ fun NotificationItem.toRow(
         unread = unread,
         urgent = urgent,
         opensAck = floatId != null,
+        swapId = swapId,
+        swapAcceptable = swapAcceptable,
     )
+
+/**
+ * One INCOMING pending swap aimed at this worker (§8.2) — the worker's own
+ * `swap_requests` row (counterparty + status 'pending', own-row RLS), mapped for
+ * the Updates feed. The initiator's identity is intentionally absent: `users` rows
+ * are not cross-worker-readable (the §11.4 T3b privacy decision is still open).
+ */
+data class IncomingSwap(
+    val swapId: String,
+    /** `shift_swap` | `float_swap` | `permanent_swap` (the `swap_type_enum` value). */
+    val swapType: String,
+    val createdAt: Instant,
+    val expiresAt: Instant,
+)
+
+/** `swap_type_enum` values whose acceptance is a plain `{swap_id}` POST. */
+private val TEMPORARY_SWAP_TYPES = setOf("shift_swap", "float_swap")
+
+private fun swapTypeLabel(swapType: String): String =
+    when (swapType.lowercase()) {
+        "shift_swap" -> "Shift swap"
+        "float_swap" -> "Float swap"
+        "permanent_swap" -> "Permanent swap"
+        else -> "Swap"
+    }
+
+/**
+ * Surface the worker's INCOMING pending swaps in the Updates feed (T3a minimal
+ * slice — the counterparty action). `create-swap` does not insert a notification
+ * row for the counterparty, so these entries are synthesized from the worker's own
+ * `swap_requests` rows — the swaps analogue of [withPendingFloatEntry]. Each entry
+ * is urgent ("Action needed"), carries [NotificationItem.swapId] so the row renders
+ * Accept/Decline, and is acceptable only for temporary swaps ([IncomingSwap] /
+ * [NotificationItem.swapAcceptable]). Idempotent — a swap already represented in
+ * [items] (by `swapId`) is not duplicated.
+ */
+fun withIncomingSwapEntries(
+    items: List<NotificationItem>,
+    swaps: List<IncomingSwap>,
+    zone: TimeZone = NEW_YORK,
+): List<NotificationItem> {
+    val represented = items.mapNotNull { it.swapId }.toSet()
+    val entries =
+        swaps
+            .filter { it.swapId !in represented }
+            .map { swap ->
+                val acceptable = swap.swapType.lowercase() in TEMPORARY_SWAP_TYPES
+                val respondBy = "${formatDayLabel(swap.expiresAt, zone)}, ${formatBlockTime(swap.expiresAt, zone)}"
+                NotificationItem(
+                    id = "incoming-swap-${swap.swapId}",
+                    category = NotificationCategory.SWAP,
+                    title = "Swap request — ${swapTypeLabel(swap.swapType)}",
+                    body =
+                        if (acceptable) {
+                            "A housemate proposed a swap with you. Respond by $respondBy."
+                        } else {
+                            "A housemate proposed a permanent swap. Accepting happens on the desk/web; you can decline here. Expires $respondBy."
+                        },
+                    createdAt = swap.createdAt,
+                    unread = true,
+                    urgent = true,
+                    swapId = swap.swapId,
+                    swapAcceptable = acceptable,
+                )
+            }
+    return items + entries
+}
 
 /** The grouped Updates feed — Today and Earlier, each newest-first. */
 data class UpdatesFeed(

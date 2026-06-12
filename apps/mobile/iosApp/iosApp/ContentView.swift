@@ -90,16 +90,18 @@ final class UpdatesObservable: ObservableObject {
         self.feed = vm.uiState.value.feed
     }
 
-    /// Live host: load the real notifications + the worker's pending float, rebuild the
-    /// VM (merging the pending-float entry), republish the feed. Falls back to the demo
-    /// feed (no swap) when the notifications fetch fails. `DemoFactory` supplies `now`
-    /// Kotlin-side so we avoid bridging a `kotlin.time.Instant`.
+    /// Live host: load the real notifications + the worker's pending float + incoming
+    /// pending swaps (§8.2, T3a), rebuild the VM (merging the pending-float + swap
+    /// entries), republish the feed. Falls back to the demo feed (no swap) when the
+    /// notifications fetch fails. `DemoFactory` supplies `now` Kotlin-side so we avoid
+    /// bridging a `kotlin.time.Instant`.
     func activateLive(repo: WorkerShiftsRepository, userId: String) async {
         guard !live else { return }
         live = true
         guard let items = try? await repo.fetchNotifications(userId: userId) else { return }
         let float = try? await repo.fetchPendingFloat(userId: userId)
-        vm = DemoFactory.shared.updatesViewModel(notifications: items, float: float ?? nil)
+        let swaps = (try? await repo.fetchIncomingSwaps(userId: userId)) ?? []
+        vm = DemoFactory.shared.updatesViewModel(notifications: items, float: float ?? nil, swaps: swaps)
         feed = vm.uiState.value.feed
     }
 
@@ -111,6 +113,13 @@ final class UpdatesObservable: ObservableObject {
         let ids = vm.markAllRead()
         feed = vm.uiState.value.feed
         return ids
+    }
+
+    /// Optimistic resolution of an incoming swap entry (T3a): the actionable row leaves
+    /// the feed immediately; the live host POSTs `accept-swap` / `reject-swap` best-effort.
+    func resolveSwap(_ swapId: String) {
+        vm.resolveSwap(swapId: swapId)
+        feed = vm.uiState.value.feed
     }
 }
 
@@ -606,6 +615,19 @@ struct ShiftsRootView: View {
                 }
                 if row.urgent { actionNeededTag(c) }
                 Text(row.body).font(ShiftFont.sans(13)).foregroundColor(c.sec).fixedSize(horizontal: false, vertical: true)
+                if let swapId = row.swapId {
+                    // T3a — the counterparty action on an incoming swap. Accept only for
+                    // temporary swaps (a permanent acceptance needs the desk/web — §8.4).
+                    HStack(spacing: 8) {
+                        if row.swapAcceptable {
+                            ShiftButton(title: "Accept", action: { actOnSwap(swapId, accept: true) }, size: .sm)
+                                .accessibilityIdentifier("swap_accept_button")
+                        }
+                        ShiftButton(title: "Decline", action: { actOnSwap(swapId, accept: false) }, variant: .outlined, size: .sm)
+                            .accessibilityIdentifier("swap_reject_button")
+                    }
+                    .padding(.top, 6)
+                }
             }
             Text(row.timeLabel).font(ShiftType.monoId).monospacedDigit().foregroundColor(c.ter)
         }
@@ -615,6 +637,22 @@ struct ShiftsRootView: View {
         .overlay(alignment: .leading) { if row.urgent { Rectangle().fill(c.floatOut.accent).frame(width: 4) } }
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(row.urgent ? Color.clear : c.divider, lineWidth: 1))
+        .accessibilityIdentifier(row.swapId != nil ? "swap_request_notification" : "")
+    }
+
+    /// Resolve an incoming swap entry optimistically, then (live) POST the real
+    /// `accept-swap` / `reject-swap` best-effort — the server stays authoritative.
+    private func actOnSwap(_ swapId: String, accept: Bool) {
+        updatesModel.resolveSwap(swapId)
+        guard liveUserId != nil else { return }
+        let repo = WorkerBackend.shared.shiftsRepository
+        Task {
+            if accept {
+                _ = try? await repo.acceptSwap(swapId: swapId)
+            } else {
+                _ = try? await repo.rejectSwap(swapId: swapId)
+            }
+        }
     }
 
     private func notificationVisual(_ category: NotificationCategory, _ c: ShiftColors) -> (String, Color) {

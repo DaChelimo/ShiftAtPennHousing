@@ -3,7 +3,9 @@ package com.pennhousing.shift.shared.samples
 import com.pennhousing.shift.shared.breakclaim.BreakClaimSnapshot
 import com.pennhousing.shift.shared.data.ProfileSnapshot
 import com.pennhousing.shift.shared.model.FloatAck
+import com.pennhousing.shift.shared.notifications.IncomingSwap
 import com.pennhousing.shift.shared.notifications.NotificationItem
+import com.pennhousing.shift.shared.notifications.withIncomingSwapEntries
 import com.pennhousing.shift.shared.notifications.withPendingFloatEntry
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
 import com.pennhousing.shift.shared.viewmodel.BreakClaimViewModel
@@ -70,13 +72,30 @@ object DemoFactory {
     fun updatesViewModel(
         notifications: List<NotificationItem>,
         float: FloatAck?,
+    ): UpdatesViewModel = updatesViewModel(notifications, float, emptyList())
+
+    /**
+     * Live Updates VM that additionally surfaces the worker's INCOMING pending swaps
+     * (§8.2, T3a) — `withIncomingSwapEntries` synthesizes the actionable Accept/Decline
+     * entries from the `swap_requests` rows `fetchIncomingSwaps` returns (`create-swap`
+     * writes no counterparty notification row). iOS calls this from
+     * `UpdatesObservable.activateLive`; Android applies the same merge in `MainActivity`.
+     */
+    fun updatesViewModel(
+        notifications: List<NotificationItem>,
+        float: FloatAck?,
+        swaps: List<IncomingSwap>,
     ): UpdatesViewModel =
         UpdatesViewModel(
-            withPendingFloatEntry(
-                items = notifications,
-                pendingFloatId = float?.floatId,
-                pendingFloatStart = float?.floatStart,
-                destinationHouseName = float?.destinationHouse?.name,
+            withIncomingSwapEntries(
+                items =
+                    withPendingFloatEntry(
+                        items = notifications,
+                        pendingFloatId = float?.floatId,
+                        pendingFloatStart = float?.floatStart,
+                        destinationHouseName = float?.destinationHouse?.name,
+                    ),
+                swaps = swaps,
             ),
             now(),
         )

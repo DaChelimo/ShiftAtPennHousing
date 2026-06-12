@@ -1,5 +1,6 @@
 package com.pennhousing.shift.shared.calendar
 
+import com.pennhousing.shift.shared.model.AssignmentKind
 import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.shifts.DOW_SHORT
 import com.pennhousing.shift.shared.shifts.MONTH_SHORT
@@ -245,6 +246,86 @@ fun buildCalendarAgenda(
     }
     return CalendarAgenda(header = header, items = items)
 }
+
+// ===================================================================
+// Week picker + derived recurring template (D5).
+// ===================================================================
+
+/** One pickable week in the week-picker sheet. */
+data class WeekOption(
+    val offset: Int,
+    val label: String, // "This week" / "Next week" / "Last week" / "In N weeks"
+    val rangeLabel: String, // "Jun 8 – Jun 14"
+)
+
+/** The quick weeks the picker offers (design: last / this / next / +2 / +3). */
+fun weekPickerOptions(
+    now: Instant,
+    zone: TimeZone = NEW_YORK,
+    offsets: List<Int> = listOf(-1, 0, 1, 2, 3),
+): List<WeekOption> =
+    offsets.map { offset ->
+        WeekOption(
+            offset = offset,
+            label =
+                when {
+                    offset == 0 -> "This week"
+                    offset == 1 -> "Next week"
+                    offset == -1 -> "Last week"
+                    offset > 1 -> "In $offset weeks"
+                    else -> "${-offset} weeks ago"
+                },
+            rangeLabel = buildCalendarWeek(emptyList(), now, zone, anchor = shiftWeekAnchor(now, offset, zone)).rangeLabel,
+        )
+    }
+
+/**
+ * One recurring slot of the DERIVED typical week (D5). No recurring-template
+ * entity exists in the read model — `worker_my_shifts` materializes dated
+ * blocks — so this is the union of the worker's SCHEDULED-kind (SM-built,
+ * non-break) spans grouped by NY weekday + time + house, with [weeksSeen]
+ * saying how many distinct weeks back the derivation. The UI labels it
+ * honestly as derived.
+ */
+data class TemplateSlot(
+    val dayIndex: Int, // 0=Mon..6=Sun
+    val dayLabel: String, // "Mon"
+    val timeLabel: String, // "14:00 – 18:00"
+    val durationLabel: String,
+    val houseName: String,
+    val weeksSeen: Int,
+)
+
+fun buildTypicalWeek(
+    shifts: List<MyShift>,
+    zone: TimeZone = NEW_YORK,
+): List<TemplateSlot> =
+    coalesceMyShifts(shifts)
+        .asSequence()
+        .filter { it.kind == AssignmentKind.SCHEDULED && !it.breakShift && !it.droppedStillOpen }
+        .groupBy { shift ->
+            val local = shift.start.toLocalDateTime(zone)
+            Triple(local.dayOfWeek.ordinal, formatBlockTime(shift.start, zone) + formatBlockTime(shift.end, zone), shift.house.id)
+        }
+        .values
+        .map { group ->
+            val first = group.minByOrNull { it.start }!!
+            val weeks = group.map { mondayOf(it.start, zone) }.toSet().size
+            TemplateSlot(
+                dayIndex = first.start.toLocalDateTime(zone).date.dayOfWeek.ordinal,
+                dayLabel = DOW_SHORT[first.start.toLocalDateTime(zone).date.dayOfWeek.ordinal],
+                timeLabel = formatTimeRangeLabel(first, zone),
+                durationLabel = formatHoursMinutes((first.end - first.start).inWholeMinutes),
+                houseName = first.house.name,
+                weeksSeen = weeks,
+            )
+        }
+        .sortedWith(compareBy({ it.dayIndex }, { it.timeLabel }))
+
+private fun formatTimeRangeLabel(
+    shift: MyShift,
+    zone: TimeZone,
+): String = "${formatBlockTime(shift.start, zone)} – ${formatBlockTime(shift.end, zone)}"
 
 /** "6h" / "6h 30m" / "30m" — a whole-day total from minutes. */
 internal fun formatHoursMinutes(minutes: Long): String {

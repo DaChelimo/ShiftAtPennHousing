@@ -211,6 +211,8 @@ struct ShiftsRootView: View {
     // D2/D3 — swap proposal target (opened from the drop sheet's pivot).
     @State private var swapTarget: MyShift?
     @State private var swapProposed = false
+    // D5 — week-picker sheet.
+    @State private var showWeekPicker = false
     // T2-13 — push/deep-link routed full-screen ack (AppDelegate / onOpenURL set it).
     @ObservedObject private var deepLink = DeepLinkRouter.shared
 
@@ -910,7 +912,42 @@ struct ShiftsRootView: View {
     private var calendarTab: some View {
         let c = ShiftColors.resolve(scheme)
         let st = calendarModel.state
-        return VStack(alignment: .leading, spacing: 0) {
+        return Group {
+            if st.mode == .template {
+                // D5 — the derived recurring typical week (honestly labelled).
+                VStack(alignment: .leading, spacing: 10) {
+                    weekHeaderCard("Derived from your scheduled weeks", titleOverride: "Recurring template", c)
+                    ShiftBanner(
+                        title: "Viewing the recurring template",
+                        bodyText: "Derived from your scheduled weeks — permanent drops and swaps change every future week.",
+                        tone: .info
+                    )
+                    .padding(.horizontal, 16)
+                    .accessibilityIdentifier("template_banner")
+                    if st.template.isEmpty {
+                        EmptyState(title: "No recurring slots", systemIcon: ShiftIcons.calendar, bodyText: "Nothing in your SM-built schedule yet.")
+                    } else {
+                        VStack(spacing: 8) {
+                            ForEach(Array(st.template.enumerated()), id: \.offset) { _, slot in
+                                templateSlotRow(slot, c)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("calendar_template")
+            } else {
+                calendarWeekBody(st, c)
+            }
+        }
+        .sheet(isPresented: $showWeekPicker) {
+            weekPickerSheet(c)
+        }
+    }
+
+    private func calendarWeekBody(_ st: CalendarUiState, _ c: ShiftColors) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
             weekHeaderCard(st.week.rangeLabel, Int(st.weekOffset), c)
             weekStrip(st.week, Int(st.selectedDayIndex), c)
             dayHeaderRow(st.agenda.header, c)
@@ -957,6 +994,91 @@ struct ShiftsRootView: View {
         .accessibilityIdentifier("calendar_screen")
     }
 
+    /// D5 — title-overridden header (template mode); tap opens the picker.
+    private func weekHeaderCard(_ range: String, titleOverride: String, _ c: ShiftColors) -> some View {
+        Button(action: { showWeekPicker = true }) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous).fill(c.blueContainer).frame(width: 38, height: 38)
+                    Image(systemName: ShiftIcons.calendar).font(.system(size: 19)).foregroundColor(c.blue)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(titleOverride).font(ShiftFont.sans(15, .semibold)).foregroundColor(c.ink)
+                    Text(range).font(ShiftFont.sans(13)).foregroundColor(c.sec)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .background(c.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(c.divider, lineWidth: 1))
+            .padding(.horizontal, 16).padding(.vertical, 8)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("calendar_week_picker_open")
+    }
+
+    /// D5 — one quick-week row + the template entry.
+    private func weekPickerSheet(_ c: ShiftColors) -> some View {
+        ShiftSheet(title: "Pick a week", onClose: { showWeekPicker = false }) {
+            VStack(spacing: 8) {
+                ForEach(calendarModel.vm.weekOptions(), id: \.offset) { option in
+                    Button(action: {
+                        calendarModel.vm.selectWeekOffset(offset: option.offset)
+                        showWeekPicker = false
+                    }) {
+                        HStack {
+                            Text(option.label).font(ShiftFont.sans(14, .semibold)).foregroundColor(c.ink)
+                            Spacer(minLength: 0)
+                            Text(option.rangeLabel).font(ShiftFont.mono(12.5)).monospacedDigit().foregroundColor(c.sec)
+                        }
+                        .padding(.horizontal, 13).padding(.vertical, 11)
+                        .background(Int(calendarModel.state.weekOffset) == Int(option.offset) ? c.blue.opacity(0.08) : c.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(c.divider, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("week_picker_option")
+                }
+                Button(action: {
+                    calendarModel.vm.showTemplate()
+                    showWeekPicker = false
+                }) {
+                    HStack {
+                        Text("Recurring template").font(ShiftFont.sans(14, .semibold)).foregroundColor(c.permanent.deep)
+                        Spacer(minLength: 0)
+                        Text("derived").font(ShiftFont.sans(12.5)).foregroundColor(c.sec)
+                    }
+                    .padding(.horizontal, 13).padding(.vertical, 11)
+                    .background(c.permanent.tint)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("week_picker_template")
+            }
+            .accessibilityIdentifier("week_picker_sheet")
+        }
+    }
+
+    /// One derived recurring slot row.
+    private func templateSlotRow(_ slot: TemplateSlot, _ c: ShiftColors) -> some View {
+        HStack(spacing: 10) {
+            Text(slot.dayLabel).font(ShiftFont.sans(13.5, .bold)).foregroundColor(c.ink)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(slot.timeLabel).font(ShiftType.monoTime).monospacedDigit().foregroundColor(c.ink)
+                Text("\(slot.houseName) · \(slot.durationLabel)").font(ShiftFont.sans(12.5)).foregroundColor(c.sec)
+            }
+            Spacer(minLength: 0)
+            Text(slot.weeksSeen > 1 ? "seen \(slot.weeksSeen) weeks" : "seen once")
+                .font(ShiftFont.sans(11.5)).foregroundColor(c.ter)
+        }
+        .padding(.horizontal, 13).padding(.vertical, 11)
+        .background(c.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(c.divider, lineWidth: 1))
+        .accessibilityIdentifier("template_slot_row")
+    }
+
     /// The week-picker header (T3b-4): the shown week's range + prev/next chevrons.
     private func weekHeaderCard(_ range: String, _ weekOffset: Int, _ c: ShiftColors) -> some View {
         let title: String
@@ -972,10 +1094,14 @@ struct ShiftsRootView: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous).fill(c.blueContainer).frame(width: 38, height: 38)
                 Image(systemName: ShiftIcons.calendar).font(.system(size: 19)).foregroundColor(c.blue)
             }
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(ShiftFont.sans(15, .semibold)).foregroundColor(c.ink)
-                Text(range).font(ShiftFont.sans(13)).foregroundColor(c.sec)
+            Button(action: { showWeekPicker = true }) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(ShiftFont.sans(15, .semibold)).foregroundColor(c.ink)
+                    Text(range).font(ShiftFont.sans(13)).foregroundColor(c.sec)
+                }
             }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("calendar_week_picker_open")
             Spacer(minLength: 0)
             Button(action: { calendarModel.vm.previousWeek() }) {
                 Image(systemName: "chevron.left").font(.system(size: 15, weight: .semibold)).foregroundColor(c.sec)

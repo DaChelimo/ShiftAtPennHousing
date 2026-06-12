@@ -50,7 +50,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pennhousing.shift.shared.calendar.CalendarAgenda
 import com.pennhousing.shift.shared.calendar.CalendarDayHeader
 import com.pennhousing.shift.shared.calendar.CalendarWeek
+import com.pennhousing.shift.shared.calendar.TemplateSlot
 import com.pennhousing.shift.shared.calendar.WeekDayCell
+import com.pennhousing.shift.shared.calendar.WeekOption
+import com.pennhousing.shift.shared.viewmodel.CalendarMode
 import com.pennhousing.shift.shared.data.PermanentPickupScope
 import com.pennhousing.shift.shared.data.ToastNotification
 import com.pennhousing.shift.shared.house.HouseRosterRow
@@ -1261,12 +1264,68 @@ private fun ActionNeededTag() {
 private fun CalendarTabContent(vm: CalendarViewModel) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val c = ShiftTheme.colors
+    var showWeekPicker by remember { mutableStateOf(false) }
+
+    if (showWeekPicker) {
+        WeekPickerSheet(
+            options = vm.weekOptions(),
+            currentOffset = state.weekOffset,
+            onPick = { offset ->
+                vm.selectWeekOffset(offset)
+                showWeekPicker = false
+            },
+            onTemplate = {
+                vm.showTemplate()
+                showWeekPicker = false
+            },
+            onDismiss = { showWeekPicker = false },
+        )
+    }
+
+    if (state.mode == CalendarMode.TEMPLATE) {
+        // D5 — the derived recurring typical week (honestly labelled; no template
+        // entity exists, this is the union of SCHEDULED-kind slots in the snapshot).
+        Column(Modifier.fillMaxSize().background(c.bg).testTag("calendar_template")) {
+            WeekHeaderCard(
+                rangeLabel = "Derived from your scheduled weeks",
+                title = "Recurring template",
+                onOpenPicker = { showWeekPicker = true },
+            )
+            ShiftBanner(
+                title = "Viewing the recurring template",
+                body = "Derived from your scheduled weeks — permanent drops and swaps change every future week.",
+                tone = BannerTone.Info,
+                modifier = Modifier.padding(horizontal = 16.dp).testTag("template_banner"),
+            )
+            if (state.template.isEmpty()) {
+                EmptyState(
+                    title = "No recurring slots",
+                    icon = ShiftIcons.Calendar,
+                    body = "Nothing in your SM-built schedule yet.",
+                )
+            } else {
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 24.dp),
+                ) {
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            state.template.forEach { slot -> TemplateSlotRow(slot) }
+                        }
+                    }
+                }
+            }
+        }
+        return
+    }
+
     Column(Modifier.fillMaxSize().background(c.bg).testTag("calendar_screen")) {
         WeekHeaderCard(
             rangeLabel = state.week.rangeLabel,
             weekOffset = state.weekOffset,
             onPreviousWeek = vm::previousWeek,
             onNextWeek = vm::nextWeek,
+            onOpenPicker = { showWeekPicker = true },
         )
         WeekStrip(state.week, state.selectedDayIndex, vm::selectDay)
         DayHeaderRow(state.agenda.header)
@@ -1321,16 +1380,20 @@ private fun WeekHeaderCard(
     weekOffset: Int = 0,
     onPreviousWeek: (() -> Unit)? = null,
     onNextWeek: (() -> Unit)? = null,
+    // D5 — tapping the card opens the week-picker sheet.
+    onOpenPicker: (() -> Unit)? = null,
+    title: String? = null,
 ) {
     val c = ShiftTheme.colors
-    val title =
-        when {
-            weekOffset == 0 -> "This week"
-            weekOffset == 1 -> "Next week"
-            weekOffset == -1 -> "Last week"
-            weekOffset > 1 -> "In $weekOffset weeks"
-            else -> "${-weekOffset} weeks ago"
-        }
+    val resolvedTitle =
+        title
+            ?: when {
+                weekOffset == 0 -> "This week"
+                weekOffset == 1 -> "Next week"
+                weekOffset == -1 -> "Last week"
+                weekOffset > 1 -> "In $weekOffset weeks"
+                else -> "${-weekOffset} weeks ago"
+            }
     Row(
         Modifier
             .fillMaxWidth()
@@ -1338,6 +1401,9 @@ private fun WeekHeaderCard(
             .clip(RoundedCornerShape(14.dp))
             .background(c.surface)
             .border(1.dp, c.divider, RoundedCornerShape(14.dp))
+            .then(
+                if (onOpenPicker != null) Modifier.clickable(onClick = onOpenPicker).testTag("calendar_week_picker_open") else Modifier,
+            )
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -1349,7 +1415,7 @@ private fun WeekHeaderCard(
             Icon(ShiftIcons.Calendar, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(19.dp))
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text(title, color = c.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text(resolvedTitle, color = c.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
             Text(rangeLabel, color = c.sec, fontSize = 13.sp)
         }
         if (onPreviousWeek != null && onNextWeek != null) {
@@ -1378,6 +1444,88 @@ private fun WeekHeaderCard(
                         .padding(4.dp),
             )
         }
+    }
+}
+
+/**
+ * D5 — the week-picker sheet: quick weeks (last / this / next / +2 / +3) plus the
+ * derived recurring-template entry. The pure `weekPickerOptions` labels each row.
+ */
+@Composable
+private fun WeekPickerSheet(
+    options: List<WeekOption>,
+    currentOffset: Int,
+    onPick: (Int) -> Unit,
+    onTemplate: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val c = ShiftTheme.colors
+    ShiftBottomSheet(onDismiss = onDismiss, title = "Pick a week") {
+        Column(
+            Modifier.fillMaxWidth().testTag("week_picker_sheet"),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            options.forEach { option ->
+                val selected = option.offset == currentOffset
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else c.surface)
+                        .border(1.dp, if (selected) MaterialTheme.colorScheme.primary else c.divider, RoundedCornerShape(12.dp))
+                        .clickable { onPick(option.offset) }
+                        .padding(horizontal = 13.dp, vertical = 11.dp)
+                        .testTag("week_picker_option"),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(option.label, color = c.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text(option.rangeLabel, style = ShiftTheme.type.monoTime.copy(fontSize = 12.5.sp), color = c.sec)
+                }
+            }
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(c.permanent.tint)
+                    .clickable(onClick = onTemplate)
+                    .padding(horizontal = 13.dp, vertical = 11.dp)
+                    .testTag("week_picker_template"),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Recurring template", color = c.permanent.deep, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text("derived", color = c.sec, fontSize = 12.5.sp)
+            }
+        }
+    }
+}
+
+/** One derived recurring slot ("Mon · 14:00 – 18:00 · Harnwell · seen 4 weeks"). */
+@Composable
+private fun TemplateSlotRow(slot: TemplateSlot) {
+    val c = ShiftTheme.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(c.surface)
+            .border(1.dp, c.divider, RoundedCornerShape(12.dp))
+            .padding(horizontal = 13.dp, vertical = 11.dp)
+            .testTag("template_slot_row"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(slot.dayLabel, color = c.ink, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text(slot.timeLabel, style = ShiftTheme.type.monoTime, color = c.ink)
+            Text("${slot.houseName} · ${slot.durationLabel}", color = c.sec, fontSize = 12.5.sp)
+        }
+        Text(
+            if (slot.weeksSeen > 1) "seen ${slot.weeksSeen} weeks" else "seen once",
+            color = c.ter,
+            fontSize = 11.5.sp,
+        )
     }
 }
 

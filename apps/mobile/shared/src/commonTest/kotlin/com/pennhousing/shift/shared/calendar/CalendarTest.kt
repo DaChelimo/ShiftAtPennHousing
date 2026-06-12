@@ -215,6 +215,62 @@ class CalendarTest {
         assertFalse(vm.uiState.value.week.days[5].closed) // no closure data off-week
     }
 
+    // ----- week picker + derived template (D5) -----
+
+    @Test fun week_picker_options_label_and_range_each_offset() {
+        val options = weekPickerOptions(now)
+        assertEquals(listOf(-1, 0, 1, 2, 3), options.map { it.offset })
+        assertEquals(listOf("Last week", "This week", "Next week", "In 2 weeks", "In 3 weeks"), options.map { it.label })
+        assertEquals("Jan 12 – Jan 18", options.first { it.offset == 0 }.rangeLabel)
+        assertEquals("Jan 5 – Jan 11", options.first { it.offset == -1 }.rangeLabel)
+        assertEquals("Jan 19 – Jan 25", options.first { it.offset == 1 }.rangeLabel)
+    }
+
+    @Test fun typical_week_derives_recurring_scheduled_slots_across_weeks() {
+        // The same Thu 09:00–13:00 Harnwell slot in two consecutive weeks → ONE
+        // template slot, weeksSeen = 2. A pickup never enters the template.
+        val nextWeekSame = shift("2026-01-22T09:00:00-05:00", "2026-01-22T13:00:00-05:00")
+        val slots = buildTypicalWeek(listOf(morning, nextWeekSame, saturday))
+        assertEquals(1, slots.size)
+        val slot = slots.single()
+        assertEquals("Thu", slot.dayLabel)
+        assertEquals("09:00 – 13:00", slot.timeLabel)
+        assertEquals("Harnwell", slot.houseName)
+        assertEquals(2, slot.weeksSeen)
+    }
+
+    @Test fun typical_week_excludes_breaks_drops_and_coalesces_per_block_rows() {
+        val blocks =
+            (0 until 4).map { i ->
+                MyShift(
+                    id = "b-$i",
+                    house = harnwell,
+                    start = at("2026-01-16T10:00:00-05:00") + (i * 30).minutes,
+                    end = at("2026-01-16T10:00:00-05:00") + ((i + 1) * 30).minutes,
+                    kind = AssignmentKind.SCHEDULED,
+                )
+            }
+        val breakShift = shift("2026-01-16T18:00:00-05:00", "2026-01-16T20:00:00-05:00").copy(id = "br", breakShift = true)
+        val dropped = shift("2026-01-16T20:00:00-05:00", "2026-01-16T22:00:00-05:00").copy(id = "dr", droppedStillOpen = true)
+        val slots = buildTypicalWeek(blocks + breakShift + dropped)
+        assertEquals(1, slots.size) // 4 blocks coalesce to one Fri 10:00–12:00 slot
+        assertEquals("10:00 – 12:00", slots.single().timeLabel)
+        assertEquals("Fri", slots.single().dayLabel)
+    }
+
+    @Test fun view_model_template_mode_toggles_and_week_pick_exits_it() {
+        val vm = com.pennhousing.shift.shared.viewmodel.CalendarViewModel(all, now)
+        vm.showTemplate()
+        val tpl = vm.uiState.value
+        assertEquals(com.pennhousing.shift.shared.viewmodel.CalendarMode.TEMPLATE, tpl.mode)
+        assertTrue(tpl.template.isNotEmpty()) // morning + evening are SCHEDULED
+        vm.selectWeekOffset(1)
+        val wk = vm.uiState.value
+        assertEquals(com.pennhousing.shift.shared.viewmodel.CalendarMode.WEEK, wk.mode)
+        assertEquals(1, wk.weekOffset)
+        assertTrue(wk.template.isEmpty())
+    }
+
     // ----- duration formatter -----
 
     @Test fun formats_hours_and_minutes() {

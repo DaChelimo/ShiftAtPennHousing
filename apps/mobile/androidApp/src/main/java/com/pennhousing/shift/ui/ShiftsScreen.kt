@@ -103,15 +103,18 @@ import com.pennhousing.shift.ui.kit.ShiftToast
 import com.pennhousing.shift.ui.kit.ToastTone
 import com.pennhousing.shift.ui.theme.ShiftTheme
 
+// The constants MUST match each tab's render position in the PrimaryScrollableTabRow —
+// selectedTabIndex positions the indicator by row position (a mismatched constant
+// underlines the wrong tab; caught on the T3b emulator spot-check).
 private const val TAB_MY = 0
 private const val TAB_HOME = 1
 private const val TAB_OTHER = 2
 private const val TAB_CALENDAR = 3
-private const val TAB_UPDATES = 4
-private const val TAB_PREFS = 5
-private const val TAB_BREAK = 6
-private const val TAB_SETTINGS = 7
-private const val TAB_HOUSE = 8 // §11.4 house schedule (T3b) — rendered after Calendar
+private const val TAB_HOUSE = 4 // §11.4 house schedule (T3b)
+private const val TAB_UPDATES = 5
+private const val TAB_PREFS = 6
+private const val TAB_BREAK = 7
+private const val TAB_SETTINGS = 8
 
 /**
  * Phase 13a — the worker's Shifts screen (BEHAVIORAL_SPECIFICATION.md §5.6).

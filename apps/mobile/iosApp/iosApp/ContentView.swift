@@ -207,6 +207,8 @@ struct ShiftsRootView: View {
     @State private var claimTarget: OpenShift?
     @State private var showAck = false
     @State private var claimSucceeded = false
+    // T2-13 — push/deep-link routed full-screen ack (AppDelegate / onOpenURL set it).
+    @ObservedObject private var deepLink = DeepLinkRouter.shared
 
     var body: some View {
         VStack(spacing: 0) {
@@ -319,19 +321,16 @@ struct ShiftsRootView: View {
             )
         }
         .sheet(isPresented: $showAck) {
-            // Live host POSTs `acknowledge-float` / `decline-float` (best-effort) when the
-            // optimistic local transition succeeds; demo (liveUserId == nil) = local-only.
-            FloatAcknowledgmentView(
-                vm: ackModel.vm,
-                onAcknowledge: liveUserId == nil ? nil : { floatId in
-                    let repo = WorkerBackend.shared.shiftsRepository
-                    Task { _ = try? await repo.acknowledgeFloat(floatId: floatId) }
-                },
-                onDecline: liveUserId == nil ? nil : { floatId in
-                    let repo = WorkerBackend.shared.shiftsRepository
-                    Task { _ = try? await repo.declineFloat(floatId: floatId) }
-                }
+            ackSurface
+        }
+        .fullScreenCover(
+            // T2-13 — push-launched FULL-SCREEN FloatAckSurface (same hero as the sheet).
+            isPresented: Binding(
+                get: { deepLink.floatAckId != nil },
+                set: { if !$0 { deepLink.floatAckId = nil } }
             )
+        ) {
+            ackSurface
         }
         .task {
             // Backend-configured path: load the worker's real active period + wire the
@@ -351,6 +350,23 @@ struct ShiftsRootView: View {
                 await breakModel.activateLive(repo: WorkerBackend.shared.breakRepository, userId: uid)
             }
         }
+    }
+
+    /// The ack hero — presented as a sheet (Updates row) AND as the T2-13 push-launched
+    /// full-screen cover. Live host POSTs `acknowledge-float` / `decline-float`
+    /// (best-effort) when the optimistic local transition succeeds; demo = local-only.
+    private var ackSurface: some View {
+        FloatAcknowledgmentView(
+            vm: ackModel.vm,
+            onAcknowledge: liveUserId == nil ? nil : { floatId in
+                let repo = WorkerBackend.shared.shiftsRepository
+                Task { _ = try? await repo.acknowledgeFloat(floatId: floatId) }
+            },
+            onDecline: liveUserId == nil ? nil : { floatId in
+                let repo = WorkerBackend.shared.shiftsRepository
+                Task { _ = try? await repo.declineFloat(floatId: floatId) }
+            }
+        )
     }
 
     // MARK: tabs

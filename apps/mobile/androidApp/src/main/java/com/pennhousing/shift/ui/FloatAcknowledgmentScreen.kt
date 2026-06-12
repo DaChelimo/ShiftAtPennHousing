@@ -6,11 +6,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -65,6 +69,58 @@ fun FloatAcknowledgmentModal(
     onAcknowledgeFloat: (String) -> Unit = {},
     onDeclineFloat: (String) -> Unit = {},
 ) {
+    ShiftBottomSheet(onDismiss = onClose) {
+        FloatAckBody(
+            ackVm = ackVm,
+            onClose = onClose,
+            onAcknowledgeFloat = onAcknowledgeFloat,
+            onDeclineFloat = onDeclineFloat,
+            tag = "ack_modal",
+        )
+    }
+}
+
+/**
+ * T2-13 — the push-launched FULL-SCREEN FloatAckSurface (the design's standalone
+ * ack screen). Same shared hero/body as the sheet variant; presented edge-to-edge
+ * when the app is opened from the float push notification / a
+ * `pennshift://float-ack/{floatId}` deep link. Dismissal returns to the app.
+ */
+@Composable
+fun FloatAcknowledgmentFullScreen(
+    ackVm: AckDeclineViewModel,
+    onClose: () -> Unit,
+    onAcknowledgeFloat: (String) -> Unit = {},
+    onDeclineFloat: (String) -> Unit = {},
+) {
+    Surface(Modifier.fillMaxSize().testTag("ack_fullscreen"), color = ShiftTheme.colors.bg) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 28.dp),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            FloatAckBody(
+                ackVm = ackVm,
+                onClose = onClose,
+                onAcknowledgeFloat = onAcknowledgeFloat,
+                onDeclineFloat = onDeclineFloat,
+                tag = "ack_fullscreen_body",
+            )
+        }
+    }
+}
+
+/** The shared ack hero + actions — rendered by the sheet AND the full-screen surface. */
+@Composable
+private fun FloatAckBody(
+    ackVm: AckDeclineViewModel,
+    onClose: () -> Unit,
+    onAcknowledgeFloat: (String) -> Unit,
+    onDeclineFloat: (String) -> Unit,
+    tag: String,
+) {
     val state by ackVm.uiState.collectAsStateWithLifecycle()
     // The screen's load instant — drives the static "starts in" + countdown (the kit
     // never ticks a clock; the snapshot ViewModel is decided once, decision #17).
@@ -74,29 +130,27 @@ fun FloatAcknowledgmentModal(
             floatAckHero(state.phase, state.destinationHouse.name, state.floatStart, state.deadline, now)
         }
 
-    ShiftBottomSheet(onDismiss = onClose) {
-        Column(
-            Modifier.fillMaxWidth().testTag("ack_modal"),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            HeroHeader(state.phase, hero)
-            DetailCard(state, hero)
-            HoursReassuranceBanner()
-            StatusOrCountdown(state.phase, hero)
-            ActionButtons(
-                state = state,
-                // Fire the live RPC only when the optimistic local transition actually
-                // succeeds (the VM returns true iff it moved PENDING → terminal before
-                // the T-10m deadline) — a no-op tap past the deadline must not POST.
-                onAck = {
-                    if (ackVm.acknowledge(Clock.System.now())) onAcknowledgeFloat(state.floatId)
-                },
-                onDecline = {
-                    if (ackVm.decline(Clock.System.now())) onDeclineFloat(state.floatId)
-                },
-                onClose = onClose,
-            )
-        }
+    Column(
+        Modifier.fillMaxWidth().testTag(tag),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        HeroHeader(state.phase, hero)
+        DetailCard(state, hero)
+        HoursReassuranceBanner()
+        StatusOrCountdown(state.phase, hero)
+        ActionButtons(
+            state = state,
+            // Fire the live RPC only when the optimistic local transition actually
+            // succeeds (the VM returns true iff it moved PENDING → terminal before
+            // the T-10m deadline) — a no-op tap past the deadline must not POST.
+            onAck = {
+                if (ackVm.acknowledge(Clock.System.now())) onAcknowledgeFloat(state.floatId)
+            },
+            onDecline = {
+                if (ackVm.decline(Clock.System.now())) onDeclineFloat(state.floatId)
+            },
+            onClose = onClose,
+        )
     }
 }
 

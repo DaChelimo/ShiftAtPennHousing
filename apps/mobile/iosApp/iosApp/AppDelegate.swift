@@ -86,6 +86,27 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     ) {
         completionHandler([.banner, .sound])
     }
+
+    // T2-13 — a tapped push routes into the full-screen FloatAckSurface. The
+    // phase-12 `dispatch-push` data shape is `{ notification_id, type, payload }`;
+    // the shared, tested `pushDisplayFromData` extracts the float id (non-nil only
+    // for a `float_assigned` payload).
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let userInfo = response.notification.request.content.userInfo
+        let display = pushDisplayFromData(
+            type: userInfo["type"] as? String,
+            payloadJson: userInfo["payload"] as? String,
+            appName: "Shift@PennHousing"
+        )
+        if let floatId = display.floatId {
+            DispatchQueue.main.async { DeepLinkRouter.shared.floatAckId = floatId }
+        }
+        completionHandler()
+    }
 }
 
 #if canImport(FirebaseMessaging)

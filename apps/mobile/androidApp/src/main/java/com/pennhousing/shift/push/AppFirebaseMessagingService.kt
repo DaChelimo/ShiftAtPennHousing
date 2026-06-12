@@ -2,19 +2,33 @@ package com.pennhousing.shift.push
 
 import android.app.Notification
 import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import com.pennhousing.shift.MainActivity
 import com.pennhousing.shift.R
+import com.pennhousing.shift.shared.ack.floatAckDeepLink
+import com.pennhousing.shift.shared.ack.pushDisplayFromData
 import com.pennhousing.shift.shared.platform.registerPushToken
 
 /**
- * Phase 13a — FCM service (deliverable #6).
+ * Phase 13a — FCM service (deliverable #6) + T2-13 push routing.
  *
  * - [onNewToken]: a refreshed registration token → POST it to the Edge Function
  *   via the shared [registerPushToken] hook (`push_tokens`, phase-12).
  * - [onMessageReceived]: a delivered push → post a system notification on the
  *   app's channel. Personal notifications (your float) are §10.1-mandatory.
+ *
+ * T2-13: the phase-12 `dispatch-push` EF sends DATA-ONLY messages
+ * (`{ notification_id, type, payload }` — no `notification` block), which the
+ * previous handler silently dropped. Display now comes from the shared, tested
+ * [pushDisplayFromData]; a `float_assigned` payload's tap intent deep-links to
+ * `pennshift://float-ack/{floatId}` → MainActivity opens the FULL-SCREEN
+ * FloatAckSurface. A notification-block message (e.g. console test sends) still
+ * displays as before.
  */
 class AppFirebaseMessagingService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
@@ -22,8 +36,12 @@ class AppFirebaseMessagingService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
-        val notification = message.notification ?: return
         val manager = getSystemService(NotificationManager::class.java) ?: return
+
+        // dispatch-push data shape; notification-block messages override title/body.
+        val display = pushDisplayFromData(message.data["type"], message.data["payload"])
+        val title = message.notification?.title ?: display.title
+        val body = message.notification?.body ?: display.body
 
         val builder =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -34,10 +52,32 @@ class AppFirebaseMessagingService : FirebaseMessagingService() {
             }
         builder
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle(notification.title ?: getString(R.string.app_name))
-            .setContentText(notification.body.orEmpty())
+            .setContentTitle(title)
+            .setContentText(body)
             .setAutoCancel(true)
+            .setContentIntent(contentIntent(display.floatId))
 
         manager.notify(message.messageId.hashCode(), builder.build())
+    }
+
+    /**
+     * Tap target: the float-assignment push deep-links into the full-screen ack
+     * (T2-13); any other push just opens the app.
+     */
+    private fun contentIntent(floatId: String?): PendingIntent {
+        val intent =
+            Intent(this, MainActivity::class.java).apply {
+                if (floatId != null) {
+                    action = Intent.ACTION_VIEW
+                    data = Uri.parse(floatAckDeepLink(floatId))
+                }
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+        return PendingIntent.getActivity(
+            this,
+            floatId?.hashCode() ?: 0,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
     }
 }

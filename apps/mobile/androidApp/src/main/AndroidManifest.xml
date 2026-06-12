@@ -22,6 +22,16 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- T2-13: pennshift://float-ack/{floatId} opens the full-screen
+                 FloatAckSurface (push-tap content intent + external deep links). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="pennshift"
+                    android:host="float-ack" />
+            </intent-filter>
         </activity>
 
         <!-- FCM: receives new-token callbacks and push messages (deliverable #6). -->

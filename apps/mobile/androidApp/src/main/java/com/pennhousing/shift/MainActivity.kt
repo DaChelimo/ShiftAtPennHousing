@@ -30,6 +30,7 @@ import com.pennhousing.shift.shared.auth.AppBootstrap
 import com.pennhousing.shift.shared.auth.AuthSession
 import com.pennhousing.shift.shared.auth.DataSource
 import com.pennhousing.shift.shared.auth.StartDestination
+import com.pennhousing.shift.shared.ack.parseFloatAckDeepLink
 import com.pennhousing.shift.shared.breakclaim.withContext
 import com.pennhousing.shift.shared.breakclaim.withOptOut
 import com.pennhousing.shift.shared.data.BreakRepository
@@ -85,12 +86,16 @@ class MainActivity : ComponentActivity() {
         maybeRequestNotificationPermission()
 
         val backendConfigured = AppConfig.supabaseUrl.isNotBlank()
+        // T2-13: a float push tap / external deep link (pennshift://float-ack/{id})
+        // opens the FULL-SCREEN FloatAckSurface on launch. Pure parser; null when the
+        // app was launched normally.
+        val launchFloatAckId = parseFloatAckDeepLink(intent?.dataString)
 
         setContent {
             if (backendConfigured) {
-                LiveOrLoginRoot()
+                LiveOrLoginRoot(launchFloatAckId)
             } else {
-                DemoRoot()
+                DemoRoot(launchFloatAckId)
             }
         }
     }
@@ -109,7 +114,7 @@ class MainActivity : ComponentActivity() {
  * deterministic [DemoData] snapshot anchored to wall-clock `now`.
  */
 @Composable
-private fun DemoRoot() {
+private fun DemoRoot(launchFloatAckId: String? = null) {
     val now = remember { Clock.System.now() }
     val snapshot = remember(now) { DemoData.snapshot(now) }
     val pendingFloat = remember(now) { DemoData.pendingFloat(now) }
@@ -134,6 +139,7 @@ private fun DemoRoot() {
         currentWeeklyHours = DemoData.DEMO_WEEKLY_HOURS,
         // Demo has no backend session → sign-out is a no-op (login is the live path).
         onSignOut = {},
+        launchFloatAckId = launchFloatAckId,
     )
 }
 
@@ -143,7 +149,7 @@ private fun DemoRoot() {
  * flight we show a loading state.
  */
 @Composable
-private fun LiveOrLoginRoot() {
+private fun LiveOrLoginRoot(launchFloatAckId: String? = null) {
     val now = remember { Clock.System.now() }
 
     // Restore the session off the gateway exactly once. null while loading; the
@@ -172,6 +178,7 @@ private fun LiveOrLoginRoot() {
                 LiveShiftsRoot(
                     session = session,
                     now = now,
+                    launchFloatAckId = launchFloatAckId,
                     onSignOut = {
                         scope.launch { WorkerBackend.authGateway.signOut() }
                         authedSession = null
@@ -207,6 +214,7 @@ private fun LiveShiftsRoot(
     session: AuthSession,
     now: Instant,
     onSignOut: () -> Unit,
+    launchFloatAckId: String? = null,
 ) {
     val repo = remember { WorkerBackend.shiftsRepository }
     val snapshotState by remember(session.userId) {
@@ -440,6 +448,7 @@ private fun LiveShiftsRoot(
                     // already cleared the dots optimistically. No new backend RPC (T2-8).
                     prefsScope.launch { repo.markAllRead(session.userId, unreadIds) }
                 },
+                launchFloatAckId = launchFloatAckId,
                 onAcceptSwap = { swapId ->
                     // POST the real acceptance → `accept-swap` (best-effort; temporary swaps
                     // only — the feed never offers Accept on a permanent entry). The server

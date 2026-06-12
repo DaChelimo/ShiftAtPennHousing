@@ -187,6 +187,10 @@ fun ShiftsApp(
     // entry optimistically. Demo defaults to local-only. The argument is the swap id.
     onAcceptSwap: (String) -> Unit = {},
     onRejectSwap: (String) -> Unit = {},
+    // T2-13: non-null when the app was opened from the float push notification / a
+    // `pennshift://float-ack/{floatId}` deep link → present the FULL-SCREEN ack
+    // surface on launch (the ack VM already targets the worker's pending float).
+    launchFloatAckId: String? = null,
 ) {
     ShiftTheme {
         val state by shiftsVm.uiState.collectAsStateWithLifecycle()
@@ -194,6 +198,8 @@ fun ShiftsApp(
         var selectedIndex by remember { mutableIntStateOf(TAB_MY) }
         var showAckModal by remember { mutableStateOf(false) }
         var claimSuccess by remember { mutableStateOf(false) }
+        // T2-13 — full-screen ack on push/deep-link launch (once per launch id).
+        var showFullScreenAck by remember(launchFloatAckId) { mutableStateOf(launchFloatAckId != null) }
 
         Scaffold(modifier = Modifier.fillMaxSize().testTag("shifts_screen")) { padding ->
             Column(Modifier.fillMaxSize().padding(padding)) {
@@ -307,6 +313,16 @@ fun ShiftsApp(
                 onAcknowledgeFloat = onAcknowledgeFloat,
                 onDeclineFloat = onDeclineFloat,
                 onClose = { showAckModal = false },
+            )
+        }
+
+        if (showFullScreenAck) {
+            // T2-13 — push-launched full-screen FloatAckSurface, over everything.
+            FloatAcknowledgmentFullScreen(
+                ackVm = ackVm,
+                onAcknowledgeFloat = onAcknowledgeFloat,
+                onDeclineFloat = onDeclineFloat,
+                onClose = { showFullScreenAck = false },
             )
         }
     }

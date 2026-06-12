@@ -1,6 +1,15 @@
 import SwiftUI
 import Shared
 
+/// T2-13 — routes a tapped float push / external `pennshift://float-ack/{id}` deep
+/// link into the full-screen FloatAckSurface. AppDelegate (push tap) and onOpenURL
+/// both write here; ShiftsRootView observes and presents.
+@MainActor
+final class DeepLinkRouter: ObservableObject {
+    static let shared = DeepLinkRouter()
+    @Published var floatAckId: String?
+}
+
 /// Phase 13a — iOS entry point.
 ///
 /// Installs `AppDelegate` (push/APNs) and routes through `RootView`: with no backend
@@ -14,6 +23,12 @@ struct iOSApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .onOpenURL { url in
+                    // T2-13 — external deep link into the full-screen ack.
+                    if let id = parseFloatAckDeepLink(uri: url.absoluteString) {
+                        DeepLinkRouter.shared.floatAckId = id
+                    }
+                }
         }
     }
 }

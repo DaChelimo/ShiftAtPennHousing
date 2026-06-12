@@ -377,6 +377,12 @@ private fun LiveShiftsRoot(
                     // reconciles. This is the ONLY user-toggleable notification channel.
                     prefsScope.launch { profileRepo.setBroadcastSubscription(session.userId, subscribed) }
                 },
+                onMarkAllRead = { unreadIds ->
+                    // Persist the read receipts → loop the worker's unread ids through the
+                    // `mark_notification_read` RPC (best-effort) while the Updates ViewModel
+                    // already cleared the dots optimistically. No new backend RPC (T2-8).
+                    prefsScope.launch { repo.markAllRead(session.userId, unreadIds) }
+                },
             )
         }
     }

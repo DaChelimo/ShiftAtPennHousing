@@ -59,9 +59,13 @@ final class CalendarObservable: ObservableObject {
 @MainActor
 final class UpdatesObservable: ObservableObject {
     @Published private(set) var feed: UpdatesFeed
+    private var vm: UpdatesViewModel
     private var live = false
 
+    var hasUnread: Bool { vm.uiState.value.hasUnread }
+
     init(vm: UpdatesViewModel) {
+        self.vm = vm
         self.feed = vm.uiState.value.feed
     }
 
@@ -74,9 +78,18 @@ final class UpdatesObservable: ObservableObject {
         live = true
         guard let items = try? await repo.fetchNotifications(userId: userId) else { return }
         let float = try? await repo.fetchPendingFloat(userId: userId)
-        feed = DemoFactory.shared
-            .updatesViewModel(notifications: items, float: float ?? nil)
-            .uiState.value.feed
+        vm = DemoFactory.shared.updatesViewModel(notifications: items, float: float ?? nil)
+        feed = vm.uiState.value.feed
+    }
+
+    /// Optimistic "Mark all read" (T2-8): flip every unread item to read in the shared VM,
+    /// republish the regrouped feed, and return the ids that were unread for the live host
+    /// to persist via the `mark_notification_read` RPC. Idempotent (empty when nothing unread).
+    @discardableResult
+    func markAllRead() -> [String] {
+        let ids = vm.markAllRead()
+        feed = vm.uiState.value.feed
+        return ids
     }
 }
 
@@ -489,11 +502,38 @@ struct ShiftsRootView: View {
                 .padding(.top, 40)
             } else {
                 VStack(alignment: .leading, spacing: 22) {
+                    if updatesModel.hasUnread { markAllReadHeader }
                     if !feed.today.isEmpty { notificationGroup("Today", feed.today) }
                     if !feed.earlier.isEmpty { notificationGroup("Earlier", feed.earlier) }
                 }
                 .padding(16)
             }
+        }
+    }
+
+    /// The Updates header trailing affordance — "Mark all read" (worker-app.html AppHeader trailing check).
+    private var markAllReadHeader: some View {
+        let c = ShiftColors.resolve(scheme)
+        return HStack {
+            Spacer(minLength: 0)
+            Button {
+                // Optimistic local clear (returns the previously-unread ids); the live host
+                // (liveUserId != nil) persists them via the `mark_notification_read` RPC.
+                let ids = updatesModel.markAllRead()
+                if let uid = liveUserId, !ids.isEmpty {
+                    let repo = WorkerBackend.shared.shiftsRepository
+                    Task { _ = try? await repo.markAllRead(userId: uid, unreadIds: ids) }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: ShiftIcons.checkCircle).font(.system(size: 15))
+                    Text("Mark all read").font(ShiftFont.sans(13.5, .medium))
+                }
+                .foregroundColor(c.blue)
+                .padding(.horizontal, 10).padding(.vertical, 6)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("mark_all_read")
         }
     }
 

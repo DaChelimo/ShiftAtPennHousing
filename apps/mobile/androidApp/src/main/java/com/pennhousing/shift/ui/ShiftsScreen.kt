@@ -159,6 +159,10 @@ fun ShiftsApp(
     // The argument is the NEW desired subscription state. Only the broadcast / "General
     // updates" channel is interactive — the three personal-notif rows stay disabled (§10.1).
     onToggleBroadcast: (Boolean) -> Unit = {},
+    // Live host loops the worker's still-unread notification ids through the
+    // `mark_notification_read` RPC (best-effort) when "Mark all read" is tapped; the Updates
+    // ViewModel does the optimistic local clear. Demo defaults to local-only (no write).
+    onMarkAllRead: (List<String>) -> Unit = {},
 ) {
     ShiftTheme {
         val state by shiftsVm.uiState.collectAsStateWithLifecycle()
@@ -244,7 +248,13 @@ fun ShiftsApp(
                     TAB_UPDATES ->
                         UpdatesTabContent(
                             feed = updatesState.feed,
+                            hasUnread = updatesState.hasUnread,
                             onOpenAck = { showAckModal = true },
+                            onMarkAllRead = {
+                                // Optimistic local clear (returns the ids that were unread),
+                                // then best-effort live persist via the host callback.
+                                onMarkAllRead(updatesVm.markAllRead())
+                            },
                         )
                     TAB_PREFS -> PreferencesTabContent(preferencesVm, onSubmitPreferences)
                     TAB_BREAK -> BreakClaimTabContent(breakClaimVm, onClaimBreak, onDropBreak)
@@ -828,13 +838,19 @@ private fun OtherHousesTabContent(
  * The Updates feed (worker-app.html `UpdatesScreen`): Today / Earlier groups of
  * notification rows (shared, tested [com.pennhousing.shift.shared.notifications.buildUpdatesFeed]).
  * The urgent float-assignment row carries the `pending_float_notification` selector and
- * opens the ack hero. Empty → "You're all caught up". (No "mark all read" — workers
- * have no UPDATE policy on `notifications`; the unread dots are read-only.)
+ * opens the ack hero. Empty → "You're all caught up".
+ *
+ * T2-8 — a "Mark all read" affordance (the design's AppHeader trailing check, omitted in
+ * T1-1) sits in the feed header when [hasUnread]. Tapping it fires [onMarkAllRead], which
+ * optimistically clears the unread dots (and, on the live host, loops the worker's unread
+ * ids through the `mark_notification_read` RPC). Hidden when nothing is unread.
  */
 @Composable
 private fun UpdatesTabContent(
     feed: UpdatesFeed,
+    hasUnread: Boolean,
     onOpenAck: () -> Unit,
+    onMarkAllRead: () -> Unit,
 ) {
     if (feed.isEmpty) {
         Column(Modifier.fillMaxSize().background(ShiftTheme.colors.bg).padding(top = 40.dp)) {
@@ -851,11 +867,42 @@ private fun UpdatesTabContent(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(22.dp),
     ) {
+        if (hasUnread) {
+            item { MarkAllReadHeader(onMarkAllRead) }
+        }
         if (feed.today.isNotEmpty()) {
             item { NotificationGroup("Today", feed.today, onOpenAck) }
         }
         if (feed.earlier.isNotEmpty()) {
             item { NotificationGroup("Earlier", feed.earlier, onOpenAck) }
+        }
+    }
+}
+
+/** The Updates header trailing affordance — "Mark all read" (worker-app.html AppHeader trailing check). */
+@Composable
+private fun MarkAllReadHeader(onMarkAllRead: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(10.dp))
+                .clickable(onClick = onMarkAllRead)
+                .testTag("mark_all_read")
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                ShiftIcons.CheckCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(17.dp),
+            )
+            Text("Mark all read", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
         }
     }
 }

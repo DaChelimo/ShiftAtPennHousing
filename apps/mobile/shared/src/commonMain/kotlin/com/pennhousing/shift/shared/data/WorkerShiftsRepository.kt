@@ -13,6 +13,8 @@ import com.pennhousing.shift.shared.notifications.notificationFromPayload
 import com.pennhousing.shift.shared.shifts.NEW_YORK
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.rpc
 import io.github.jan.supabase.realtime.PostgresAction
 import io.github.jan.supabase.realtime.channel
 import io.github.jan.supabase.realtime.postgresChangeFlow
@@ -26,7 +28,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import kotlin.time.Instant
 
 /**
@@ -322,6 +326,48 @@ class WorkerShiftsRepository(
             .select { filter { eq("recipient_user_id", userId) } }
             .decodeList<NotificationWireRow>()
             .map { it.toModel() }
+
+    /**
+     * Mark ONE notification read (§10.1) → the `mark_notification_read` RPC. Called DIRECTLY
+     * via Postgrest (not an Edge Function): the RPC is `SECURITY DEFINER` and GRANTed to
+     * `authenticated` (migration 20260601000001), so the worker's JWT can invoke it through
+     * PostgREST. It sets `acknowledged_at = p_now` on the worker's own still-unread row
+     * (`auth.uid()` guard + `recipient_user_id = p_user_id`), so the worker's read receipt is
+     * a legitimate self-scoped write. Best-effort (the Updates VM flips its optimistic local
+     * unread state regardless); idempotent — an already-read / non-existent row returns `false`.
+     */
+    suspend fun markNotificationRead(
+        notificationId: String,
+        userId: String,
+        now: Instant = kotlin.time.Clock.System.now(),
+    ) {
+        supabase.postgrest.rpc(
+            "mark_notification_read",
+            buildJsonObject {
+                put("p_notification_id", notificationId)
+                put("p_user_id", userId)
+                put("p_now", now.toString())
+            },
+        )
+    }
+
+    /**
+     * Mark ALL the given unread notifications read by looping [unreadIds] through
+     * [markNotificationRead] (the single `mark_notification_read` RPC) — no new backend RPC
+     * is introduced (this stays a no-DB change). Each call is independent and best-effort;
+     * one transient failure does not block the rest. The optimistic local clear lives in
+     * `UpdatesViewModel.markAllRead`; this only persists the receipts. `now` is shared across
+     * the batch so every row stamps the same read instant.
+     */
+    suspend fun markAllRead(
+        userId: String,
+        unreadIds: List<String>,
+        now: Instant = kotlin.time.Clock.System.now(),
+    ) {
+        unreadIds.forEach { id ->
+            runCatching { markNotificationRead(id, userId, now) }
+        }
+    }
 
     /** Live new-notification stream for the top-of-screen toast (§10.1, deliverable #7). */
     fun observeNotifications(userId: String): Flow<ToastNotification> =

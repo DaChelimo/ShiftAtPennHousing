@@ -62,6 +62,11 @@ export type CalendarDay = {
   date: string; // e.g. "Feb 2"
   dateKey: string; // YYYY-MM-DD (NY)
   isToday: boolean;
+  // §3.4/§11.3: this house is CLOSED for this date (derived server-side from the
+  // operating-calendar + staffing via house_closure(p_house_id, p_on_date)). A
+  // closed day shows a "Closed" cell instead of the shift grid — no shifts, no
+  // open-shifts feed.
+  closed: boolean;
 };
 
 // Same-house roster for the inline-override worker picker (S1). Filtered to this
@@ -355,16 +360,28 @@ export async function getHouseCalendar(
   const today = nyToday(now);
   const thisWeekMon = mondayOf(today);
 
-  const days: CalendarDay[] = Array.from({ length: 7 }, (_, i) => {
-    const dateKey = addDays(weekStartDate, i);
-    return {
-      index: i,
-      label: DOW[i]!,
-      date: dayLabelParts(dateKey).date,
-      dateKey,
-      isToday: dateKey === today,
-    };
-  });
+  // §3.4/§11.3: ask the backend which of the week's dates this house is CLOSED for
+  // (winter break → only Harnwell open; no-operating-calendar date → all closed).
+  // One RPC per column (≤7) is fine; resolve in parallel.
+  const dateKeys = Array.from({ length: 7 }, (_, i) => addDays(weekStartDate, i));
+  const closedFlags = await Promise.all(
+    dateKeys.map(async (dateKey) => {
+      const { data } = await supabase.rpc('house_closure', {
+        p_house_id: houseId,
+        p_on_date: dateKey,
+      });
+      return data === true;
+    }),
+  );
+
+  const days: CalendarDay[] = dateKeys.map((dateKey, i) => ({
+    index: i,
+    label: DOW[i]!,
+    date: dayLabelParts(dateKey).date,
+    dateKey,
+    isToday: dateKey === today,
+    closed: closedFlags[i] ?? false,
+  }));
 
   const base: CalendarModel = {
     houseId,

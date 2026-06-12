@@ -97,6 +97,19 @@ function ShiftCardEl({
   );
 }
 
+// §3.4/§11.3 closed-house presentation: a column with no shift grid and no
+// open-shifts feed — just a "Closed" marker for the closure date.
+function ClosedCell() {
+  return (
+    <div className="cal-closed">
+      <div className="cal-closed-inner">
+        <Icon name="calendar" size={22} />
+        <span>Closed</span>
+      </div>
+    </div>
+  );
+}
+
 function GutterTicks({ startBlock, rows }: { startBlock: number; rows: number }) {
   return (
     <div className="cal-gutter">
@@ -150,23 +163,33 @@ function DayColumn({
         <span className="cal-date t-mono">{day.date}</span>
         {day.isToday && <span className="cal-today-pip">Today</span>}
       </div>
-      <div className="cal-lanes" style={{ height: BLOCKS * BLOCK_H }}>
-        <RowLines startBlock={0} rows={BLOCKS} />
-        {Array.from({ length: lanes }).map((_, ln) => (
-          <div className={`cal-lane ${ln === lanes - 1 ? 'lane-last' : ''}`.trim()} key={ln}>
-            {shifts
-              .filter((s) => s.lane === ln)
-              .map((s) => (
-                <ShiftCardEl key={s.id} shift={s} onSelect={onSelect} />
-              ))}
-          </div>
-        ))}
-        {day.isToday && nowBlock !== null && (
-          <div className="nowline-inline" style={{ top: nowBlock * BLOCK_H }}>
-            <span className="nowline-dot" />
-          </div>
-        )}
-      </div>
+      {day.closed ? (
+        <div
+          className="cal-lanes"
+          style={{ height: BLOCKS * BLOCK_H }}
+          data-testid="calendar-closed-day"
+        >
+          <ClosedCell />
+        </div>
+      ) : (
+        <div className="cal-lanes" style={{ height: BLOCKS * BLOCK_H }}>
+          <RowLines startBlock={0} rows={BLOCKS} />
+          {Array.from({ length: lanes }).map((_, ln) => (
+            <div className={`cal-lane ${ln === lanes - 1 ? 'lane-last' : ''}`.trim()} key={ln}>
+              {shifts
+                .filter((s) => s.lane === ln)
+                .map((s) => (
+                  <ShiftCardEl key={s.id} shift={s} onSelect={onSelect} />
+                ))}
+            </div>
+          ))}
+          {day.isToday && nowBlock !== null && (
+            <div className="nowline-inline" style={{ top: nowBlock * BLOCK_H }}>
+              <span className="nowline-dot" />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -187,6 +210,13 @@ function SplitDay({
     { from: 0, to: HALF },
     { from: HALF, to: BLOCKS },
   ];
+  if (day.closed) {
+    return (
+      <div className="splitday" data-testid="calendar-closed-day">
+        <ClosedCell />
+      </div>
+    );
+  }
   return (
     <div className="splitday">
       {halves.map((half) => {

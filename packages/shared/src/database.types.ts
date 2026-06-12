@@ -1607,6 +1607,10 @@ export type Database = {
         Returns: Json;
       };
       hmod_interval_start_date: { Args: { p_at: string }; Returns: string };
+      house_closure: {
+        Args: { p_house_id: string; p_on_date: string };
+        Returns: boolean;
+      };
       is_assignment_claimable: {
         Args: { p_as_of: string; p_assignment_id: string };
         Returns: boolean;

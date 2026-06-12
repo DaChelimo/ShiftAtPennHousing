@@ -1594,6 +1594,18 @@ export type Database = {
           blocks_inserted: number;
         }[];
       };
+      hire_worker: {
+        Args: {
+          p_email: string;
+          p_home_house_id: string;
+          p_initiator: string;
+          p_name: string;
+          p_phone?: string;
+          p_role?: Database['public']['Enums']['user_role_enum'];
+          p_user_id: string;
+        };
+        Returns: Json;
+      };
       hmod_interval_start_date: { Args: { p_at: string }; Returns: string };
       is_assignment_claimable: {
         Args: { p_as_of: string; p_assignment_id: string };

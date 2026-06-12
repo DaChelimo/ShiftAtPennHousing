@@ -1,8 +1,9 @@
 import type { AppRole } from '../../lib/auth';
 import type { PeopleData, PersonRow } from '../../lib/data/people';
-import { Avatar, Button, type Column, DataTable, PageHead, Tag, type TagKind } from '../ui';
+import { Avatar, type Column, DataTable, PageHead, Tag, type TagKind } from '../ui';
 
 import { FireWorkerControl } from './FireWorkerControl';
+import { HireWorkerControl } from './HireWorkerControl';
 
 const ROLE_META: Record<AppRole, { short: string; full: string; kind: TagKind }> = {
   sw: { short: 'SW', full: 'Student Worker', kind: 'gray' },
@@ -114,15 +115,7 @@ export function PeopleRoster({ data }: { data: PeopleData }) {
         eyebrow={`${data.houseName} · roster`}
         title="People"
         sub="Workers and managers at this house, with their roles, weekly hours against the cap, and status."
-        actions={
-          <Button
-            icon="add"
-            disabled
-            title="Hire a worker — no backing RPC in this build (flagged)"
-          >
-            Hire worker
-          </Button>
-        }
+        actions={<HireWorkerControl houseName={data.houseName} />}
       />
 
       <div

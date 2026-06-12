@@ -32,13 +32,28 @@ export type FireWorkerSummary = {
   swapsVoided: number;
 };
 
+export type AppRole = 'sw' | 'sm' | 'hm' | 'bm';
+
+export type HireWorkerSummary = {
+  userId: string;
+  name: string;
+  email: string;
+  homeHouseId: string;
+  role: AppRole;
+};
+
 // Map the RPC's snake_case RAISE reasons (and the propagated step messages) to
 // readable copy. Anything unmapped falls through verbatim so nothing is hidden.
 function friendlyMessage(raw: string): string {
   const msg = raw.trim();
   const MAP: Record<string, string> = {
-    not_authorized: 'You are not authorized to fire workers at this house.',
+    not_authorized: 'You are not authorized to manage workers at this house.',
     worker_not_found: 'That worker could not be found.',
+    worker_already_exists: 'A worker with that account already exists.',
+    name_required: 'A worker name is required.',
+    invalid_email: 'A valid email address is required.',
+    house_not_found: 'That house could not be found.',
+    invalid_role: 'The initial role is invalid.',
     semester_boundary_not_found:
       'The semester boundary for one of this worker’s shifts could not be determined. Contact an administrator.',
   };
@@ -102,6 +117,92 @@ export async function fireWorker(input: {
       nonRecurringVacated: result.non_recurring_vacated ?? 0,
       floatsVoided: result.floats_voided ?? 0,
       swapsVoided: result.swaps_voided ?? 0,
+    },
+  };
+}
+
+// T2-6 — Hire a worker (BSpec §4.5 "Hiring"). A new hire is created at any time
+// during a period with NO assigned shifts, active from the moment of creation,
+// holding standard capabilities for their initial role. Creating a worker spans
+// auth.users (admin API, service-role) + public.users + public.user_roles: this
+// action creates the auth user via the service client's admin API (the only step
+// that cannot run in SQL), then delegates the app-row inserts + validation + the
+// authoritative authz re-check to the hire_worker RPC (migration 20260611000004).
+// The canonical reusable shape is the hire-worker Edge Function (mobile/external);
+// the web admin uses the service client directly, mirroring fireWorker / saveWeeklyCap.
+//
+// People-admin is HM/BM-only (§6.6/§2.3/§2.6). This action gates isHouseAdmin and
+// scopes the hire to the caller's administered house; the RPC re-checks the gate
+// house-scoped and authoritatively. Do NOT widen to SM.
+export async function hireWorker(input: {
+  name: string;
+  email: string;
+  role: AppRole;
+  phone?: string;
+}): Promise<ActionResult<HireWorkerSummary>> {
+  const me = await getSessionUser();
+  if (!isHouseAdmin(me)) {
+    return { ok: false, error: 'You are not authorized to hire workers.' };
+  }
+
+  const name = input.name.trim();
+  const email = input.email.trim().toLowerCase();
+  if (name === '') return { ok: false, error: 'A worker name is required.' };
+  if (email === '') return { ok: false, error: 'A valid email address is required.' };
+  if (!['sw', 'sm', 'hm', 'bm'].includes(input.role)) {
+    return { ok: false, error: 'Choose a valid initial role.' };
+  }
+
+  const homeHouseId = adminHouseId(me!);
+  const service = createServiceClient();
+
+  // ① Create the auth.users row (service-role admin API). Email-confirmed so the
+  //    hire can sign in immediately; the deployment's invite/reset flow issues the
+  //    credential. A duplicate auth user surfaces as a conflict.
+  const { data: created, error: createError } = await service.auth.admin.createUser({
+    email,
+    email_confirm: true,
+    user_metadata: { name },
+  });
+  if (createError !== null || created?.user == null) {
+    const raw = createError?.message ?? 'Could not create the worker account.';
+    return { ok: false, error: raw };
+  }
+  const newUserId = created.user.id;
+
+  // ② Insert the app rows + role via the RPC (authz re-checked, validated, atomic).
+  const { data, error } = await service.rpc('hire_worker', {
+    p_initiator: me!.userId,
+    p_user_id: newUserId,
+    p_name: name,
+    p_email: email,
+    p_home_house_id: homeHouseId,
+    p_role: input.role,
+    p_phone: input.phone?.trim() || undefined,
+  });
+  if (error !== null) {
+    // Roll back the orphaned auth user — the app rows never landed.
+    await service.auth.admin.deleteUser(newUserId).catch(() => undefined);
+    return { ok: false, error: friendlyMessage(error.message) };
+  }
+
+  const result = (data ?? {}) as {
+    user_id?: string;
+    name?: string;
+    email?: string;
+    home_house_id?: string;
+    role?: AppRole;
+  };
+
+  revalidatePath('/admin/people');
+  return {
+    ok: true,
+    data: {
+      userId: result.user_id ?? newUserId,
+      name: result.name ?? name,
+      email: result.email ?? email,
+      homeHouseId: result.home_house_id ?? homeHouseId,
+      role: result.role ?? input.role,
     },
   };
 }

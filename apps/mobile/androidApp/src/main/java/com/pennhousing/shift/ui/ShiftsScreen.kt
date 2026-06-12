@@ -721,9 +721,12 @@ private fun ClaimSheet(
                     )
                 } else {
                     ShiftButton(
+                        // The duration ("Claim 1h"), not the range — the half-width
+                        // button truncates "Claim 17:30 – 19:00" (emulator-verified);
+                        // the selected range is already shown in the selector above.
                         when {
                             permanent -> "Confirm pickup"
-                            !claimPlan.wholeShift -> "Claim ${claimPlan.rangeLabel}"
+                            !claimPlan.wholeShift -> "Claim ${claimPlan.durationLabel}"
                             else -> "Claim shift"
                         },
                         onClick = {

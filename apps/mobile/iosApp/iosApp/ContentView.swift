@@ -940,9 +940,12 @@ private struct ClaimFlowSheet: View {
                             .accessibilityIdentifier("soft_cap_confirm_button")
                     } else {
                         ShiftButton(
+                            // The duration ("Claim 1h"), not the range — the half-width
+                            // button truncates the full range label; the selected range
+                            // is already shown in the selector above.
                             title: permanent
                                 ? "Confirm pickup"
-                                : (plan.wholeShift ? "Claim shift" : "Claim \(plan.rangeLabel)"),
+                                : (plan.wholeShift ? "Claim shift" : "Claim \(plan.durationLabel)"),
                             action: {
                                 onConfirmed(effective)
                                 dismiss()

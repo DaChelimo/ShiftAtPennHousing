@@ -8,6 +8,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
 
 /**
@@ -102,6 +103,28 @@ class CalendarTest {
         assertEquals("Mon", a.header.title)
         assertNull(a.header.summary)
         assertTrue(a.isEmpty)
+    }
+
+    // ----- block coalescing (parity CO) -----
+
+    @Test fun agenda_coalesces_per_block_rows_into_one_card() {
+        // A live 4h Saturday shift arrives as 8 per-30-min rows (the live read model);
+        // the agenda shows ONE card with the merged span and counts it as one shift.
+        val start = at("2026-01-17T10:00:00-05:00")
+        val blocks =
+            (0 until 8).map { i ->
+                MyShift(
+                    id = "blk-$i",
+                    house = harnwell,
+                    start = start + (i * 30).minutes,
+                    end = start + ((i + 1) * 30).minutes,
+                    kind = AssignmentKind.SCHEDULED,
+                )
+            }
+        val a = buildCalendarAgenda(blocks, selectedDayIndex = 5, now = now) // Sat
+        assertEquals("1 shift · 4h", a.header.summary)
+        assertEquals(1, a.items.size)
+        assertEquals("10:00 – 14:00", a.items[0].shift?.timeLabel)
     }
 
     // ----- duration formatter -----

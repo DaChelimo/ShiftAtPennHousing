@@ -10,6 +10,7 @@ import com.pennhousing.shift.shared.network.EdgeFunctionClient
 import com.pennhousing.shift.shared.network.EdgeResult
 import com.pennhousing.shift.shared.notifications.NotificationItem
 import com.pennhousing.shift.shared.notifications.notificationFromPayload
+import com.pennhousing.shift.shared.shifts.BLOCK
 import com.pennhousing.shift.shared.shifts.NEW_YORK
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
@@ -65,14 +66,14 @@ class WorkerShiftsRepository(
 ) {
     /**
      * Drop a single occurrence of [shift] this week → the phase-05 `drop-shift` Edge
-     * Function (`drop_type: 'temporary'`). The block's `assignment_id` is the worker-read
-     * model row id; the EF's `drop_shift` RPC reattributes it to a vacant slot. Best-effort
-     * (the UI flips its optimistic local state regardless); `EdgeResult.ok` reports the 2xx.
+     * Function (`drop_type: 'temporary'`). Best-effort (the UI flips its optimistic
+     * local state regardless); `EdgeResult.ok` reports the 2xx.
      *
-     * One `MyShift` is one 30-minute block (invariant #5), so this drops exactly one
-     * contiguous occurrence — `assignment_ids` is the single-element array the EF requires.
+     * [shift] is the DISPLAYED (coalesced) card: its `blockIds` carry every constituent
+     * 30-minute block `assignment_id` (invariant #5), and the EF accepts the whole
+     * contiguous run in one `assignment_ids` array (it validates contiguity itself).
      */
-    suspend fun dropShift(shift: MyShift): EdgeResult = dropShift(shift.id)
+    suspend fun dropShift(shift: MyShift): EdgeResult = dropBlocks(shift.blockIds)
 
     /**
      * Drop a single 30-minute block by its `assignment_id` → the `drop-shift` Edge
@@ -82,11 +83,19 @@ class WorkerShiftsRepository(
      * its block `assignment_id`, exactly what `drop-shift` keys on (there is no
      * break-specific drop RPC; confirmed). Best-effort; `EdgeResult.ok` reports the 2xx.
      */
-    suspend fun dropShift(assignmentId: String): EdgeResult {
+    suspend fun dropShift(assignmentId: String): EdgeResult = dropBlocks(listOf(assignmentId))
+
+    /**
+     * Drop a contiguous run of blocks (their `assignment_id`s, time-ordered) in ONE
+     * `drop-shift` call — the EF takes the full `assignment_ids` array and rejects a
+     * non-contiguous run (`drop_not_contiguous`), which a coalesced card (or a §5.2
+     * partial sub-range of one) never is.
+     */
+    suspend fun dropBlocks(assignmentIds: List<String>): EdgeResult {
         val body =
             Json.encodeToString(
                 DropShiftRequest(
-                    assignmentIds = listOf(assignmentId),
+                    assignmentIds = assignmentIds,
                     dropType = "temporary",
                 ),
             )
@@ -100,7 +109,7 @@ class WorkerShiftsRepository(
      * omitted so the EF defaults it to the authenticated worker (self-initiated path).
      */
     suspend fun permanentDrop(shift: MyShift): EdgeResult {
-        val slot = slotFor(shift.house.id, shift.start)
+        val slot = slotFor(shift.house.id, shift.start, shift.end)
         val body =
             Json.encodeToString(
                 PermanentDropRequest(
@@ -167,31 +176,46 @@ class WorkerShiftsRepository(
      *
      * The SERVER is authoritative for the hours-cap, the T-2h cutoff, cross-house
      * eligibility (Harnwell training constraint — invariant #1) and FCFS conflict
-     * resolution; the client cap/claimable gating stays a pre-check only. One feed row
-     * is one 30-minute block (invariant #5). Permanent pickup goes through the dedicated
-     * [permanentPickup] (the `permanent-pickup` EF), NOT this temporary path (`claim-shift`
-     * with `claim_type:'permanent'` returns 501).
+     * resolution; the client cap/claimable gating stays a pre-check only. [shift] is the
+     * DISPLAYED (coalesced) card, so each constituent block (invariant #5) is claimed
+     * per-block via [claimBlocks] — `claim_open_shift` keys on one `assignment_id`.
+     * Permanent pickup goes through the dedicated [permanentPickup] (the
+     * `permanent-pickup` EF), NOT this temporary path (`claim-shift` with
+     * `claim_type:'permanent'` returns 501).
      */
-    suspend fun claimShift(shift: OpenShift): EdgeResult =
-        edge.invoke(
-            "claim-shift",
-            Json.encodeToString(ClaimShiftRequest(assignmentId = shift.id, claimType = "temporary")),
-        )
+    suspend fun claimShift(shift: OpenShift): EdgeResult = claimBlocks(shift.blockIds)
 
     /**
      * Reclaim a shift the worker dropped that is still open → the SAME `claim-shift`
-     * Edge Function. `drop_shift` vacates the block in place (status → 'vacant') WITHOUT
-     * changing its `assignment_id`, so the dropped-still-open `MyShift.id` is the very
-     * `assignment_id` now sitting vacant in `worker_open_shifts`. Reclaiming is therefore
-     * a temporary claim keyed on that id — no separate backend exists or is needed. The
+     * Edge Function. `drop_shift` vacates the blocks in place (status → 'vacant') WITHOUT
+     * changing their `assignment_id`s, so the dropped-still-open card's `blockIds` are the
+     * very `assignment_id`s now sitting vacant in `worker_open_shifts`. Reclaiming is
+     * therefore a per-block temporary claim — no separate backend exists or is needed. The
      * server re-applies the same cap / T-2h / FCFS checks; if someone else already took
-     * the slot the EF returns `shift_unavailable` and the next snapshot reconciles.
+     * a slot the EF returns `shift_unavailable` and the next snapshot reconciles.
      */
-    suspend fun reclaimShift(shift: MyShift): EdgeResult =
-        edge.invoke(
-            "claim-shift",
-            Json.encodeToString(ClaimShiftRequest(assignmentId = shift.id, claimType = "temporary")),
-        )
+    suspend fun reclaimShift(shift: MyShift): EdgeResult = claimBlocks(shift.blockIds)
+
+    /**
+     * Claim each block `assignment_id` through the `claim-shift` EF (`claim_type:
+     * 'temporary'`), one POST per block — FCFS atomicity is server-side and per-block.
+     * A mid-run failure does NOT stop the rest (a partial claim beats none; the next
+     * Realtime snapshot reconciles the UI); the result is the first failure if any
+     * block failed, else the last success.
+     */
+    suspend fun claimBlocks(assignmentIds: List<String>): EdgeResult {
+        var last = EdgeResult(false, 0, "")
+        var firstFailure: EdgeResult? = null
+        for (id in assignmentIds) {
+            last =
+                edge.invoke(
+                    "claim-shift",
+                    Json.encodeToString(ClaimShiftRequest(assignmentId = id, claimType = "temporary")),
+                )
+            if (!last.ok && firstFailure == null) firstFailure = last
+        }
+        return firstFailure ?: last
+    }
 
     /**
      * Claim a break shift from the pool → the phase-11 `break-claim` Edge Function. The
@@ -536,18 +560,39 @@ internal data class RecurringSlot(
     val blockStartLocals: List<String>,
 )
 
+/**
+ * The slot identity for the [start, end) span: one NY-local HH:MM entry per 30-minute
+ * block (invariant #5) — a coalesced multi-block card names its WHOLE recurring slot,
+ * not just its first block. Block iteration is duration arithmetic on instants
+ * (invariant #6); each start is formatted NY-local independently, so a span is
+ * labelled correctly even across a DST transition.
+ */
 internal fun slotFor(
     houseId: String,
     start: Instant,
+    end: Instant,
 ): RecurringSlot {
-    val local = start.toLocalDateTime(NEW_YORK)
-    val dayOfWeek = if (local.dayOfWeek == DayOfWeek.SUNDAY) 0 else local.dayOfWeek.isoDayNumber
-    val hh = local.hour.toString().padStart(2, '0')
-    val mm = local.minute.toString().padStart(2, '0')
-    return RecurringSlot(houseId = houseId, dayOfWeek = dayOfWeek, blockStartLocals = listOf("$hh:$mm"))
+    val firstLocal = start.toLocalDateTime(NEW_YORK)
+    val dayOfWeek = if (firstLocal.dayOfWeek == DayOfWeek.SUNDAY) 0 else firstLocal.dayOfWeek.isoDayNumber
+    val blockStartLocals =
+        generateSequence(start) { it + BLOCK }
+            .takeWhile { it < end }
+            .map { blockStart ->
+                val local = blockStart.toLocalDateTime(NEW_YORK)
+                val hh = local.hour.toString().padStart(2, '0')
+                val mm = local.minute.toString().padStart(2, '0')
+                "$hh:$mm"
+            }
+            .toList()
+            .ifEmpty {
+                val hh = firstLocal.hour.toString().padStart(2, '0')
+                val mm = firstLocal.minute.toString().padStart(2, '0')
+                listOf("$hh:$mm")
+            }
+    return RecurringSlot(houseId = houseId, dayOfWeek = dayOfWeek, blockStartLocals = blockStartLocals)
 }
 
-private fun OpenShift.toSlot(): RecurringSlot = slotFor(house.id, start)
+private fun OpenShift.toSlot(): RecurringSlot = slotFor(house.id, start, end)
 
 /**
  * The `permanent-pickup` GET/POST response envelope — `{ scope }` on GET, `{ ...data, scope }`

@@ -236,10 +236,26 @@ fun planTemporaryDrop(
 fun applyTemporaryDrop(
     shifts: List<MyShift>,
     shiftId: String,
-): List<MyShift> = shifts.map { if (it.id == shiftId) it.copy(droppedStillOpen = true) else it }
+): List<MyShift> = applyTemporaryDrop(shifts, setOf(shiftId))
+
+/**
+ * Block-set form of [applyTemporaryDrop]: flag every block whose id is in [blockIds]
+ * — a coalesced card drops all (or, for a partial §5.2 drop, a sub-range of) its
+ * constituent per-block rows.
+ */
+fun applyTemporaryDrop(
+    shifts: List<MyShift>,
+    blockIds: Set<String>,
+): List<MyShift> = shifts.map { if (it.id in blockIds) it.copy(droppedStillOpen = true) else it }
 
 /** Reverse of [applyTemporaryDrop]: the worker reclaims a shift no one else took (§5.2). */
 fun reclaimDroppedShift(
     shifts: List<MyShift>,
     shiftId: String,
-): List<MyShift> = shifts.map { if (it.id == shiftId) it.copy(droppedStillOpen = false) else it }
+): List<MyShift> = reclaimDroppedShift(shifts, setOf(shiftId))
+
+/** Block-set form of [reclaimDroppedShift] (see [applyTemporaryDrop]'s block-set form). */
+fun reclaimDroppedShift(
+    shifts: List<MyShift>,
+    blockIds: Set<String>,
+): List<MyShift> = shifts.map { if (it.id in blockIds) it.copy(droppedStillOpen = false) else it }

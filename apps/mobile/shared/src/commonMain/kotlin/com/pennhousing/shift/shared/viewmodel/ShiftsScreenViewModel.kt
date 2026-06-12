@@ -14,6 +14,8 @@ import com.pennhousing.shift.shared.shifts.applyTemporaryDrop
 import com.pennhousing.shift.shared.shifts.buildHomeOpenShiftsTab
 import com.pennhousing.shift.shared.shifts.buildMyShiftsTab
 import com.pennhousing.shift.shared.shifts.buildOtherHousesTab
+import com.pennhousing.shift.shared.shifts.coalesceMyShifts
+import com.pennhousing.shift.shared.shifts.coalesceOpenShifts
 import com.pennhousing.shift.shared.shifts.dropOptionsFor
 import com.pennhousing.shift.shared.shifts.evaluateClaimCap
 import com.pennhousing.shift.shared.shifts.hoursBetween
@@ -60,11 +62,14 @@ class ShiftsScreenViewModel(
     val uiState: StateFlow<ShiftsUiState> = _uiState.asStateFlow()
 
     private fun snapshot(tab: ShiftsTab): ShiftsUiState =
+        // The stores stay PER-BLOCK (the live read models are one row per 30-min
+        // block); coalescing at presentation time merges each contiguous same-shift
+        // run into one displayed card carrying its constituent blockIds.
         ShiftsUiState(
             selectedTab = tab,
-            myShifts = buildMyShiftsTab(workerShifts),
-            homeOpen = buildHomeOpenShiftsTab(openFeed),
-            otherHouses = buildOtherHousesTab(openFeed),
+            myShifts = buildMyShiftsTab(coalesceMyShifts(workerShifts)),
+            homeOpen = buildHomeOpenShiftsTab(coalesceOpenShifts(openFeed)),
+            otherHouses = buildOtherHousesTab(coalesceOpenShifts(openFeed)),
         )
 
     fun selectTab(tab: ShiftsTab) {
@@ -98,6 +103,10 @@ class ShiftsScreenViewModel(
      * via [claimable] / [claimCap] in the UI before this is called.
      */
     fun claim(shift: OpenShift) {
+        // [shift] is the DISPLAYED (coalesced) card: its blockIds cover every
+        // constituent vacant block, so all of them leave the feed and the picked-up
+        // span carries them for the live per-block claim writes.
+        val claimedIds = shift.blockIds.toSet()
         val picked =
             MyShift(
                 id = shift.id,
@@ -106,19 +115,29 @@ class ShiftsScreenViewModel(
                 end = shift.end,
                 kind = AssignmentKind.TEMP_PICKUP,
                 crossHouse = !shift.homeHouse,
+                blockIds = shift.blockIds,
             )
         workerShifts = workerShifts + picked
-        openFeed = openFeed.filterNot { it.id == shift.id }
+        openFeed = openFeed.filterNot { it.id in claimedIds }
         _uiState.value = snapshot(_uiState.value.selectedTab)
     }
 
     fun drop(shiftId: String) {
-        workerShifts = applyTemporaryDrop(workerShifts, shiftId)
+        workerShifts = applyTemporaryDrop(workerShifts, displayedBlockIds(shiftId))
         _uiState.value = snapshot(_uiState.value.selectedTab)
     }
 
     fun reclaim(shiftId: String) {
-        workerShifts = reclaimDroppedShift(workerShifts, shiftId)
+        workerShifts = reclaimDroppedShift(workerShifts, displayedBlockIds(shiftId))
         _uiState.value = snapshot(_uiState.value.selectedTab)
     }
+
+    /**
+     * Resolve a displayed card id to the block ids it covers: the UI hands back the
+     * coalesced card's id (its first block), but the store is per-block, so the
+     * optimistic move must flag every constituent row. An id with no coalesced match
+     * (already a single block) falls back to itself.
+     */
+    private fun displayedBlockIds(shiftId: String): Set<String> =
+        coalesceMyShifts(workerShifts).firstOrNull { it.id == shiftId }?.blockIds?.toSet() ?: setOf(shiftId)
 }

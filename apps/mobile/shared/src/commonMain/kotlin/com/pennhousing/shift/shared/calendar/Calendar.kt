@@ -5,6 +5,7 @@ import com.pennhousing.shift.shared.shifts.DOW_SHORT
 import com.pennhousing.shift.shared.shifts.MONTH_SHORT
 import com.pennhousing.shift.shared.shifts.MyShiftRow
 import com.pennhousing.shift.shared.shifts.NEW_YORK
+import com.pennhousing.shift.shared.shifts.coalesceMyShifts
 import com.pennhousing.shift.shared.shifts.formatBlockTime
 import com.pennhousing.shift.shared.shifts.toRow
 import kotlinx.datetime.DateTimeUnit
@@ -130,7 +131,10 @@ fun buildCalendarAgenda(
         .toLocalDateTime(zone)
         .date.dayOfWeek.ordinal
     val date = monday.plus(selectedDayIndex, DateTimeUnit.DAY)
-    val dayShifts = shifts.filter { weekDayIndex(it, monday, zone) == selectedDayIndex }.sortedBy { it.start }
+    // Coalesce first: the live snapshot is one row per 30-min block, and the agenda
+    // (like the Shifts tabs) shows one card per displayed shift, not per block.
+    val dayShifts =
+        coalesceMyShifts(shifts).filter { weekDayIndex(it, monday, zone) == selectedDayIndex }.sortedBy { it.start }
 
     val totalMinutes = dayShifts.sumOf { (it.end - it.start).inWholeMinutes }
     val summary =

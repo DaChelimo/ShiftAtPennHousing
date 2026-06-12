@@ -18,6 +18,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
 
 /**
@@ -348,6 +349,76 @@ class ShiftsScreenViewModelTest {
         val after = m.uiState.value.myShifts
         assertTrue(after.scheduled.any { it.id == "sc" })
         assertFalse(after.dropped.any { it.id == "sc" })
+    }
+
+    // ===================================================================
+    // Block coalescing (parity CO) — the live read models are per-30-min-block;
+    // the displayed tabs merge contiguous same-shift runs into one card.
+    // ===================================================================
+
+    /** [n] consecutive 30-min SCHEDULED Harnwell blocks from [startIso], ids `prefix-i`. */
+    private fun blockRun(
+        startIso: String,
+        n: Int,
+        prefix: String,
+    ): List<MyShift> {
+        val start = at(startIso)
+        return (0 until n).map { i ->
+            MyShift(
+                id = "$prefix-$i",
+                house = harnwell,
+                start = start + (i * 30).minutes,
+                end = start + ((i + 1) * 30).minutes,
+                kind = AssignmentKind.SCHEDULED,
+            )
+        }
+    }
+
+    @Test
+    fun perBlockSnapshotRendersAsOneCoalescedCard() {
+        // A live 4h shift arrives as 8 rows but must display as ONE card (CO).
+        val m = ShiftsScreenViewModel(blockRun("2026-01-15T12:00:00-05:00", 8, "blk"), emptyList(), noon)
+        val scheduled = m.uiState.value.myShifts.scheduled
+        assertEquals(1, scheduled.size)
+        assertEquals("blk-0", scheduled.single().id)
+        assertEquals((0 until 8).map { "blk-$it" }, scheduled.single().blockIds)
+    }
+
+    @Test
+    fun droppingACoalescedCardFlagsAllItsBlocksAndReclaimRestoresThem() {
+        val m = ShiftsScreenViewModel(blockRun("2026-01-15T12:00:00-05:00", 4, "blk"), emptyList(), noon)
+        m.drop("blk-0") // the displayed card's id (its first block)
+        val afterDrop = m.uiState.value.myShifts
+        assertTrue(afterDrop.scheduled.isEmpty())
+        assertEquals(1, afterDrop.dropped.size) // dropped blocks re-coalesce into one card
+        assertEquals((0 until 4).map { "blk-$it" }, afterDrop.dropped.single().blockIds)
+        m.reclaim("blk-0")
+        val afterReclaim = m.uiState.value.myShifts
+        assertTrue(afterReclaim.dropped.isEmpty())
+        assertEquals(1, afterReclaim.scheduled.size)
+    }
+
+    @Test
+    fun claimingACoalescedOpenCardRemovesAllItsFeedBlocks() {
+        val openRun =
+            (0 until 4).map { i ->
+                OpenShift(
+                    id = "op-$i",
+                    house = harnwell,
+                    start = at("2026-01-15T14:00:00-05:00") + (i * 30).minutes,
+                    end = at("2026-01-15T14:00:00-05:00") + ((i + 1) * 30).minutes,
+                    feed = OpenFeed.WEEKLY,
+                    homeHouse = true,
+                )
+            }
+        val m = ShiftsScreenViewModel(emptyList(), openRun, noon)
+        val card = m.uiState.value.homeOpen.weekly.single() // displayed coalesced card
+        m.claim(card)
+        assertTrue(m.uiState.value.homeOpen.weekly.isEmpty()) // every block left the feed
+        val picked = m.uiState.value.myShifts.pickedUp.single()
+        assertEquals(card.blockIds, picked.blockIds) // pickup carries the per-block ids
+        assertEquals(card.start, picked.start)
+        assertEquals(card.end, picked.end)
     }
 
     // ===================================================================

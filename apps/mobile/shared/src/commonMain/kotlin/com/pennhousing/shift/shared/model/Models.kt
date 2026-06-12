@@ -38,6 +38,10 @@ data class MyShift(
     val pending: Boolean = false, // force-triggered float not yet acked → "(Pending)" (§11.2)
     val breakShift: Boolean = false, // short/winter break shift → golden border (§11.2)
     val droppedStillOpen: Boolean = false, // personally dropped this week, still unclaimed (§5.6 #2)
+    // The constituent 30-min block assignment_ids, in time order. A raw read-model row
+    // is one block (the default); a coalesced card carries every merged block id so
+    // drop/claim can target all — or a sub-range — of the underlying blocks.
+    val blockIds: List<String> = listOf(id),
 )
 
 enum class MyShiftsSection { PICKED_UP, DROPPED, SCHEDULED }
@@ -52,6 +56,8 @@ data class OpenShift(
     val feed: OpenFeed,
     val homeHouse: Boolean, // true → Tab 2; false → Tab 3
     val weeksRemaining: Int? = null, // permanent openings only (§5.1)
+    // The constituent vacant 30-min block assignment_ids, in time order (see MyShift.blockIds).
+    val blockIds: List<String> = listOf(id),
 )
 
 data class FloatAck(

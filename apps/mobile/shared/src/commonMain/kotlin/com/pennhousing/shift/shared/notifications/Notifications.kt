@@ -131,7 +131,7 @@ data class NotificationItem(
     val urgent: Boolean = false,
     /** Non-null → the actionable pending-float entry; tapping it opens the ack hero (§7). */
     val floatId: String? = null,
-    /** Non-null → an INCOMING pending swap (§8.2, T3a) — the row offers Accept/Decline. */
+    /** Non-null → a pending swap entry (§8.2, T3a) — the row offers swap actions. */
     val swapId: String? = null,
     /**
      * Accept is offered on this entry. Temporary (shift/float) swaps accept with a
@@ -140,6 +140,8 @@ data class NotificationItem(
      * not compute — those entries offer Decline only.
      */
     val swapAcceptable: Boolean = false,
+    /** This is the worker's OWN outgoing pending swap (D4) — the row offers Cancel (void). */
+    val swapOutgoing: Boolean = false,
 )
 
 /** A fully-formatted Updates row — the UI renders this directly. */
@@ -153,10 +155,12 @@ data class NotificationRow(
     val urgent: Boolean,
     /** This row is the pending-float entry (carries the `pending_float_notification` selector). */
     val opensAck: Boolean,
-    /** Non-null → the row renders the swap Accept/Decline actions (T3a). */
+    /** Non-null → the row renders swap actions (T3a incoming / D4 outgoing). */
     val swapId: String? = null,
     /** Accept offered (temporary swaps only — see [NotificationItem.swapAcceptable]). */
     val swapAcceptable: Boolean = false,
+    /** Own outgoing pending swap → the row offers Cancel (void) instead of Accept/Decline. */
+    val swapOutgoing: Boolean = false,
 )
 
 /** "18:36" when the notification is from today (NY), else the short day-of-week ("Mon"). */
@@ -186,6 +190,7 @@ fun NotificationItem.toRow(
         opensAck = floatId != null,
         swapId = swapId,
         swapAcceptable = swapAcceptable,
+        swapOutgoing = swapOutgoing,
     )
 
 /**
@@ -250,6 +255,39 @@ fun withIncomingSwapEntries(
                     urgent = true,
                     swapId = swap.swapId,
                     swapAcceptable = acceptable,
+                )
+            }
+    return items + entries
+}
+
+/**
+ * Surface the worker's OWN outgoing pending swaps (D4 — the initiator's void
+ * affordance): synthesized like [withIncomingSwapEntries] but NOT urgent (waiting
+ * on the counterparty, no action required of the worker beyond an optional
+ * cancel). Each entry carries `swapId` + `swapOutgoing = true` so the row renders
+ * a Cancel button → the `void-swap` EF. Idempotent by swap id.
+ */
+fun withOutgoingSwapEntries(
+    items: List<NotificationItem>,
+    swaps: List<IncomingSwap>,
+    zone: TimeZone = NEW_YORK,
+): List<NotificationItem> {
+    val represented = items.mapNotNull { it.swapId }.toSet()
+    val entries =
+        swaps
+            .filter { it.swapId !in represented }
+            .map { swap ->
+                val respondBy = "${formatDayLabel(swap.expiresAt, zone)}, ${formatBlockTime(swap.expiresAt, zone)}"
+                NotificationItem(
+                    id = "outgoing-swap-${swap.swapId}",
+                    category = NotificationCategory.SWAP,
+                    title = "Your swap request — ${swapTypeLabel(swap.swapType)}",
+                    body = "Waiting on your housemate. Expires $respondBy. You can cancel it.",
+                    createdAt = swap.createdAt,
+                    unread = false,
+                    urgent = false,
+                    swapId = swap.swapId,
+                    swapOutgoing = true,
                 )
             }
     return items + entries

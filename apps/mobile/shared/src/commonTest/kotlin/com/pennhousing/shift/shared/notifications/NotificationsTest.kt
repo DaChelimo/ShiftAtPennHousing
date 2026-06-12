@@ -251,5 +251,25 @@ class NotificationsTest {
         assertEquals("s-1", row.swapId)
         assertTrue(row.swapAcceptable)
         assertFalse(row.opensAck) // a swap entry never opens the float ack hero
+        assertFalse(row.swapOutgoing)
+    }
+
+    // ----- outgoing swap entries (D4 — the initiator's void affordance) -----
+
+    @Test fun outgoing_swap_synthesizes_a_voidable_non_urgent_entry() {
+        val entry = withOutgoingSwapEntries(emptyList(), listOf(swap("s-7", "shift_swap"))).single()
+        assertEquals("s-7", entry.swapId)
+        assertTrue(entry.swapOutgoing)
+        assertFalse(entry.urgent) // waiting on the counterparty — no action REQUIRED
+        assertFalse(entry.unread)
+        assertFalse(entry.swapAcceptable)
+        assertEquals("Your swap request — Shift swap", entry.title)
+        assertTrue(entry.toRow(now).swapOutgoing)
+    }
+
+    @Test fun outgoing_swap_entry_is_not_duplicated_when_already_represented() {
+        val incoming = withIncomingSwapEntries(emptyList(), listOf(swap("s-7", "shift_swap")))
+        val merged = withOutgoingSwapEntries(incoming, listOf(swap("s-7", "shift_swap")))
+        assertEquals(1, merged.size)
     }
 }

@@ -17,6 +17,7 @@ import com.pennhousing.shift.shared.notifications.NotificationItem
 import com.pennhousing.shift.shared.notifications.notificationFromPayload
 import com.pennhousing.shift.shared.shifts.BLOCK
 import com.pennhousing.shift.shared.shifts.NEW_YORK
+import com.pennhousing.shift.shared.swaps.SwapProposal
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
@@ -35,9 +36,12 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import kotlin.time.Instant
 
 /**
@@ -463,6 +467,71 @@ class WorkerShiftsRepository(
                     expiresAt = Instant.parse(it.expiresAt),
                 )
             }
+
+    /**
+     * The worker's OWN outgoing pending swaps (D4 — initiator side; own-row RLS).
+     * The Updates feed synthesizes voidable entries via `withOutgoingSwapEntries`.
+     */
+    suspend fun fetchOutgoingSwaps(userId: String): List<IncomingSwap> =
+        supabase
+            .from(TABLE_SWAP_REQUESTS)
+            .select(Columns.list("swap_id", "swap_type", "created_at", "expires_at")) {
+                filter {
+                    eq("initiator_user_id", userId)
+                    eq("status", "pending")
+                }
+            }
+            .decodeList<SwapRequestRow>()
+            .map {
+                IncomingSwap(
+                    swapId = it.swapId,
+                    swapType = it.swapType,
+                    createdAt = Instant.parse(it.createdAt),
+                    expiresAt = Instant.parse(it.expiresAt),
+                )
+            }
+
+    /**
+     * Propose a swap (§8.1–§8.4, D2/D3) → the `create-swap` Edge Function. The
+     * SERVER is authoritative for §8 eligibility (the packages/core module),
+     * ownership, pending-swap conflicts, break-profile guards and expiry; this
+     * just maps the picked proposal to the EF body. A permanent swap names the
+     * recurring slot via the same NY-local identity `permanent-drop` uses
+     * (house + day-of-week + the span's HH:MM block starts). Best-effort — the
+     * UI shows a "proposed" toast and the feed's outgoing entry follows on the
+     * next snapshot; a 4xx/409 simply means no request was created.
+     */
+    suspend fun createSwap(proposal: SwapProposal): EdgeResult {
+        val body =
+            buildJsonObject {
+                put("swap_type", proposal.swapType)
+                put("counterparty_user_id", proposal.counterpartyUserId)
+                putJsonArray("initiator_assignment_ids") {
+                    proposal.initiatorShift.blockIds.forEach { add(it) }
+                }
+                proposal.counterpartyAssignmentIds?.let { ids ->
+                    putJsonArray("counterparty_assignment_ids") { ids.forEach { add(it) } }
+                }
+                if (proposal.swapType == "permanent_swap") {
+                    val slot =
+                        slotFor(proposal.initiatorShift.house.id, proposal.initiatorShift.start, proposal.initiatorShift.end)
+                    putJsonObject("recurring_pattern") {
+                        put("house_id", slot.houseId)
+                        put("day_of_week", slot.dayOfWeek)
+                        putJsonArray("block_start_locals") { slot.blockStartLocals.forEach { add(it) } }
+                    }
+                }
+            }
+        return edge.invoke("create-swap", body.toString())
+    }
+
+    /**
+     * Cancel the worker's own outgoing pending swap (D4) → the `void-swap` Edge
+     * Function (`{ swap_id }`; either party may void a pending request — the EF
+     * filters to pending + own party, idempotent `not_pending` 409 otherwise).
+     */
+    suspend fun voidSwap(swapId: String): EdgeResult =
+        edge.invoke("void-swap", Json.encodeToString(SwapActionRequest(swapId = swapId)))
 
     /**
      * Accept an incoming TEMPORARY swap (§8.2) → the `accept-swap` Edge Function with a

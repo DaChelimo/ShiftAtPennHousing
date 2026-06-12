@@ -20,6 +20,8 @@ data class HouseScheduleUiState(
     val day: HouseDay,
     /** Strip dots — the Mon..Sun indexes that have any seat. */
     val daysWithSeats: Set<Int>,
+    /** The raw week seats — the swap counterparty picker derives candidates from these (D2). */
+    val seats: List<com.pennhousing.shift.shared.house.HouseSeat> = emptyList(),
 )
 
 /**
@@ -51,6 +53,7 @@ class HouseScheduleViewModel(
             selectedDayIndex = dayIndex,
             day = buildHouseDay(snapshot.seats, dayIndex, now),
             daysWithSeats = daysWithSeats,
+            seats = snapshot.seats,
         )
 
     fun selectDay(index: Int) {

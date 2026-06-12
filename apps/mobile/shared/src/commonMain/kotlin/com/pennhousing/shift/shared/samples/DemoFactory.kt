@@ -7,6 +7,7 @@ import com.pennhousing.shift.shared.model.FloatAck
 import com.pennhousing.shift.shared.notifications.IncomingSwap
 import com.pennhousing.shift.shared.notifications.NotificationItem
 import com.pennhousing.shift.shared.notifications.withIncomingSwapEntries
+import com.pennhousing.shift.shared.notifications.withOutgoingSwapEntries
 import com.pennhousing.shift.shared.notifications.withPendingFloatEntry
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
 import com.pennhousing.shift.shared.viewmodel.BreakClaimViewModel
@@ -87,17 +88,33 @@ object DemoFactory {
         notifications: List<NotificationItem>,
         float: FloatAck?,
         swaps: List<IncomingSwap>,
+    ): UpdatesViewModel = updatesViewModel(notifications, float, swaps, emptyList())
+
+    /**
+     * Live Updates VM with the worker's OUTGOING pending swaps too (D4 — voidable
+     * entries via `withOutgoingSwapEntries`). iOS calls this from
+     * `UpdatesObservable.activateLive`; Android applies the same merge inline.
+     */
+    fun updatesViewModel(
+        notifications: List<NotificationItem>,
+        float: FloatAck?,
+        swaps: List<IncomingSwap>,
+        outgoing: List<IncomingSwap>,
     ): UpdatesViewModel =
         UpdatesViewModel(
-            withIncomingSwapEntries(
+            withOutgoingSwapEntries(
                 items =
-                    withPendingFloatEntry(
-                        items = notifications,
-                        pendingFloatId = float?.floatId,
-                        pendingFloatStart = float?.floatStart,
-                        destinationHouseName = float?.destinationHouse?.name,
+                    withIncomingSwapEntries(
+                        items =
+                            withPendingFloatEntry(
+                                items = notifications,
+                                pendingFloatId = float?.floatId,
+                                pendingFloatStart = float?.floatStart,
+                                destinationHouseName = float?.destinationHouse?.name,
+                            ),
+                        swaps = swaps,
                     ),
-                swaps = swaps,
+                swaps = outgoing,
             ),
             now(),
         )

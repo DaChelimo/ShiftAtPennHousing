@@ -101,7 +101,8 @@ final class UpdatesObservable: ObservableObject {
         guard let items = try? await repo.fetchNotifications(userId: userId) else { return }
         let float = try? await repo.fetchPendingFloat(userId: userId)
         let swaps = (try? await repo.fetchIncomingSwaps(userId: userId)) ?? []
-        vm = DemoFactory.shared.updatesViewModel(notifications: items, float: float ?? nil, swaps: swaps)
+        let outgoing = (try? await repo.fetchOutgoingSwaps(userId: userId)) ?? []
+        vm = DemoFactory.shared.updatesViewModel(notifications: items, float: float ?? nil, swaps: swaps, outgoing: outgoing)
         feed = vm.uiState.value.feed
     }
 
@@ -207,6 +208,9 @@ struct ShiftsRootView: View {
     @State private var claimTarget: OpenShift?
     @State private var showAck = false
     @State private var claimSucceeded = false
+    // D2/D3 — swap proposal target (opened from the drop sheet's pivot).
+    @State private var swapTarget: MyShift?
+    @State private var swapProposed = false
     // T2-13 — push/deep-link routed full-screen ack (AppDelegate / onOpenURL set it).
     @ObservedObject private var deepLink = DeepLinkRouter.shared
 
@@ -219,6 +223,13 @@ struct ShiftsRootView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
                     .accessibilityIdentifier("claim_success")
+            }
+            if swapProposed {
+                // D2 — the server stays authoritative; the request shows under Updates once created.
+                ShiftToast(message: "Swap proposed — your housemate has been asked", tone: .success, systemIcon: ShiftIcons.check)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .accessibilityIdentifier("swap_proposed_toast")
             }
 
             tabBar
@@ -286,7 +297,27 @@ struct ShiftsRootView: View {
                         _ = try? await repo.dropShift(shift: droppedShift)
                     }
                 }
+            }, onProposeSwap: swapKindsFor(shift: shift, breakProfile: false).isEmpty ? nil : {
+                // D2 — pivot from dropping to proposing a swap for the same card.
+                dropTarget = nil
+                swapTarget = shift
             })
+        }
+        .sheet(item: $swapTarget) { shift in
+            SwapSheetView(
+                shift: shift,
+                kinds: swapKindsFor(shift: shift, breakProfile: false),
+                candidates: swapCandidatesFor(seats: houseModel.state.seats, excludeUserId: liveUserId),
+                onSubmit: { proposal in
+                    // Live host POSTs the real proposal → `create-swap` (best-effort);
+                    // the server is authoritative for §8 eligibility/conflicts.
+                    if liveUserId != nil {
+                        let repo = WorkerBackend.shared.shiftsRepository
+                        Task { _ = try? await repo.createSwap(proposal: proposal) }
+                    }
+                    swapProposed = true
+                }
+            )
         }
         .sheet(item: $claimTarget) { shift in
             ClaimFlowSheet(
@@ -673,15 +704,21 @@ struct ShiftsRootView: View {
                 if row.urgent { actionNeededTag(c) }
                 Text(row.body).font(ShiftFont.sans(13)).foregroundColor(c.sec).fixedSize(horizontal: false, vertical: true)
                 if let swapId = row.swapId {
-                    // T3a — the counterparty action on an incoming swap. Accept only for
-                    // temporary swaps (a permanent acceptance needs the desk/web — §8.4).
+                    // T3a — the counterparty action on an incoming swap (Accept only for
+                    // temporary swaps; permanent acceptance needs the desk/web — §8.4).
+                    // D4 — an OUTGOING pending swap offers Cancel (void) instead.
                     HStack(spacing: 8) {
-                        if row.swapAcceptable {
-                            ShiftButton(title: "Accept", action: { actOnSwap(swapId, accept: true) }, size: .sm)
-                                .accessibilityIdentifier("swap_accept_button")
+                        if row.swapOutgoing {
+                            ShiftButton(title: "Cancel request", action: { voidSwap(swapId) }, variant: .outlined, size: .sm)
+                                .accessibilityIdentifier("swap_void_button")
+                        } else {
+                            if row.swapAcceptable {
+                                ShiftButton(title: "Accept", action: { actOnSwap(swapId, accept: true) }, size: .sm)
+                                    .accessibilityIdentifier("swap_accept_button")
+                            }
+                            ShiftButton(title: "Decline", action: { actOnSwap(swapId, accept: false) }, variant: .outlined, size: .sm)
+                                .accessibilityIdentifier("swap_reject_button")
                         }
-                        ShiftButton(title: "Decline", action: { actOnSwap(swapId, accept: false) }, variant: .outlined, size: .sm)
-                            .accessibilityIdentifier("swap_reject_button")
                     }
                     .padding(.top, 6)
                 }
@@ -695,6 +732,14 @@ struct ShiftsRootView: View {
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(row.urgent ? Color.clear : c.divider, lineWidth: 1))
         .accessibilityIdentifier(row.swapId != nil ? "swap_request_notification" : "")
+    }
+
+    /// D4 — cancel an own outgoing pending swap: optimistic resolve + `void-swap` POST.
+    private func voidSwap(_ swapId: String) {
+        updatesModel.resolveSwap(swapId)
+        guard liveUserId != nil else { return }
+        let repo = WorkerBackend.shared.shiftsRepository
+        Task { _ = try? await repo.voidSwap(swapId: swapId) }
     }
 
     /// Resolve an incoming swap entry optimistically, then (live) POST the real
@@ -1256,6 +1301,8 @@ private struct DropFlowSheet: View {
     /// Live host POSTs to `drop-shift` / `permanent-drop` on confirm (best-effort);
     /// nil in the demo path. The Bool is the permanent-vs-occurrence scope.
     var onDrop: ((MyShift, Bool) -> Void)? = nil
+    /// D2 — non-nil when this card can propose a swap (§8); pivots to the SwapSheet.
+    var onProposeSwap: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
     @State private var permanentScope = false
@@ -1302,6 +1349,12 @@ private struct DropFlowSheet: View {
 
                 if !permanentScope && blockCount > 1 {
                     dropRangeSelector(plan, c)
+                }
+
+                if let propose = onProposeSwap {
+                    // D2 — keep the shift, trade it with a housemate instead (§8).
+                    ShiftButton(title: "Propose a swap instead", action: { dismiss(); propose() }, variant: .tonal, fullWidth: true)
+                        .accessibilityIdentifier("swap_propose_option")
                 }
 
                 if shortNotice && !acknowledged {
@@ -1380,6 +1433,121 @@ private struct DropFlowSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(c.divider, lineWidth: 1))
         .accessibilityIdentifier("drop_range_selector")
+    }
+}
+
+/// The swap-proposal sheet (§8.1–§8.4, D2/D3): pick the kind the card supports,
+/// then the counterparty — a housemate's run (temporary) or a person (permanent)
+/// from the §11.4 house grid. The server (`create-swap`) stays authoritative.
+private struct SwapSheetView: View {
+    let shift: MyShift
+    let kinds: [SwapKind]
+    let candidates: [SwapCandidate]
+    let onSubmit: (SwapProposal) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var scheme
+    @State private var kindIndex = 0
+    @State private var picked: SwapCandidate?
+
+    private var kind: SwapKind { kinds[min(kindIndex, kinds.count - 1)] }
+    private var options: [SwapCandidate] {
+        kind == .permanent ? swapPeople(candidates: candidates) : candidates
+    }
+
+    var body: some View {
+        let c = ShiftColors.resolve(scheme)
+        let row = shift.toRow()
+        ShiftSheet(title: "Propose a swap", onClose: { dismiss() }) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    HouseBadge(initial: row.houseInitial, bg: c.surfaceVar, fg: c.ink)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(row.timeLabel).font(ShiftType.monoTime).monospacedDigit().foregroundColor(c.ink)
+                        Text("\(row.houseName ?? row.destination ?? "") · \(row.durationLabel) · \(row.dayLabel)")
+                            .font(ShiftFont.sans(13)).foregroundColor(c.sec)
+                    }
+                }
+
+                if kinds.count > 1 {
+                    HStack(spacing: 8) {
+                        kindButton("This week", 0, c)
+                        kindButton("Permanently", 1, c)
+                    }
+                } else if kind == .float {
+                    Text("Float swap — a housemate takes your float assignment.")
+                        .font(ShiftFont.sans(13)).foregroundColor(c.sec)
+                }
+
+                SectionHeader(title: kind == .permanent ? "Who takes the slot?" : "Whose shift do you want?")
+                if options.isEmpty {
+                    Text("No housemates with shifts this week to swap with.")
+                        .font(ShiftFont.sans(13)).foregroundColor(c.ter)
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(options.prefix(8), id: \.seatIds) { candidate in
+                            candidateRow(candidate, c)
+                        }
+                    }
+                    .accessibilityIdentifier("swap_candidate_list")
+                }
+
+                ShiftButton(
+                    title: "Propose swap",
+                    action: {
+                        if let candidate = picked {
+                            onSubmit(buildSwapProposal(kind: kind, initiatorShift: shift, candidate: candidate))
+                            dismiss()
+                        }
+                    },
+                    fullWidth: true
+                )
+                .disabled(picked == nil)
+                .accessibilityIdentifier("swap_submit_button")
+            }
+            .accessibilityIdentifier("swap_sheet")
+        }
+    }
+
+    private func kindButton(_ title: String, _ index: Int, _ c: ShiftColors) -> some View {
+        Button(action: { kindIndex = index; picked = nil }) {
+            Text(title)
+                .font(ShiftFont.sans(13.5, kindIndex == index ? .semibold : .regular))
+                .foregroundColor(kindIndex == index ? .white : c.ink)
+                .padding(.horizontal, 12).padding(.vertical, 7)
+                .background(kindIndex == index ? c.blue : c.surfaceVar)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(index == 0 ? "swap_kind_shift" : "swap_kind_permanent")
+    }
+
+    private func candidateRow(_ candidate: SwapCandidate, _ c: ShiftColors) -> some View {
+        let selected = picked?.userId == candidate.userId && picked?.seatIds == candidate.seatIds
+        return Button(action: { picked = candidate }) {
+            HStack(spacing: 10) {
+                HouseBadge(initial: String(candidate.workerName.prefix(1)), bg: c.surfaceVar, fg: c.ink)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(candidate.workerName).font(ShiftFont.sans(14, .semibold)).foregroundColor(c.ink)
+                    if kind != .permanent {
+                        Text("\(candidate.dayLabel) · \(candidate.timeLabel) · \(candidate.durationLabel)")
+                            .font(ShiftFont.sans(12.5)).foregroundColor(c.sec)
+                    }
+                }
+                Spacer(minLength: 0)
+                if selected {
+                    Image(systemName: ShiftIcons.checkCircle).font(.system(size: 16)).foregroundColor(c.blue)
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .background(selected ? c.blue.opacity(0.08) : c.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(selected ? c.blue : c.divider, lineWidth: selected ? 1.5 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("swap_candidate_row")
     }
 }
 

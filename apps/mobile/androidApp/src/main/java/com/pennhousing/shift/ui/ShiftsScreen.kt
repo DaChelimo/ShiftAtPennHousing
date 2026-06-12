@@ -75,6 +75,12 @@ import com.pennhousing.shift.shared.shifts.claimMeter
 import com.pennhousing.shift.shared.shifts.hoursBetween
 import com.pennhousing.shift.shared.shifts.subOpenShiftFor
 import com.pennhousing.shift.shared.shifts.subShiftFor
+import com.pennhousing.shift.shared.swaps.SwapCandidate
+import com.pennhousing.shift.shared.swaps.SwapKind
+import com.pennhousing.shift.shared.swaps.SwapProposal
+import com.pennhousing.shift.shared.swaps.buildSwapProposal
+import com.pennhousing.shift.shared.swaps.swapKindsFor
+import com.pennhousing.shift.shared.swaps.swapPeople
 import com.pennhousing.shift.shared.shifts.toRow
 import com.pennhousing.shift.shared.shifts.weeklyHoursSummary
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
@@ -191,6 +197,12 @@ fun ShiftsApp(
     // `pennshift://float-ack/{floatId}` deep link → present the FULL-SCREEN ack
     // surface on launch (the ack VM already targets the worker's pending float).
     launchFloatAckId: String? = null,
+    // D2/D3 — swap initiation: the counterparty picker candidates (derived from the
+    // house grid by the host) and the live `create-swap` POST. Demo = local-only.
+    swapCandidates: List<SwapCandidate> = emptyList(),
+    onCreateSwap: (SwapProposal) -> Unit = {},
+    // D4 — cancel an own outgoing pending swap → `void-swap` (best-effort).
+    onVoidSwap: (String) -> Unit = {},
 ) {
     ShiftTheme {
         val state by shiftsVm.uiState.collectAsStateWithLifecycle()
@@ -198,6 +210,7 @@ fun ShiftsApp(
         var selectedIndex by remember { mutableIntStateOf(TAB_MY) }
         var showAckModal by remember { mutableStateOf(false) }
         var claimSuccess by remember { mutableStateOf(false) }
+        var swapProposed by remember { mutableStateOf(false) }
         // T2-13 — full-screen ack on push/deep-link launch (once per launch id).
         var showFullScreenAck by remember(launchFloatAckId) { mutableStateOf(launchFloatAckId != null) }
 
@@ -215,6 +228,20 @@ fun ShiftsApp(
                                 .fillMaxWidth()
                                 .padding(horizontal = 16.dp, vertical = 8.dp)
                                 .testTag("claim_success"),
+                        tone = ToastTone.Success,
+                        icon = ShiftIcons.Check,
+                    )
+                }
+                if (swapProposed) {
+                    // D2 — the server stays authoritative; the request shows under
+                    // Updates (outgoing) once created, so this is honest feedback.
+                    ShiftToast(
+                        message = "Swap proposed — your housemate has been asked",
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                                .testTag("swap_proposed_toast"),
                         tone = ToastTone.Success,
                         icon = ShiftIcons.Check,
                     )
@@ -254,7 +281,18 @@ fun ShiftsApp(
                 }
 
                 when (selectedIndex) {
-                    TAB_MY -> MyShiftsTabContent(state.myShifts, shiftsVm, currentWeeklyHours, breakProfile, onDropShift, onReclaimShift)
+                    TAB_MY ->
+                        MyShiftsTabContent(
+                            tab = state.myShifts,
+                            vm = shiftsVm,
+                            currentWeeklyHours = currentWeeklyHours,
+                            breakProfile = breakProfile,
+                            onDropShift = onDropShift,
+                            onReclaimShift = onReclaimShift,
+                            swapCandidates = swapCandidates,
+                            onCreateSwap = onCreateSwap,
+                            onSwapProposed = { swapProposed = true },
+                        )
                     TAB_HOME ->
                         HomeOpenTabContent(
                             tab = state.homeOpen,
@@ -298,6 +336,11 @@ fun ShiftsApp(
                             onRejectSwap = { swapId ->
                                 updatesVm.resolveSwap(swapId)
                                 onRejectSwap(swapId)
+                            },
+                            // D4 — cancel an own outgoing pending swap (void).
+                            onVoidSwap = { swapId ->
+                                updatesVm.resolveSwap(swapId)
+                                onVoidSwap(swapId)
                             },
                         )
                     TAB_PREFS -> PreferencesTabContent(preferencesVm, onSubmitPreferences)
@@ -369,8 +412,12 @@ private fun MyShiftsTabContent(
     breakProfile: Boolean,
     onDropShift: (MyShift, Boolean) -> Unit = { _, _ -> },
     onReclaimShift: (MyShift) -> Unit = {},
+    swapCandidates: List<SwapCandidate> = emptyList(),
+    onCreateSwap: (SwapProposal) -> Unit = {},
+    onSwapProposed: () -> Unit = {},
 ) {
     var dropTarget by remember { mutableStateOf<MyShift?>(null) }
+    var swapTarget by remember { mutableStateOf<MyShift?>(null) }
 
     // §5.6 Tab 1 order (top→bottom): picked-up, dropped, scheduled. (The design's
     // visual order is scheduled-first, but the spec + Maestro contract pin this order.)
@@ -435,6 +482,29 @@ private fun MyShiftsTabContent(
             breakProfile = breakProfile,
             onDrop = onDropShift,
             onDismiss = { dropTarget = null },
+            // D2 — pivot from dropping to proposing a swap for the same card.
+            onProposeSwap =
+                if (swapKindsFor(shift, breakProfile).isNotEmpty()) {
+                    {
+                        dropTarget = null
+                        swapTarget = shift
+                    }
+                } else {
+                    null
+                },
+        )
+    }
+
+    swapTarget?.let { shift ->
+        SwapSheet(
+            shift = shift,
+            kinds = swapKindsFor(shift, breakProfile),
+            candidates = swapCandidates,
+            onSubmit = { proposal ->
+                onCreateSwap(proposal)
+                onSwapProposed()
+            },
+            onDismiss = { swapTarget = null },
         )
     }
 }
@@ -989,6 +1059,7 @@ private fun UpdatesTabContent(
     onMarkAllRead: () -> Unit,
     onAcceptSwap: (String) -> Unit = {},
     onRejectSwap: (String) -> Unit = {},
+    onVoidSwap: (String) -> Unit = {},
 ) {
     if (feed.isEmpty) {
         Column(Modifier.fillMaxSize().background(ShiftTheme.colors.bg).padding(top = 40.dp)) {
@@ -1009,10 +1080,10 @@ private fun UpdatesTabContent(
             item { MarkAllReadHeader(onMarkAllRead) }
         }
         if (feed.today.isNotEmpty()) {
-            item { NotificationGroup("Today", feed.today, onOpenAck, onAcceptSwap, onRejectSwap) }
+            item { NotificationGroup("Today", feed.today, onOpenAck, onAcceptSwap, onRejectSwap, onVoidSwap) }
         }
         if (feed.earlier.isNotEmpty()) {
-            item { NotificationGroup("Earlier", feed.earlier, onOpenAck, onAcceptSwap, onRejectSwap) }
+            item { NotificationGroup("Earlier", feed.earlier, onOpenAck, onAcceptSwap, onRejectSwap, onVoidSwap) }
         }
     }
 }
@@ -1052,10 +1123,11 @@ private fun NotificationGroup(
     onOpenAck: () -> Unit,
     onAcceptSwap: (String) -> Unit = {},
     onRejectSwap: (String) -> Unit = {},
+    onVoidSwap: (String) -> Unit = {},
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         SectionHeader(title)
-        rows.forEach { NotificationCard(it, onOpenAck, onAcceptSwap, onRejectSwap) }
+        rows.forEach { NotificationCard(it, onOpenAck, onAcceptSwap, onRejectSwap, onVoidSwap) }
     }
 }
 
@@ -1066,6 +1138,7 @@ private fun NotificationCard(
     onOpenAck: () -> Unit,
     onAcceptSwap: (String) -> Unit = {},
     onRejectSwap: (String) -> Unit = {},
+    onVoidSwap: (String) -> Unit = {},
 ) {
     val c = ShiftTheme.colors
     val (icon, accent) =
@@ -1118,24 +1191,35 @@ private fun NotificationCard(
                 if (row.urgent) ActionNeededTag()
                 Text(row.body, color = c.sec, fontSize = 13.sp, lineHeight = 18.sp)
                 row.swapId?.let { swapId ->
-                    // T3a — the counterparty action on an incoming swap. Accept only for
-                    // temporary swaps (a permanent acceptance needs the desk/web — §8.4).
+                    // T3a — the counterparty action on an incoming swap (Accept only for
+                    // temporary swaps; a permanent acceptance needs the desk/web — §8.4).
+                    // D4 — an OUTGOING pending swap offers Cancel (void) instead.
                     Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (row.swapAcceptable) {
+                        if (row.swapOutgoing) {
                             ShiftButton(
-                                "Accept",
-                                onClick = { onAcceptSwap(swapId) },
-                                modifier = Modifier.testTag("swap_accept_button"),
+                                "Cancel request",
+                                onClick = { onVoidSwap(swapId) },
+                                modifier = Modifier.testTag("swap_void_button"),
+                                variant = ButtonVariant.Outlined,
+                                size = ButtonSize.Sm,
+                            )
+                        } else {
+                            if (row.swapAcceptable) {
+                                ShiftButton(
+                                    "Accept",
+                                    onClick = { onAcceptSwap(swapId) },
+                                    modifier = Modifier.testTag("swap_accept_button"),
+                                    size = ButtonSize.Sm,
+                                )
+                            }
+                            ShiftButton(
+                                "Decline",
+                                onClick = { onRejectSwap(swapId) },
+                                modifier = Modifier.testTag("swap_reject_button"),
+                                variant = ButtonVariant.Outlined,
                                 size = ButtonSize.Sm,
                             )
                         }
-                        ShiftButton(
-                            "Decline",
-                            onClick = { onRejectSwap(swapId) },
-                            modifier = Modifier.testTag("swap_reject_button"),
-                            variant = ButtonVariant.Outlined,
-                            size = ButtonSize.Sm,
-                        )
                     }
                 }
             }
@@ -1652,6 +1736,8 @@ private fun DropSheet(
     breakProfile: Boolean,
     onDismiss: () -> Unit,
     onDrop: (MyShift, Boolean) -> Unit = { _, _ -> },
+    // D2 — non-null when this card can propose a swap (§8); pivots to the SwapSheet.
+    onProposeSwap: (() -> Unit)? = null,
 ) {
     val c = ShiftTheme.colors
     val row = remember(shift) { shift.toRow() }
@@ -1713,6 +1799,17 @@ private fun DropSheet(
                         rangeFrom = from
                         rangeTo = to
                     },
+                )
+            }
+
+            onProposeSwap?.let { propose ->
+                // D2 — keep the shift, trade it with a housemate instead (§8).
+                ShiftButton(
+                    "Propose a swap instead",
+                    onClick = propose,
+                    modifier = Modifier.fillMaxWidth().testTag("swap_propose_option"),
+                    variant = ButtonVariant.Tonal,
+                    fullWidth = true,
                 )
             }
 
@@ -1821,6 +1918,153 @@ private fun DropRangeSelector(
             valueRange = 0f..blockCount.toFloat(),
             steps = (blockCount - 1).coerceAtLeast(0),
         )
+    }
+}
+
+// ===================================================================
+// Swap proposal (§8.1–§8.4, D2/D3) — initiate a swap from a My-Shifts card.
+// ===================================================================
+
+/**
+ * The swap-proposal sheet: pick the swap kind the card supports (§8 — float
+ * cards propose a float swap; scheduled cards a this-week or permanent swap;
+ * pickups a this-week swap), then the counterparty — a housemate's run from
+ * the §11.4 house grid for temporary swaps, a PERSON for permanent swaps. The
+ * server (`create-swap` + packages/core eligibility) stays authoritative; a
+ * rejected proposal simply creates nothing and the feed never shows it.
+ */
+@Composable
+private fun SwapSheet(
+    shift: MyShift,
+    kinds: List<SwapKind>,
+    candidates: List<SwapCandidate>,
+    onSubmit: (SwapProposal) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val c = ShiftTheme.colors
+    val row = remember(shift) { shift.toRow() }
+    var kind by remember { mutableStateOf(kinds.first()) }
+    var picked by remember { mutableStateOf<SwapCandidate?>(null) }
+    val options = remember(kind, candidates) { if (kind == SwapKind.PERMANENT) swapPeople(candidates) else candidates }
+
+    ShiftBottomSheet(onDismiss = onDismiss, title = "Propose a swap") {
+        Column(
+            Modifier.fillMaxWidth().testTag("swap_sheet"),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                HouseBadge(row.houseInitial, c.surfaceVar, c.ink)
+                Column {
+                    Text(row.timeLabel, style = ShiftTheme.type.monoTime, color = c.ink)
+                    Text("${row.houseName ?: row.destination ?: ""} · ${row.durationLabel} · ${row.dayLabel}", color = c.sec, fontSize = 13.sp)
+                }
+            }
+
+            if (kinds.size > 1) {
+                ScopeOption(
+                    selected = kind == SwapKind.SHIFT,
+                    title = "Swap this week's occurrence",
+                    body = "You take theirs, they take yours — this week only.",
+                    icon = ShiftIcons.Refresh,
+                    accent = MaterialTheme.colorScheme.primary,
+                    tag = "swap_kind_shift",
+                    onClick = {
+                        kind = SwapKind.SHIFT
+                        picked = null
+                    },
+                )
+                ScopeOption(
+                    selected = kind == SwapKind.PERMANENT,
+                    title = "Swap permanently",
+                    body = "Transfers this recurring slot for the rest of the period.",
+                    icon = ShiftIcons.Refresh,
+                    accent = c.permanent.accent,
+                    tag = "swap_kind_permanent",
+                    onClick = {
+                        kind = SwapKind.PERMANENT
+                        picked = null
+                    },
+                )
+            } else if (kind == SwapKind.FLOAT) {
+                Text(
+                    "Float swap — a housemate takes your float assignment.",
+                    color = c.sec,
+                    fontSize = 13.sp,
+                )
+            }
+
+            SectionHeader(if (kind == SwapKind.PERMANENT) "Who takes the slot?" else "Whose shift do you want?")
+            if (options.isEmpty()) {
+                Text("No housemates with shifts this week to swap with.", color = c.ter, fontSize = 13.sp)
+            } else {
+                Column(
+                    Modifier.testTag("swap_candidate_list"),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    options.take(8).forEach { candidate ->
+                        SwapCandidateRow(
+                            candidate = candidate,
+                            personOnly = kind == SwapKind.PERMANENT,
+                            selected = picked?.userId == candidate.userId && picked?.seatIds == candidate.seatIds,
+                            onClick = { picked = candidate },
+                        )
+                    }
+                }
+            }
+
+            ShiftButton(
+                "Propose swap",
+                onClick = {
+                    picked?.let { candidate ->
+                        onSubmit(buildSwapProposal(kind, shift, candidate))
+                        onDismiss()
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().testTag("swap_submit_button"),
+                fullWidth = true,
+                enabled = picked != null,
+            )
+        }
+    }
+}
+
+/** One pickable counterparty row — a run (temporary swaps) or a person (permanent). */
+@Composable
+private fun SwapCandidateRow(
+    candidate: SwapCandidate,
+    personOnly: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val c = ShiftTheme.colors
+    val accent = MaterialTheme.colorScheme.primary
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(if (selected) accent.copy(alpha = 0.08f) else c.surface)
+            .border(if (selected) 1.5.dp else 1.dp, if (selected) accent else c.divider, shape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .testTag("swap_candidate_row"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        HouseBadge(candidate.workerName.take(1), c.surfaceVar, c.ink)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text(candidate.workerName, color = c.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            if (!personOnly) {
+                Text(
+                    "${candidate.dayLabel} · ${candidate.timeLabel} · ${candidate.durationLabel}",
+                    color = c.sec,
+                    fontSize = 12.5.sp,
+                )
+            }
+        }
+        if (selected) {
+            Icon(ShiftIcons.CheckCircle, contentDescription = null, tint = accent, modifier = Modifier.size(18.dp))
+        }
     }
 }
 

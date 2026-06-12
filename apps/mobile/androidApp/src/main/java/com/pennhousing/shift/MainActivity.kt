@@ -46,6 +46,8 @@ import com.pennhousing.shift.shared.notifications.withPendingFloatEntry
 import com.pennhousing.shift.shared.platform.AppConfig
 import com.pennhousing.shift.shared.preferences.PreferencePeriod
 import com.pennhousing.shift.shared.samples.DemoData
+import com.pennhousing.shift.shared.notifications.withOutgoingSwapEntries
+import com.pennhousing.shift.shared.swaps.swapCandidates
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
 import com.pennhousing.shift.shared.viewmodel.BreakClaimViewModel
 import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
@@ -140,6 +142,8 @@ private fun DemoRoot(launchFloatAckId: String? = null) {
         // Demo has no backend session → sign-out is a no-op (login is the live path).
         onSignOut = {},
         launchFloatAckId = launchFloatAckId,
+        // D2 — demo swap candidates from the demo house grid (no live write).
+        swapCandidates = remember(now) { swapCandidates(DemoData.houseSchedule(now).seats, excludeUserId = null) },
     )
 }
 
@@ -253,19 +257,28 @@ private fun LiveShiftsRoot(
                 produceState(initialValue = emptyList<IncomingSwap>(), session.userId) {
                     value = runCatching { repo.fetchIncomingSwaps(session.userId) }.getOrDefault(emptyList())
                 }
+            // Outgoing pending swaps (D4): the worker's own initiator rows — voidable.
+            val liveOutgoingSwaps by
+                produceState(initialValue = emptyList<IncomingSwap>(), session.userId) {
+                    value = runCatching { repo.fetchOutgoingSwaps(session.userId) }.getOrDefault(emptyList())
+                }
             val updatesVm =
-                remember(liveNotifications, livePendingFloat, liveIncomingSwaps) {
+                remember(liveNotifications, livePendingFloat, liveIncomingSwaps, liveOutgoingSwaps) {
                     val base = liveNotifications ?: DemoData.notifications(now)
                     UpdatesViewModel(
-                        withIncomingSwapEntries(
+                        withOutgoingSwapEntries(
                             items =
-                                withPendingFloatEntry(
-                                    items = base,
-                                    pendingFloatId = livePendingFloat?.floatId,
-                                    pendingFloatStart = livePendingFloat?.floatStart,
-                                    destinationHouseName = livePendingFloat?.destinationHouse?.name,
+                                withIncomingSwapEntries(
+                                    items =
+                                        withPendingFloatEntry(
+                                            items = base,
+                                            pendingFloatId = livePendingFloat?.floatId,
+                                            pendingFloatStart = livePendingFloat?.floatStart,
+                                            destinationHouseName = livePendingFloat?.destinationHouse?.name,
+                                        ),
+                                    swaps = liveIncomingSwaps,
                                 ),
-                            swaps = liveIncomingSwaps,
+                            swaps = liveOutgoingSwaps,
                         ),
                         now,
                     )
@@ -460,6 +473,20 @@ private fun LiveShiftsRoot(
                     // POST the real decline → `reject-swap` (best-effort; idempotent — a
                     // non-pending swap 409s `not_pending` and nothing changes server-side).
                     prefsScope.launch { repo.rejectSwap(swapId) }
+                },
+                // D2/D3 — counterparty candidates from the live house grid (self excluded).
+                swapCandidates =
+                    remember(liveHouseSchedule) {
+                        swapCandidates(liveHouseSchedule?.seats ?: emptyList(), excludeUserId = session.userId)
+                    },
+                onCreateSwap = { proposal ->
+                    // POST the real proposal → `create-swap` (best-effort). The server is
+                    // authoritative for §8 eligibility/conflicts; a rejection creates nothing.
+                    prefsScope.launch { repo.createSwap(proposal) }
+                },
+                onVoidSwap = { swapId ->
+                    // POST the real void → `void-swap` (best-effort; pending-only, own-party).
+                    prefsScope.launch { repo.voidSwap(swapId) }
                 },
             )
         }

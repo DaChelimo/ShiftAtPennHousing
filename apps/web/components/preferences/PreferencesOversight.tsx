@@ -1,25 +1,22 @@
 import Link from 'next/link';
 
 import type {
-  DeadlineStatus,
   PreferenceRow,
   PreferencesOversight as PreferencesOversightData,
   ReminderCell,
 } from '../../lib/data/preferences';
 import {
   Avatar,
-  Button,
   type Column,
   DataTable,
-  DateInput,
   EmptyState,
-  Field,
   type IconName,
-  Notification,
   PageHead,
   Tag,
   type TagKind,
 } from '../ui';
+
+import { DeadlineEditor } from './DeadlineEditor';
 
 const ROLE_META: Record<PreferenceRow['role'], { short: string; full: string; kind: TagKind }> = {
   sm: { short: 'SM', full: 'Student Manager', kind: 'blue' },
@@ -34,31 +31,6 @@ const STATUS_META: Record<
   no_hours: { label: 'No hours', kind: 'gray', dot: true },
   not_yet: { label: 'Not yet', kind: 'amber', icon: 'clock' },
 };
-
-const DEADLINE_META: Record<DeadlineStatus, { label: string; kind: TagKind }> = {
-  open: { label: 'Open', kind: 'green' },
-  closed: { label: 'Closed', kind: 'gray' },
-  unset: { label: 'No deadline set', kind: 'outline' },
-  published: { label: 'Published', kind: 'blue' },
-};
-
-function deadlineCaption(period: NonNullable<PreferencesOversightData['period']>): string {
-  const { status, deadlineLabel, daysToDeadline } = period;
-  if (status === 'published') {
-    return 'This period is published — preferences are locked and the schedule is live.';
-  }
-  if (status === 'unset' || deadlineLabel === null || daysToDeadline === null) {
-    return 'No deadline set — preference submission is open indefinitely.';
-  }
-  if (status === 'open') {
-    const d = daysToDeadline;
-    const rel = d <= 0 ? 'today' : d === 1 ? 'in 1 day' : `in ${d} days`;
-    return `Submissions close ${rel} · ${deadlineLabel}.`;
-  }
-  const ago = Math.abs(daysToDeadline);
-  const rel = ago === 0 ? 'today' : ago === 1 ? '1 day ago' : `${ago} days ago`;
-  return `Submissions closed ${rel} · ${deadlineLabel}.`;
-}
 
 // Reminder cadence chips (5d / 3d / 1d). Color is never the only cue: a sent
 // reminder carries a check, upcoming is a hollow outline, overdue a filled dot —
@@ -240,49 +212,8 @@ export function PreferencesOversight({ data }: { data: PreferencesOversightData 
         }
       />
 
-      <Notification kind="info" title="Setting the deadline isn’t wired in this build">
-        The submission deadline below is live (read from the scheduling period), but there is no
-        set-deadline RPC yet, so the control is disabled (DESIGN_TOKENS.md §6). Submission and
-        reminder status are live.
-      </Notification>
-
-      {/* Deadline — current value is live; the editor is flagged-disabled. */}
-      <section
-        className="card"
-        style={{ padding: 16, margin: '16px 0 20px', display: 'grid', gap: 16 }}
-        aria-label="Submission deadline"
-      >
-        <div className="row between wrap gap-4" style={{ alignItems: 'flex-start' }}>
-          <div className="col gap-1">
-            <span className="t-eyebrow">Submission deadline</span>
-            <span className="row gap-2 center">
-              <Tag kind={DEADLINE_META[period.status].kind}>
-                {DEADLINE_META[period.status].label}
-              </Tag>
-              <span className="t-h2" style={{ margin: 0 }}>
-                {period.deadlineLabel ?? 'Not set'}
-              </span>
-            </span>
-            <span className="t-helper">{deadlineCaption(period)}</span>
-          </div>
-          <div className="row gap-3 wrap" style={{ alignItems: 'flex-end' }}>
-            <Field label="New deadline" helper="No set-deadline RPC in this build">
-              <DateInput
-                defaultValue={period.deadlineDateValue ?? undefined}
-                disabled
-                aria-label="New submission deadline (disabled — not wired in this build)"
-              />
-            </Field>
-            <Button
-              icon="calendar"
-              disabled
-              title="Set the submission deadline — no backing RPC in this build (flagged)"
-            >
-              Set deadline
-            </Button>
-          </div>
-        </div>
-      </section>
+      {/* Deadline — live read + write (set_preference_deadline RPC, §4.2). */}
+      <DeadlineEditor period={period} />
 
       {/* Roster completion — sets up the builder. */}
       <div

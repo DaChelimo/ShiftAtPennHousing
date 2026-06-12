@@ -1769,6 +1769,17 @@ export type Database = {
         };
         Returns: boolean;
       };
+      set_preference_deadline: {
+        Args: {
+          p_actor_user_id: string;
+          p_period_id: string;
+          p_preference_deadline: string;
+        };
+        Returns: {
+          period_id: string;
+          preference_deadline: string;
+        }[];
+      };
       snapshot_float_ack_reminders: {
         Args: {
           p_destination_assignment_ids: string[];

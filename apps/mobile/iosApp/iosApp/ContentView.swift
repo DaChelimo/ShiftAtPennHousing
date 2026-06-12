@@ -9,24 +9,52 @@ import Shared
 /// Maestro flows run on the iOS simulator.
 
 /// Observes a Kotlin `StateFlow<ShiftsUiState>` (exposed by SKIE) as `@Published`.
+/// D8 — the live host calls `activateLive`: the worker's REAL week streams in via
+/// `observeWorkerWeek` (Realtime) and the VM is rebuilt per emission, exactly like
+/// Android's `LiveShiftsRoot` (reads were demo-backed on iOS before; writes were live).
 @MainActor
 final class ShiftsObservable: ObservableObject {
-    let vm: ShiftsScreenViewModel
+    private(set) var vm: ShiftsScreenViewModel
     @Published var state: ShiftsUiState
+    /// The live "This week — Xh" total (demo constant until live activates).
+    @Published var weeklyHours: Double = DemoFactory.shared.demoWeeklyHours
     private var task: Task<Void, Never>?
+    private var liveTask: Task<Void, Never>?
+    private var live = false
 
     init(vm: ShiftsScreenViewModel) {
         self.vm = vm
         self.state = vm.uiState.value
+        subscribe()
+    }
+
+    private func subscribe() {
+        task?.cancel()
+        state = vm.uiState.value
         task = Task { [weak self] in
             guard let self else { return }
-            for await s in self.vm.uiState {
-                self.state = s
+            for await s in self.vm.uiState { self.state = s }
+        }
+    }
+
+    func activateLive(repo: WorkerShiftsRepository, userId: String) {
+        guard !live else { return }
+        live = true
+        liveTask = Task { [weak self] in
+            // Initial snapshot + a fresh one on every Realtime change (RLS-scoped).
+            for await snapshot in repo.observeWorkerWeek(userId: userId) {
+                guard let self else { return }
+                self.vm = DemoFactory.shared.shiftsViewModel(snapshot: snapshot)
+                self.weeklyHours = DemoFactory.shared.weeklyHoursFor(snapshot: snapshot)
+                self.subscribe()
             }
         }
     }
 
-    deinit { task?.cancel() }
+    deinit {
+        task?.cancel()
+        liveTask?.cancel()
+    }
 }
 
 /// Observes the Personal-Calendar `StateFlow` (its `selectDay` mutates state, so —
@@ -59,13 +87,21 @@ final class CalendarObservable: ObservableObject {
     /// Live host: fetch the worker's closed-house day indexes (best-effort; an empty
     /// set keeps the demo VM) and rebuild the calendar VM with them. `DemoFactory`
     /// supplies `now` Kotlin-side; the Set flows Kotlin→Swift→Kotlin opaquely.
-    func activateLive(repo: WorkerShiftsRepository, userId: String) async {
+    func activateLive(repo: WorkerShiftsRepository, userId: String) {
         guard !live else { return }
         live = true
-        guard let closed = try? await repo.fetchCalendarClosedDays(userId: userId), !closed.isEmpty else { return }
-        vm = DemoFactory.shared.calendarViewModel(closedDayIndexes: closed)
-        subscribe()
+        liveTask = Task { [weak self] in
+            // D8 — the calendar reads the REAL week too (closed days overlaid once).
+            let closed = (try? await repo.fetchCalendarClosedDays(userId: userId)) ?? Set()
+            for await snapshot in repo.observeWorkerWeek(userId: userId) {
+                guard let self else { return }
+                self.vm = DemoFactory.shared.calendarViewModel(snapshot: snapshot, closedDayIndexes: closed)
+                self.subscribe()
+            }
+        }
     }
+
+    private var liveTask: Task<Void, Never>?
 
     deinit { task?.cancel() }
 }
@@ -334,7 +370,7 @@ struct ShiftsRootView: View {
             ClaimFlowSheet(
                 vm: model.vm,
                 shift: shift,
-                currentWeeklyHours: DemoFactory.shared.demoWeeklyHours,
+                currentWeeklyHours: model.weeklyHours,
                 // Live host GETs the `permanent-pickup` dry-run SCOPE for the "Picking up N of
                 // M weeks · K skipped" confirmation; demo (no live user) → nil = plain note.
                 loadPermanentScope: liveUserId == nil ? nil : { s in
@@ -378,12 +414,14 @@ struct ShiftsRootView: View {
             // Backend-configured path: load the worker's real active period + wire the
             // live submit. Demo (liveUserId == nil) keeps the DemoFactory period.
             if let uid = liveUserId {
+                // D8 — live READS for the week + calendar (writes were already live).
+                model.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
                 await prefsModel.activateLive(repo: WorkerBackend.shared.preferencesRepository, userId: uid)
                 await updatesModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
                 await ackModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
                 await settingsModel.activateLive(repo: WorkerBackend.shared.profileRepository, userId: uid)
-                // Closed-house days for the calendar strip (§3.4/§11.3, T2-12c).
-                await calendarModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
+                // Closed-house days + the live week for the calendar (§3.4/§11.3 + D8).
+                calendarModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
                 // The home-house grid + contacts (§11.4, T3b).
                 await houseModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
                 // Live break context (name + window + "only Harnwell open") + the §4.4
@@ -460,7 +498,7 @@ struct ShiftsRootView: View {
     // contract (the design's visual order is scheduled-first; spec pins this order).
     private var myShifts: some View {
         VStack(alignment: .leading, spacing: 22) {
-            WeekTotalChip(currentWeeklyHours: DemoFactory.shared.demoWeeklyHours)
+            WeekTotalChip(currentWeeklyHours: model.weeklyHours)
 
             ShiftSection(
                 title: "Picked up",

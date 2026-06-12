@@ -2,6 +2,8 @@ package com.pennhousing.shift.shared.samples
 
 import com.pennhousing.shift.shared.breakclaim.BreakClaimSnapshot
 import com.pennhousing.shift.shared.data.ProfileSnapshot
+import com.pennhousing.shift.shared.data.WorkerSnapshot
+import com.pennhousing.shift.shared.shifts.weeklyHours
 import com.pennhousing.shift.shared.house.HouseScheduleSnapshot
 import com.pennhousing.shift.shared.model.FloatAck
 import com.pennhousing.shift.shared.notifications.IncomingSwap
@@ -38,6 +40,19 @@ object DemoFactory {
         val snapshot = DemoData.snapshot(now)
         return ShiftsScreenViewModel(snapshot.myShifts, snapshot.openShifts, now)
     }
+
+    /**
+     * Live Shifts VM from a real [WorkerSnapshot] (D8 — iOS read parity with the
+     * Android `LiveShiftsRoot`). Supplies `now` Kotlin-side; iOS rebuilds it per
+     * Realtime emission of `observeWorkerWeek`.
+     */
+    fun shiftsViewModel(snapshot: WorkerSnapshot): ShiftsScreenViewModel {
+        val now = now()
+        return ShiftsScreenViewModel(snapshot.myShifts, snapshot.openShifts, now)
+    }
+
+    /** The live "This week — Xh" total for [snapshot] (D8; pure `weeklyHours`). */
+    fun weeklyHoursFor(snapshot: WorkerSnapshot): Double = weeklyHours(snapshot.myShifts, now())
 
     fun ackViewModel(): AckDeclineViewModel {
         val now = now()
@@ -140,13 +155,18 @@ object DemoFactory {
     /**
      * Calendar VM with the worker's LIVE closed-house days (§3.4/§11.3, T2-12c) —
      * the Mon..Sun indexes from `WorkerShiftsRepository.fetchCalendarClosedDays`.
-     * Supplies `now` Kotlin-side (no `kotlin.time.Instant` across the Swift bridge);
-     * the iOS week snapshot itself stays the demo one (parity with the iOS read path).
+     * Supplies `now` Kotlin-side (no `kotlin.time.Instant` across the Swift bridge).
      */
     fun calendarViewModel(closedDayIndexes: Set<Int>): CalendarViewModel {
         val now = now()
         return CalendarViewModel(DemoData.snapshot(now).myShifts, now, closedDayIndexes)
     }
+
+    /** Live calendar VM from a real week snapshot + closed days (D8 — iOS read parity). */
+    fun calendarViewModel(
+        snapshot: WorkerSnapshot,
+        closedDayIndexes: Set<Int>,
+    ): CalendarViewModel = CalendarViewModel(snapshot.myShifts, now(), closedDayIndexes)
 
     fun preferencesViewModel(): PreferencesViewModel = PreferencesViewModel(DemoData.preferencePeriod(now()))
 

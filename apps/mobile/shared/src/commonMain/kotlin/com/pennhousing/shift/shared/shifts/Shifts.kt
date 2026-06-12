@@ -232,6 +232,21 @@ fun planTemporaryDrop(
     )
 }
 
+/**
+ * The worker's CURRENT-WEEK hours (the "This week — Xh" chip): the sum of their
+ * still-held blocks (dropped-still-open ones no longer count) whose start falls
+ * in [now]'s NY week. Pure duration arithmetic (invariant #6).
+ */
+fun weeklyHours(
+    myShifts: List<MyShift>,
+    now: Instant,
+    zone: kotlinx.datetime.TimeZone = NEW_YORK,
+): Double =
+    myShifts
+        .filter { !it.droppedStillOpen }
+        .filter { com.pennhousing.shift.shared.calendar.weekDayIndexInWeekOf(it.start, now, zone) != null }
+        .sumOf { hoursBetween(it.start, it.end) }
+
 // ===================================================================
 // Partial drop (§5.2, T2-11) — a sub-range of a coalesced card's blocks.
 // ===================================================================

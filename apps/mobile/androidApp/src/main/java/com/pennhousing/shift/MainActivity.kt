@@ -49,6 +49,7 @@ import com.pennhousing.shift.shared.platform.AppConfig
 import com.pennhousing.shift.shared.preferences.PreferencePeriod
 import com.pennhousing.shift.shared.samples.DemoData
 import com.pennhousing.shift.shared.notifications.withOutgoingSwapEntries
+import com.pennhousing.shift.shared.shifts.weeklyHours
 import com.pennhousing.shift.shared.swaps.swapCandidates
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
 import com.pennhousing.shift.shared.viewmodel.BreakClaimViewModel
@@ -374,7 +375,9 @@ private fun LiveShiftsRoot(
                 preferencesVm = preferencesVm,
                 breakClaimVm = breakClaimVm,
                 settingsVm = settingsVm,
-                currentWeeklyHours = DemoData.DEMO_WEEKLY_HOURS,
+                // D8 — the live "This week — Xh" total from the real snapshot (the demo
+                // constant was a placeholder; dropped-still-open blocks don't count).
+                currentWeeklyHours = remember(snapshot) { weeklyHours(snapshot.myShifts, now) },
                 onSignOut = onSignOut,
                 onSubmitPreferences = {
                     // POST the current edits, then flip to the optimistic submitted state

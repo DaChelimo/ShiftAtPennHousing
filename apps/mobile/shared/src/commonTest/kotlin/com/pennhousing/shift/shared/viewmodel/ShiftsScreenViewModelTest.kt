@@ -464,6 +464,17 @@ class ShiftsScreenViewModelTest {
         assertEquals(at("2026-01-15T15:00:00-05:00"), picked.end)
     }
 
+    @Test
+    fun weeklyHoursSumsThisWeeksHeldShiftsOnly() {
+        // D8 — the "This week" chip: held shifts in now's week count; a
+        // dropped-still-open block and an other-week shift do not.
+        val nextWeek =
+            MyShift("nw", harnwell, at("2026-01-22T12:00:00-05:00"), at("2026-01-22T14:00:00-05:00"), AssignmentKind.SCHEDULED)
+        val held = listOf(pickedUpHome, scheduled, droppedStillOpen, nextWeek)
+        // pickedUpHome 2h + scheduled 2h; dropped 2h excluded; next week excluded.
+        assertEquals(4.0, com.pennhousing.shift.shared.shifts.weeklyHours(held, noon))
+    }
+
     // ===================================================================
     // Tab selection.
     // ===================================================================

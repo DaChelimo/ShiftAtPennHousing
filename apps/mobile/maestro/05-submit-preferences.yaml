@@ -6,7 +6,17 @@ appId: com.pennhousing.shift
 - launchApp:
     clearState: true
 
-# Open the Preferences tab (a scrollable tab; Maestro scrolls to find it).
+# Open the Preferences tab. It is the 7th tab (index 6) in the scrollable tab row,
+# off-screen to the right at launch; swipe the tab row (≈9% height) right-to-left
+# until it appears, then tap. Self-tuning + a no-op where the tab already fits.
+- repeat:
+    while:
+      notVisible:
+        id: "tab_preferences"
+    commands:
+      - swipe:
+          start: 85%, 9%
+          end: 35%, 9%
 - tapOn:
     id: "tab_preferences"
 - assertVisible:

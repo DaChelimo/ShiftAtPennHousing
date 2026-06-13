@@ -8,11 +8,25 @@ appId: com.pennhousing.shift
 
 # A pending float surfaces the ack/decline modal (§7). If it is not auto-presented
 # on launch, open it from the updates tab.
+#
+# Updates is the 6th tab (index 5) in the PrimaryScrollableTabRow, so it starts
+# off-screen to the right. Maestro's tapOn does NOT horizontally auto-scroll a
+# Compose tab row, so swipe the tab row (≈9% screen height) right-to-left until the
+# tab is on-screen, then tap it. The repeat/while self-tunes the swipe count and is
+# a no-op on layouts where the tab already fits (e.g. iOS / wider screens).
 - runFlow:
     when:
       notVisible:
         id: "ack_modal"
     commands:
+      - repeat:
+          while:
+            notVisible:
+              id: "tab_updates"
+          commands:
+            - swipe:
+                start: 85%, 9%
+                end: 35%, 9%
       - tapOn:
           id: "tab_updates"
       - tapOn:

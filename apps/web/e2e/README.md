@@ -223,3 +223,30 @@ fire is a pure deactivate that always succeeds regardless of clock/period (date-
 avoids the now()-relative semester-boundary fragility). Authorized actor =
 **`SEED.hmQuad`** (existing). Reuses `smQuad`/`alice` as the unauthorized actors.
 Re-seed (`supabase db reset`) between runs.
+
+## TB — Test backfill over already-built read screens (Track D / D11)
+
+Unlike the TDD-red specs above, these four are **backfill**: the screens already
+ship, so each spec is GREEN against the seeded app and guards the read surface +
+authorization + selector contract against regression. All reuse the phase-13b
+`SEED` actors and the now-relative S1 fixtures (`SEED.overrideWeek` = the next NY
+Monday — the only Quad week with published blocks).
+
+| File                         | Screen / route                             | Covers                                                                                                                                                                                                        |
+| ---------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `live-calendar.spec.ts`      | Live calendar — `/calendar`                | The published-week grid (shift + "Open shift" cards, `In 1w` label, week nav); the `calendar-closed-day` selector is dormant on an open week; manager-gated.                                                  |
+| `hours-report.spec.ts`       | Hours report — `/admin/hours`              | The decomposition columns (at-home / floated-out / cross-house-pickup), summary strip, the full home-housed roster; manager-gated (`hours-unauthorized`).                                                     |
+| `coverage-permanent.spec.ts` | Coverage monitor — `/coverage`             | The board + both feed tabs; the Permanent-openings tab shows a `PermCard` **or** the honest "No permanent openings" empty state; manager-gated.                                                               |
+| `config-health.spec.ts`      | Config + Health — `/admin/{config,health}` | Project-admin config value round-trip (edit → save → audit read-back → restore); `config-unauthorized` for an HM; `health-push-card` + four `health-not-configured-*` cards; `health-unauthorized` for an SM. |
+
+Notes on the data dependencies (all deterministic against `seed.sql`):
+
+- **Calendar** renders cards only on `?week=${SEED.overrideWeek}` (the current week
+  is empty for Quad). No house closure is seeded anywhere, so the closed-day cell
+  asserts the **negative** (absent on an open week); the populated closed path is
+  covered by the mobile Maestro `calendar_closed_day` selector + pgTAP.
+- **Config** logs in as `SEED.projectAdmin` (`admin@pennhousing.test`), the
+  `system_config.project_administrator_user_id`. It edits `no_ack_trigger_offset_minutes`
+  and **restores** it so the suite leaves `system_config` pristine.
+- **Health** authorizes on `isHouseAdmin` OR project-admin, so `hmQuad` passes and
+  `smQuad` (an SM, neither) hits `health-unauthorized`.

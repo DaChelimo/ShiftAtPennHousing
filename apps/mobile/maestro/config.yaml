@@ -9,3 +9,6 @@ executionOrder:
     - 02-claim-shift
     - 03-drop-shift
     - 04-acknowledge-float
+    - 05-submit-preferences
+    - 06-claim-break
+    - 07-settings

@@ -6,7 +6,17 @@ appId: com.pennhousing.shift
 - launchApp:
     clearState: true
 
-# Open the Settings tab (a scrollable tab; Maestro scrolls to find it).
+# Open the Settings tab. It is the LAST tab (index 8) in the scrollable tab row,
+# off-screen to the right at launch; swipe the tab row (≈9% height) right-to-left
+# until it appears, then tap. Self-tuning + a no-op where the tab already fits.
+- repeat:
+    while:
+      notVisible:
+        id: "tab_settings"
+    commands:
+      - swipe:
+          start: 85%, 9%
+          end: 35%, 9%
 - tapOn:
     id: "tab_settings"
 - assertVisible:
@@ -18,6 +28,12 @@ appId: com.pennhousing.shift
 - tapOn:
     id: "settings_broadcast_toggle"
 
-# The Account group (incl. Sign out) is present.
+# The Account group (incl. Sign out) sits below the fold in the settings list, so
+# scroll the screen down to it before asserting (assertVisible does not auto-scroll
+# the way tapOn does).
+- scrollUntilVisible:
+    element:
+      id: "settings_sign_out"
+    direction: DOWN
 - assertVisible:
     id: "settings_sign_out"

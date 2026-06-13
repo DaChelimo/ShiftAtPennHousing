@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -175,6 +176,13 @@ private fun BreakInfoCard(
     Box(
         Modifier
             .fillMaxWidth()
+            // IntrinsicSize.Min pins the card to its content height so the
+            // fillMaxHeight accent bar below fills the ROW height, not the parent
+            // Column's (unbounded) max — without it the card expands to fill the
+            // whole screen and clips the hours meter + claim list off-screen (the
+            // non-scrollable outer Column can't recover them). See the §13a
+            // "ShiftBanner fillMaxHeight needs IntrinsicSize.Min" gotcha.
+            .height(IntrinsicSize.Min)
             .padding(horizontal = 16.dp, vertical = 2.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(c.surface)

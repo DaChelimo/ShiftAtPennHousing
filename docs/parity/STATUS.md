@@ -71,30 +71,53 @@ Status legend: ☐ pending · ◐ in-progress · ☑ done (gate green) · ⚠ bl
 
 ## Track D — Deferred-items program (see DEFERRED.md for the full inventory)
 
-| ID      | Chunk                                                                                                                                                                                                                                                            | Status | Gate result                                   | Commit    |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | --------------------------------------------- | --------- |
-| D1      | **T2-13 built**: full-screen push FloatAckSurface + `pennshift://float-ack/{id}` deep link (Android intent filter + iOS URL scheme/push-tap router); FIXED a real push bug — dispatch-push DATA-only messages were silently dropped by the Android FCM handler.  | ☑      | JVM 253 + assemble + iOS link + adb deep-link | `1e9a223` |
-| D2-4    | **T3a-2..4 built**: swap initiate (shift/float/permanent; counterparty picker from the T3b house grid; permanent = person, no span) + void own outgoing requests (Updates entries via `withOutgoingSwapEntries`). Server stays authoritative for §8 eligibility. | ☑      | JVM 262 + assemble + iOS link                 | `93b27e0` |
-| D5      | **Calendar advanced built**: week-picker sheet (quick weeks + range labels) + DERIVED recurring-template view (honest banner; SCHEDULED-kind union, weeksSeen).                                                                                                  | ☑      | JVM 266 + assemble + iOS link                 | `95e1649` |
-| D6/7/9  | **Break pool LIVE** (withLivePool + per-block claims + EF `projectedHours` reconciles the 40h meter) · **pending-float ack countdown** (T-10m, `float_ack_countdown`) · **preferences deadline lock** (§4.2 client-side read-only past deadline).                | ☑      | JVM 274 + assemble + iOS link                 | `2958db5` |
-| D8      | **iOS live week READS** (observeWorkerWeek → VM rebuild per Realtime emission; closed days overlaid) + real "This week" hours on BOTH hosts (pure `weeklyHours`; demo constant retired on the live paths).                                                       | ☑      | JVM 275 + assemble + iOS link                 | `cba1123` |
-| D10     | **§6.12 integration cards**: Push-delivery card from REAL signals (`pending_notification_deliveries(p_now)` RPC backlog + oldest age + `push_tokens` counts) + explicit Not-configured cards for SMS/Allied/SSO/SIS.                                             | ☑      | web type-check + lint + build                 | `7b1a0db` |
-| D11/D12 | TB spec backfill + verification runs (Maestro / Playwright)                                                                                                                                                                                                      | ◐      | —                                             | —         |
+| ID      | Chunk                                                                                                                                                                                                                                                            | Status | Gate result                                                                                 | Commit    |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------- | --------- |
+| D1      | **T2-13 built**: full-screen push FloatAckSurface + `pennshift://float-ack/{id}` deep link (Android intent filter + iOS URL scheme/push-tap router); FIXED a real push bug — dispatch-push DATA-only messages were silently dropped by the Android FCM handler.  | ☑      | JVM 253 + assemble + iOS link + adb deep-link                                               | `1e9a223` |
+| D2-4    | **T3a-2..4 built**: swap initiate (shift/float/permanent; counterparty picker from the T3b house grid; permanent = person, no span) + void own outgoing requests (Updates entries via `withOutgoingSwapEntries`). Server stays authoritative for §8 eligibility. | ☑      | JVM 262 + assemble + iOS link                                                               | `93b27e0` |
+| D5      | **Calendar advanced built**: week-picker sheet (quick weeks + range labels) + DERIVED recurring-template view (honest banner; SCHEDULED-kind union, weeksSeen).                                                                                                  | ☑      | JVM 266 + assemble + iOS link                                                               | `95e1649` |
+| D6/7/9  | **Break pool LIVE** (withLivePool + per-block claims + EF `projectedHours` reconciles the 40h meter) · **pending-float ack countdown** (T-10m, `float_ack_countdown`) · **preferences deadline lock** (§4.2 client-side read-only past deadline).                | ☑      | JVM 274 + assemble + iOS link                                                               | `2958db5` |
+| D8      | **iOS live week READS** (observeWorkerWeek → VM rebuild per Realtime emission; closed days overlaid) + real "This week" hours on BOTH hosts (pure `weeklyHours`; demo constant retired on the live paths).                                                       | ☑      | JVM 275 + assemble + iOS link                                                               | `cba1123` |
+| D10     | **§6.12 integration cards**: Push-delivery card from REAL signals (`pending_notification_deliveries(p_now)` RPC backlog + oldest age + `push_tokens` counts) + explicit Not-configured cards for SMS/Allied/SSO/SIS.                                             | ☑      | web type-check + lint + build                                                               | `7b1a0db` |
+| D11/D12 | **DONE.** 4 Playwright specs over already-built read screens (live-calendar / hours-report / coverage-permanent / config-health) + Maestro 04–07 unblocked (self-tuning tab-row swipe) + a real break-screen `IntrinsicSize.Min` fix.                            | ☑      | Maestro **7/7** · Playwright **56/64** (7 fails all pre-existing hmod-context S6 — see log) | `db2019c` |
 
 ## Track TB — Test backfill
 
-| ID   | Chunk                                                  | Status | Gate result | Commit |
-| ---- | ------------------------------------------------------ | ------ | ----------- | ------ |
-| TB-1 | Web live-calendar grid                                 | ☐      | —           | —      |
-| TB-2 | Web hours report                                       | ☐      | —           | —      |
-| TB-3 | Web coverage monitor                                   | ☐      | —           | —      |
-| TB-4 | Web config + health                                    | ☐      | —           | —      |
-| TB-5 | Web inbox/force-trigger/leave/rotor/cap/prefs residual | ☐      | —           | —      |
-| TB-6 | Mobile residual                                        | ☐      | —           | —      |
+| ID   | Chunk                                                  | Status | Gate result                                                                                                               | Commit    |
+| ---- | ------------------------------------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------- | --------- |
+| TB-1 | Web live-calendar grid                                 | ☑      | Playwright `live-calendar.spec.ts` 3✓                                                                                     | `db2019c` |
+| TB-2 | Web hours report                                       | ☑      | Playwright `hours-report.spec.ts` 2✓                                                                                      | `db2019c` |
+| TB-3 | Web coverage monitor                                   | ☑      | Playwright `coverage-permanent.spec.ts` 3✓                                                                                | `db2019c` |
+| TB-4 | Web config + health                                    | ☑      | Playwright `config-health.spec.ts` 4✓                                                                                     | `db2019c` |
+| TB-5 | Web inbox/force-trigger/leave/rotor/cap/prefs residual | ☑      | Already covered by the S1–S9/P14 specs (admin-override/force-trigger/inbox-resolve/hm-leave/cap-modification/fire-worker) | —         |
+| TB-6 | Mobile residual                                        | ☑      | Maestro 01–07 **7/7** green                                                                                               | `db2019c` |
 
 ---
 
 ## Verification log
+
+- **2026-06-13 — D11/D12 verification runs (impl `db2019c`).**
+  - **Maestro 7/7 PASS** (`Pixel_9_API_Baklava`, demo path): flows 01–07. Flows 04–07
+    were unblocked by a self-tuning `repeat/while notVisible → swipe` over the
+    scrollable tab row (Updates/Preferences/Break/Settings sit off-screen right; Maestro
+    `tapOn` does not horizontally auto-scroll). Two real defects surfaced once the tabs
+    were reachable: **(06)** the break FCFS info card grew to full height (a
+    `fillMaxHeight` accent bar with no `IntrinsicSize.Min`) and the non-scrollable outer
+    `Column` clipped the hours meter + claim list off-screen → fixed with
+    `Modifier.height(IntrinsicSize.Min)` (the §13a ShiftBanner gotcha); **(07)**
+    `settings_sign_out` is below the fold → `scrollUntilVisible`. `:androidApp:assembleDebug`
+    green; emulator killed after.
+  - **Playwright 56/64 PASS, 1 skipped** (`supabase db reset`; edge runtime restarted —
+    it had OOM-exited 137; `PORT=3100` per the foreign-:3000 gotcha): all 4 new TB specs
+    green (12 tests) + force-trigger green once the edge runtime was up. The **7 failures
+    are ALL `hmod-context.spec.ts`** (S6 on-duty pill + cross-house switcher), reproduced
+    on a fresh reset → **not introduced by D11/D12** (which touches none of the hmod
+    resolution, AppShell, layout, S6 seed, or rotor RPC). Cause: the spec's own
+    rotor-save test mutates the current duty-week rotor mid-run (seed seats Hana on-duty
+    `…0008`; the run leaves Bea `…0009`), and the path also routes through the teammate's
+    in-flight `simNow()`/`app_now()` layout change. Left for the dev-clock / S6 owner.
+  - The resume note's predicted "~8 stale admin-override/force-trigger failures" did NOT
+    occur — those seeds are now now-relative (`date_trunc('week', now())+7`) and pass.
 
 - **2026-06-12 spot-check (demo path, Pixel 9 emulator) — all new surfaces PASS.**
   - **Coalescing (CO):** per-block DemoData renders as single merged cards on My-Shifts /

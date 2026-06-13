@@ -1,9 +1,14 @@
 # Deferred-Items Program — complete list + execution plan
 
-> **⟳ STATUS (2026-06-12, same session):** D1 `1e9a223` · D2-4 `93b27e0` · D5 `95e1649` ·
-> D6+D7+D9 `2958db5` · D8 `cba1123` · D10 `7b1a0db` — ALL BUILD ITEMS DONE (mobile JVM
-> suite 246→275 green; iOS link green; D1 adb deep-link spot-check PASS). D11/D12 in
-> flight: TB specs + Maestro + Playwright runs — results recorded in STATUS.md.
+> **⟳ STATUS (2026-06-13):** D1 `1e9a223` · D2-4 `93b27e0` · D5 `95e1649` ·
+> D6+D7+D9 `2958db5` · D8 `cba1123` · D10 `7b1a0db` · **D11/D12 `db2019c`** — **PROGRAM
+> COMPLETE.** Build items D1–D10 done (mobile JVM 246→275 green; iOS link green). D11
+> shipped 4 Playwright TB specs (live-calendar / hours-report / coverage-permanent /
+> config-health), with the existing S1–S9/P14 specs covering TB-5. D12: **Maestro 7/7**
+> (flows 04–07 unblocked by a self-tuning tab-row swipe, plus two real fixes — the
+> break-screen `IntrinsicSize.Min` and a settings `scrollUntilVisible`) and **Playwright
+> 56/64** (the 7 failures are all pre-existing `hmod-context` S6, NOT D11/D12 — see the
+> STATUS.md verification log). Results recorded in STATUS.md.
 
 Compiled 2026-06-12 from HANDOFF.md / STATUS.md / PLAN.md / MATRIX.md after all four
 parity tracks completed. This is the FULL deferred inventory (the chat summary listed

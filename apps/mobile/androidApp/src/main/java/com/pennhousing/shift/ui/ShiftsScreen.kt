@@ -41,8 +41,11 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -134,6 +137,7 @@ private const val TAB_SETTINGS = 8
  * native Compose UI over it (the Fruitties split). Selector ids match
  * `apps/mobile/maestro/README.md`.
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun ShiftsApp(
     shiftsVm: ShiftsScreenViewModel,
@@ -217,7 +221,15 @@ fun ShiftsApp(
         // T2-13 — full-screen ack on push/deep-link launch (once per launch id).
         var showFullScreenAck by remember(launchFloatAckId) { mutableStateOf(launchFloatAckId != null) }
 
-        Scaffold(modifier = Modifier.fillMaxSize().testTag("shifts_screen")) { padding ->
+        Scaffold(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    // Maestro matches Compose testTags only when they surface as
+                    // resource-ids — without this every `id:` selector silently fails.
+                    .semantics { testTagsAsResourceId = true }
+                    .testTag("shifts_screen"),
+        ) { padding ->
             Column(Modifier.fillMaxSize().padding(padding)) {
                 toast?.let { NotificationToast(it) }
                 if (claimSuccess) {

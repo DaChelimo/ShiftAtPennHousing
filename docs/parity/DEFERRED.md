@@ -1,5 +1,10 @@
 # Deferred-Items Program — complete list + execution plan
 
+> **⟳ STATUS (2026-06-12, same session):** D1 `1e9a223` · D2-4 `93b27e0` · D5 `95e1649` ·
+> D6+D7+D9 `2958db5` · D8 `cba1123` · D10 `7b1a0db` — ALL BUILD ITEMS DONE (mobile JVM
+> suite 246→275 green; iOS link green; D1 adb deep-link spot-check PASS). D11/D12 in
+> flight: TB specs + Maestro + Playwright runs — results recorded in STATUS.md.
+
 Compiled 2026-06-12 from HANDOFF.md / STATUS.md / PLAN.md / MATRIX.md after all four
 parity tracks completed. This is the FULL deferred inventory (the chat summary listed
 only D1/D2-4/D5/D10); each row says what unblocks it now and how it gates.

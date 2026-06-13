@@ -17,7 +17,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -33,7 +36,7 @@ import com.pennhousing.shift.ui.theme.ShiftTheme
  * design; confirmations are [ShiftConfirmSheet]s. (Android uses the M3 modal sheet;
  * iOS uses a native `.sheet` with detents + grabber — the native-chrome difference.)
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
 @Composable
 fun ShiftBottomSheet(
     onDismiss: () -> Unit,
@@ -52,7 +55,15 @@ fun ShiftBottomSheet(
         dragHandle = { Grabber() },
     ) {
         if (title != null) SheetHeader(title, onDismiss)
-        Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp).padding(top = 8.dp, bottom = 28.dp)) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                // The modal sheet is its own window — re-enable resource-id testTags
+                // so Maestro's `id:` selectors see the sheet's controls.
+                .semantics { testTagsAsResourceId = true }
+                .padding(horizontal = 18.dp)
+                .padding(top = 8.dp, bottom = 28.dp),
+        ) {
             content()
         }
     }

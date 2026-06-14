@@ -12,12 +12,14 @@ import {
   type SpanBlock,
   type WorkerScheduleInfo,
 } from '@shift/core';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   assignDraft,
   publishScheduleAction,
-  removeDraft,
+  removeDraftSpan,
+  type ActionResult,
   type PublishStats,
 } from '../../lib/actions/builder';
 import type { BuilderBlock, BuilderData } from '../../lib/data/scheduleBuilder';
@@ -56,6 +58,7 @@ type PendingAssign = {
 };
 
 export function ScheduleBuilder({ data }: { data: BuilderData }) {
+  const router = useRouter();
   const [phase, setPhase] = useState<1 | 2>(1);
   const [drafts, setDrafts] = useState<Record<string, string[]>>(data.drafts);
   const [anchorIdx, setAnchorIdx] = useState<number | null>(null);
@@ -70,6 +73,88 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
   // Phase-2 worker search (§6.2 / design): a client-side filter over the
   // already-loaded full roster — no new query. Empty = show everyone.
   const [rosterQuery, setRosterQuery] = useState('');
+
+  // ---- save status (A2) --------------------------------------------------
+  // Every assign/remove is persisted immediately (no batch "Save" step); these
+  // surface that so the HM trusts that refreshing won't lose work, and a guard
+  // blocks an unload while a write is genuinely mid-flight.
+  const inFlight = useRef(0);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  // ---- freshness (B2) ----------------------------------------------------
+  // Preferences are server-fetched once at render; new worker submissions only
+  // appear on a refresh. `router.refresh()` re-runs the server component so the
+  // `data` prop re-flows (preferences read straight from props recompute; local
+  // drafts/published re-sync via the effect below). This now runs ONLY on tab
+  // focus/visibility (the manual "Refresh preferences" button was removed) — and
+  // never while a write is in flight, so a stale read can't clobber an optimistic edit.
+  const lastRefreshAt = useRef(0);
+
+  const refreshData = useCallback(() => {
+    if (inFlight.current > 0) return;
+    lastRefreshAt.current = Date.now();
+    router.refresh();
+  }, [router]);
+
+  // Re-sync server-owned state after a refresh/navigation re-flows `data`. We
+  // adjust state during render (React's "data changed since last render"
+  // pattern) keyed on the `data` reference, which only changes on a server
+  // re-render — never on a local interaction — so it can't stomp optimistic
+  // drafts mid-edit.
+  const [prevData, setPrevData] = useState(data);
+  if (prevData !== data) {
+    setPrevData(data);
+    setDrafts(data.drafts);
+    setPublished(data.published);
+    setPublishStats(null);
+  }
+
+  // B2: refetch when the tab regains focus (e.g. HM switched to phone to tell a
+  // worker to submit, then came back). Throttled to avoid focus+visibility
+  // double-fire and rapid toggling.
+  useEffect(() => {
+    const maybeRefresh = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - lastRefreshAt.current < 3000) return;
+      refreshData();
+    };
+    window.addEventListener('focus', maybeRefresh);
+    document.addEventListener('visibilitychange', maybeRefresh);
+    return () => {
+      window.removeEventListener('focus', maybeRefresh);
+      document.removeEventListener('visibilitychange', maybeRefresh);
+    };
+  }, [refreshData]);
+
+  // A2 guard: warn before leaving only while a write is actually in flight
+  // (sub-second). Persisted edits are safe, so there's nothing else to protect.
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (inFlight.current > 0) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, []);
+
+  // Wrap a persisted write so the Saved/Saving indicator and unload guard track
+  // it. Returns the action result for callers that branch on success.
+  const runWrite = useCallback(async <T,>(fn: () => Promise<ActionResult<T>>) => {
+    inFlight.current += 1;
+    setSaving(true);
+    try {
+      const res = await fn();
+      if (!res.ok) setError(res.error);
+      else setSavedAt(Date.now());
+      return res;
+    } finally {
+      inFlight.current -= 1;
+      if (inFlight.current === 0) setSaving(false);
+    }
+  }, []);
 
   // Finalize a drag on mouse-up anywhere.
   useEffect(() => {
@@ -91,6 +176,15 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
     for (const w of data.workers) map.set(w.userId, w.name);
     return map;
   }, [data.workers]);
+
+  // Per-block staffing limit (1 regular / 2 Harnwell / 3 Quad) — the builder enforces
+  // it at assign time so an over-staffed pattern can't be drafted (the DB trigger is the
+  // authoritative backstop).
+  const capacityByBlock = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const b of data.blocks) map.set(b.blockId, b.requiredHeadcount);
+    return map;
+  }, [data.blocks]);
 
   // assignedHours this week is derived from current local drafts.
   const scheduleInfos = useMemo<WorkerScheduleInfo[]>(() => {
@@ -148,36 +242,64 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
 
   const commitAssign = useCallback(
     async (userId: string, blockIds: string[]) => {
+      // Staffing-limit guard: never push a block past its required_headcount. Mirrors
+      // the DB trigger so the SM gets immediate feedback instead of a failed write.
+      const overCapacity = blockIds.some((blockId) => {
+        const req = capacityByBlock.get(blockId) ?? 1;
+        const current = drafts[blockId] ?? [];
+        const adding = current.includes(userId) ? 0 : 1;
+        return current.length + adding > req;
+      });
+      if (overCapacity) {
+        setPending(null);
+        setError(
+          'Those blocks are already fully staffed for this house. Remove the current worker before assigning another.',
+        );
+        return;
+      }
+
+      // Only the blocks that actually gain this worker (others are idempotent) — so a
+      // failed write reverts exactly what it added.
+      const added = blockIds.filter((blockId) => !(drafts[blockId] ?? []).includes(userId));
       setDrafts((prev) => {
         const next = { ...prev };
-        for (const blockId of blockIds) {
-          const existing = next[blockId] ?? [];
-          if (!existing.includes(userId)) next[blockId] = [...existing, userId];
-        }
+        for (const blockId of added) next[blockId] = [...(next[blockId] ?? []), userId];
         return next;
       });
       setPending(null);
       if (data.periodId !== null) {
-        const res = await assignDraft({ periodId: data.periodId, blockIds, userId });
-        if (!res.ok) setError(res.error);
+        const periodId = data.periodId;
+        const res = await runWrite(() => assignDraft({ periodId, blockIds, userId }));
+        if (!res.ok) {
+          setDrafts((prev) => {
+            const next = { ...prev };
+            for (const blockId of added) {
+              next[blockId] = (next[blockId] ?? []).filter((id) => id !== userId);
+            }
+            return next;
+          });
+        }
       }
     },
-    [data.periodId],
+    [capacityByBlock, drafts, data.periodId, runWrite],
   );
 
-  const onRemove = useCallback(
-    async (userId: string, blockId: string) => {
+  // Remove a worker from a whole contiguous run at once (the "×" on a continuous block).
+  const onRemoveSpan = useCallback(
+    async (userId: string, blockIds: string[]) => {
       setDrafts((prev) => {
         const next = { ...prev };
-        next[blockId] = (next[blockId] ?? []).filter((id) => id !== userId);
+        for (const blockId of blockIds) {
+          next[blockId] = (next[blockId] ?? []).filter((id) => id !== userId);
+        }
         return next;
       });
       if (data.periodId !== null) {
-        const res = await removeDraft({ periodId: data.periodId, blockId, userId });
-        if (!res.ok) setError(res.error);
+        const periodId = data.periodId;
+        await runWrite(() => removeDraftSpan({ periodId, blockIds, userId }));
       }
     },
-    [data.periodId],
+    [data.periodId, runWrite],
   );
 
   const onPhase1Click = (entry: Phase1Entry) => {
@@ -220,11 +342,9 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
   const onPublish = async () => {
     setPublishOpen(false);
     if (data.periodId === null) return;
-    const res = await publishScheduleAction({ periodId: data.periodId });
-    if (!res.ok) {
-      setError(res.error);
-      return;
-    }
+    const periodId = data.periodId;
+    const res = await runWrite(() => publishScheduleAction({ periodId }));
+    if (!res.ok) return;
     setPublished(true);
     setPublishStats(res.data);
   };
@@ -260,14 +380,16 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
                   </Tag>
                 </span>
               ) : (
-                <Tag kind="amber">
-                  Draft{data.weekStartDate !== null && ` · week of ${data.weekStartDate}`}
-                </Tag>
+                <Tag kind="amber">Draft · recurring weekly pattern</Tag>
               )}
+              <SaveStatus saving={saving} savedAt={savedAt} />
             </div>
             <div className="t-helper">
-              Build the recurring weekly pattern. Drag a span of consecutive 30-min blocks, then
-              assign from preferences (Phase 1) or the full roster (Phase 2).
+              Build the recurring weekly pattern{' '}
+              {data.weekStartDate !== null && <>(template week of {data.weekStartDate})</>}. Drag a
+              span of consecutive 30-min blocks, then assign from preferences (Phase 1) or the full
+              roster (Phase 2). Publishing applies this pattern to every week of the term — edit
+              individual weeks later in the live calendar.
             </div>
           </div>
           <div className="row gap-2 wrap">
@@ -325,7 +447,7 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
               setSelectedBlockIds([]);
             }}
             onCellEnter={(idx) => dragging && setHoverIdx(idx)}
-            onRemove={onRemove}
+            onRemoveSpan={onRemoveSpan}
           />
 
           <aside className="builder-side">
@@ -476,9 +598,99 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
 
 // ---- subcomponents -------------------------------------------------------
 
+// A2: surfaces that every assignment is saved the instant it's made (the
+// builder has no batch "Save" — drafts persist per-action), so the HM can
+// refresh for new preferences without fear of losing work.
+function SaveStatus({ saving, savedAt }: { saving: boolean; savedAt: number | null }) {
+  if (saving) {
+    return (
+      <span data-testid="builder-save-status" className="bld-savestate is-saving">
+        <Icon name="refresh" size={14} className="bld-spin" />
+        Saving…
+      </span>
+    );
+  }
+  if (savedAt !== null) {
+    return (
+      <span data-testid="builder-save-status" className="bld-savestate is-saved">
+        <Icon name="check" size={14} />
+        All changes saved
+      </span>
+    );
+  }
+  return null;
+}
+
 function advisoryText(a: Phase2Advisory): string {
   if (a.kind === 'opted_out') return 'Opted out — no hours';
   return `Marked cannot for this block (${nyTime(a.blockStartAt)})`;
+}
+
+// Fixed pixel height of one 30-min block row. The continuous assignment blocks and the
+// selection band are absolutely positioned at `localIndex * CELL_H`, so this MUST match
+// the `.bld-cell` height in builder.css.
+const CELL_H = 34;
+
+type BlockRun = { userId: string; startLocal: number; len: number; blockIds: string[] };
+type LanedRun = BlockRun & { lane: number };
+
+// Coalesce a day's drafts into per-worker contiguous runs (the mobile `Coalesce` pattern):
+// a worker drafted across consecutive 30-min blocks becomes ONE run with a single label,
+// instead of one card per block.
+function computeRuns(dayBlocks: BuilderBlock[], drafts: Record<string, string[]>): BlockRun[] {
+  const has = (idx: number, userId: string) =>
+    (drafts[dayBlocks[idx]!.blockId] ?? []).includes(userId);
+  const workers = new Set<string>();
+  for (const b of dayBlocks) for (const u of drafts[b.blockId] ?? []) workers.add(u);
+
+  const runs: BlockRun[] = [];
+  for (const userId of workers) {
+    let i = 0;
+    while (i < dayBlocks.length) {
+      if (!has(i, userId)) {
+        i += 1;
+        continue;
+      }
+      let j = i;
+      while (j + 1 < dayBlocks.length && has(j + 1, userId)) j += 1;
+      runs.push({
+        userId,
+        startLocal: i,
+        len: j - i + 1,
+        blockIds: dayBlocks.slice(i, j + 1).map((b) => b.blockId),
+      });
+      i = j + 1;
+    }
+  }
+  return runs;
+}
+
+// Greedy lane assignment so overlapping runs (multi-headcount houses: Harnwell 2, Quad 3)
+// sit side by side instead of stacking on top of each other.
+function assignLanes(runs: BlockRun[]): { laned: LanedRun[]; laneCount: number } {
+  const sorted = [...runs].sort(
+    (a, b) => a.startLocal - b.startLocal || a.userId.localeCompare(b.userId),
+  );
+  const laneEnd: number[] = []; // exclusive end (local idx) of the last run placed in each lane
+  const laned: LanedRun[] = sorted.map((r) => {
+    let lane = laneEnd.findIndex((end) => end <= r.startLocal);
+    if (lane === -1) {
+      lane = laneEnd.length;
+      laneEnd.push(0);
+    }
+    laneEnd[lane] = r.startLocal + r.len;
+    return { ...r, lane };
+  });
+  return { laned, laneCount: Math.max(1, laneEnd.length) };
+}
+
+// "08:00–12:00" for a run — the END is the last block's start + 30 min, so the span reads
+// as one continuous block and the 11:30-vs-12:00 "is that the end?" ambiguity disappears.
+function runRangeLabel(dayBlocks: BuilderBlock[], run: BlockRun): string {
+  const first = dayBlocks[run.startLocal]!;
+  const last = dayBlocks[run.startLocal + run.len - 1]!;
+  const end = nyTime(new Date(new Date(last.startAtIso).getTime() + 30 * 60000));
+  return `${first.timeLabel}–${end}`;
 }
 
 function Grid({
@@ -491,7 +703,7 @@ function Grid({
   selectedBlockIds,
   onCellDown,
   onCellEnter,
-  onRemove,
+  onRemoveSpan,
 }: {
   blocks: BuilderBlock[];
   drafts: Record<string, string[]>;
@@ -502,7 +714,7 @@ function Grid({
   selectedBlockIds: string[];
   onCellDown: (idx: number) => void;
   onCellEnter: (idx: number) => void;
-  onRemove: (userId: string, blockId: string) => void;
+  onRemoveSpan: (userId: string, blockIds: string[]) => void;
 }) {
   const lo = anchorIdx !== null && hoverIdx !== null ? Math.min(anchorIdx, hoverIdx) : -1;
   const hi = anchorIdx !== null && hoverIdx !== null ? Math.max(anchorIdx, hoverIdx) : -1;
@@ -529,49 +741,107 @@ function Grid({
 
   return (
     <div data-testid="schedule-builder-grid" className="bld-grid">
-      {days.map((day) => (
-        <div className="bld-day" key={day}>
-          <div className="bld-dayhead">
-            <span className="cal-dow">{dowLabel(day)}</span>
-            <span className="cal-date t-mono">{day}</span>
-          </div>
-          <div className="bld-col">
-            {blocks.map((b, idx) => {
-              if (b.dayKey !== day) return null;
-              const inSpan = (dragging && idx >= lo && idx <= hi) || selected.has(b.blockId);
-              const assignees = drafts[b.blockId] ?? [];
-              const isHour = b.timeKey.endsWith('00');
-              return (
-                <div
-                  key={b.blockId}
-                  data-testid={`block-${b.cellKey}`}
-                  onMouseDown={() => onCellDown(idx)}
-                  onMouseEnter={() => onCellEnter(idx)}
-                  className={`bld-cell ${isHour ? 'is-hour' : ''} ${inSpan ? 'is-span' : ''}`.trim()}
-                >
-                  <span className="bld-time">{b.timeLabel}</span>
-                  <div className="bld-assignees">
-                    {assignees.map((userId) => (
-                      <span key={userId} className="bld-chip">
-                        <span>{workerName.get(userId) ?? userId}</span>
-                        <button
-                          type="button"
-                          className="bld-chip-x"
-                          aria-label={`Remove ${workerName.get(userId) ?? userId}`}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          onClick={() => onRemove(userId, b.blockId)}
-                        >
-                          ×
-                        </button>
+      {days.map((day) => {
+        // This day's blocks, paired with their index in the flat `blocks` array (the drag
+        // model keys on the flat index). The local index drives vertical positioning.
+        const dayCells: Array<{ b: BuilderBlock; flatIdx: number }> = [];
+        blocks.forEach((b, flatIdx) => {
+          if (b.dayKey === day) dayCells.push({ b, flatIdx });
+        });
+        const dayBlocks = dayCells.map((c) => c.b);
+        const { laned, laneCount } = assignLanes(computeRuns(dayBlocks, drafts));
+
+        // The active drag / finalized selection, as one contiguous local range in this day.
+        let selStart = -1;
+        let selEnd = -1;
+        dayCells.forEach(({ b, flatIdx }, localIdx) => {
+          const on = (dragging && flatIdx >= lo && flatIdx <= hi) || selected.has(b.blockId);
+          if (on) {
+            if (selStart === -1) selStart = localIdx;
+            selEnd = localIdx;
+          }
+        });
+
+        return (
+          <div className="bld-day" key={day}>
+            <div className="bld-dayhead">
+              <span className="cal-dow">{dowLabel(day)}</span>
+              <span className="cal-date t-mono">{day}</span>
+            </div>
+            <div className="bld-col">
+              {/* Drag layer: one target per 30-min block (preserves the e2e drag contract).
+                  The assignee name stays in the cell (visually hidden) so each block's
+                  testid still reports who's on it; the visible block is the overlay. */}
+              {dayCells.map(({ b, flatIdx }) => {
+                const isHour = b.timeKey.endsWith('00');
+                const assignees = drafts[b.blockId] ?? [];
+                // Each empty cell reads as its full 30-min range ("08:00–08:30"), not
+                // just the start — so the end boundary is unambiguous (08:30 means this
+                // block ENDS at 08:30, not that an 08:30 block begins). Assigned cells
+                // are covered by the .bld-run overlay, which carries the run's range.
+                const endLabel = nyTime(new Date(new Date(b.startAtIso).getTime() + 30 * 60000));
+                return (
+                  <div
+                    key={b.blockId}
+                    data-testid={`block-${b.cellKey}`}
+                    onMouseDown={() => onCellDown(flatIdx)}
+                    onMouseEnter={() => onCellEnter(flatIdx)}
+                    className={`bld-cell ${isHour ? 'is-hour' : ''}`.trim()}
+                    style={{ height: CELL_H }}
+                  >
+                    <span className="bld-time">
+                      {b.timeLabel}–{endLabel}
+                    </span>
+                    {assignees.length > 0 && (
+                      <span className="bld-cell-assignee" aria-hidden="true">
+                        {assignees.map((u) => workerName.get(u) ?? u).join(', ')}
                       </span>
-                    ))}
+                    )}
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+
+              {/* Selection band — one continuous highlight, not per-cell. */}
+              {selStart !== -1 && (
+                <div
+                  className="bld-selection"
+                  style={{ top: selStart * CELL_H, height: (selEnd - selStart + 1) * CELL_H }}
+                  aria-hidden="true"
+                />
+              )}
+
+              {/* Assignment layer — each contiguous run is ONE continuous block. */}
+              {laned.map((run) => {
+                const name = workerName.get(run.userId) ?? run.userId;
+                return (
+                  <div
+                    key={`${run.userId}-${run.startLocal}`}
+                    className="bld-run"
+                    style={{
+                      top: run.startLocal * CELL_H,
+                      height: run.len * CELL_H,
+                      left: `${(run.lane / laneCount) * 100}%`,
+                      width: `${100 / laneCount}%`,
+                    }}
+                  >
+                    <span className="bld-run-name">{name}</span>
+                    <span className="bld-run-time t-mono">{runRangeLabel(dayBlocks, run)}</span>
+                    <button
+                      type="button"
+                      className="bld-run-x"
+                      aria-label={`Remove ${name}`}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={() => onRemoveSpan(run.userId, run.blockIds)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

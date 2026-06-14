@@ -2,6 +2,8 @@ import type { PreferenceRecord, PreferenceStatus } from '@shift/core';
 
 import { createServiceClient } from '../supabase/server';
 
+import { selectByBlockIdChunks } from './blockChunks';
+
 const NY = 'America/New_York';
 
 // NY wall-clock date as 'YYYY-MM-DD' (en-CA yields ISO order).
@@ -59,6 +61,7 @@ export type BuilderBlock = {
   timeKey: string; // NY HHMM (cell key suffix)
   cellKey: string; // `${dayKey}-${timeKey}` → data-testid `block-${cellKey}`
   timeLabel: string; // NY HH:mm
+  requiredHeadcount: number; // concurrent staffing limit for this block (1 regular / 2 Harnwell / 3 Quad)
 };
 
 export type BuilderWorker = { userId: string; name: string };
@@ -111,13 +114,14 @@ export async function getBuilderData(houseId: string): Promise<BuilderData> {
   // 2. Blocks for the house; choose the week of the earliest block as the build week.
   const { data: blockRows } = await supabase
     .from('shift_blocks')
-    .select('block_id, block_start_at')
+    .select('block_id, block_start_at, required_headcount')
     .eq('house_id', houseId)
     .order('block_start_at');
 
   const allBlocks = (blockRows ?? []).map((b) => ({
     blockId: b.block_id,
     startAtIso: b.block_start_at,
+    requiredHeadcount: b.required_headcount,
   }));
 
   const empty: BuilderData = {
@@ -153,6 +157,7 @@ export async function getBuilderData(houseId: string): Promise<BuilderData> {
         timeKey,
         cellKey: `${dayKey}-${timeKey}`,
         timeLabel: nyTimeLabel(b.startAtIso),
+        requiredHeadcount: b.requiredHeadcount,
       };
     });
   const weekBlockIds = blocks.map((b) => b.blockId);
@@ -170,15 +175,14 @@ export async function getBuilderData(houseId: string): Promise<BuilderData> {
   }
 
   // 4. Preferences for the week's blocks (the Phase-1 pool = workers with any pref row).
-  const { data: prefRows } = await supabase
-    .from('preferences')
-    .select('user_id, block_id, status')
-    .eq('period_id', periodId)
-    .in(
-      'block_id',
-      weekBlockIds.length > 0 ? weekBlockIds : ['00000000-0000-0000-0000-000000000000'],
-    );
-  const preferences: PreferenceRecord[] = (prefRows ?? []).map((p) => ({
+  const prefRows = await selectByBlockIdChunks(weekBlockIds, (chunk) =>
+    supabase
+      .from('preferences')
+      .select('user_id, block_id, status')
+      .eq('period_id', periodId)
+      .in('block_id', chunk),
+  );
+  const preferences: PreferenceRecord[] = prefRows.map((p) => ({
     userId: p.user_id,
     blockId: p.block_id,
     status: p.status as PreferenceStatus,
@@ -204,17 +208,16 @@ export async function getBuilderData(houseId: string): Promise<BuilderData> {
     ...new Set([...preferences.map((p) => p.userId), ...Object.keys(targets)]),
   ];
 
-  // 6. Existing draft assignments for the week.
-  const { data: draftRows } = await supabase
-    .from('draft_block_assignments')
-    .select('block_id, user_id')
-    .eq('period_id', periodId)
-    .in(
-      'block_id',
-      weekBlockIds.length > 0 ? weekBlockIds : ['00000000-0000-0000-0000-000000000000'],
-    );
+  // 6. Existing draft assignments for the week (same chunking — 224 ids 414s).
+  const draftRows = await selectByBlockIdChunks(weekBlockIds, (chunk) =>
+    supabase
+      .from('draft_block_assignments')
+      .select('block_id, user_id')
+      .eq('period_id', periodId)
+      .in('block_id', chunk),
+  );
   const drafts: Record<string, string[]> = {};
-  for (const d of draftRows ?? []) {
+  for (const d of draftRows) {
     (drafts[d.block_id] ??= []).push(d.user_id);
   }
 

@@ -7,9 +7,11 @@
 
 - Approval = **peer mutual consent only** (no manager step) → mobile-only, no admin-web work.
 - Cross-week reach = **whole active scheduling period** forward; retroactive = **current + last week** back.
-- **One-sided handoff** ("I take Bob's shift, get his full hours, he gets none of mine") is NEW and wanted.
+- **One-sided handoff** ("I take Bob's shift, get his full hours, he gets none of mine") is NEW and wanted. **Always cap-exempt** (both directions, future + past) — like floats; an accepted, deliberate cap-bypass.
 - **Permanent swap** = a first-class in-app feature mirroring **permanent pickup** conventions.
 - UI = **calendar-based** (reuse the familiar Personal Calendar); intuitive, esp. for 3-staff houses (Quad).
+- **Entry points = BOTH** a My-Shifts card's Swap action (give pre-pinned) and a Swaps-tab "＋ Propose" (empty calendar).
+- **Give source = ALL my shifts** (home-house + cross-house pickups + float-out), sourced from My-Shifts data, not just the home-house grid.
 
 ---
 
@@ -98,13 +100,15 @@ Pure, `now`/`anchor`-injected, KMP-clean (validate with `:shared:compileKotlinIo
 
 ## 4. One-sided handoff — new backend (Phase 1b)
 
-Model as a swap with an **empty counterparty span** (give-only) or **empty initiator span** (take-only). Peer consent (the counterparty/initiator must accept). **Receiver is cap-checked** (they gain hours — unlike symmetric swaps/floats which are hour-neutral; BEH §9).
+Model as a swap with an **empty counterparty span** (give-only) or **empty initiator span** (take-only). Peer consent (the counterparty/initiator must accept).
 
-- **Spec:** add BEH §8.5 "One-sided handoff (directed give / take-over)". Contrast with drop→open-feed (anyone claims) and permanent drop/pickup (open period): this is a **directed, peer-consented** transfer to a _specific_ person. Harnwell/float-direction eligibility still applies (reuse `evaluateSwapEligibility`). Retroactive allowed within current+last week (no new worked hours are _created_, only re-attributed — but the receiver's _future_ cap is the relevant check for future shifts; a past one-sided take re-attributes already-worked hours and is cap-exempt like a retroactive float-swap — pin this in the spec).
-- **Migration:** relax `swap_requests_temporary_counterparty_assignment_ids_nonempty` to allow an empty side **iff** a new `swap_type` value (e.g. `handoff`) or a `direction` column marks it one-sided. Add the column + CHECK that exactly one side is empty for a handoff.
-- **RPC:** extend/clone `accept_swap` → one-way `user_id` transfer of the non-empty span to the receiver; run `checkClaimAgainstCap` (packages/core, reused by claim/pickup) on the receiver for **future** spans; skip cap for fully-past spans (retro re-attribution). Keep the `FOR UPDATE` + status/expiry/ownership backstops.
-- **EF:** `create-swap` allow the empty side for `handoff`; validate direction; reuse eligibility + conflict guards.
-- **Core (Vitest) + pgTAP:** eligibility symmetry for the non-empty side; cap-check on receiver (future) vs skip (past); empty-side CHECK; accept transfers one way; expiry.
+**Cap decision (user, 2026-06-17): handoffs are ALWAYS cap-exempt** — never run a cap check, in either direction, future or past. Consistent with how floats and symmetric swaps are already treated (BEH §9 floats don't consult the cap). Accepted tradeoff: a directed take-over is therefore a deliberate cap-bypass (claim/pickup still cap-check), justified because it's a mutual-consent peer arrangement reflecting reality. Record this explicitly in the spec so it isn't mistaken for an oversight.
+
+- **Spec:** add BEH §8.5 "One-sided handoff (directed give / take-over)". Contrast with drop→open-feed (anyone claims) and permanent drop/pickup (open period): this is a **directed, peer-consented** transfer to a _specific_ person. Harnwell/float-direction eligibility still applies (reuse `evaluateSwapEligibility`). Retroactive allowed within current+last week. **No cap check at all** (see cap decision above) — neither at create nor accept, future or past.
+- **Migration:** relax `swap_requests_temporary_counterparty_assignment_ids_nonempty` to allow an empty side **iff** a new `swap_type = 'handoff'` value marks it one-sided. Add the type + a CHECK that exactly one of the two spans is empty for a handoff (and that handoff is never permanent).
+- **RPC:** extend/clone `accept_swap` → one-way `user_id` transfer of the non-empty span to the receiver. **No `checkClaimAgainstCap`.** Keep the `FOR UPDATE` + status/expiry/ownership backstops + the symmetric eligibility re-check on the transferred span.
+- **EF:** `create-swap` allow the empty side for `handoff`; validate exactly-one-empty; reuse eligibility + conflict guards.
+- **Core (Vitest) + pgTAP:** eligibility on the non-empty span (Harnwell/float-direction); empty-side CHECK (exactly one empty; handoff ≠ permanent); accept transfers one way; **no cap check fires**; expiry.
 - **UI:** the calendar's optional give/take already produces the one-sided draft (§3b); map to `handoff` in `createSwap`.
 
 ---

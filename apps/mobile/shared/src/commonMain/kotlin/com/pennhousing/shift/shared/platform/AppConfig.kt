@@ -20,4 +20,17 @@ object AppConfig {
 
     @Volatile
     var accessTokenProvider: () -> String? = { null }
+
+    /**
+     * Refreshes the worker's Supabase session before a privileged call reads its JWT via
+     * [accessTokenProvider]. `force = false` refreshes only when the token is missing or
+     * within the near-expiry window (the cheap pre-flight on every call); `force = true`
+     * always refreshes (the 401 backstop, after a stale token slipped through).
+     *
+     * Wired to Supabase Auth in `WorkerBackend.wireAccessToken()` after sign-in/restore;
+     * the default is a no-op so the demo / pre-sign-in path never tries to refresh. Must
+     * never throw — the caller stays best-effort.
+     */
+    @Volatile
+    var ensureFreshSession: suspend (force: Boolean) -> Unit = { _ -> }
 }

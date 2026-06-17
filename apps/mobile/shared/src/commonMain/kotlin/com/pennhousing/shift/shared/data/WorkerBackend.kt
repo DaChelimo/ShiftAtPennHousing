@@ -6,7 +6,9 @@ import com.pennhousing.shift.shared.network.createAppSupabaseClient
 import com.pennhousing.shift.shared.platform.AppConfig
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
+import kotlinx.datetime.toStdlibInstant
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Worker auth — the single shared Supabase client + token wiring (DESIGN §5, item 2).
@@ -36,9 +38,36 @@ object WorkerBackend {
 
     val breakRepository: BreakRepository by lazy { BreakRepository(client) }
 
-    /** Point `AppConfig.accessTokenProvider` at the live worker JWT (call after sign-in). */
+    /**
+     * Point `AppConfig.accessTokenProvider` at the live worker JWT and wire
+     * `AppConfig.ensureFreshSession` to Supabase Auth (call after sign-in / valid restore).
+     *
+     * The provider reads the token lazily on each call, so supabase-kt's internal refresh
+     * is always reflected. But the background refresh is not guaranteed to have run before
+     * a privileged call (a backgrounded app, a session restored cold), so [EdgeFunctionClient]
+     * calls `ensureFreshSession` to refresh a missing/near-expiry token proactively and to
+     * force a refresh on a 401. This is what stops an expired JWT from silently 401-ing
+     * writes (the swap-proposed-but-nothing-happened bug). `refreshCurrentSession` rotates
+     * the token using the stored refresh token; all wrapped so it never throws.
+     */
+    @Suppress("DEPRECATION")
     fun wireAccessToken() {
         AppConfig.accessTokenProvider = { client.auth.currentAccessTokenOrNull() }
+        AppConfig.ensureFreshSession = { force ->
+            runCatching {
+                if (client.auth.currentSessionOrNull() == null) {
+                    client.auth.loadFromStorage()
+                    client.auth.awaitInitialization()
+                }
+                val session = client.auth.currentSessionOrNull()
+                if (session != null) {
+                    val expiresAt = session.expiresAt.toStdlibInstant()
+                    if (force || expiresAt - Clock.System.now() <= 60.seconds) {
+                        client.auth.refreshCurrentSession()
+                    }
+                }
+            }
+        }
     }
 
     /**

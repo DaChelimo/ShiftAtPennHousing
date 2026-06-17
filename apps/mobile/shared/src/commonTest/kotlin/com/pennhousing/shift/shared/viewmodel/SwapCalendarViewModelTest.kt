@@ -134,6 +134,34 @@ class SwapCalendarViewModelTest {
     }
 
     @Test
+    fun handoff_mode_produces_a_give_only_handoff_proposal() {
+        val vm = SwapCalendarViewModel(listOf(schedThu), meUserId = "me", now = now, initialGiveShiftId = "sch")
+        vm.setWeekSeats(0, thuSeats)
+        vm.pickTake(vm.uiState.value.day.others[0]) // picks the recipient
+        vm.setHandoff(true)
+        assertTrue(vm.uiState.value.handoff)
+        assertFalse(vm.uiState.value.permanentToggleVisible) // permanent hidden in hand-off
+        val p = vm.proposals()
+        assertEquals(1, p.size)
+        assertEquals("handoff", p[0].swapType)
+        assertEquals("ben", p[0].counterpartyUserId) // the recipient
+        assertEquals(listOf("sch-0", "sch-1", "sch-2", "sch-3"), p[0].initiatorAssignmentIds) // I give my whole shift
+        assertNull(p[0].counterpartyAssignmentIds) // they give nothing back
+    }
+
+    @Test
+    fun handoff_and_permanent_are_mutually_exclusive() {
+        val vm = SwapCalendarViewModel(listOf(schedThu), meUserId = "me", now = now, initialGiveShiftId = "sch")
+        vm.setWeekSeats(0, thuSeats)
+        vm.pickTake(vm.uiState.value.day.others[0])
+        vm.togglePermanent()
+        assertTrue(vm.uiState.value.permanent)
+        vm.setHandoff(true)
+        assertTrue(vm.uiState.value.handoff)
+        assertFalse(vm.uiState.value.permanent) // permanent cleared
+    }
+
+    @Test
     fun stale_seat_feed_for_another_week_is_ignored() {
         val vm = SwapCalendarViewModel(listOf(schedThu), meUserId = "me", now = now, initialGiveShiftId = "sch")
         vm.setWeekSeats(5, thuSeats) // arrives for a week the worker isn't on

@@ -8,7 +8,7 @@ import {
   type Supabase,
 } from '../_shared/swap-http.ts';
 
-type SwapType = 'shift_swap' | 'float_swap' | 'permanent_swap';
+type SwapType = 'shift_swap' | 'float_swap' | 'permanent_swap' | 'handoff';
 
 type AssignmentSnapshot = {
   assignment_id: string;
@@ -166,30 +166,47 @@ Deno.serve(
       recurring_pattern: recurringPattern,
     } = parsed.body;
 
-    if (swapType !== 'shift_swap' && swapType !== 'float_swap' && swapType !== 'permanent_swap') {
+    if (
+      swapType !== 'shift_swap' &&
+      swapType !== 'float_swap' &&
+      swapType !== 'permanent_swap' &&
+      swapType !== 'handoff'
+    ) {
       return jsonResponse({ error: 'swap_type_invalid' }, 400);
     }
     if (!isUuid(counterpartyUserId)) {
       return jsonResponse({ error: 'counterparty_user_id must be a UUID' }, 400);
     }
-    if (!isUuidArray(initiatorAssignmentIds)) {
-      return jsonResponse(
-        { error: 'initiator_assignment_ids must be a non-empty UUID array' },
-        400,
-      );
-    }
-    if (swapType !== 'permanent_swap' && !isUuidArray(counterpartyAssignmentIds)) {
-      return jsonResponse(
-        { error: 'counterparty_assignment_ids must be a non-empty UUID array' },
-        400,
-      );
+
+    const isHandoff = swapType === 'handoff';
+    const hasInitiatorSpan = isUuidArray(initiatorAssignmentIds);
+    const hasCounterpartySpan = isUuidArray(counterpartyAssignmentIds);
+
+    if (isHandoff) {
+      // §8.5 one-sided: EXACTLY one span — give-only (initiator set; you hand your shift
+      // to the counterparty) or take-only (counterparty set; you take their shift). The
+      // empty side is the worker receiving the other's shift.
+      if (hasInitiatorSpan === hasCounterpartySpan) {
+        return jsonResponse({ error: 'handoff_requires_exactly_one_span' }, 400);
+      }
+    } else {
+      if (!hasInitiatorSpan) {
+        return jsonResponse(
+          { error: 'initiator_assignment_ids must be a non-empty UUID array' },
+          400,
+        );
+      }
+      if (swapType !== 'permanent_swap' && !hasCounterpartySpan) {
+        return jsonResponse(
+          { error: 'counterparty_assignment_ids must be a non-empty UUID array' },
+          400,
+        );
+      }
     }
 
-    const concreteCounterpartyIds =
-      Array.isArray(counterpartyAssignmentIds) && counterpartyAssignmentIds.every(isUuid)
-        ? counterpartyAssignmentIds
-        : [];
-    const touchedAssignmentIds = [...initiatorAssignmentIds, ...concreteCounterpartyIds];
+    const concreteInitiatorIds = hasInitiatorSpan ? initiatorAssignmentIds : [];
+    const concreteCounterpartyIds = hasCounterpartySpan ? counterpartyAssignmentIds : [];
+    const touchedAssignmentIds = [...concreteInitiatorIds, ...concreteCounterpartyIds];
 
     try {
       const assignments = await loadAssignments(auth.supabase, touchedAssignmentIds);
@@ -198,7 +215,7 @@ Deno.serve(
       }
 
       const initiatorRows = assignments.filter((row) =>
-        initiatorAssignmentIds.includes(row.assignment_id),
+        concreteInitiatorIds.includes(row.assignment_id),
       );
       const counterpartyRows = assignments.filter((row) =>
         concreteCounterpartyIds.includes(row.assignment_id),
@@ -226,7 +243,10 @@ Deno.serve(
 
       if (swapType !== 'permanent_swap') {
         const eligibility = module.evaluateSwapEligibility({
-          swapType,
+          // A handoff reuses the symmetric receiver-eligibility checks (Harnwell /
+          // float direction) on its single non-empty span; the empty side adds no
+          // checks. Treat it as a shift_swap for eligibility (no float requirement).
+          swapType: isHandoff ? 'shift_swap' : swapType,
           initiator: {
             userId: auth.userId,
             homeHouseId: initiatorHomeHouseId,
@@ -265,7 +285,7 @@ Deno.serve(
         // in apply_permanent_swap re-checks this at acceptance.
         const { data: offending, error: guardError } = await auth.supabase.rpc(
           'assignments_outside_regular_school_year',
-          { p_assignment_ids: initiatorAssignmentIds },
+          { p_assignment_ids: concreteInitiatorIds },
         );
         if (guardError !== null) {
           return jsonResponse({ error: guardError.message }, 400);
@@ -292,7 +312,9 @@ Deno.serve(
 
       const createdAt = new Date();
       const blockMinutes =
-        swapType === 'float_swap' ? await loadShiftBlockMinutes(auth.supabase) : 30;
+        swapType === 'float_swap' || swapType === 'handoff'
+          ? await loadShiftBlockMinutes(auth.supabase)
+          : 30;
       const expiresAt = computeExpiresAt(swapType, createdAt, assignments, blockMinutes);
       const { data, error } = await auth.supabase
         .from('swap_requests')
@@ -300,11 +322,9 @@ Deno.serve(
           swap_type: swapType,
           initiator_user_id: auth.userId,
           counterparty_user_id: counterpartyUserId,
-          initiator_assignment_ids: initiatorAssignmentIds,
+          initiator_assignment_ids: concreteInitiatorIds,
           counterparty_assignment_ids:
-            swapType === 'permanent_swap' && concreteCounterpartyIds.length === 0
-              ? null
-              : concreteCounterpartyIds,
+            concreteCounterpartyIds.length === 0 ? null : concreteCounterpartyIds,
           recurring_pattern: recurringPattern ?? null,
           created_at: createdAt.toISOString(),
           expires_at: expiresAt.toISOString(),

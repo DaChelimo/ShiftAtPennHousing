@@ -177,3 +177,22 @@ fun SwapDayCard.asCandidate(): SwapCandidate =
         dayLabel = dayLabel,
         durationLabel = durationLabel,
     )
+
+/**
+ * A GIVE-ONLY one-sided handoff (§8.5): the worker hands [giveBlockIds] of their own
+ * [initiatorShift] to [toUserId], who gives nothing back. Maps to the `handoff` EF with
+ * a null counterparty span (the empty side). Take-over (initiator-empty) is the standalone
+ * entry's job; from a My-Shifts card the worker is always the giver.
+ */
+fun buildHandoffProposal(
+    initiatorShift: MyShift,
+    giveBlockIds: List<String>,
+    toUserId: String,
+): SwapProposal =
+    SwapProposal(
+        swapType = "handoff",
+        counterpartyUserId = toUserId,
+        initiatorShift = initiatorShift,
+        initiatorAssignmentIds = giveBlockIds,
+        counterpartyAssignmentIds = null,
+    )

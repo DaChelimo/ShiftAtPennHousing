@@ -21,6 +21,7 @@ import com.pennhousing.shift.shared.swaps.SwapDayCard
 import com.pennhousing.shift.shared.swaps.SwapKind
 import com.pennhousing.shift.shared.swaps.SwapProposal
 import com.pennhousing.shift.shared.swaps.asCandidate
+import com.pennhousing.shift.shared.swaps.buildHandoffProposal
 import com.pennhousing.shift.shared.swaps.buildSwapDay
 import com.pennhousing.shift.shared.swaps.buildSwapProposal
 import com.pennhousing.shift.shared.swaps.swapWeekDaysWithShifts
@@ -43,6 +44,8 @@ data class SwapCalendarUiState(
     val take: SwapDayCard?, // pinned "take"
     val permanent: Boolean,
     val permanentToggleVisible: Boolean, // give is a SCHEDULED shift + a take is picked
+    /** Hand-off mode (§8.5): give-only — the worker hands their shift to the picked person, who gives nothing back. */
+    val handoff: Boolean,
     val canPropose: Boolean,
     val summary: String?, // bottom-bar copy for the forming swap
     /** True while the host is (re)fetching this week's house grid — "take" cards are absent until it lands. */
@@ -80,6 +83,7 @@ class SwapCalendarViewModel(
     private var giveShift: MyShift? = null
     private var take: SwapDayCard? = null
     private var permanent = false
+    private var handoff = false
 
     init {
         val pre = initialGiveShiftId?.let { id -> coalescedMine.firstOrNull { it.id == id } }
@@ -132,6 +136,7 @@ class SwapCalendarViewModel(
         val g = give
         val t = take
         return when {
+            g != null && t != null && handoff -> "Hand off ${g.timeLabel} to ${t.workerName} (they give nothing back)"
             g != null && t != null && permanent -> "Swap permanently with ${t.workerName}"
             g != null && t != null -> "Give ${g.timeLabel} ⇄ take ${t.workerName} ${t.timeLabel}"
             else -> null
@@ -142,7 +147,8 @@ class SwapCalendarViewModel(
         val anchor = shiftWeekAnchor(now, weekOffset)
         val week = buildCalendarWeek(myShifts, now, anchor = anchor)
         val seats = if (seatsForOffset == weekOffset) weekSeats else emptyList()
-        val permVisible = give?.permanentEligible == true && take != null
+        // Permanent and hand-off are mutually exclusive; permanent needs a SCHEDULED give.
+        val permVisible = give?.permanentEligible == true && take != null && !handoff
         return SwapCalendarUiState(
             weekOffset = weekOffset,
             weekRange = week.rangeLabel,
@@ -156,6 +162,7 @@ class SwapCalendarViewModel(
             take = take,
             permanent = permanent && permVisible,
             permanentToggleVisible = permVisible,
+            handoff = handoff && give != null && take != null,
             canPropose = give != null && take != null,
             summary = summaryLabel(),
             loadingWeek = seatsForOffset != weekOffset,
@@ -214,8 +221,20 @@ class SwapCalendarViewModel(
     fun togglePermanent() {
         if (give?.permanentEligible == true && take != null) {
             permanent = !permanent
+            if (permanent) handoff = false // mutually exclusive
             _uiState.value = snapshot()
         }
+    }
+
+    /**
+     * Hand-off mode (§8.5, give-only): the worker hands their give shift to the picked
+     * person, who gives nothing back. Mutually exclusive with permanent. Cap-exempt
+     * server-side. The picked take card supplies only the recipient (their shift is ignored).
+     */
+    fun setHandoff(on: Boolean) {
+        handoff = on
+        if (on) permanent = false
+        _uiState.value = snapshot()
     }
 
     /**
@@ -226,6 +245,10 @@ class SwapCalendarViewModel(
     fun proposals(): List<SwapProposal> {
         val g = giveShift ?: return emptyList()
         val t = take ?: return emptyList()
+        if (handoff) {
+            // Give-only one-sided: hand the give shift to the picked person (their shift ignored).
+            return listOf(buildHandoffProposal(g, g.blockIds, t.userId))
+        }
         val kind =
             when {
                 permanent && give?.permanentEligible == true -> SwapKind.PERMANENT

@@ -22,10 +22,13 @@ export type OverrideScope = 'this_week' | 'permanent';
 export type AssignAdvisory = { kind: string };
 
 // assignWorker resolves to either a confirm request (soft advisories, nothing
-// written) or a completed write. removeWorker only ever completes.
+// written) or a completed write. The completed write carries `assignedCount` —
+// the number of seats actually filled — so the UI can warn when a write was a
+// no-op (e.g. a permanent assign whose future occurrences are all already
+// filled). removeWorker only ever completes.
 export type AssignOutcome =
   | { needsConfirm: true; advisories: AssignAdvisory[] }
-  | { needsConfirm: false };
+  | { needsConfirm: false; assignedCount: number; scope: OverrideScope };
 
 // Map the RPC's snake_case hard-block reasons (and the Harnwell DB trigger message)
 // to readable copy. Anything unmapped falls through verbatim so nothing is hidden.
@@ -122,6 +125,7 @@ export async function assignWorker(input: {
   const result = (data ?? {}) as {
     needs_confirm?: boolean;
     advisories?: { kind?: string }[];
+    assigned_count?: number;
   };
   if (result.needs_confirm === true) {
     const advisories: AssignAdvisory[] = (result.advisories ?? []).map((a) => ({
@@ -131,7 +135,14 @@ export async function assignWorker(input: {
   }
 
   revalidatePath('/calendar');
-  return { ok: true, data: { needsConfirm: false } };
+  return {
+    ok: true,
+    data: {
+      needsConfirm: false,
+      assignedCount: result.assigned_count ?? 0,
+      scope: input.scope,
+    },
+  };
 }
 
 // Remove a worker from the clicked block(s) — vacates the seat (this_week →

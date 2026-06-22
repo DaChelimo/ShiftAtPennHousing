@@ -374,6 +374,9 @@ function EditSection({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  // A completed-but-no-op write (0 seats assigned) — surfaced as a warning snackbar
+  // rather than a success, so the operator sees that nothing changed.
+  const [warning, setWarning] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<AssignAdvisory[] | null>(null);
 
   // The DB block ids backing the selected sub-range (blockIds are in block order).
@@ -406,6 +409,7 @@ function EditSection({
     setBusy(true);
     setError(null);
     setSuccess(null);
+    setWarning(null);
     const res = await assignWorker({
       blockIds: selectedBlockIds,
       userId: workerId,
@@ -426,6 +430,16 @@ function EditSection({
       return;
     }
     setConfirm(null);
+    // A completed write that touched zero seats is a no-op, not a success — the
+    // operator should know nothing changed (and, where we can infer it, why).
+    if (res.data.assignedCount === 0) {
+      setWarning(
+        res.data.scope === 'permanent'
+          ? 'No shifts were assigned — every future occurrence of this slot is already filled (or none remain this term).'
+          : 'No shift was assigned — this seat is already filled.',
+      );
+      return;
+    }
     setSuccess(occupied ? 'Replaced' : 'Assigned');
     setTimeout(onApplied, 700);
   }
@@ -435,6 +449,7 @@ function EditSection({
     setBusy(true);
     setError(null);
     setSuccess(null);
+    setWarning(null);
     const res = await removeWorker({
       blockIds: selectedBlockIds,
       userId: shift.userId,
@@ -606,6 +621,11 @@ function EditSection({
         {success !== null && (
           <Notification kind="success" title={success} testId="override-success">
             The live schedule has been updated.
+          </Notification>
+        )}
+        {warning !== null && (
+          <Notification kind="warning" title="Nothing was assigned" testId="override-warning">
+            {warning}
           </Notification>
         )}
 

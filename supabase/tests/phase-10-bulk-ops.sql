@@ -54,7 +54,7 @@
 
 BEGIN;
 
-SELECT plan(46);
+SELECT plan(47);
 
 -- ============================================================
 -- 0. Fixtures: users, the SM-of-house-05 role, the recurring-slot blocks, the
@@ -628,6 +628,27 @@ SELECT is(
   (SELECT user_id FROM public.shift_block_assignments WHERE assignment_id = '0a000003-0000-0000-0000-0000000000c1'),
   '0a000001-0000-0000-0000-000000000001'::uuid,
   're-pickup: the worker owns the slot again'
+);
+
+-- ============================================================
+-- F. BOUNDARY ROBUSTNESS (20260614000005). A drop initiated the day BEFORE the
+--    term opens (now is in the gap before any period — e.g. the Sunday before a
+--    Monday semester start) must still resolve the CURRENT-OR-UPCOMING term and
+--    succeed, not raise semester_boundary_not_found. Placed last: it vacates extra
+--    weeks of the slot, so it must not run before the other drop/pickup sections.
+-- ============================================================
+SELECT is(
+  (public.permanent_drop_slot(
+     '0a000001-0000-0000-0000-000000000001'::uuid,
+     'house-05',
+     EXTRACT(DOW FROM current_setting('test.p10.anchor')::timestamptz
+                       AT TIME ZONE 'America/New_York')::integer,
+     ARRAY['19:00'],
+     current_setting('test.p10.anchor')::timestamptz - interval '9 days', -- before the term opens (start = anchor−8d)
+     NULL) ->> 'semester_end_date'),
+  (((current_setting('test.p10.anchor')::timestamptz + interval '38 days')
+     AT TIME ZONE 'America/New_York')::date)::text,
+  'drop initiated before the term opens resolves the current-or-upcoming term end (no semester_boundary_not_found)'
 );
 
 SELECT finish();

@@ -78,7 +78,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  MAX_SPAN_BLOCKS,
   MIN_SPAN_BLOCKS,
   buildPhase1Card,
   buildPhase2Roster,
@@ -130,13 +129,17 @@ const prefs = (entries: Array<[Worker, string, PreferenceRecord['status']]>): Pr
 const names = (entries: Array<{ worker: Worker }>): string[] => entries.map((e) => e.worker.name);
 
 // =====================================================================
-// validateDragSpan — §4.3 "a span of 2 to 12 consecutive 30-minute blocks"
+// validateDragSpan — any contiguous run of 30-min blocks (the 2..12 size limits
+// were lifted; the SM may pick a single block or a span of any length).
 // =====================================================================
 
 describe('validateDragSpan — span size + contiguity (D7)', () => {
-  it('exposes the 2-block (1h) min and 12-block (6h) max as constants', () => {
-    expect(MIN_SPAN_BLOCKS).toBe(2);
-    expect(MAX_SPAN_BLOCKS).toBe(12);
+  it('exposes a 1-block minimum (a single 30-min block is a valid pick)', () => {
+    expect(MIN_SPAN_BLOCKS).toBe(1);
+  });
+
+  it('a single block is valid (30 min) — no 1-hour minimum any more', () => {
+    expect(validateDragSpan(span(1))).toEqual({ valid: true, blockCount: 1, hours: 0.5 });
   });
 
   it('a 2-block contiguous span is valid (1 hour)', () => {
@@ -147,16 +150,16 @@ describe('validateDragSpan — span size + contiguity (D7)', () => {
     expect(validateDragSpan(span(12))).toEqual({ valid: true, blockCount: 12, hours: 6 });
   });
 
-  it('a single block is too_short (1 block = 30 min, below the 1-hour minimum)', () => {
-    expect(validateDragSpan(span(1))).toEqual({ valid: false, reason: 'too_short' });
+  it('a 13-block span is valid (6.5 hours) — no 6-hour maximum any more', () => {
+    expect(validateDragSpan(span(13))).toEqual({ valid: true, blockCount: 13, hours: 6.5 });
+  });
+
+  it('a 32-block contiguous span (a full 08:00–24:00 day) is valid (16 hours)', () => {
+    expect(validateDragSpan(span(32))).toEqual({ valid: true, blockCount: 32, hours: 16 });
   });
 
   it('an empty span is too_short', () => {
     expect(validateDragSpan([])).toEqual({ valid: false, reason: 'too_short' });
-  });
-
-  it('a 13-block span is too_long (6.5 hours, above the 6-hour maximum)', () => {
-    expect(validateDragSpan(span(13))).toEqual({ valid: false, reason: 'too_long' });
   });
 
   it('a span with a 30-min gap between blocks is not_contiguous', () => {
@@ -172,10 +175,6 @@ describe('validateDragSpan — span size + contiguity (D7)', () => {
     const ordered = span(2);
     const reversed: SpanBlock[] = [ordered[1] as SpanBlock, ordered[0] as SpanBlock];
     expect(validateDragSpan(reversed)).toEqual({ valid: false, reason: 'not_contiguous' });
-  });
-
-  it('size is checked before contiguity: a 13-block contiguous span is too_long, not not_contiguous', () => {
-    expect(validateDragSpan(span(13))).toEqual({ valid: false, reason: 'too_long' });
   });
 });
 

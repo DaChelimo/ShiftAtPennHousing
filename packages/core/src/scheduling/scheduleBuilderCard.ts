@@ -27,24 +27,24 @@ import {
 // Re-export the shared primitives so the web layer has a single import surface.
 export type { BlockedReason, PreferenceRecord, PreferenceStatus, SpanBlock, Worker };
 
-// span the drag-picker produced — 2..12 consecutive 30-min blocks (§4.3)
-export const MIN_SPAN_BLOCKS = 2; // 1 hour
-export const MAX_SPAN_BLOCKS = 12; // 6 hours
+// span the drag-picker produced — any contiguous run of 30-min blocks (≥1). The
+// former 2..12 size limits were lifted: the SM may pick a single block or a span of
+// any length. The picker is a UI affordance, not a data constraint (each block is an
+// independent assignment), so only emptiness + contiguity remain meaningful.
+export const MIN_SPAN_BLOCKS = 1; // a single 30-min block is a valid pick; no maximum
 
 const BLOCK_MS = 30 * 60 * 1000;
 const HOURS_PER_BLOCK = 0.5;
 
 export type SpanValidation =
   | { valid: true; blockCount: number; hours: number }
-  | { valid: false; reason: 'too_short' | 'too_long' | 'not_contiguous' };
+  | { valid: false; reason: 'too_short' | 'not_contiguous' };
 
-// D7: size is the headline rule (2..12); contiguity guards a malformed picker payload.
+// A pick is valid when it holds ≥1 block and they are strictly 30-min contiguous
+// (contiguity guards a malformed picker payload). `too_short` now means empty only.
 export function validateDragSpan(span: SpanBlock[]): SpanValidation {
   if (span.length < MIN_SPAN_BLOCKS) {
     return { valid: false, reason: 'too_short' };
-  }
-  if (span.length > MAX_SPAN_BLOCKS) {
-    return { valid: false, reason: 'too_long' };
   }
 
   for (let i = 1; i < span.length; i += 1) {

@@ -7,6 +7,7 @@ import { adminHouseId, canBuildSchedule, getSessionUser } from '../../../lib/aut
 import { isProjectAdministrator } from '../../../lib/data/config';
 import { getAllHousesCoverageData, getCoverageData } from '../../../lib/data/coverage';
 import { getOnDutyHmodId, getShellHouses } from '../../../lib/data/hmod';
+import { simNow } from '../../../lib/time/simClock';
 
 // Coverage & open-shifts monitor (design screen 06). READ-only presentation over
 // existing schedule data (lib/data/coverage). Manager surface — gated to SM/HM/BM.
@@ -32,7 +33,7 @@ export default async function CoveragePage({
   }
 
   const { house } = await searchParams;
-  const now = new Date();
+  const now = await simNow();
   const onDutyId = await getOnDutyHmodId(now);
   const canViewOthers = canViewOtherHouses({
     isOnDutyHmod: onDutyId === user.userId,

@@ -2,9 +2,10 @@ import { canViewOtherHouses } from '@shift/core';
 import { redirect } from 'next/navigation';
 
 import { AppShell, type NavItem } from '../../components/AppShell';
-import { canBuildSchedule, getSessionUser, isHouseAdmin } from '../../lib/auth';
+import { canBuildSchedule, getSessionUser, isHouseAdmin, isRsm } from '../../lib/auth';
 import { isProjectAdministrator } from '../../lib/data/config';
 import { getOnDutyHmodId, getShellHouses, getUnreadCount } from '../../lib/data/hmod';
+import { getSimOffsetSeconds, isTimeTravelEnabled, simNow } from '../../lib/time/simClock';
 
 function prettifyHouse(id: string): string {
   if (!id) return 'House';
@@ -136,11 +137,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // §2.5 HMOD context: resolve who is on-duty now, whether this user may leave their
   // home house (on-duty HMOD or project admin — D5), the switcher's house list, and
   // the bell's due/unread count. A single `now` so the pill, switcher, and bell agree.
-  const now = new Date();
+  const now = await simNow();
   const onDutyId = await getOnDutyHmodId(now);
   const hmodOnDuty = onDutyId === user.userId;
   const isProjectAdmin = await isProjectAdministrator(user.userId);
-  const canSwitchHouse = canViewOtherHouses({ isOnDutyHmod: hmodOnDuty, isProjectAdmin });
+  // §2.3a: an RSM may switch into any house to VIEW its schedule/coverage (the
+  // switched house is read-only — every write is scoped to their own house).
+  const canSwitchHouse = canViewOtherHouses({
+    isOnDutyHmod: hmodOnDuty,
+    isProjectAdmin,
+    isRsm: isRsm(user),
+  });
   const houses = canSwitchHouse
     ? await getShellHouses()
     : [
@@ -151,6 +158,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         },
       ];
   const unreadCount = await getUnreadCount(user.userId, now);
+  // Dev-only time-travel card (left of the HMOD pill). Hidden in production.
+  const devClock = isTimeTravelEnabled() ? { offsetSeconds: await getSimOffsetSeconds() } : null;
 
   return (
     <AppShell
@@ -165,6 +174,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       canSwitchHouse={canSwitchHouse}
       houses={houses}
       unreadCount={unreadCount}
+      devClock={devClock}
     >
       {children}
     </AppShell>

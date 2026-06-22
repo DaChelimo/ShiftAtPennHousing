@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 
 import { adminHouseId, getSessionUser, isHouseAdmin } from '../auth';
 import { createServiceClient } from '../supabase/server';
+import { simNow } from '../time/simClock';
 
 import type { ActionResult } from './builder';
 
@@ -32,7 +33,7 @@ export type FireWorkerSummary = {
   swapsVoided: number;
 };
 
-export type AppRole = 'sw' | 'sm' | 'hm' | 'bm';
+export type AppRole = 'sw' | 'sm' | 'hm' | 'rsm' | 'bm';
 
 export type HireWorkerSummary = {
   userId: string;
@@ -92,7 +93,7 @@ export async function fireWorker(input: {
   const { data, error } = await service.rpc('fire_worker', {
     p_initiator: me!.userId,
     p_user_id: input.userId,
-    p_now: new Date().toISOString(),
+    p_now: (await simNow()).toISOString(),
   });
   if (error !== null) return { ok: false, error: friendlyMessage(error.message) };
 
@@ -149,7 +150,7 @@ export async function hireWorker(input: {
   const email = input.email.trim().toLowerCase();
   if (name === '') return { ok: false, error: 'A worker name is required.' };
   if (email === '') return { ok: false, error: 'A valid email address is required.' };
-  if (!['sw', 'sm', 'hm', 'bm'].includes(input.role)) {
+  if (!['sw', 'sm', 'hm', 'rsm', 'bm'].includes(input.role)) {
     return { ok: false, error: 'Choose a valid initial role.' };
   }
 

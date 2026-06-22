@@ -1,6 +1,6 @@
 import { createClient } from './supabase/server';
 
-export type AppRole = 'sw' | 'sm' | 'hm' | 'bm';
+export type AppRole = 'sw' | 'sm' | 'hm' | 'rsm' | 'bm';
 
 export type UserRole = { role: AppRole; scopeHouseId: string | null };
 
@@ -44,23 +44,39 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   };
 }
 
-// §4.3 / phase-07 note: who may build/publish a schedule — sm, hm, or bm.
+// §4.3 / phase-07 note: who may build/publish a schedule — sm, hm, rsm, or bm.
 export function canBuildSchedule(user: SessionUser | null): boolean {
-  return !!user && user.roles.some((r) => r.role === 'sm' || r.role === 'hm' || r.role === 'bm');
+  return (
+    !!user &&
+    user.roles.some(
+      (r) => r.role === 'sm' || r.role === 'hm' || r.role === 'rsm' || r.role === 'bm',
+    )
+  );
 }
 
-// §2.3 / §2.6: HM/BM-only administrative powers (leave, rotor). BM is admin-only.
+// §2.3 / §2.3a / §2.6: HM/RSM/BM administrative powers (people, leave, rotor —
+// the RSM cannot serve as HMOD, but the rotor page is still theirs to view/manage
+// for their house). BM is admin-only; the RSM holds all HM admin powers.
 export function isHouseAdmin(user: SessionUser | null): boolean {
-  return !!user && user.roles.some((r) => r.role === 'hm' || r.role === 'bm');
+  return !!user && user.roles.some((r) => r.role === 'hm' || r.role === 'rsm' || r.role === 'bm');
 }
 
-// §9.3: cap modification is campus-wide HM/BM authority, not house-scoped.
+// §2.3a: an RSM has read-only visibility into every house's schedule.
+export function isRsm(user: SessionUser | null): boolean {
+  return !!user && user.roles.some((r) => r.role === 'rsm');
+}
+
+// §9.3: cap modification is campus-wide HM/RSM/BM authority, not house-scoped.
 export const canModifyWeeklyCap = isHouseAdmin;
 
-// The house this admin administers (first sm/hm/bm scope). Falls back to home house.
+// The house this admin administers (first sm/hm/rsm/bm scope). Falls back to home
+// house. Every WRITE is scoped through this id, so an RSM viewing another house
+// (via the switcher) still cannot edit it — their admin house stays their own.
 export function adminHouseId(user: SessionUser): string {
   const scoped = user.roles.find(
-    (r) => (r.role === 'sm' || r.role === 'hm' || r.role === 'bm') && r.scopeHouseId !== null,
+    (r) =>
+      (r.role === 'sm' || r.role === 'hm' || r.role === 'rsm' || r.role === 'bm') &&
+      r.scopeHouseId !== null,
   );
   return scoped?.scopeHouseId ?? user.homeHouseId;
 }

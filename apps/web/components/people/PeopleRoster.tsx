@@ -9,10 +9,11 @@ const ROLE_META: Record<AppRole, { short: string; full: string; kind: TagKind }>
   sw: { short: 'SW', full: 'Student Worker', kind: 'gray' },
   sm: { short: 'SM', full: 'Student Manager', kind: 'blue' },
   hm: { short: 'HM', full: 'Housing Manager', kind: 'purple' },
+  rsm: { short: 'RSM', full: 'Residential Services Manager', kind: 'magenta' },
   bm: { short: 'BM', full: 'Building Manager', kind: 'teal' },
 };
 
-const ROLE_ORDER: AppRole[] = ['bm', 'hm', 'sm', 'sw'];
+const ROLE_ORDER: AppRole[] = ['bm', 'hm', 'rsm', 'sm', 'sw'];
 
 function prettifyHouse(id: string): string {
   if (!id) return '';

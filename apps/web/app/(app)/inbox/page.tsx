@@ -3,6 +3,7 @@ import { Notification } from '../../../components/ui/Notification';
 import { PageHead } from '../../../components/ui/PageHead';
 import { canBuildSchedule, getSessionUser } from '../../../lib/auth';
 import { getInboxData } from '../../../lib/data/inbox';
+import { simNow } from '../../../lib/time/simClock';
 
 // Action inbox / notifications (design screen 07). READ-only presentation over the
 // signed-in user's notifications (RLS-scoped); actions go through lib/actions/inbox.
@@ -31,6 +32,6 @@ export default async function InboxPage({
   const { show } = await searchParams;
   const view = show === 'resolved' ? 'resolved' : 'default';
 
-  const data = await getInboxData(view);
+  const data = await getInboxData(view, await simNow());
   return <ActionInbox data={data} />;
 }

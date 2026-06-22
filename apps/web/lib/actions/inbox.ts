@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 
 import { getSessionUser, isHouseAdmin } from '../auth';
 import { createServiceClient } from '../supabase/server';
+import { simNow } from '../time/simClock';
 
 import type { ActionResult } from './builder';
 
@@ -51,7 +52,7 @@ export async function setAlliedResolved(input: {
     p_notification_id: input.notificationId,
     p_user_id: me!.userId,
     p_resolved: input.resolved,
-    p_now: new Date().toISOString(),
+    p_now: (await simNow()).toISOString(),
   });
   if (error !== null) return { ok: false, error: friendlyMessage(error.message) };
 
@@ -74,7 +75,7 @@ export async function markRead(input: {
   const { error } = await service.rpc('mark_notification_read', {
     p_notification_id: input.notificationId,
     p_user_id: me.userId,
-    p_now: new Date().toISOString(),
+    p_now: (await simNow()).toISOString(),
   });
   if (error !== null) return { ok: false, error: friendlyMessage(error.message) };
 

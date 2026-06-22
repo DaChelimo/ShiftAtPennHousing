@@ -517,12 +517,25 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  padding: 18px 12px 16px 20px;
+  padding: 16px 12px 14px 20px;
   border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
 }
+/* The body is a fixed-height flex column: the time row / tags / escalation and the
+   edit footer stay put while ONLY the worker list scrolls — the whole flow fits in
+   one viewport (no page scroll). */
 .panel-body {
-  padding: 18px 20px 32px;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 14px 20px 16px;
+  overflow: hidden;
+}
+.panel-body > .detail-row,
+.panel-body > .detail-tags,
+.panel-body > .detail-esc {
+  flex-shrink: 0;
 }
 .detail-row {
   display: flex;
@@ -573,8 +586,182 @@
   background: var(--surface-2);
   border: 1px solid var(--border-subtle);
 }
+/* Edit section: fills the remaining body height as a flex column — fixed top
+   (time range + action + list label), a scrolling worker list, and a footer
+   (scope + apply) pinned to the bottom. */
 .detail-override {
-  margin-top: 20px;
-  padding-top: 16px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-top: 14px;
+  padding-top: 14px;
   border-top: 1px solid var(--border-subtle);
+}
+.edit-top {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.edit-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 16px;
+}
+.edit-foot {
+  flex-shrink: 0;
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* --- identity chips under the name (phone + weekly load) --- */
+.person-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.pchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 12px;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.pchip .t-mono {
+  font-size: 12px;
+}
+button.pchip {
+  cursor: pointer;
+}
+button.pchip:hover {
+  background: var(--surface-3);
+}
+.pchip.is-empty {
+  color: var(--text-secondary);
+}
+
+/* --- time-range picker: typed times + a draggable dual-thumb slider --- */
+.range-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.range-row .input {
+  flex: 1;
+  min-width: 0;
+}
+.range-dash {
+  color: var(--text-secondary);
+}
+.range-slider {
+  padding: 9px 9px 3px;
+}
+.range-slider-track {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-3);
+}
+.range-slider-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--brand);
+  border-radius: 3px;
+}
+.range-thumb {
+  position: absolute;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--brand);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+  cursor: grab;
+  touch-action: none;
+  z-index: 2;
+}
+.range-thumb:active {
+  cursor: grabbing;
+}
+
+/* --- worker-card picker (cap-aware) — the one scrolling region in the panel --- */
+.wpick-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding-right: 2px;
+  overflow-y: auto;
+}
+.wpick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: background var(--motion) var(--ease);
+}
+.wpick:hover {
+  background: var(--surface-2);
+}
+.wpick.is-sel {
+  border: 2px solid var(--brand);
+  background: var(--brand-subtle-bg);
+  padding: 8px 11px;
+}
+.wpick-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+.wpick-name {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wpick-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.wpick-hint.tone-warn {
+  color: var(--st-pending);
+}
+.wpick-hint.tone-danger {
+  color: var(--st-danger);
+}
+.wpick-check {
+  color: var(--brand);
+  flex-shrink: 0;
 }

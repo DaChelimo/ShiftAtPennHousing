@@ -19,6 +19,7 @@ export type LeaveAdminData = {
 function roleLabel(role: string): string {
   if (role === 'bm') return 'Building Manager';
   if (role === 'hm') return 'Housing Manager';
+  if (role === 'rsm') return 'Residential Services Manager';
   return 'Project administrator';
 }
 
@@ -30,11 +31,12 @@ export async function getLeaveAdminData(me: SessionUser): Promise<LeaveAdminData
   const svc = createServiceClient();
   const myHouse = adminHouseId(me);
 
-  // HM/BM candidates with their (first) admin role + house.
+  // HM/RSM/BM candidates with their (first) admin role + house. §2.3a adds the
+  // RSM to the leave hierarchy (RSM → HM → BM …).
   const { data: roleRows } = await svc
     .from('user_roles')
     .select('user_id, role, scope_house_id')
-    .in('role', ['hm', 'bm']);
+    .in('role', ['hm', 'rsm', 'bm']);
 
   const roleByUser = new Map<string, { role: string; house: string | null }>();
   for (const r of roleRows ?? []) {
@@ -89,14 +91,24 @@ export async function getLeaveAdminData(me: SessionUser): Promise<LeaveAdminData
     .maybeSingle();
   const projectAdminId = (cfg?.config_value as string | undefined) ?? null;
 
-  // Default replacement: same-house BM, else same-house HM other than me (§2.6 #1).
+  // Default replacement (§2.6 #1, §2.3a): same-house, role-aware by the LEAVER's
+  // own rank — an RSM defaults down to the HM; an HM defaults to the BM; a BM
+  // defaults to the HM. The RSM is offered as a fallback to everyone.
   const sameHouseAdmins = adminUserIds.filter(
     (id) => id !== me.userId && roleByUser.get(id)?.house === myHouse,
   );
+  const myAdminRole =
+    me.roles.find((r) => r.role === 'rsm' || r.role === 'hm' || r.role === 'bm')?.role ?? null;
+  const preferenceOrder =
+    myAdminRole === 'rsm'
+      ? ['hm', 'bm', 'rsm']
+      : myAdminRole === 'hm'
+        ? ['bm', 'rsm', 'hm']
+        : ['hm', 'rsm', 'bm'];
   const defaultReplacementUserId =
-    sameHouseAdmins.find((id) => roleByUser.get(id)?.role === 'bm') ??
-    sameHouseAdmins.find((id) => roleByUser.get(id)?.role === 'hm') ??
-    null;
+    preferenceOrder
+      .map((role) => sameHouseAdmins.find((id) => roleByUser.get(id)?.role === role))
+      .find((id) => id !== undefined) ?? null;
 
   const optionIds = new Set<string>();
   for (const id of adminUserIds) {

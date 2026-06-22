@@ -171,6 +171,21 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
     return () => window.removeEventListener('mouseup', onUp);
   }, [dragging, anchorIdx, hoverIdx, data.blocks]);
 
+  // Escape deselects: drop the current/dragged blocks so they return to their normal
+  // grey (and abort an in-progress drag). Modals own Escape while they're open.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (pending !== null || publishOpen) return;
+      setDragging(false);
+      setAnchorIdx(null);
+      setHoverIdx(null);
+      setSelectedBlockIds([]);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pending, publishOpen]);
+
   const workerName = useMemo(() => {
     const map = new Map<string, string>();
     for (const w of data.workers) map.set(w.userId, w.name);
@@ -456,8 +471,7 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
                 <Icon name="drag" size={24} />
                 <div className="t-h3">Select blocks to assign</div>
                 <div className="t-helper">
-                  Drag across {phase === 1 ? '2–12' : 'one or more'} consecutive cells to pick a
-                  span.
+                  Drag across one or more consecutive cells to pick a span. Press Esc to clear it.
                 </div>
                 <div className="side-stat">
                   <span className="t-meta">Assigned so far</span>
@@ -480,7 +494,7 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
                 {!spanValid ? (
                   <div className="side-note">
                     <Notification kind="warning" title="Adjust your selection">
-                      Pick a span of 2–12 consecutive 30-min blocks.
+                      Pick one or more consecutive 30-min blocks.
                     </Notification>
                   </div>
                 ) : (

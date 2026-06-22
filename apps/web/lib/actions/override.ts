@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 
 import { adminHouseId, canBuildSchedule, getSessionUser } from '../auth';
 import { createServiceClient } from '../supabase/server';
+import { simNow } from '../time/simClock';
 
 import type { ActionResult } from './builder';
 
@@ -87,14 +88,21 @@ async function authorizeForBlocks(
   return { ok: true, operatorUserId: me!.userId };
 }
 
-// Assign / reassign a worker onto the clicked block(s). `overrideAdvisories=false`
+// Assign / replace a worker onto the clicked block(s). `overrideAdvisories=false`
 // is the first step: if soft advisories apply, the RPC writes nothing and returns
 // needs_confirm with the advisory kinds; the UI re-calls with the flag true.
+//
+// `incumbentUserId` distinguishes REPLACE (hand a still-occupied seat to a new
+// worker) from filling an open shift: when set, the RPC overwrites THAT worker's
+// seat on each block instead of preferring a vacant one — without it, a block that
+// also carries a vacant seat would get the new worker added beside the incumbent
+// (the original reassign bug). Omit it for empty-seat assignment.
 export async function assignWorker(input: {
   blockIds: string[];
   userId: string;
   scope: OverrideScope;
   overrideAdvisories: boolean;
+  incumbentUserId?: string | null;
 }): Promise<ActionResult<AssignOutcome>> {
   const authz = await authorizeForBlocks(input.blockIds);
   if (!authz.ok) return { ok: false, error: authz.error };
@@ -106,7 +114,8 @@ export async function assignWorker(input: {
     p_user_id: input.userId,
     p_scope: input.scope,
     p_override_advisories: input.overrideAdvisories,
-    p_now: new Date().toISOString(),
+    p_now: (await simNow()).toISOString(),
+    ...(input.incumbentUserId ? { p_incumbent_user_id: input.incumbentUserId } : {}),
   });
   if (error !== null) return { ok: false, error: friendlyMessage(error.message) };
 
@@ -141,7 +150,7 @@ export async function removeWorker(input: {
     p_block_ids: input.blockIds,
     p_user_id: input.userId,
     p_scope: input.scope,
-    p_now: new Date().toISOString(),
+    p_now: (await simNow()).toISOString(),
   });
   if (error !== null) return { ok: false, error: friendlyMessage(error.message) };
 

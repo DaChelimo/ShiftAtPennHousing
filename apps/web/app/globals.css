@@ -1774,6 +1774,17 @@ textarea {
   color: var(--brand);
   font-weight: 500;
 }
+/* Full-width segmented control: the buttons split the container into equal halves
+   that fill it horizontally (used for the panel's Action + Apply-to toggles). */
+.seg-fill {
+  display: flex;
+  width: 100%;
+}
+.seg-fill .seg-btn {
+  flex: 1 1 0;
+  padding: 0 8px;
+  text-align: center;
+}
 
 /* ---------- Key-value list (modals/panels) ---------- */
 .kv-list {

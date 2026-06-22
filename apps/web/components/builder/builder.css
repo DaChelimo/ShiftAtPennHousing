@@ -159,7 +159,9 @@
   border-radius: 4px;
 }
 
-/* continuous assignment block — one per contiguous same-worker run */
+/* continuous assignment block — one per contiguous same-worker run. A calm light
+   tint (not the screamy solid brand) with dark text + a soft brand border, so a
+   filled span reads clearly without dominating the grid. */
 .bld-run {
   box-sizing: border-box;
   position: absolute;
@@ -170,11 +172,11 @@
   justify-content: center;
   gap: 1px;
   padding: 2px 8px;
-  background: var(--brand);
-  color: #fff;
-  border: 1px solid color-mix(in srgb, var(--brand) 72%, #000 14%);
+  background: color-mix(in srgb, var(--brand) 16%, var(--surface));
+  color: var(--text-primary);
+  border: 1px solid color-mix(in srgb, var(--brand) 42%, var(--surface));
   border-radius: 5px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
   overflow: hidden;
 }
 .bld-run-name {
@@ -188,7 +190,7 @@
 .bld-run-time {
   font-size: 10.5px;
   line-height: 1.1;
-  opacity: 0.85;
+  color: var(--text-secondary);
   white-space: nowrap;
 }
 .bld-run-x {
@@ -202,8 +204,8 @@
   width: 18px;
   height: 18px;
   border: none;
-  background: color-mix(in srgb, #fff 22%, transparent);
-  color: #fff;
+  background: color-mix(in srgb, var(--brand) 14%, transparent);
+  color: var(--brand);
   border-radius: 99px;
   font-size: 13px;
   line-height: 1;
@@ -214,7 +216,7 @@
   opacity: 1;
 }
 .bld-run-x:hover {
-  background: color-mix(in srgb, #fff 38%, transparent);
+  background: color-mix(in srgb, var(--brand) 26%, transparent);
 }
 .bld-grid-empty {
   flex: 1;

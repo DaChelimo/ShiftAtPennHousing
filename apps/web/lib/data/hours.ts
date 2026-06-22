@@ -123,7 +123,10 @@ export async function getHoursReport(
   }
   const workers = users.filter((u) => {
     const roles = rolesByUser.get(u.user_id) ?? [];
-    return roles.some((r) => r === 'sw' || r === 'sm' || r === 'hm') && !roles.includes('bm');
+    return (
+      roles.some((r) => r === 'sw' || r === 'sm' || r === 'hm' || r === 'rsm') &&
+      !roles.includes('bm')
+    );
   });
   const workerIds = workers.map((w) => w.user_id);
   if (workerIds.length === 0) return base;

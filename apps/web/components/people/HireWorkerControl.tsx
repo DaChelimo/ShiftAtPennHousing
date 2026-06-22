@@ -18,6 +18,7 @@ const ROLE_OPTIONS: { value: AppRole; label: string }[] = [
   { value: 'sw', label: 'Student Worker (SW)' },
   { value: 'sm', label: 'Student Manager (SM)' },
   { value: 'hm', label: 'Housing Manager (HM)' },
+  { value: 'rsm', label: 'Residential Services Manager (RSM)' },
   { value: 'bm', label: 'Building Manager (BM)' },
 ];
 

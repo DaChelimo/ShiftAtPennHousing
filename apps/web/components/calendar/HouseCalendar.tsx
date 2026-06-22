@@ -453,10 +453,13 @@ export function HouseCalendar({
 
       {selected && (
         <ShiftDetailPanel
+          key={selected.id}
           shift={selected}
           houseName={model.houseName}
           dayLabel={`${model.days[selected.dayIndex]!.label} ${model.days[selected.dayIndex]!.date}`}
           assignableWorkers={model.assignableWorkers}
+          softCapHours={model.softCapHours}
+          capEnforcement={model.capEnforcement}
           onClose={() => setSelected(null)}
           onApplied={() => {
             setSelected(null);

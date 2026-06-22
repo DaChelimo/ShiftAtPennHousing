@@ -14,7 +14,7 @@ export async function saveRotor(input: {
   entries: Array<{ weekStartDate: string; hmodUserId: string }>;
 }): Promise<ActionResult> {
   const me = await getSessionUser();
-  if (!isHouseAdmin(me)) return { ok: false, error: 'Only an HM or BM may plan the rotor.' };
+  if (!isHouseAdmin(me)) return { ok: false, error: 'Only an HM, RSM or BM may plan the rotor.' };
 
   if (input.entries.length === 0) return { ok: true, data: undefined };
 

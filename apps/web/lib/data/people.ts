@@ -170,7 +170,8 @@ export async function getPeopleData(houseId: string, now: Date = new Date()): Pr
   base.people = users.map((u) => {
     const roles = rolesByUser.get(u.user_id) ?? [];
     const hasShifts =
-      roles.some((r) => r === 'sw' || r === 'sm' || r === 'hm') && !roles.includes('bm');
+      roles.some((r) => r === 'sw' || r === 'sm' || r === 'hm' || r === 'rsm') &&
+      !roles.includes('bm');
     return {
       userId: u.user_id,
       name: u.name,

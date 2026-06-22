@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { createClient } from '../lib/supabase/client';
 
+import { DevClockCard } from './DevClockCard';
 import { Avatar } from './ui/Avatar';
 import { Icon, type IconName } from './ui/Icon';
 import { Tag } from './ui/Tag';
@@ -188,6 +189,7 @@ export function AppShell({
   canSwitchHouse = false,
   houses,
   unreadCount = 0,
+  devClock = null,
   children,
 }: {
   user: ShellUser;
@@ -196,6 +198,8 @@ export function AppShell({
   canSwitchHouse?: boolean;
   houses?: ShellHouse[];
   unreadCount?: number;
+  /** Dev-only time-travel control state; null hides the card (e.g. production). */
+  devClock?: { offsetSeconds: number } | null;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -279,6 +283,8 @@ export function AppShell({
         </div>
 
         <div className="grow" />
+
+        {devClock && <DevClockCard offsetSeconds={devClock.offsetSeconds} />}
 
         {canBeHmod && (
           <div

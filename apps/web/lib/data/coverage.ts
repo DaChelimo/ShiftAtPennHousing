@@ -3,6 +3,7 @@ import { summarizeAckReminders } from '@shift/core';
 import type { EscalationStep } from '../../components/ui';
 import { createServiceClient } from '../supabase/server';
 
+import { selectByBlockIdChunks } from './blockChunks';
 import { getShellHouses } from './hmod';
 
 // ===========================================================================
@@ -183,20 +184,25 @@ export async function getCoverageData(
   }
   const blockIds = [...blockMeta.keys()];
 
-  const { data: asgRows } = await supabase
-    .from('shift_block_assignments')
-    .select('block_id, status, user_id, vacancy_origin, source_house_id, parent_float_id')
-    .in('block_id', blockIds)
-    .in('status', ['vacant', 'pending_float_in', 'allied']);
-  const assignments = (asgRows ?? []) as AsgRow[];
+  // Chunk the block_id filter — the coverage window spans many weeks (≫224 ids),
+  // which 414s ("URI too long") as a single `.in(...)`.
+  const assignments = (await selectByBlockIdChunks(blockIds, (chunk) =>
+    supabase
+      .from('shift_block_assignments')
+      .select('block_id, status, user_id, vacancy_origin, source_house_id, parent_float_id')
+      .in('block_id', chunk)
+      .in('status', ['vacant', 'pending_float_in', 'allied']),
+  )) as AsgRow[];
 
-  const { data: stepRows } = await supabase
-    .from('block_step_status')
-    .select('block_id, step_name, fired_at')
-    .in('block_id', blockIds)
-    .order('fired_at', { ascending: true });
+  const stepRows = await selectByBlockIdChunks(blockIds, (chunk) =>
+    supabase
+      .from('block_step_status')
+      .select('block_id, step_name, fired_at')
+      .in('block_id', chunk)
+      .order('fired_at', { ascending: true }),
+  );
   const stepByBlock = new Map<string, EscalationStep>();
-  for (const s of stepRows ?? []) stepByBlock.set(s.block_id, mapStep(s.step_name));
+  for (const s of stepRows) stepByBlock.set(s.block_id, mapStep(s.step_name));
 
   const floaterIds = [
     ...new Set(

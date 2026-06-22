@@ -18,7 +18,8 @@ export const ICONS = {
   warnFill: 'M8 1L15 14H1z',
   check: 'M3 8.5l3.5 3.5L13 4.5',
   checkCircle: 'M8 14.5A6.5 6.5 0 1 0 8 1.5a6.5 6.5 0 0 0 0 13zM5 8l2 2 4-4',
-  phone: 'M3 2h3l1.5 4-2 1a8 8 0 0 0 3.5 3.5l1-2 4 1.5v3a1 1 0 0 1-1 1A11 11 0 0 1 2 3a1 1 0 0 1 1-1z',
+  phone:
+    'M3 2h3l1.5 4-2 1a8 8 0 0 0 3.5 3.5l1-2 4 1.5v3a1 1 0 0 1-1 1A11 11 0 0 1 2 3a1 1 0 0 1 1-1z',
   overflow: 'M8 3.2a.8.8 0 1 0 0-.1zM8 8.4a.8.8 0 1 0 0-.1zM8 13.6a.8.8 0 1 0 0-.1z',
   settings:
     'M8 10.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.5 1.5M11.5 11.5L13 13M13 3l-1.5 1.5M4.5 11.5L3 13',
@@ -39,9 +40,11 @@ export const ICONS = {
   send: 'M2 8l12-5-5 12-2.5-4.5z',
   shield: 'M8 1.5l5 2v4c0 3-2 5.5-5 7-3-1.5-5-4-5-7v-4z',
   swap: 'M4 4h8l-2-2M12 12H4l2 2',
+  refresh: 'M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2v3h-3',
   dot: 'M8 8m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0',
   hours: 'M8 14.5A6.5 6.5 0 1 0 8 1.5a6.5 6.5 0 0 0 0 13zM8 5v3.2L10 10',
   doc: 'M4 1h6l3 3v11H4zM10 1v3h3',
+  copy: 'M6 6h8v8H6zM3 11V3a1 1 0 0 1 1-1h7',
 } as const;
 
 export type IconName = keyof typeof ICONS;

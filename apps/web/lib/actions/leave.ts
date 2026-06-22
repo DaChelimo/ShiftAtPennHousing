@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { getSessionUser, isHouseAdmin } from '../auth';
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from '../env';
 import { createClient, createServiceClient } from '../supabase/server';
+import { simNow } from '../time/simClock';
 
 import type { ActionResult } from './builder';
 
@@ -51,7 +52,7 @@ export async function submitLeave(input: {
   replacementUserId: string | null;
 }): Promise<ActionResult<{ leaveId: string; mailtoUrl: string | null }>> {
   const me = await getSessionUser();
-  if (!isHouseAdmin(me)) return { ok: false, error: 'Only an HM or BM may submit leave.' };
+  if (!isHouseAdmin(me)) return { ok: false, error: 'Only an HM, RSM or BM may submit leave.' };
 
   const svc = createServiceClient();
   const { data, error } = await svc.rpc('submit_hm_leave', {
@@ -76,13 +77,13 @@ export async function returnFromLeave(input: {
   leaveId: string;
 }): Promise<ActionResult<{ mailtoUrl: string | null }>> {
   const me = await getSessionUser();
-  if (!isHouseAdmin(me)) return { ok: false, error: 'Only an HM or BM may end leave.' };
+  if (!isHouseAdmin(me)) return { ok: false, error: 'Only an HM, RSM or BM may end leave.' };
 
   const svc = createServiceClient();
   const { data, error } = await svc.rpc('end_hm_leave_early', {
     p_leave_id: input.leaveId,
     p_user_id: me!.userId,
-    p_now: new Date().toISOString(),
+    p_now: (await simNow()).toISOString(),
   });
   if (error !== null) return { ok: false, error: error.message };
 

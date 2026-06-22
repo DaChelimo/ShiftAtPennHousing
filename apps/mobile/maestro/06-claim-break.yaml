@@ -1,33 +1,35 @@
-# Phase 13a E2E — §6 (Phase 11) claim a break shift (FCFS) from the break picker.
+# Break redesign E2E — §4.4 claim a break shift from the CALENDAR picker (drag → claim).
 #
-# Android emulator + iOS simulator (Maestro). TDD-RED: selectors are the UI contract.
+# Android emulator + iOS simulator (Maestro). Selectors are the UI contract
+# (apps/mobile/maestro/README.md). Runs against the demo build, whose break calendar is in
+# its CLAIM_WINDOW phase, so the active-break promotion banner shows on launch.
 appId: com.pennhousing.shift
 ---
 - launchApp:
     clearState: true
 
-# Open the Break-shifts tab. It is the 8th tab (index 7) in the scrollable tab row,
-# off-screen to the right at launch; swipe the tab row (≈9% height) right-to-left
-# until it appears, then tap. Self-tuning + a no-op where the tab already fits.
-- repeat:
-    while:
-      notVisible:
-        id: "tab_break"
-    commands:
-      - swipe:
-          start: 85%, 9%
-          end: 35%, 9%
-- tapOn:
-    id: "tab_break"
+# B6 — while a break's claim window is open, the Break calendar is promoted with a banner
+# on every tab. Tap it to open the calendar (it also lives behind More → Break shifts).
 - assertVisible:
-    id: "break_claim_screen"
+    id: "break_open_banner"
+- tapOn:
+    id: "break_open_banner"
+- assertVisible:
+    id: "break_calendar_screen"
 - assertVisible:
     id: "break_hours_meter"
 - assertVisible:
-    id: "break_shift_card"
-
-# Claim the first claimable break shift → the "Break shift claimed" toast shows.
-- tapOn:
-    id: "break_claim_button"
+    id: "break_calendar_week_strip"
 - assertVisible:
-    id: "break_claim_success"
+    id: "break_calendar_day"
+
+# Tap an open block (a tap is a single-block selection) → the claim bar appears with the
+# trim/coverage summary → claim it → the "Break shift claimed" toast shows.
+- tapOn:
+    id: "break_block_row"
+- assertVisible:
+    id: "break_calendar_claim_bar"
+- tapOn:
+    id: "break_calendar_claim_button"
+- assertVisible:
+    id: "break_calendar_success"

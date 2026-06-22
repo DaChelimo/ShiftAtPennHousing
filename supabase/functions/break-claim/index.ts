@@ -89,16 +89,49 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return jsonResponse({ error: 'Request body must be an object' }, 400);
   }
 
-  const { assignment_id: assignmentId, claim_type: claimType } = body as {
+  const {
+    assignment_id: assignmentId,
+    claim_type: claimType,
+    block_ids: blockIds,
+  } = body as {
     assignment_id?: unknown;
     claim_type?: unknown;
+    block_ids?: unknown;
   };
-  if (!isUuid(assignmentId)) {
-    return jsonResponse({ error: 'assignment_id must be a UUID' }, 400);
-  }
 
   if (claimType !== 'temporary') {
     return jsonResponse({ error: "claim_type must be 'temporary'" }, 400);
+  }
+
+  // Break calendar drag (§4.4 "The calendar picker"): claim one open seat per block,
+  // FCFS-trimmed server-side by claim_break_blocks. The response carries exactly the
+  // claimed (block, seat) pairs so the client reconciles its optimistic drag.
+  if (blockIds !== undefined) {
+    if (!Array.isArray(blockIds) || blockIds.length === 0 || !blockIds.every(isUuid)) {
+      return jsonResponse({ error: 'block_ids must be a non-empty array of UUIDs' }, 400);
+    }
+    const { data: claimed, error: rangeError } = await supabase.rpc('claim_break_blocks', {
+      p_block_ids: blockIds,
+      p_user_id: user.id,
+      p_as_of: new Date().toISOString(),
+    });
+    if (rangeError !== null) {
+      const code = errorCode(rangeError.message);
+      return jsonResponse({ error: code }, errorStatus[code] ?? 400);
+    }
+    return jsonResponse({
+      claim_type: claimType,
+      claimed: (claimed ?? []).map(
+        (r: { claimed_block_id: string; claimed_assignment_id: string }) => ({
+          block_id: r.claimed_block_id,
+          assignment_id: r.claimed_assignment_id,
+        }),
+      ),
+    });
+  }
+
+  if (!isUuid(assignmentId)) {
+    return jsonResponse({ error: 'assignment_id must be a UUID' }, 400);
   }
 
   const { data: projection, error: projectionError } = await supabase

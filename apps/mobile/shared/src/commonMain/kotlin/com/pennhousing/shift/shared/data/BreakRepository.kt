@@ -1,9 +1,5 @@
 package com.pennhousing.shift.shared.data
 
-import com.pennhousing.shift.shared.breakclaim.BreakClaimSnapshot
-import com.pennhousing.shift.shared.breakclaim.BreakContextCopy
-import com.pennhousing.shift.shared.breakclaim.withLivePool
-import com.pennhousing.shift.shared.breakclaim.breakContextCopy
 import com.pennhousing.shift.shared.shifts.NEW_YORK
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
@@ -19,20 +15,17 @@ import kotlinx.serialization.json.put
 import kotlin.time.Clock
 
 /**
- * Live break context — the data layer behind the break-claim screen's descriptive copy
- * (T2-2a). The mobile analogue of the Edge/HTTP layer the phase-13a test plan scopes
- * out, so it is intentionally untested by kotlin.test; correctness is verified manually
- * against a running backend (the pure derivation it calls — `breakContextCopy` — IS
- * unit-tested).
+ * Live break data — the data layer behind the break CALENDAR screen. The mobile analogue
+ * of the Edge/HTTP layer the phase-13a test plan scopes out, so it is intentionally
+ * untested by kotlin.test; correctness is verified manually against a running backend.
  *
- * READ — [fetchActiveBreakContext] reads the active break row from `break_periods`,
+ * READ — [fetchActiveBreak] reads the active break row from `break_periods`,
  * worker-readable since migration 20260611000002 (FOR SELECT TO authenticated). The
  * "active/relevant" break is the soonest break that has not yet ended ([asOf] ≤
  * end_date), ordered by start_date ascending — the one whose claim window is open or
- * imminent. The break NAME + window + the "only Harnwell open" eyebrow are then derived
- * by [breakContextCopy] (the live-vs-derivable logic). The claimable POOL itself is
- * still demo-backed — surfacing live `worker_open_shifts` break rows is a larger wiring,
- * deferred. There is no per-worker scoping: a break period is not owned by a worker.
+ * imminent. Its id + name + window scope the break-calendar grid read
+ * ([WorkerShiftsRepository.fetchBreakCalendarFor]). There is no per-worker scoping: a
+ * break period is not owned by a worker.
  *
  * OPT-OUT (§4.4, T2-2b) — the per-break "no break hours" control, the break analogue of
  * the regular-year no-hours opt-out (`period_targets.opted_out`). The `break_optouts`
@@ -42,43 +35,25 @@ import kotlin.time.Clock
  * own row exist". Worker RLS already permits select/insert/update/delete of OWN rows
  * (migration 20260531000002:36-59), so these go DIRECTLY through Postgrest — no EF/RPC.
  */
-/**
- * D6 — overlay the LIVE break pool using the active break's window, without the
- * host touching kotlinx-datetime types (androidApp has no direct dependency on it).
- */
-fun BreakClaimSnapshot.withLivePoolFor(
-    week: WorkerSnapshot,
-    activeBreak: BreakRepository.ActiveBreak,
-): BreakClaimSnapshot = withLivePool(week.openShifts, week.myShifts, activeBreak.startDate, activeBreak.endDate)
-
 class BreakRepository(
     private val supabase: SupabaseClient,
 ) {
 
     /**
-     * The active break's identity ([breakId]) + its live descriptive copy ([context]),
-     * or null when there is no current/upcoming break (the caller keeps the demo copy).
-     * The id is needed to target the §4.4 opt-out at the active break.
+     * The active break's identity ([breakId]) + name + window, or null when there is no
+     * current/upcoming break. The id is needed to target the §4.4 opt-out at the active
+     * break; the window scopes the break-calendar grid read.
      */
     data class ActiveBreak(
         val breakId: String,
-        val context: BreakContextCopy,
-        /** The break window (NY calendar dates) — the live pool filters to it (D6). */
+        val breakName: String,
+        /** The break window (NY calendar dates) — the break-calendar grid read scopes to it. */
         val startDate: LocalDate,
         val endDate: LocalDate,
     )
 
     /**
-     * The live descriptive copy for the active break, or null when there is no current
-     * or upcoming break period (the caller keeps the demo copy). "Today" is the current
-     * America/New_York calendar date (invariant #6); rows ending on/after it are
-     * candidates. The clock read lives here in the (untested) data layer, never in the
-     * pure `breakContextCopy` it calls.
-     */
-    suspend fun fetchActiveBreakContext(): BreakContextCopy? = fetchActiveBreak()?.context
-
-    /**
-     * The active break (id + derived copy) — the soonest break that has not yet ended
+     * The active break (id + name + window) — the soonest break that has not yet ended
      * ([asOf] ≤ end_date), ordered by start_date ascending. Returns the [breakId] too so
      * the §4.4 opt-out toggle can target it. Null when there is no current/upcoming break.
      */
@@ -87,7 +62,7 @@ class BreakRepository(
         val candidates =
             supabase
                 .from("break_periods")
-                .select(Columns.list("break_id", "break_name", "break_type", "start_date", "end_date")) {
+                .select(Columns.list("break_id", "break_name", "start_date", "end_date")) {
                     filter { gte("end_date", asOf.toString()) }
                     order("start_date", Order.ASCENDING)
                 }
@@ -95,13 +70,7 @@ class BreakRepository(
         val active = candidates.firstOrNull() ?: return null
         return ActiveBreak(
             breakId = active.breakId,
-            context =
-                breakContextCopy(
-                    breakName = active.breakName,
-                    breakType = active.breakType,
-                    startDate = LocalDate.parse(active.startDate),
-                    endDate = LocalDate.parse(active.endDate),
-                ),
+            breakName = active.breakName,
             startDate = LocalDate.parse(active.startDate),
             endDate = LocalDate.parse(active.endDate),
         )
@@ -166,7 +135,6 @@ class BreakRepository(
 private data class BreakPeriodRow(
     @SerialName("break_id") val breakId: String,
     @SerialName("break_name") val breakName: String,
-    @SerialName("break_type") val breakType: String,
     @SerialName("start_date") val startDate: String,
     @SerialName("end_date") val endDate: String,
 )

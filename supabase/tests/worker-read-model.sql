@@ -5,7 +5,7 @@
 -- NOTE: the views expose `id = assignment_id::text`, so fixtures use explicit
 -- assignment_id values (the 'a000' namespace) and assertions key off those.
 BEGIN;
-SELECT plan(17);
+SELECT plan(19);
 
 -- ---- Actors (harnwell SW ×2, quad SW, quad BM) ----
 INSERT INTO auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -39,7 +39,12 @@ INSERT INTO shift_blocks (block_id, house_id, block_start_at, required_headcount
   ('f0000000-0000-4000-9000-000000000003','harnwell','2026-07-01 21:00:00-04',2),
   ('f0000000-0000-4000-9000-000000000004','harnwell','2026-07-01 21:30:00-04',2),
   ('f0000000-0000-4000-9000-000000000010','quad','2026-07-01 20:00:00-04',3),
-  ('f0000000-0000-4000-9000-000000000011','quad','2026-07-01 20:30:00-04',3);
+  ('f0000000-0000-4000-9000-000000000011','quad','2026-07-01 20:30:00-04',3),
+  -- A future block on a date OUTSIDE the regular_school_year calendar (beyond the
+  -- seeded semester) — stands in for a break / off-calendar occurrence of a
+  -- permanently-dropped slot. The permanent feed must NOT treat it as a permanent
+  -- opening (it mirrors the permanent-pickup candidate filter), else it strands.
+  ('f0000000-0000-4000-9000-000000000012','quad','2027-06-01 20:00:00-04',3);
 
 -- ---- Assignments — EXPLICIT assignment_id (= the view's `id`). Constraint-valid:
 -- non-vacant ⇒ vacancy_origin 'none' + user set; vacant ⇒ null user; is_float ⇒ source set. ----
@@ -49,7 +54,8 @@ INSERT INTO shift_block_assignments (assignment_id, block_id, user_id, status, v
   ('f0000000-0000-4000-a000-000000000003','f0000000-0000-4000-9000-000000000003','f0000000-0000-4000-8000-000000000001','pending_float_in','none',true,false,'harnwell'),
   ('f0000000-0000-4000-a000-000000000004','f0000000-0000-4000-9000-000000000004',NULL,'vacant','never_assigned',false,false,NULL),
   ('f0000000-0000-4000-a000-000000000010','f0000000-0000-4000-9000-000000000010',NULL,'vacant','never_assigned',false,false,NULL),
-  ('f0000000-0000-4000-a000-000000000011','f0000000-0000-4000-9000-000000000011',NULL,'vacant','permanent_drop',false,false,NULL);
+  ('f0000000-0000-4000-a000-000000000011','f0000000-0000-4000-9000-000000000011',NULL,'vacant','permanent_drop',false,false,NULL),
+  ('f0000000-0000-4000-a000-000000000012','f0000000-0000-4000-9000-000000000012',NULL,'vacant','permanent_drop',false,false,NULL);
 
 -- ===== worker_my_shifts =====
 SELECT is((SELECT count(*)::int FROM worker_my_shifts WHERE user_id='f0000000-0000-4000-8000-000000000001' AND id LIKE 'f0000000-0000-4000-a000-%'),
@@ -86,6 +92,14 @@ SELECT ok((SELECT home_house FROM worker_open_shifts WHERE id='f0000000-0000-400
           'open: quad block → home_house=true for quad worker');
 SELECT ok((SELECT home_house = false FROM worker_open_shifts WHERE id='f0000000-0000-4000-a000-000000000010' AND eligible_user_id='f0000000-0000-4000-8000-000000000001'),
           'open: quad block → home_house=false for harnwell worker (cross-house)');
+
+-- Permanent_drop block OFF the regular_school_year calendar (break / off-calendar):
+-- must NOT be a permanent_opening (mirrors the permanent-pickup candidate filter), so
+-- it cannot strand in the permanent feed as an un-pickable phantom.
+SELECT isnt((SELECT DISTINCT feed FROM worker_open_shifts WHERE id='f0000000-0000-4000-a000-000000000012'),
+          'permanent_opening', 'open: permanent_drop off the regular calendar is NOT a permanent_opening');
+SELECT ok((SELECT bool_and(weeks_remaining IS NULL) FROM worker_open_shifts WHERE id='f0000000-0000-4000-a000-000000000012'),
+          'open: off-calendar permanent_drop has null weeks_remaining (not counted)');
 
 SELECT finish();
 ROLLBACK;

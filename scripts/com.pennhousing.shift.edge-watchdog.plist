@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd agent: run the edge-runtime watchdog every 60s while you are logged in.
+
+  Install / uninstall: see scripts/edge-runtime-watchdog.README.md
+  (the install sed-replaces REPO_PATH with your absolute checkout path).
+  Log: REPO_PATH/scripts/edge-watchdog.log
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.pennhousing.shift.edge-watchdog</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>REPO_PATH/scripts/edge-runtime-watchdog.sh</string>
+  </array>
+
+  <!-- Run at load and then every 60 seconds. -->
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartInterval</key>
+  <integer>60</integer>
+
+  <!-- docker lives in /usr/local/bin or /opt/homebrew/bin depending on install. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>REPO_PATH/scripts/edge-watchdog.log</string>
+  <key>StandardErrorPath</key>
+  <string>REPO_PATH/scripts/edge-watchdog.log</string>
+</dict>
+</plist>

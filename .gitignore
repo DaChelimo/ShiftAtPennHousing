@@ -42,3 +42,6 @@ Thumbs.db
 # Emitted JS from TS sources (build output belongs in dist/)
 packages/core/src/**/*.js
 packages/core/src/**/*.d.ts
+
+# edge-runtime watchdog log (local dev)
+scripts/edge-watchdog.log

@@ -61,7 +61,7 @@ Block durations are uniformly 30 minutes, so 1 hour equals 2 blocks and a worker
 
 ## 2. Roles
 
-The system has five roles. Workers may hold more than one. The roles are: Student Worker, Student Manager, Housing Manager, Building Manager, and Housing Manager On Duty.
+The system has six roles. Workers may hold more than one. The roles are: Student Worker, Student Manager, Housing Manager, Residential Services Manager, Building Manager, and Housing Manager On Duty.
 
 ### 2.1 Student Worker (SW)
 
@@ -89,7 +89,7 @@ Administratively (the powers shared by both HM and BM):
 
 - Manually override the live schedule for their house (same capabilities as the SM, plus authority to override SM actions).
 - Force-trigger a float lookup (Section 6.6).
-- Receive real-time notifications for events requiring human attention within their working hours, per the routing in Section 10.1 (HM is the primary recipient; BM is the default replacement when HM is on leave).
+- Receive real-time notifications for events requiring human attention, per the routing in Section 10.1 (during HM working hours the house's RSM is the in-house recipient; the HM/BM are contacted in their HMOD capacity and via leave resolution).
 - Place calls to Allied Security when the system has determined Allied coverage is required.
 - Serve as HMOD on rotation (Section 2.5).
 - Go on leave and designate a replacement (Section 2.6).
@@ -97,6 +97,18 @@ Administratively (the powers shared by both HM and BM):
 HMs and BMs work Monday through Friday, from 08:00 (inclusive) through 17:00 (exclusive). A notification or escalation event that fires at exactly 08:00 on a weekday is within HM working hours; one that fires at exactly 17:00 is within HMOD hours. Outside these hours and on all weekends, the Housing Manager On Duty (HMOD) covers all HM/BM responsibilities for all 13 houses.
 
 Throughout this document, "HM" used in administrative contexts (notifications, overrides, force-triggers, leave) applies equally to BMs unless explicitly qualified. "HM" used in worker contexts (shift assignment, float, broadcast) applies only to HMs, never to BMs.
+
+### 2.3a Residential Services Manager (RSM)
+
+Every house has a Residential Services Manager. The RSM is a university employee who sits **below the Housing Manager and above the Student Manager** in the house hierarchy.
+
+- **The RSM holds every power an HM holds, with one exception: an RSM can never serve as HMOD.** They build and override the schedule, force-trigger float lookups, administer their house's people, modify the weekly hours cap, and go on leave — all the HM administrative powers — but they are never placed on the HMOD rotor and are never a valid HMOD-transfer target (see §2.5/§2.6).
+- **The RSM holds shift assignments like an HM.** An RSM may work scheduled shifts at their home desk and pick up open shifts (per the standard eligibility matrix). Like an HM, an RSM is never automatically floated by the system and never receives broadcast notifications.
+- **The RSM has read-only visibility into every house.** An RSM may view the live schedule and coverage of any of the 13 houses (e.g., the DuBois RSM may view the Rodin schedule), but may **not** make changes to a house other than their own. Every write the RSM performs — overrides, builder edits, people admin, leave, cap — remains scoped to their own house; cross-house access is view-only.
+
+In administrative contexts where this document says "HM," the RSM holds the same power **except HMOD duty**. Where the routing of a notification differs (the RSM, not the HM, is the in-working-hours contact), it is called out explicitly in §10.1.
+
+**RSM leave.** The RSM participates in the same leave/replacement machinery as the HM and BM (§2.6). When an RSM goes on leave, the default replacement is the same house's HM (then the BM); the RSM may also be designated as another admin's replacement. Because an RSM can never be HMOD, an HMOD on-duty interval never resolves to an RSM.
 
 ### 2.4 The BM-as-Substitute Pattern
 
@@ -324,6 +336,14 @@ All time offsets in this section (T-14d, T-3d, T-1d) are measured from the **fir
   - A worker who drops a previously-claimed break shift during the T-1d-to-T-2h window sends that shift into the open-shifts feed (not back into the calendar picker, which is now closed).
   - A worker who reclaimed a previously-dropped shift via the open-shifts feed may drop it again, and it returns to the feed.
   - Standard open-shifts mechanics apply: the shift becomes unpickable at T-2h (Section 5.3).
+
+**The calendar picker (round 1).** During the claim window the worker claims by **dragging on a calendar**, not by tapping cards out of a flat list. The break period is rendered with the same spatial layout as the house schedule (Section 11.4): a vertical time axis, day columns, and one lane per concurrent desk — a single lane for the eleven regular houses, two for Harnwell, three for Quad. Already-claimed coverage shows as read-only filled cards (with the claimant's name, per the directory ruling); the worker's own claims are droppable; the remaining capacity shows as claimable empty space.
+
+To claim, the worker drags a time range over the open space. They choose **time, never a desk**: per 30-minute block the system fills any one open seat (the lanes are interchangeable). The hours cap and the per-house staffing limit both bound the drag — a block already at its required headcount is full and read-only (a worker can never over-staff a block), and the drag cannot push the worker past the break hours cap.
+
+Because claiming is first-come-first-served, a drag is reconciled against the live state at the moment of the claim: blocks in the dragged range that are still open are claimed; blocks that filled up first (or that the worker already covers) are **trimmed away**, and the worker is told which part was taken and which was already full (e.g. "Claimed 4:00–6:00; 6:00–8:00 was already full"). An interior conflict splits the claim into the open segments on either side. This is the same partial-coverage behavior the rest of the system uses; it never silently claims a different range than the worker sees.
+
+**Round 2 (after T-1d).** When the picker closes, the unclaimed coverage is no longer presented as a break calendar — it becomes ordinary open shifts. The leftover seats enter the open-shifts feed (above) and are picked up there with the normal mechanics (T-2h cutoff, soft cap, cross-house eligibility), exactly as during the regular term. The break calendar itself becomes read-only and points the worker to the open-shifts feed.
 
 **Indicating zero break hours.** A worker who wants no hours for a given break clicks a "no break hours" control on that break's calendar — the break analogue of the regular-year "no hours" button (Section 4.1), scoped to the specific break rather than to a semester. This records an opt-out for that worker and that break, which (a) suppresses the T-3d alert above and (b) signals that the worker is intentionally sitting the break out. The opt-out is **per break**: opting out of one break has no effect on any other break (a worker may sit out Thanksgiving yet want spring-break hours). It is **advisory** — it does not prevent the worker from later claiming a break shift via the calendar picker, or via the open-shifts feed after T-1d, if they change their mind (the same latitude Section 4.1 grants the regular-year opt-out worker); claiming during the window is itself sufficient to suppress the alert. The opt-out is stored in `break_optouts` (ARCHITECTURE.md §2.9).
 
@@ -776,6 +796,17 @@ Permanent drop and permanent pickup are distinct from and coexist with:
 - **Temporary shift swap** (Section 8.1): swaps two specific spans; recurring ownership is unchanged.
 - **Permanent shift swap** (Section 8.3): two workers atomically exchange recurring slots. Functionally distinct from permanent drop + permanent pickup: a permanent swap is one atomic operation between two willing parties; permanent drop + permanent pickup are two independent operations with an open period between them during which the slot is available to anyone and may receive Allied coverage on each weekly occurrence.
 
+### 8.5 One-Sided Handoff (Directed Give / Take-Over)
+
+A **handoff** is a directed, peer-consented, **one-way** transfer of a single shift span between two specific workers — distinct from a swap (which exchanges two spans) and from drop → open-feed (which offers the span to anyone). It covers the everyday case where one worker covers another's shift by private arrangement ("Bob called me at the desk and I took his shift") and the two later record who actually worked it.
+
+- **Two directions.** _Give-only_: worker A hands a span of their own shift to a chosen worker B; A loses those hours, B gains them, B gives nothing back. _Take-over_: worker A takes over B's shift span; A gains the hours, B loses them. Either is a single handoff with exactly one non-empty span.
+- **Consent.** The counterparty always confirms (it is their shift being taken, or their incoming shift being handed to them). No manager step (peer mutual consent), consistent with temporary swaps.
+- **Eligibility (symmetric, span-based).** The receiver of the transferred span must satisfy the same Harnwell-training and float-direction constraints as a swap receiver (Sections 1.2, 5.3, 6.1). Checked at creation and re-checked at acceptance.
+- **Hours cap: NOT consulted.** A handoff is **always cap-exempt**, in both directions and whether the shift is future or already worked — the same treatment as floats (Section 9.3). This is a deliberate, recorded policy decision (2026-06-17): a directed mutual-consent handoff re-attributes hours without a cap re-check, even though the receiver's weekly total rises. (It is therefore a sanctioned exception to the claim/pickup cap checks of Section 5.3.)
+- **Retroactive.** Because the common case is recorded after the shift is worked, a handoff request remains acceptable until 24 hours after the span's end (the same window as a retroactive float swap, Section 8.2). Acceptance after the shift updates the calendar retroactively.
+- **Atomicity & no-takeback.** Acceptance transfers the span in one operation; the seat-vacated guard voids a still-pending handoff if the span is dropped or floated out from under its owner beforehand.
+
 ---
 
 ## 9. Hours
@@ -831,15 +862,15 @@ Notifications are routed by recipient role and urgency. The system does not deli
 
 **Personal notifications** (your own shift was dropped, you've been assigned a float, your acknowledgment is overdue) are sent immediately to the affected worker. These notifications are mandatory and cannot be silenced.
 
-**Open shift broadcasts** (T-3 hour notifications about an unclaimed shift) are sent only to subscribed SWs and SMs at the shift's home house. Broadcast subscription is opt-in and defaults to off. HMs and BMs cannot subscribe: the subscription toggle is not shown to users holding an `hm` or `bm` role, and the backend rejects any attempt to enable subscription for these roles. An SM promoted to HM has their subscription automatically revoked at the moment of role assignment.
+**Open shift broadcasts** (T-3 hour notifications about an unclaimed shift) are sent only to subscribed SWs and SMs at the shift's home house. Broadcast subscription is opt-in and defaults to off. HMs, RSMs and BMs cannot subscribe: the subscription toggle is not shown to users holding an `hm`, `rsm`, or `bm` role, and the backend rejects any attempt to enable subscription for these roles. An SM promoted to HM has their subscription automatically revoked at the moment of role assignment.
 
-**HM/BM notifications** are sent in real-time to **the HM only** (not the BM) when **both** the current time and the affected block's start time fall within HM working hours (Monday-Friday, [08:00, 17:00)). The BM is silent unless the HM is on leave, in which case the BM is the default replacement (Section 2.4) and receives the notification via the leave-resolution chain (Section 2.6). If either the current time or the block start time is outside HM hours, the notification is routed to the HMOD on duty instead. The HM/BM/HMOD places the call to Allied.
+**Coverage / Allied-procurement notifications** are sent in real-time to **the house's RSM** when **both** the current time and the affected block's start time fall within HM working hours (Monday-Friday, [08:00, 17:00)). During HM working hours the HM is **not** the in-house recipient — the HM is contacted only in their HMOD capacity (outside HM hours and on weekends, per the HMOD rules below). If the RSM is on leave, the leave-resolution chain (Section 2.6) resolves the acting contact (the RSM's replacement — by default the HM, then the BM). If the house has no acting RSM at all (none assigned, or the chain resolves to no active person), the notification falls back to the HMOD on duty. If either the current time or the block start time is outside HM hours, the notification is routed to the HMOD on duty instead. The RSM/HMOD places the call to Allied.
 
 **SM in-app notifications.** SMs receive in-app notifications (visible on next app open, persisting in the updates tab) for events affecting their house that do not require immediate action but warrant their awareness. The primary such event is a worker permanently dropping a recurring slot at their house (Section 8.4). The SM is the operational decision-maker for whether to actively search for a permanent picker or let the weekly escalations run. SMs do not receive push notifications for these events; they appear in-app only.
 
 **Worker in-app notifications.** Workers receive in-app notifications (visible on next app open, persisting in the updates tab) when an SM/HM permanently removes them from a recurring slot. The notification identifies the affected slot, the operator who initiated the removal, and the time period affected.
 
-**Outside HM working hours and on weekends, no notifications go to the HM or BM.** The HMOD covers all such events. The HM does not receive a morning digest of overnight events; they may consult the calendar if they want to see what happened.
+**Outside HM working hours and on weekends, no notifications go to the RSM, HM, or BM.** The HMOD covers all such events. They do not receive a morning digest of overnight events; they may consult the calendar if they want to see what happened.
 
 **HMOD notifications** are sent in real-time during HMOD on-duty hours (Monday-Friday 17:00 to 24:00, all day Friday 17:00 through Monday 08:00) for any event requiring Allied procurement or other immediate action.
 
@@ -847,7 +878,7 @@ Notifications are routed by recipient role and urgency. The system does not deli
 
 **A drop happens at 23:00 on a Tuesday for a shift starting Wednesday at 08:00.** The shift starts at the boundary of the HM's working day. T-2 (escalation point) is 06:00 Wednesday, which is HMOD time. The HMOD is notified for Allied procurement in real-time.
 
-**A drop happens at 23:00 on a Tuesday for a shift starting Wednesday at 15:00.** T-2 is 13:00 Wednesday, which is HM working hours. If float lookup fails, the HM receives a real-time notification at 13:00 Wednesday for Allied procurement. (Note: under the new shift-granularity rules, shifts begin only on 30-minute boundaries; 15:00 is valid.)
+**A drop happens at 23:00 on a Tuesday for a shift starting Wednesday at 15:00.** T-2 is 13:00 Wednesday, which is HM working hours. If float lookup fails, the house's RSM receives a real-time notification at 13:00 Wednesday for Allied procurement (the HM is contacted only in their HMOD capacity, which this in-hours window is not). (Note: under the new shift-granularity rules, shifts begin only on 30-minute boundaries; 15:00 is valid.)
 
 **A drop happens at 14:00 on a Wednesday for a shift starting that evening at 22:00.** T-2 is 20:00 Wednesday, which is outside HM working hours. The HMOD receives the escalation notification in real-time. The HM does not receive any notification.
 

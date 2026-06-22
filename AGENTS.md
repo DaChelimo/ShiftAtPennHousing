@@ -55,6 +55,12 @@ It supplements but does not replace BEHAVIORAL_SPECIFICATION.md and ARCHITECTURE
   place. The `android` CLI (skill: `android-cli`) is for emulator/device runs
   only — it does NOT scaffold KMP. The iosApp Xcode project / signing is
   maintained in Xcode (see `apps/mobile/iosApp/README.md`).
+- Commits: one commit per distinct feature/change-set — group only the files that
+  ship together (migration + its tests + the code + docs for that feature), and keep
+  unrelated features in separate commits. Never bundle multiple distinct features into
+  one commit. Use a conventional-commit subject (`type(scope): summary`). When the
+  working tree mixes features, stage by path per feature; cross-cutting files
+  (shared models, docs) go in the commit of the feature that drives them.
 - Type generation: after any migration change, run:
   `supabase gen types typescript --local > packages/shared/src/database.types.ts`
 - Supabase MCP: configured in `.claude/settings.local.json` (gitignored). When active,
@@ -241,3 +247,38 @@ iOS framework and the iosApp.
   `04-acknowledge-float` can open the ack modal without it auto-covering the screen
   on every launch. Maestro runs against a real emulator/simulator — not verifiable
   from the JVM host; run it manually per the verification checklist.
+- [Phase 13a] My-Shifts week navigation: `ShiftsScreenViewModel` carries a
+  `weekOffset` (mirrors `CalendarViewModel`) and scopes the My-Shifts tab to the
+  shown NY week via `shiftsInWeekOf` (calendar/), so a pickup/drop landing in a
+  future week shows under that week. `ShiftsUiState` exposes `weekOffset` /
+  `weekRangeLabel` / `weekHours` (the shown week's held hours — the "This week —
+  Xh" chip now reads from state, not the host's `currentWeeklyHours`, which still
+  feeds the open-shift CLAIM meter since claiming is always current-week). The
+  OPEN-shift feeds (Tabs 2/3) are NOT week-scoped. The Android `WeekHeaderCard` /
+  `WeekPickerSheet` are shared with Calendar (parameterized tags + optional
+  template row); My-Shifts selectors are `myshifts_week_picker_open` /
+  `_prev_week` / `_next_week` / `_week_picker_sheet` / `_week_picker_option`
+  (flow `09-my-shifts-week.yaml`). DemoData seeds My-Shifts on fixed WEEKDAYS of
+  the current+next NY week (deterministic, week-scope-friendly) — open shifts stay
+  `now`-relative so they remain claimable. Reminder: the default `assembleDebug` is
+  the LIVE build (login screen); use `-PSUPABASE_URL=` for the demo/login-bypass
+  build that shows DemoData.
+- [RSM] The Residential Services Manager (`user_role_enum` value `rsm`, added by
+  20260617000005/…006; BSpec §2.3a) is HM-minus-HMOD plus read-only cross-house
+  schedule view. THREE invariants future agents must not break: (1) `rsm` is
+  scope-required like sm/hm/bm (the `user_roles_scope_required_check` lists it);
+  it joins `user_has_house_admin_role` (hm/bm/rsm) and `user_can_build_schedule`
+  (sm/hm/bm/rsm), so own-house writes work — but every write gate is STILL
+  scope-matched, so cross-house stays read-only. (2) `rsm` is NEVER HMOD-eligible:
+  do NOT add it to `hmod_rotor` population (apps/web/lib/data/rotor.ts stays
+  `['hm','bm']`), `resolve_hmod_on_duty`, or the leave HMOD-transfer path. (3)
+  In-hours Allied/no-ack notifications route to the RSM, not the HM (BSpec §10.1):
+  `process_hmod_notify_allied_step` + `process_no_ack_float` call
+  `resolve_rsm_for_house` (target `'rsm'`) in the `is_hm_working_time` branch,
+  falling back to `resolve_hmod_on_duty`. Cross-house READ is the additive
+  `user_is_rsm(auth.uid())` OR-clause on the shift_block_assignments /
+  float_assignments / float_exclusions SELECT policies; the web reads via the
+  service client so the switcher (canViewOtherHouses `isRsm`) is the real gate.
+  RSM holds shifts like an HM (claim pool + builder roster; excluded from float
+  lookup / broadcast / swap-counterparty). Manual-test seed: Diana per house
+  (`diana-<house>@upenn.edu`, person_num 11).

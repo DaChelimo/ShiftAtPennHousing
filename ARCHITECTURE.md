@@ -355,6 +355,8 @@ break_optouts
 - **Advisory only**: the opt-out suppresses the nag and signals intent; it does NOT gate claiming — a worker may opt out and later claim via the calendar picker (or the open-shifts feed after T-1d), exactly as §4.1 lets the regular-year opt-out worker pick up shifts.
 - Populated/cleared by the worker via the "no break hours" control; gets RLS (own-row write, plus the standard service-role bypass) in the same migration that creates it.
 
+**Calendar claiming (round 1) — read + write surface.** The break picker (Behavioral Spec §4.4) renders as a calendar over the break date range, reusing `house_schedule_grid` (the §11.4 read model) scoped to the break window: it already returns vacant + occupied seats per 30-min block with the claimant's name, RLS-scoped to the caller's home house. The block generator pre-creates `required_headcount` assignment rows per block, so the grid's row count at a given time **is** the block's capacity and the non-vacant rows are the fill — no separate coverage table is needed. The grid view carries `block_id` and `required_headcount` so the picker can address blocks and render "filled / required" coverage. The free-form drag claims through `claim_break_blocks(p_block_ids uuid[], p_user_id, p_as_of)`: per block it claims **one** still-vacant seat (lanes are interchangeable — "system-assigned lane"), applying the same guards as `claim_break_shift` (active user, Harnwell training, per-block time-conflict, incremental weekly hard cap). Blocks with no open seat — or already covered by the caller — are skipped; the function returns exactly the `(block_id, assignment_id)` pairs it claimed, which is the **server-side trim** the UI reconciles its optimistic drag against. The headcount trigger (`enforce_block_occupied_headcount`) is the backstop that makes over-claiming impossible. Round 2 (post-T-1d) needs no break-specific surface: `weekly_open_shifts_feed` already folds the unclaimed seats into the ordinary feed.
+
 ### 2.10 Layer 10: Scheduling Periods
 
 A table that names each SM-built scheduling period as a first-class entity. This gives the `period_targets` and `preferences` tables a concrete entity to foreign-key against, and provides the single place to store the preference submission deadline that the behavioral spec (Section 4.2) assigns to the SM.
@@ -418,20 +420,21 @@ users
   is_active              (boolean; firing flips this and triggers shift cleanup)
   broadcast_subscribed   (boolean; defaults to false; opt-in to T-3h open-shift notifications.
                           The backend enforces that this field cannot be true for any user
-                          who holds an `hm` or `bm` role — see Section 3.1 subscription guard.)
+                          who holds an `hm`, `rsm`, or `bm` role — see Section 3.1 subscription guard.)
 
 user_roles
   user_id           (foreign key)
-  role              (enum: sw, sm, hm, bm)
-  scope_house_id    (foreign key; for sm/hm/bm, the house their role covers)
+  role              (enum: sw, sm, hm, rsm, bm)
+  scope_house_id    (foreign key; for sm/hm/rsm/bm, the house their role covers)
 ```
 
-A user can hold multiple roles. The `hm` and `bm` roles share identical **administrative** capabilities (overrides, force-triggers, notifications, leave) but differ in **worker** behavior:
+A user can hold multiple roles. The `hm`, `rsm`, and `bm` roles share identical **administrative** capabilities (overrides, force-triggers, notifications, leave, weekly-cap) but differ in **worker** behavior and in two role-specific carve-outs (RSM cannot be HMOD; RSM has cross-house read):
 
 - A user holding `hm` may also hold `sw`/`sm` roles and act as a worker (scheduled shifts, claimed pickups, schedule preferences). However, the float lookup eligibility and broadcast subscription pipelines exclude any user with the `hm` role: HMs are never assigned floats and never receive open-shifts broadcasts. They may still manually browse the open-shifts feed and claim.
+- A user holding `rsm` (Residential Services Manager — Behavioral Spec §2.3a) is below the HM and above the SM. The `rsm` role carries **every** HM power **except HMOD**: it is admitted to `user_has_house_admin_role` and `user_can_build_schedule` exactly like `hm`/`bm` (own-house, scope-matched), so an RSM builds/overrides, administers people, sets the cap, and takes leave for their own house. Like an HM, an RSM holds shifts (claim pool + builder roster) but is never auto-floated and never receives broadcast. Two carve-outs: (a) an RSM is **never** placed on the `hmod_rotor` and is never a valid HMOD-transfer target; (b) an RSM has **read-only** visibility into _every_ house's live schedule (the `user_is_rsm(uuid)` predicate ORs into the schedule-visibility SELECT policies), while every write stays scope-matched to their own house.
 - A user holding `bm` is admin-only. The schema enforces this by treating `bm` as exclusive of worker roles for scheduling purposes: a user with `bm` is excluded from preference submission, schedule-builder rosters, claim eligibility, and float lookup. They may still hold the `bm` role alongside `hm` or other admin roles, but worker-facing pipelines treat them as inactive.
 
-HMOD eligibility is implicit: any user with `hm` or `bm` role can appear in the `hmod_rotor`.
+HMOD eligibility is implicit: any user with `hm` or `bm` role can appear in the `hmod_rotor`. The `rsm` role is **never** HMOD-eligible — the rotor population query and FK intent stay `hm`/`bm` only.
 
 **`is_active` invariant.** Every pipeline that selects users as candidates for an active operation MUST filter on `users.is_active = true`. This includes (non-exhaustively): the float lookup eligibility query (§5.2), the broadcast-subscribed query (§4.2), the schedule-builder roster query, the claim-eligibility check, the swap counterparty selection, the HM-leave-replacement picker, the HMOD-rotor population UI, the cross-house feed visibility resolver, and the preference-submission reminder job. Historical references on already-existing rows (e.g., a fired worker's `user_id` retained on past `shift_block_assignments` rows) are preserved unchanged — the calendar still shows who was assigned in the past — but no new operation may select a deactivated user.
 
@@ -439,9 +442,9 @@ The single exception is the contact-lookup-from-shift-card surface (Behavioral S
 
 **Broadcast subscription guard.** Broadcast subscription (`users.broadcast_subscribed`) is enforced at the write layer, not at dispatch time:
 
-- The subscription toggle UI is not rendered for any user who currently holds an `hm` or `bm` role. The toggle is only visible to users whose highest role is `sw` or `sm`.
-- The backend subscription endpoint (`PATCH /users/{id}/broadcast_subscribed`) rejects any write that sets `broadcast_subscribed = true` for a user who holds an `hm` or `bm` role, returning a 403 with a descriptive error.
-- **Role promotion hook.** When a user is granted the `hm` or `bm` role (a `user_roles` INSERT), the role-assignment handler atomically sets `broadcast_subscribed = false` for that user in the same transaction. This handles the case of an SM being promoted to HM mid-period while already subscribed. No broadcast notification is sent for this change; the UI will simply no longer show the toggle on the user's next session.
+- The subscription toggle UI is not rendered for any user who currently holds an `hm`, `rsm`, or `bm` role. The toggle is only visible to users whose highest role is `sw` or `sm`.
+- The backend subscription endpoint (`PATCH /users/{id}/broadcast_subscribed`) rejects any write that sets `broadcast_subscribed = true` for a user who holds an `hm`, `rsm`, or `bm` role, returning a 403 with a descriptive error.
+- **Role promotion hook.** When a user is granted the `hm`, `rsm`, or `bm` role (a `user_roles` INSERT), the role-assignment handler atomically sets `broadcast_subscribed = false` for that user in the same transaction. This handles the case of an SM being promoted to HM mid-period while already subscribed. No broadcast notification is sent for this change; the UI will simply no longer show the toggle on the user's next session.
 - The broadcast step handler (Section 4.2) queries `users WHERE broadcast_subscribed = true AND home_house_id = :house_id` and does NOT additionally filter by role. The subscription guard at write time guarantees that no HM or BM row will have `broadcast_subscribed = true`, so the role filter at dispatch is unnecessary and is intentionally omitted to keep the dispatch path simple.
 
 ### 3.2 Shifts and Block Assignments
@@ -642,14 +645,40 @@ draft_block_assignments
 
 **Visibility.** The workers' calendar query never reads `draft_block_assignments`. Only the schedule-builder UI (scoped to SMs/HMs/BMs of the house) reads it. The orchestrator never reads it (orchestrator operates only on `shift_block_assignments.status = vacant`).
 
-**Publish operation.** When the SM clicks Publish (Phase 3 transition):
+**Publish operation.** The schedule builder edits a single **template week** (the week
+of the earliest block — the UI shows and drafts only that week). Drafts therefore
+describe a **recurring weekly pattern**, not a one-off week. When the SM clicks Publish
+(Phase 3 transition), per house, in a single transaction:
 
-1. In a single transaction, copy every row in `draft_block_assignments` for the period into `shift_block_assignments` with `status = 'scheduled'`, `vacancy_origin = 'none'`, and `is_float = false`, `is_cross_house_pickup = false`, `source_house_id = NULL`.
-2. For every `(block_id, seat)` in the period's `shift_blocks` that has NO matching draft row, insert a `shift_block_assignments` row with `status = 'vacant'`, `vacancy_origin = 'never_assigned'`. These are the slots the SM intentionally left empty (low-coverage periods, hires expected later, etc.).
-3. Delete all `draft_block_assignments` rows for the period. The draft has been consumed.
-4. Mark the `scheduling_periods` row as published (a `published_at timestamp` column — add to §2.10 schema).
+1. Derive the template = the drafts in the template week, keyed by their NY
+   `(isodow, time-of-day)` and the drafted user(s).
+2. For **every block in the period** (all weeks), look up the template users for that
+   block's `(isodow, time-of-day)` slot and convert that many of the block's
+   pre-created `vacant`/`never_assigned` seats to `status = 'scheduled'`,
+   `vacancy_origin = 'none'`, `is_float = false`, `is_cross_house_pickup = false`,
+   `source_house_id = NULL`. The remaining seats stay `vacant`/`never_assigned` — the
+   slots the SM intentionally left open (claims, escalation, later hires). This is what
+   makes the weekly pattern **repeat across the whole semester**; a slot must not be
+   over-filled beyond `required_headcount`.
+   - DST-safe: the slot key is NY `(isodow, time-of-day)`, not UTC, so 09:00 in June and
+     09:00 in December map to the same slot across the November transition.
+   - The block generator (`20260527000004`) pre-creates exactly `required_headcount`
+     vacant seats per block, so publish normally only flips statuses (the function keeps
+     excess-insert / vacancy-normalize branches for robustness).
+3. Delete all `draft_block_assignments` rows for the house. The draft has been consumed.
+4. Record the house in `period_house_publications`; once every house with blocks in the
+   period is published, set `scheduling_periods.published_at`.
 
-After publish, post-publish manual overrides write directly to `shift_block_assignments` (no draft round-trip). The draft table is empty for the period until the next semester's schedule is being built.
+Implemented in `publish_schedule(period, publisher, house)`
+(`20260614000002_publish_recurring_weekly_pattern.sql`, superseding the block-id-keyed
+loop in `20260528000010`).
+
+After publish, **per-week** changes happen on the live calendar (inline override): an
+override is scoped either to **this week only** (the clicked block span) or **this week
+onward** (the same `(house, isodow, time-of-day)` slot in every later week — the
+permanent drop/pickup mechanics of §10). Overrides write directly to
+`shift_block_assignments` (no draft round-trip). The draft table is empty for the period
+until the next semester's schedule is being built.
 
 **Why a separate table, not a status enum value.** Adding `draft` to `shift_block_assignments.status` would require every consumer (orchestrator, feeds, calendar render, claim handler, float lookup) to remember to filter it out. A separate table cleanly partitions concerns; the orchestrator's query (`status = 'vacant'`) cannot accidentally see drafts. The cost is one extra table; that cost is acceptable per the user's stated correctness-over-storage preference (§1.6/§3.2 Approach A rationale).
 
@@ -808,7 +837,7 @@ When `hmod_notify_allied` (or any HM-action notification) fires:
 
 1. Determine the block's start time.
 2. Determine the current time.
-3. If current time is within HM working hours (Mon-Fri, [08:00, 17:00)) AND the block start time is within HM working hours AND the block's date is a weekday → resolve the house's **HM only** (via `hm_leave` → effective contact at current moment) and notify them. The BM is not separately notified; if the HM is on leave, leave-resolution returns the BM (or further chain) as the effective contact. A notification firing at exactly 08:00 is within HM hours; one firing at exactly 17:00 is within HMOD hours.
+3. If current time is within HM working hours (Mon-Fri, [08:00, 17:00)) AND the block start time is within HM working hours AND the block's date is a weekday → resolve the house's **RSM** (via `resolve_rsm_for_house` → `hm_leave` → effective contact at current moment) and notify them (notification `target = 'rsm'`). The HM is **not** the in-hours recipient — they are reached only in their HMOD capacity. If the RSM is on leave, leave-resolution returns the RSM's replacement (by default the HM, then BM) as the effective contact; if the house has no acting RSM at all, the notification falls back to the HMOD on duty (`target = 'hmod'`). A notification firing at exactly 08:00 is within HM hours; one firing at exactly 17:00 is within HMOD hours.
 4. Otherwise → resolve the current HMOD (via `hmod_rotor` → effective HMOD at current moment) and notify them.
 
 This implements the behavioral spec's Section 10.1 routing rules exactly. There are no stacked digests; if neither the HM nor HMOD is currently on duty for the routing, the notification still fires (it must, because action is required), but only to whichever role is on duty.
@@ -830,7 +859,7 @@ A coverage gap consisting of (destination_house_id, list of contiguous block_ids
 1. **Validate eligibility constraints (algorithmic invariants):**
    - The destination must not be Harnwell unless the gap originated from Harnwell itself. (Harnwell-destination float lookups always return empty per Behavioral Spec §6.1; the algorithm short-circuits and the gap goes straight to HMOD-for-Allied.)
    - Workers at the 11 single-staff houses are excluded from the source pool unconditionally.
-   - Workers holding the `hm` or `bm` role are excluded from the source pool: HMs may work scheduled shifts but are never selected as floaters; BMs hold no shift assignments at all.
+   - Workers holding the `hm`, `rsm`, or `bm` role are excluded from the source pool: HMs and RSMs may work scheduled shifts but are never selected as floaters; BMs hold no shift assignments at all.
    - Workers with `is_active = false` (fired / deactivated) are excluded.
    - **Hours caps are NOT checked.** A float relocates a worker's already-scheduled hours from their home desk to the destination; total weekly hours are unchanged. See Behavioral Spec §6.1 "Hours cap is not checked at float assignment." The float lookup therefore omits any cap-check predicate, even for workers currently at 39 hours (hard cap) or 19 hours (soft cap).
 
@@ -844,7 +873,7 @@ A coverage gap consisting of (destination_house_id, list of contiguous block_ids
    - Their departure would leave at least one worker remaining at the source desk for those blocks (the floor is one worker, not the staffing pattern's required headcount), accounting for any other workers in `pending_float_out` or `floated_out` status during that block.
    - They are not already in an assigned float (`pending` or `acknowledged`) overlapping the gap window.
    - They are not currently assigned to a cross-house pickup (`is_cross_house_pickup = true`) overlapping the gap window.
-   - They do not hold the `hm` or `bm` role.
+   - They do not hold the `hm`, `rsm`, or `bm` role.
    - They have not previously declined a float whose window overlaps this gap at the same house (per the overlap-based exclusion in §3.8).
 
    b. **For each eligible worker, compute their largest consecutive coverage span within the remaining uncovered blocks.**

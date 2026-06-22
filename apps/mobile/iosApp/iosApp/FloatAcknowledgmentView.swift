@@ -34,7 +34,7 @@ struct FloatAcknowledgmentView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
     /// The screen's load instant — drives the static "starts in" + countdown.
-    private let now: Instant
+    private let now: KotlinInstant
     /// Live host POSTs to `acknowledge-float` / `decline-float` (best-effort) when the
     /// optimistic local transition succeeds; demo passes nil → no live write. The
     /// argument is the float id the modal is showing.
@@ -60,7 +60,8 @@ struct FloatAcknowledgmentView: View {
             destinationName: state.destinationHouse.name,
             floatStart: state.floatStart,
             deadline: state.deadline,
-            now: now
+            now: now,
+            zone: ShiftsKt.NEW_YORK
         )
         ShiftSheet(onClose: { dismiss() }) {
             VStack(alignment: .leading, spacing: 14) {
@@ -181,7 +182,7 @@ struct FloatAcknowledgmentView: View {
                     // succeeds (the VM returns true iff it moved PENDING → terminal before
                     // the T-10m deadline) — a no-op tap past the deadline must not POST.
                     action: {
-                        if model.vm.acknowledge(now: DemoFactory.shared.now()).boolValue {
+                        if model.vm.acknowledge(now: DemoFactory.shared.now()) {
                             onAcknowledge?(state.floatId)
                         }
                     },
@@ -193,7 +194,7 @@ struct FloatAcknowledgmentView: View {
                 ShiftButton(
                     title: "Decline",
                     action: {
-                        if model.vm.decline(now: DemoFactory.shared.now()).boolValue {
+                        if model.vm.decline(now: DemoFactory.shared.now()) {
                             onDecline?(state.floatId)
                         }
                     },

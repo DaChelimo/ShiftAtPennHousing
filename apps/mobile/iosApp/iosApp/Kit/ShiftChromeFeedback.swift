@@ -65,6 +65,25 @@ struct ShiftLargeHeader: View {
     }
 }
 
+// MARK: - Page title (simple large header)
+
+/// A simple page header — the screen's title, top-left, large and near-black. Every
+/// worker tab shows one so each screen reads clearly. Lighter than `ShiftLargeHeader`
+/// (no avatar / eyebrow / trailing).
+struct PageTitle: View {
+    let title: String
+    @Environment(\.colorScheme) private var scheme
+    var body: some View {
+        HStack {
+            Text(title)
+                .font(ShiftFont.sans(26, .bold, relativeTo: .largeTitle))
+                .foregroundColor(ShiftColors.resolve(scheme).ink)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 8)
+    }
+}
+
 // MARK: - Tab scaffold (native TabView = the iOS tab bar)
 
 struct ShiftTabItem {

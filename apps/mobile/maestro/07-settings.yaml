@@ -6,17 +6,12 @@ appId: com.pennhousing.shift
 - launchApp:
     clearState: true
 
-# Open the Settings tab. It is the LAST tab (index 8) in the scrollable tab row,
-# off-screen to the right at launch; swipe the tab row (≈9% height) right-to-left
-# until it appears, then tap. Self-tuning + a no-op where the tab already fits.
-- repeat:
-    while:
-      notVisible:
-        id: "tab_settings"
-    commands:
-      - swipe:
-          start: 85%, 9%
-          end: 35%, 9%
+# Settings is an episodic destination → it lives behind the bottom-bar "More"
+# overflow. Open More, then tap Settings in the sheet.
+- tapOn:
+    id: "tab_more"
+- assertVisible:
+    id: "more_sheet"
 - tapOn:
     id: "tab_settings"
 - assertVisible:

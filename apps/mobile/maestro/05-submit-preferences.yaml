@@ -6,17 +6,12 @@ appId: com.pennhousing.shift
 - launchApp:
     clearState: true
 
-# Open the Preferences tab. It is the 7th tab (index 6) in the scrollable tab row,
-# off-screen to the right at launch; swipe the tab row (≈9% height) right-to-left
-# until it appears, then tap. Self-tuning + a no-op where the tab already fits.
-- repeat:
-    while:
-      notVisible:
-        id: "tab_preferences"
-    commands:
-      - swipe:
-          start: 85%, 9%
-          end: 35%, 9%
+# Preferences is an episodic destination → it lives behind the bottom-bar "More"
+# overflow. Open More, then tap Preferences in the sheet.
+- tapOn:
+    id: "tab_more"
+- assertVisible:
+    id: "more_sheet"
 - tapOn:
     id: "tab_preferences"
 - assertVisible:
@@ -24,7 +19,8 @@ appId: com.pennhousing.shift
 - assertVisible:
     id: "pref_target_stepper"
 
-# Pick the "Cannot" brush, then paint the first block in the day grid.
+# Pick the "Cannot" brush, then paint the first block on the day timeline. A single tap
+# paints one 30-min block (humans long-press-drag to paint a range — not scriptable here).
 - tapOn:
     id: "pref_brush_cannot"
 - assertVisible:
@@ -32,8 +28,10 @@ appId: com.pennhousing.shift
 - tapOn:
     id: "pref_block_cell"
 
-# Submit the grid → the screen flips to the read-only "submitted" state.
+# Submit. The screen stays EDITABLE until the deadline (submitting is no longer final),
+# so the banner confirms the submission without locking the grid. Maestro `text` is a
+# full-match regex, so wildcard the banner title around the load-bearing phrase.
 - tapOn:
     id: "submit_preferences_button"
 - assertVisible:
-    text: "Submitted · read-only"
+    text: ".*you can still edit.*"

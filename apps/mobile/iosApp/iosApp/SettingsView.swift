@@ -34,7 +34,7 @@ final class SettingsObservable: ObservableObject {
     func activateLive(repo: ProfileRepository, userId: String) async {
         guard !live else { return }
         live = true
-        guard let snapshot = try? await repo.fetchProfile(userId: userId), let snapshot else { return }
+        guard let snapshot = try? await repo.fetchProfile(userId: userId) else { return }
         vm = DemoFactory.shared.settingsViewModel(snapshot: snapshot)
         state = vm.uiState.value
         observe()
@@ -57,8 +57,10 @@ struct SettingsScreen: View {
     var body: some View {
         let c = ShiftColors.resolve(scheme)
         let st = model.state
-        return VStack(alignment: .leading, spacing: 22) {
-            profileCard(st.profile, c)
+        return VStack(alignment: .leading, spacing: 0) {
+            PageTitle(title: "Settings")
+            VStack(alignment: .leading, spacing: 22) {
+                profileCard(st.profile, c)
 
             group("Notifications", c) {
                 ForEach(Array(st.notifications.enumerated()), id: \.offset) { idx, row in
@@ -110,8 +112,9 @@ struct SettingsScreen: View {
             Text("Shift@PennHousing · v\(st.appVersion)")
                 .font(ShiftFont.mono(11.5)).monospacedDigit().foregroundColor(c.ter)
                 .frame(maxWidth: .infinity, alignment: .center)
+            }
+            .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 28)
         }
-        .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 28)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(c.bg)
         .accessibilityIdentifier("settings_screen")

@@ -1,18 +1,23 @@
-# Phase 13a E2E — §5.2 drop a shift; it then appears in the Dropped subsection (§5.6 #2).
+# Phase 13a E2E — §5.2 drop a shift from the calendar agenda. A dropped shift is treated
+# like any other dropped shift: it leaves the worker's agenda and surfaces in the
+# Open-Shifts feed for anyone (incl. the worker) to claim — there is no "reclaim".
 #
-# Android emulator + iOS simulator (Maestro). TDD-RED: selectors are the UI contract.
+# Android emulator + iOS simulator (Maestro). Selectors are the cross-platform UI contract.
 appId: com.pennhousing.shift
 ---
 - launchApp:
     clearState: true
+
+# My Shifts is the calendar now. Tapping an agenda card opens the drop-type popup:
+# occurrence vs permanent (§5.2).
 - tapOn:
     id: "tab_my_shifts"
 - assertVisible:
-    id: "section_scheduled"
-
-# Tapping a shift opens the drop-type popup: occurrence vs permanent (§5.2).
+    id: "calendar_screen"
+- assertVisible:
+    id: "calendar_shift_card"
 - tapOn:
-    id: "scheduled_shift_card"
+    id: "calendar_shift_card"
 - assertVisible:
     id: "drop_options_sheet"
 - assertVisible: "Drop this occurrence"
@@ -32,10 +37,12 @@ appId: com.pennhousing.shift
 
 - tapOn:
     id: "drop_confirm_button"
+- assertNotVisible:
+    id: "drop_options_sheet"
 
-# The dropped shift leaves "their shifts" and shows under My Shifts → Dropped while
-# it is still open (§5.6 #2).
+# The dropped occurrence is no longer the worker's shift — it now shows in the
+# Open-Shifts feed (My House sub-tab), claimable (partial or full) like any open shift (§5.6 #2).
+- tapOn:
+    id: "tab_open_shifts"
 - assertVisible:
-    id: "section_dropped"
-- assertVisible:
-    id: "dropped_shift_card"
+    id: "open_shift_card"

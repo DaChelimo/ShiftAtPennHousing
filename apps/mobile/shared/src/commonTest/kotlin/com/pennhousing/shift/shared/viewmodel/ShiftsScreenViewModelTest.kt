@@ -7,6 +7,7 @@ import com.pennhousing.shift.shared.model.MyShiftsSection
 import com.pennhousing.shift.shared.model.OpenFeed
 import com.pennhousing.shift.shared.model.OpenShift
 import com.pennhousing.shift.shared.shifts.ClaimCapVerdict
+import com.pennhousing.shift.shared.shifts.OpenShiftSort
 import com.pennhousing.shift.shared.shifts.buildMyShiftsTab
 import com.pennhousing.shift.shared.shifts.buildOtherHousesTab
 import com.pennhousing.shift.shared.shifts.classifyMyShift
@@ -175,19 +176,53 @@ class ShiftsScreenViewModelTest {
     @Test
     fun tab3GroupsCrossHouseFeedsByHouseOrderedByName() {
         val t = vm().uiState.value.otherHouses
-        // grouped & ordered by house name: "House-5" < "Quad"
-        assertEquals(listOf("house-05", "quad"), t.groups.map { it.house.id })
-        val quadGroup = t.groups.first { it.house.id == "quad" }
-        assertEquals(listOf("qw1"), quadGroup.weekly.map { it.id })
-        assertEquals(listOf("qp1"), quadGroup.permanentOpenings.map { it.id })
-        val house5Group = t.groups.first { it.house.id == "house-05" }
-        assertEquals(listOf("h5w1"), house5Group.weekly.map { it.id })
-        assertTrue(house5Group.permanentOpenings.isEmpty())
+        // grouped & ordered by house name: "House-5" < "Quad"; key = house id, title = name
+        val byHouse = t.grouped(OpenShiftSort.BY_HOUSE)
+        assertEquals(listOf("house-05", "quad"), byHouse.map { it.key })
+        val quadGroup = byHouse.first { it.key == "quad" }
+        assertEquals("Quad", quadGroup.title)
+        // weekly cards before permanent within the house group
+        assertEquals(listOf("qw1", "qp1"), quadGroup.shifts.map { it.id })
+        val house5Group = byHouse.first { it.key == "house-05" }
+        assertEquals(listOf("h5w1"), house5Group.shifts.map { it.id })
+    }
+
+    @Test
+    fun tab3GroupsCrossHouseFeedsByDayOrderedMondayFirst() {
+        // 2026-01-15 is a Thursday; 2026-01-19 is the following Monday. By-day grouping
+        // orders Mon→Sun and titles each group with the weekday name.
+        val thu = at("2026-01-15T10:00:00-05:00")
+        val mon = at("2026-01-19T09:00:00-05:00")
+        val feed =
+            listOf(
+                OpenShift("thuQ", quad, thu, thu + 30.minutes, OpenFeed.WEEKLY, homeHouse = false),
+                OpenShift("monH5", house5, mon, mon + 30.minutes, OpenFeed.WEEKLY, homeHouse = false),
+            )
+        val byDay = buildOtherHousesTab(feed).grouped(OpenShiftSort.BY_DAY)
+        assertEquals(listOf("Monday", "Thursday"), byDay.map { it.title })
+        assertEquals(listOf("monH5"), byDay.first { it.title == "Monday" }.shifts.map { it.id })
+        assertEquals(listOf("thuQ"), byDay.first { it.title == "Thursday" }.shifts.map { it.id })
+    }
+
+    @Test
+    fun tab3CollapsesConcurrentMultiStaffOpeningsIntoOneCardWithCount() {
+        // Quad (multi-staff) has two desks both vacant 13:00–14:00; the read model returns
+        // one row per desk-block. Tab 3 must show ONE "2 open" card, not fragments.
+        val s = at("2026-01-15T13:00:00-05:00")
+        fun desk(prefix: String) =
+            (0 until 2).map { i ->
+                OpenShift("$prefix-$i", quad, s + (i * 30).minutes, s + ((i + 1) * 30).minutes, OpenFeed.WEEKLY, homeHouse = false)
+            }
+        val model = ShiftsScreenViewModel(myShifts = emptyList(), openShifts = desk("d1") + desk("d2"), now = noon)
+        val quadGroup = model.uiState.value.otherHouses.grouped(OpenShiftSort.BY_HOUSE).single { it.key == "quad" }
+        assertEquals(1, quadGroup.shifts.size)
+        assertEquals(2, quadGroup.shifts.single().count)
     }
 
     @Test
     fun tab3ExcludesHomeHouseShifts() {
-        val crossIds = vm().uiState.value.otherHouses.groups.flatMap { it.weekly + it.permanentOpenings }.map { it.id }
+        val crossIds =
+            vm().uiState.value.otherHouses.grouped(OpenShiftSort.BY_HOUSE).flatMap { it.shifts }.map { it.id }
         assertFalse(crossIds.any { it in setOf("hw1", "hw2", "hp1") })
     }
 
@@ -199,7 +234,8 @@ class ShiftsScreenViewModelTest {
         val homeOnly = feeds.filter { it.homeHouse }
         val t = buildOtherHousesTab(homeOnly)
         assertTrue(t.isEmpty)
-        assertTrue(t.groups.isEmpty())
+        assertTrue(t.grouped(OpenShiftSort.BY_HOUSE).isEmpty())
+        assertTrue(t.grouped(OpenShiftSort.BY_DAY).isEmpty())
     }
 
     // ===================================================================
@@ -225,7 +261,7 @@ class ShiftsScreenViewModelTest {
     @Test
     fun crossHouseOpenShiftCardShowsDestinationHouseName() {
         // §5.3 / §5.6 Tab 3: a cross-house card names the destination house.
-        val card = vm().uiState.value.otherHouses.groups.first { it.house.id == "quad" }.weekly.first()
+        val card = vm().uiState.value.otherHouses.grouped(OpenShiftSort.BY_HOUSE).first { it.key == "quad" }.shifts.first()
         assertEquals("Quad", card.house.name)
         assertFalse(card.homeHouse)
     }
@@ -473,6 +509,174 @@ class ShiftsScreenViewModelTest {
         val held = listOf(pickedUpHome, scheduled, droppedStillOpen, nextWeek)
         // pickedUpHome 2h + scheduled 2h; dropped 2h excluded; next week excluded.
         assertEquals(4.0, com.pennhousing.shift.shared.shifts.weeklyHours(held, noon))
+    }
+
+    // ===================================================================
+    // My-Shifts week navigation — the tab is scoped to the shown week so a
+    // future-week pickup / drop shows under the week it belongs to (§5.6).
+    // ===================================================================
+
+    // A scheduled shift one week after `myWeek` (Thu 2026-01-22, next week).
+    private val nextWeekScheduled =
+        MyShift("nw-sc", harnwell, at("2026-01-22T12:00:00-05:00"), at("2026-01-22T14:00:00-05:00"), AssignmentKind.SCHEDULED)
+    private val nextWeekPickup =
+        MyShift("nw-pk", quad, at("2026-01-22T09:00:00-05:00"), at("2026-01-22T11:00:00-05:00"), AssignmentKind.TEMP_PICKUP, crossHouse = true)
+
+    private fun vmWithNextWeek() =
+        ShiftsScreenViewModel(myShifts = myWeek + nextWeekScheduled + nextWeekPickup, openShifts = feeds, now = noon)
+
+    @Test
+    fun myShiftsTabDefaultsToTheCurrentWeekAndExcludesOtherWeeks() {
+        // §5.6: at offset 0 only now's-week shifts show; the next-week ones are hidden.
+        val t = vmWithNextWeek().uiState.value
+        assertEquals(0, t.weekOffset)
+        assertFalse(t.myShifts.scheduled.any { it.id == "nw-sc" })
+        assertFalse(t.myShifts.pickedUp.any { it.id == "nw-pk" })
+        // the current-week fixtures are still present
+        assertTrue(t.myShifts.scheduled.any { it.id == "sc" })
+    }
+
+    @Test
+    fun navigatingToNextWeekShowsThatWeeksShiftsOnly() {
+        val m = vmWithNextWeek()
+        m.nextWeek()
+        val t = m.uiState.value
+        assertEquals(1, t.weekOffset)
+        // next week's pickup + scheduled now show…
+        assertTrue(t.myShifts.pickedUp.any { it.id == "nw-pk" })
+        assertTrue(t.myShifts.scheduled.any { it.id == "nw-sc" })
+        // …and the current week's shifts are gone from the view.
+        assertFalse(t.myShifts.scheduled.any { it.id == "sc" })
+        assertFalse(t.myShifts.pickedUp.any { it.id == "pk-home" })
+    }
+
+    @Test
+    fun previousAndAbsoluteWeekSelectionMoveTheShownWeek() {
+        val m = vmWithNextWeek()
+        m.previousWeek()
+        assertEquals(-1, m.uiState.value.weekOffset)
+        // last week is empty (no fixtures there)
+        assertTrue(m.uiState.value.myShifts.inDisplayOrder().isEmpty())
+        m.selectWeekOffset(1)
+        assertEquals(1, m.uiState.value.weekOffset)
+        assertTrue(m.uiState.value.myShifts.scheduled.any { it.id == "nw-sc" })
+    }
+
+    @Test
+    fun weekHoursReflectsTheShownWeekNotTheWholeSnapshot() {
+        val m = vmWithNextWeek()
+        // Current week held hours: pk-home 2h + pk-cross 2h + scheduled 2h + permanent 2h
+        // + float 2h = 10h; the dropped-still-open shift (2h) is excluded.
+        assertEquals(10.0, m.uiState.value.weekHours)
+        m.nextWeek()
+        // Next week: nw-sc 2h + nw-pk 2h = 4h.
+        assertEquals(4.0, m.uiState.value.weekHours)
+    }
+
+    @Test
+    fun weekRangeLabelAndOptionsAreExposedForTheHeader() {
+        val m = vmWithNextWeek()
+        // Jan 15 2026 is a Thursday → its week is Mon Jan 12 – Sun Jan 18.
+        assertEquals("Jan 12 – Jan 18", m.uiState.value.weekRangeLabel)
+        m.nextWeek()
+        assertEquals("Jan 19 – Jan 25", m.uiState.value.weekRangeLabel)
+        // the picker offers the quick weeks (last / this / next / +2 / +3).
+        assertEquals(listOf(-1, 0, 1, 2, 3), m.weekOptions().map { it.offset })
+    }
+
+    @Test
+    fun navigatedWeekSurvivesAnOptimisticDrop() {
+        // A drop while viewing next week keeps the view on that week (offset is sticky),
+        // and the dropped next-week shift moves into that week's Dropped subsection.
+        val m = vmWithNextWeek()
+        m.nextWeek()
+        m.drop("nw-sc")
+        val t = m.uiState.value
+        assertEquals(1, t.weekOffset)
+        assertFalse(t.myShifts.scheduled.any { it.id == "nw-sc" })
+        assertTrue(t.myShifts.dropped.any { it.id == "nw-sc" })
+    }
+
+    // ===================================================================
+    // Open-Shifts week navigation + past split (UI filter — this session).
+    // The open feeds are scoped to their OWN week (last week through +4); a started
+    // weekly opening splits into the collapsed "past" card; permanent openings recur.
+    // ===================================================================
+
+    // A weekly home opening one week out (Thu 2026-01-22) — only visible at openWeekOffset 1.
+    private val nextWeekHomeWeekly =
+        OpenShift("nw-hw", harnwell, at("2026-01-22T18:00:00-05:00"), at("2026-01-22T20:00:00-05:00"), OpenFeed.WEEKLY, homeHouse = true)
+    private val nextWeekQuadWeekly =
+        OpenShift("nw-qw", quad, at("2026-01-22T13:00:00-05:00"), at("2026-01-22T15:00:00-05:00"), OpenFeed.WEEKLY, homeHouse = false)
+
+    private fun vmWithNextWeekOpen() =
+        ShiftsScreenViewModel(myShifts = emptyList(), openShifts = feeds + nextWeekHomeWeekly + nextWeekQuadWeekly, now = noon)
+
+    @Test
+    fun openFeedsDefaultToTheCurrentWeekAndExcludeOtherWeeks() {
+        // At openWeekOffset 0 only now's-week weekly openings show; next week's are hidden.
+        val s = vmWithNextWeekOpen().uiState.value
+        assertEquals(0, s.openWeekOffset)
+        val homeIds = (s.homeOpen.weekly + s.homeOpen.permanentOpenings).map { it.id }
+        assertFalse(homeIds.contains("nw-hw"))
+        assertTrue(homeIds.contains("hw1")) // current-week home opening still present
+        val otherIds = s.otherHouses.openShifts.map { it.id }
+        assertFalse(otherIds.contains("nw-qw"))
+        assertTrue(otherIds.contains("qw1"))
+    }
+
+    @Test
+    fun navigatingOpenFeedsToNextWeekShowsThatWeeksOpeningsOnly() {
+        val m = vmWithNextWeekOpen()
+        m.nextOpenWeek()
+        val s = m.uiState.value
+        assertEquals(1, s.openWeekOffset)
+        assertTrue(s.homeOpen.weekly.any { it.id == "nw-hw" })
+        assertFalse(s.homeOpen.weekly.any { it.id == "hw1" }) // current-week opening gone
+        assertTrue(s.otherHouses.openShifts.any { it.id == "nw-qw" })
+        assertFalse(s.otherHouses.openShifts.any { it.id == "qw1" })
+        // The My-Shifts week is independent — it did not move.
+        assertEquals(0, s.weekOffset)
+    }
+
+    @Test
+    fun permanentOpeningsRecurAcrossEveryNavigatedWeek() {
+        // Permanent openings carry their own "weeks remaining"; they show on any week.
+        val m = vmWithNextWeekOpen()
+        assertTrue(m.uiState.value.homeOpen.permanentOpenings.any { it.id == "hp1" })
+        m.nextOpenWeek()
+        assertTrue(m.uiState.value.homeOpen.permanentOpenings.any { it.id == "hp1" })
+        m.selectOpenWeekOffset(-1)
+        assertTrue(m.uiState.value.homeOpen.permanentOpenings.any { it.id == "hp1" })
+    }
+
+    @Test
+    fun openWeekRangeLabelTracksTheShownOpenWeek() {
+        val m = vmWithNextWeekOpen()
+        assertEquals("Jan 12 – Jan 18", m.uiState.value.openWeekRangeLabel)
+        m.nextOpenWeek()
+        assertEquals("Jan 19 – Jan 25", m.uiState.value.openWeekRangeLabel)
+    }
+
+    @Test
+    fun openWeekOptionsSpanLastWeekThroughFourWeeksAhead() {
+        // The UI guardrail: last week … in 4 weeks (prevents claiming too far out).
+        assertEquals(listOf(-1, 0, 1, 2, 3, 4), vm().openWeekOptions().map { it.offset })
+    }
+
+    @Test
+    fun pastUpcomingSplitsStartedWeeklyOpeningsAndKeepsPermanentUpcoming() {
+        // At noon: hw2 (10:00–12:00) has started → past; hw1 (18:00) → upcoming; the
+        // permanent opening hp1 (recurring) is never past even though it starts at 09:00.
+        val m = vm()
+        val home = m.uiState.value.homeOpen
+        val weeklySplit = m.pastUpcoming(home.weekly)
+        assertEquals(listOf("hw1"), weeklySplit.upcoming.map { it.id })
+        assertEquals(listOf("hw2"), weeklySplit.past.map { it.id })
+        // Permanent stays upcoming when run through the split.
+        val permSplit = m.pastUpcoming(home.permanentOpenings)
+        assertEquals(listOf("hp1"), permSplit.upcoming.map { it.id })
+        assertTrue(permSplit.past.isEmpty())
     }
 
     // ===================================================================

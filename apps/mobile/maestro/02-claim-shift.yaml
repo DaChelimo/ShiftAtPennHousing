@@ -1,15 +1,15 @@
-# Phase 13a E2E — §5.3 claim an open shift; it then appears in My Shifts (§5.6 #1).
+# Phase 13a E2E — §5.3 claim an open shift; it then appears in My Shifts (the calendar).
 #
-# Android emulator + iOS simulator (Maestro). TDD-RED: selectors are the UI contract.
+# Android emulator + iOS simulator (Maestro). Selectors are the cross-platform UI contract.
 appId: com.pennhousing.shift
 ---
 - launchApp:
     clearState: true
 
-# Open the home-house feed and pick the first claimable open shift. The claim
-# affordance is absent/disabled once the shift is past its T-2h cutoff (§5.4).
+# Open Shifts → My House (the default sub-tab). Pick the first claimable open shift; the
+# claim affordance is absent/disabled once the shift is past its T-2h cutoff (§5.4).
 - tapOn:
-    id: "tab_open_home"
+    id: "tab_open_shifts"
 - assertVisible:
     id: "open_shift_card"
 - tapOn:
@@ -30,10 +30,11 @@ appId: com.pennhousing.shift
 - assertVisible:
     id: "claim_success"
 
-# The claimed shift now appears under My Shifts → Picked-up (§5.6 #1).
+# The claimed shift is now held → it shows in My Shifts (the calendar agenda), since a
+# claim mirrors into the calendar just like a drop leaves it (§5.6 #1 / §11.2).
 - tapOn:
     id: "tab_my_shifts"
 - assertVisible:
-    id: "section_picked_up"
+    id: "calendar_screen"
 - assertVisible:
-    id: "picked_up_shift_card"
+    id: "calendar_shift_card"

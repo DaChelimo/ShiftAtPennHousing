@@ -271,6 +271,53 @@ class CalendarTest {
         assertTrue(wk.template.isEmpty())
     }
 
+    // ----- week overview (default view) -----
+
+    @Test fun week_overview_has_seven_day_sections_with_shifts_in_the_right_days() {
+        val o = buildCalendarWeekOverview(all, now)
+        assertEquals(7, o.days.size)
+        assertEquals((0..6).toList(), o.days.map { it.dayIndex })
+        val thu = o.days[3]
+        assertTrue(thu.isToday)
+        assertEquals("Today", thu.header.title)
+        assertEquals("2 shifts · 6h", thu.header.summary)
+        assertFalse(thu.isEmpty)
+        val sat = o.days[5]
+        assertFalse(sat.isEmpty) // the Saturday pickup
+        assertFalse(sat.isToday)
+        assertTrue(o.days[0].isEmpty) // Monday — nothing scheduled
+    }
+
+    @Test fun week_overview_now_line_appears_only_in_todays_section() {
+        val o = buildCalendarWeekOverview(all, now)
+        // Today (Thu) carries the NOW line; no other day does.
+        assertTrue(o.days[3].items.any { it.nowLabel != null })
+        assertTrue(o.days.filter { !it.isToday }.all { sec -> sec.items.none { it.nowLabel != null } })
+    }
+
+    @Test fun view_model_defaults_to_week_overview() {
+        val vm = com.pennhousing.shift.shared.viewmodel.CalendarViewModel(all, now)
+        val s = vm.uiState.value
+        assertEquals(com.pennhousing.shift.shared.viewmodel.CalendarMode.WEEK, s.mode)
+        assertEquals(7, s.weekOverview?.days?.size)
+        assertEquals(3, s.selectedDayIndex) // today, ready for a drill-in
+    }
+
+    @Test fun view_model_select_day_drills_in_and_show_week_returns_to_overview() {
+        val vm = com.pennhousing.shift.shared.viewmodel.CalendarViewModel(all, now)
+        vm.selectDay(5) // Saturday
+        val day = vm.uiState.value
+        assertEquals(com.pennhousing.shift.shared.viewmodel.CalendarMode.DAY, day.mode)
+        assertNull(day.weekOverview) // overview suppressed in the day view
+        assertEquals(5, day.selectedDayIndex)
+        assertFalse(day.agenda.isEmpty)
+
+        vm.showWeek()
+        val wk = vm.uiState.value
+        assertEquals(com.pennhousing.shift.shared.viewmodel.CalendarMode.WEEK, wk.mode)
+        assertEquals(7, wk.weekOverview?.days?.size)
+    }
+
     // ----- duration formatter -----
 
     @Test fun formats_hours_and_minutes() {

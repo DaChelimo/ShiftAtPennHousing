@@ -175,6 +175,34 @@ class CoalesceTest {
         assertEquals("o-0", merged.single().id)
         assertEquals(2.hours, merged.single().end - merged.single().start)
         assertEquals(listOf("o-0", "o-1", "o-2", "o-3"), merged.single().blockIds)
+        assertEquals(1, merged.single().count) // a single opening → no "N open" badge
+    }
+
+    @Test fun concurrent_desks_at_a_multi_staff_house_collapse_into_one_card_with_a_count() {
+        // The Quad has two desks both vacant 10:00–11:00 (two 30-min blocks each). The
+        // read model returns one row per desk-block, so without lane threading these
+        // fragment; they must collapse into ONE "2 open" card spanning the full hour,
+        // carrying one representative lane's block ids (claiming consumes one desk).
+        val deskA = openBlocks("2026-01-15T10:00:00-05:00", 2, "a", house = quad, homeHouse = false)
+        val deskB = openBlocks("2026-01-15T10:00:00-05:00", 2, "b", house = quad, homeHouse = false)
+        val merged = coalesceOpenShifts(deskA + deskB)
+        assertEquals(1, merged.size)
+        val card = merged.single()
+        assertEquals(2, card.count)
+        assertEquals(1.hours, card.end - card.start)
+        assertEquals(listOf("a-0", "a-1"), card.blockIds) // representative lane only
+    }
+
+    @Test fun concurrent_desks_of_different_spans_stay_separate_count_one_cards() {
+        // Desk A open 10:00–11:00, desk B open only 10:00–10:30. Different spans → two
+        // separate count-1 cards, sorted by start then end (the shorter first).
+        val deskA = openBlocks("2026-01-15T10:00:00-05:00", 2, "a", house = quad, homeHouse = false)
+        val deskB = openBlocks("2026-01-15T10:00:00-05:00", 1, "b", house = quad, homeHouse = false)
+        val merged = coalesceOpenShifts(deskA + deskB)
+        assertEquals(2, merged.size)
+        assertTrue(merged.all { it.count == 1 })
+        assertEquals(at("2026-01-15T10:30:00-05:00"), merged[0].end)
+        assertEquals(at("2026-01-15T11:00:00-05:00"), merged[1].end)
     }
 
     @Test fun weekly_and_permanent_feeds_do_not_merge() {
@@ -193,6 +221,36 @@ class CoalesceTest {
         val more = openBlocks("2026-01-15T11:00:00-05:00", 2, "more", feed = OpenFeed.PERMANENT_OPENING, weeksRemaining = 6)
         assertEquals(1, coalesceOpenShifts(six + more).size)
         assertEquals(6, coalesceOpenShifts(six + more).single().weeksRemaining)
+    }
+
+    @Test fun permanent_opening_recurs_weekly_collapses_to_one_card_keeping_earliest() {
+        // A slot dropped for the rest of the semester is vacant on every remaining week:
+        // worker_open_shifts returns one block-run per future occurrence (same house, same
+        // NY weekday, same HH:MM), so the per-span step yields N identical "EVERY MON
+        // 17:00–18:00 · N weeks remaining" cards. They name the SAME recurring slot — collapse
+        // to ONE card, keeping the earliest occurrence (pickup re-derives all weeks).
+        val mondays =
+            listOf(
+                "2026-06-22T17:00:00-04:00", // Mon
+                "2026-06-29T17:00:00-04:00", // Mon
+                "2026-07-06T17:00:00-04:00", // Mon
+            ).flatMapIndexed { w, iso ->
+                openBlocks(iso, 2, "mon$w", house = quad, feed = OpenFeed.PERMANENT_OPENING, weeksRemaining = 3)
+            }
+        val merged = coalesceOpenShifts(mondays)
+        assertEquals(1, merged.size)
+        val card = merged.single()
+        assertEquals(at("2026-06-22T17:00:00-04:00"), card.start) // earliest occurrence
+        assertEquals(at("2026-06-22T18:00:00-04:00"), card.end)
+        assertEquals(3, card.weeksRemaining)
+    }
+
+    @Test fun permanent_openings_of_different_slots_stay_separate() {
+        // Same house, same week, but two distinct recurring slots (Mon vs Wed) — different
+        // recurrence identities → two cards.
+        val mon = openBlocks("2026-06-22T17:00:00-04:00", 2, "mon", house = quad, feed = OpenFeed.PERMANENT_OPENING, weeksRemaining = 4)
+        val wed = openBlocks("2026-06-24T17:00:00-04:00", 2, "wed", house = quad, feed = OpenFeed.PERMANENT_OPENING, weeksRemaining = 4)
+        assertEquals(2, coalesceOpenShifts(mon + wed).size)
     }
 
     @Test fun open_gap_splits_and_result_sorted_by_start() {

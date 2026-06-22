@@ -135,17 +135,12 @@ data class NotificationItem(
     val floatId: String? = null,
     /** The pending float's start — drives the row's live ack countdown (D7). */
     val floatStart: Instant? = null,
-    /** Non-null → a pending swap entry (§8.2, T3a) — the row offers swap actions. */
-    val swapId: String? = null,
     /**
-     * Accept is offered on this entry. Temporary (shift/float) swaps accept with a
-     * plain `{swap_id}`; a PERMANENT swap's acceptance must enumerate the affected
-     * future assignments (§8.4 `apply_permanent_swap`), which this minimal slice does
-     * not compute — those entries offer Decline only.
+     * Non-null → an INCOMING pending-swap MIRROR (DESIGN §6): the row deep-links into
+     * the Swaps tab, where Accept / Decline live. Updates no longer renders swap actions
+     * inline — this is just a discoverable pointer, like the pending-float entry.
      */
-    val swapAcceptable: Boolean = false,
-    /** This is the worker's OWN outgoing pending swap (D4) — the row offers Cancel (void). */
-    val swapOutgoing: Boolean = false,
+    val swapId: String? = null,
 )
 
 /** A fully-formatted Updates row — the UI renders this directly. */
@@ -161,12 +156,10 @@ data class NotificationRow(
     val opensAck: Boolean,
     /** D7 — "Respond by 16:52 · 1h 49m left" on the pending-float row; null otherwise. */
     val ackCountdownLabel: String? = null,
-    /** Non-null → the row renders swap actions (T3a incoming / D4 outgoing). */
+    /** Non-null → an incoming-swap mirror; tapping the row deep-links to the Swaps tab. */
     val swapId: String? = null,
-    /** Accept offered (temporary swaps only — see [NotificationItem.swapAcceptable]). */
-    val swapAcceptable: Boolean = false,
-    /** Own outgoing pending swap → the row offers Cancel (void) instead of Accept/Decline. */
-    val swapOutgoing: Boolean = false,
+    /** This row is the incoming-swap mirror (carries the `swap_request_notification` selector). */
+    val opensSwaps: Boolean = false,
 )
 
 /**
@@ -218,8 +211,7 @@ fun NotificationItem.toRow(
         opensAck = floatId != null,
         ackCountdownLabel = ackCountdownLabel(floatId, floatStart, now, zone),
         swapId = swapId,
-        swapAcceptable = swapAcceptable,
-        swapOutgoing = swapOutgoing,
+        opensSwaps = swapId != null,
     )
 
 /**
@@ -236,9 +228,6 @@ data class IncomingSwap(
     val expiresAt: Instant,
 )
 
-/** `swap_type_enum` values whose acceptance is a plain `{swap_id}` POST. */
-private val TEMPORARY_SWAP_TYPES = setOf("shift_swap", "float_swap")
-
 private fun swapTypeLabel(swapType: String): String =
     when (swapType.lowercase()) {
         "shift_swap" -> "Shift swap"
@@ -248,14 +237,14 @@ private fun swapTypeLabel(swapType: String): String =
     }
 
 /**
- * Surface the worker's INCOMING pending swaps in the Updates feed (T3a minimal
- * slice — the counterparty action). `create-swap` does not insert a notification
- * row for the counterparty, so these entries are synthesized from the worker's own
- * `swap_requests` rows — the swaps analogue of [withPendingFloatEntry]. Each entry
- * is urgent ("Action needed"), carries [NotificationItem.swapId] so the row renders
- * Accept/Decline, and is acceptable only for temporary swaps ([IncomingSwap] /
- * [NotificationItem.swapAcceptable]). Idempotent — a swap already represented in
- * [items] (by `swapId`) is not duplicated.
+ * Surface the worker's INCOMING pending swaps as deep-link MIRRORS in the Updates feed
+ * (DESIGN §6 — the full Accept / Decline surface lives in the Swaps tab now). `create-swap`
+ * inserts no counterparty notification row, so these entries are synthesized from the
+ * worker's own `swap_requests` rows — the swaps analogue of [withPendingFloatEntry]. Each
+ * entry is urgent, carries [NotificationItem.swapId] (so its row `opensSwaps` and tapping
+ * it deep-links to Swaps → Incoming), and is one entry PER LEG (decision 2026-06-15).
+ * Idempotent — a swap already represented in [items] (by `swapId`) is not duplicated.
+ * Outgoing swaps are NOT mirrored here; they live only in the Swaps tab's Outgoing list.
  */
 fun withIncomingSwapEntries(
     items: List<NotificationItem>,
@@ -267,56 +256,16 @@ fun withIncomingSwapEntries(
         swaps
             .filter { it.swapId !in represented }
             .map { swap ->
-                val acceptable = swap.swapType.lowercase() in TEMPORARY_SWAP_TYPES
-                val respondBy = "${formatDayLabel(swap.expiresAt, zone)}, ${formatBlockTime(swap.expiresAt, zone)}"
+                val expires = "${formatDayLabel(swap.expiresAt, zone)}, ${formatBlockTime(swap.expiresAt, zone)}"
                 NotificationItem(
                     id = "incoming-swap-${swap.swapId}",
                     category = NotificationCategory.SWAP,
                     title = "Swap request — ${swapTypeLabel(swap.swapType)}",
-                    body =
-                        if (acceptable) {
-                            "A housemate proposed a swap with you. Respond by $respondBy."
-                        } else {
-                            "A housemate proposed a permanent swap. Accepting happens on the desk/web; you can decline here. Expires $respondBy."
-                        },
+                    body = "A housemate proposed a swap with you. Review it in Swaps. Expires $expires.",
                     createdAt = swap.createdAt,
                     unread = true,
                     urgent = true,
                     swapId = swap.swapId,
-                    swapAcceptable = acceptable,
-                )
-            }
-    return items + entries
-}
-
-/**
- * Surface the worker's OWN outgoing pending swaps (D4 — the initiator's void
- * affordance): synthesized like [withIncomingSwapEntries] but NOT urgent (waiting
- * on the counterparty, no action required of the worker beyond an optional
- * cancel). Each entry carries `swapId` + `swapOutgoing = true` so the row renders
- * a Cancel button → the `void-swap` EF. Idempotent by swap id.
- */
-fun withOutgoingSwapEntries(
-    items: List<NotificationItem>,
-    swaps: List<IncomingSwap>,
-    zone: TimeZone = NEW_YORK,
-): List<NotificationItem> {
-    val represented = items.mapNotNull { it.swapId }.toSet()
-    val entries =
-        swaps
-            .filter { it.swapId !in represented }
-            .map { swap ->
-                val respondBy = "${formatDayLabel(swap.expiresAt, zone)}, ${formatBlockTime(swap.expiresAt, zone)}"
-                NotificationItem(
-                    id = "outgoing-swap-${swap.swapId}",
-                    category = NotificationCategory.SWAP,
-                    title = "Your swap request — ${swapTypeLabel(swap.swapType)}",
-                    body = "Waiting on your housemate. Expires $respondBy. You can cancel it.",
-                    createdAt = swap.createdAt,
-                    unread = false,
-                    urgent = false,
-                    swapId = swap.swapId,
-                    swapOutgoing = true,
                 )
             }
     return items + entries

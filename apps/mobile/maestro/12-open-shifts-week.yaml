@@ -1,0 +1,43 @@
+# Phase 13a E2E — Open-Shifts week navigation + the "Earlier this week" past card.
+# The open feeds are a UI-side week filter (last week … +4): the tab defaults to the
+# current week, stepping forward shows a later week's openings, and already-started
+# openings live in a collapsed-by-default greyed card. Applies to BOTH sub-tabs.
+#
+# The demo seeds a current-week claimable opening (`hw-1`), an already-started one
+# (`hw-past` → the past card), and a next-week opening (`nw-hw`).
+#
+# Android emulator + iOS simulator (Maestro): selectors are the cross-platform contract.
+appId: com.pennhousing.shift
+---
+- launchApp:
+    clearState: true
+- tapOn:
+    id: "tab_open_shifts"
+- assertVisible:
+    id: "open_shift_card"
+
+# The open-week navigator is present and starts on the current week.
+- assertVisible:
+    id: "open_week_picker_open"
+- assertVisible: "This week"
+
+# An already-started opening is tucked into the collapsed "Earlier this week" card.
+- assertVisible:
+    id: "past_open_section"
+
+# Step forward a week: the header reflects it and next week's opening appears.
+- tapOn:
+    id: "open_next_week"
+- assertVisible: "Next week"
+- assertVisible:
+    id: "open_shift_card"
+
+# Open the picker and jump straight back to this week.
+- tapOn:
+    id: "open_week_picker_open"
+- assertVisible:
+    id: "open_week_picker_sheet"
+- tapOn: "This week"
+- assertVisible: "This week"
+- assertVisible:
+    id: "open_shift_card"

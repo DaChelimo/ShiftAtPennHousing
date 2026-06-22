@@ -1,0 +1,39 @@
+# Phase 13a E2E — §11.2 Personal Calendar = "My Shifts" (the default landing tab).
+# It defaults to the WHOLE-WEEK overview; the Week/Day toggle drills into a single day
+# and back. The Mon–Sun day-strip is HIDDEN in Week mode (every day is already shown in
+# the overview) and animates in for Day mode.
+#
+# Android emulator + iOS simulator (Maestro): selectors are the cross-platform contract.
+appId: com.pennhousing.shift
+---
+- launchApp:
+    clearState: true
+
+# My Shifts (the calendar) is the first/default tab — no navigation needed.
+- assertVisible:
+    id: "calendar_screen"
+
+# Default view is the whole-week overview (not a single day), and the day-strip is
+# hidden in Week mode.
+- assertVisible:
+    id: "calendar_view_toggle"
+- assertVisible:
+    id: "calendar_week_overview"
+- assertVisible:
+    id: "calendar_day_section"
+- assertNotVisible:
+    id: "calendar_week_strip"
+
+# Drill into the single-day view — the day-strip now appears.
+- tapOn:
+    id: "calendar_view_day"
+- assertVisible:
+    id: "calendar_week_strip"
+
+# Return to the week overview — the strip is hidden again.
+- tapOn:
+    id: "calendar_view_week"
+- assertVisible:
+    id: "calendar_week_overview"
+- assertNotVisible:
+    id: "calendar_week_strip"

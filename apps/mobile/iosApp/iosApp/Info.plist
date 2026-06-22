@@ -40,6 +40,13 @@
 	</array>
 	<!-- Supabase config (the iOS analogue of Android BuildConfig); values come
 	     from Configuration/Config.xcconfig and are read by AppDelegate. -->
+	<!-- Allow cleartext HTTP to the local Supabase stack (dev only). Without this,
+	     App Transport Security can block http://127.0.0.1:54321 on iOS. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>SUPABASE_URL</key>
 	<string>$(SUPABASE_URL)</string>
 	<key>SUPABASE_ANON_KEY</key>

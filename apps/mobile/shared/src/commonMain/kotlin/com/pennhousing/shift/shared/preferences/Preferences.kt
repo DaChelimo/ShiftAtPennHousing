@@ -3,11 +3,12 @@ package com.pennhousing.shift.shared.preferences
 import com.pennhousing.shift.shared.shifts.DOW_SHORT
 import com.pennhousing.shift.shared.shifts.MONTH_SHORT
 import com.pennhousing.shift.shared.shifts.NEW_YORK
-import com.pennhousing.shift.shared.shifts.formatBlockTime
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
 
 /*
@@ -141,13 +142,39 @@ fun buildPrefWeekStrip(
     return PrefWeekStrip(rangeLabel = range, cells = cells)
 }
 
-// ── Selected-day grid ──────────────────────────────────────────────────────────
+// ── Selected-day timeline ────────────────────────────────────────────────────────
+//
+// The picker is a vertical day timeline, NOT a labelled per-cell grid: hours live in a
+// left gutter (on the dividing lines, so a fill *between* the "8 AM" and "9" lines is
+// unambiguously 08:00–09:00), each 30-min block is a bare colored segment (no per-cell
+// text — that crowds short shifts), and a painted run carries ONE span label. The UI
+// paints by drag (long-press → sweep, current brush) with a single tap = one block.
 
-/** One paintable cell in the day grid — its mono time + the current brush. */
+private const val BLOCK_MINUTES = 30
+
+/** One paintable 30-minute segment. No visible text — [a11yLabel] is the screen-reader copy. */
 data class PrefBlockCell(
     val blockId: String,
-    val timeLabel: String,
     val brush: PrefBrush,
+    /** This block starts on the hour → a heavier divider above it. */
+    val isHourStart: Boolean,
+    /** "8:00 AM – 8:30 AM · preferred" (accessibility only — never rendered as a label). */
+    val a11yLabel: String,
+)
+
+/** One left-gutter hour label. [boundaryIndex] is how many blocks down its line sits (0 = top). */
+data class PrefHourMark(
+    val boundaryIndex: Int,
+    val label: String,
+)
+
+/** A contiguous painted span (never AVAILABLE) — backs the single per-run label pill. */
+data class PrefBlockRun(
+    val brush: PrefBrush,
+    val startBlockIndex: Int,
+    val blockCount: Int,
+    /** "8:00 AM – 12:00 PM" — the whole span, shown once on the run. */
+    val label: String,
 )
 
 /** Per-day tally for the summary line. */
@@ -161,12 +188,59 @@ data class PrefDayView(
     val dayIndex: Int,
     val title: String,
     val cells: List<PrefBlockCell>,
+    val hourMarks: List<PrefHourMark>,
+    val runs: List<PrefBlockRun>,
     val summary: PrefDaySummary,
 ) {
     val isEmpty: Boolean get() = cells.isEmpty()
 }
 
-/** The selected day's grid + header ("Wed · Jun 10") + summary counts. */
+private fun pad2(n: Int): String = if (n < 10) "0$n" else n.toString()
+
+/** "8 AM" / "9" / "12 PM" — a gutter hour mark. Meridiem shown only when [withMeridiem]. */
+fun formatHourMark(
+    instant: Instant,
+    withMeridiem: Boolean,
+    zone: TimeZone = NEW_YORK,
+): String {
+    val ldt = instant.toLocalDateTime(zone)
+    val h12 = ((ldt.hour + 11) % 12) + 1
+    return if (withMeridiem) "$h12 ${if (ldt.hour < 12) "AM" else "PM"}" else "$h12"
+}
+
+/** "8:00 AM" — 12-hour clock with minutes + meridiem (NY-anchored, invariant #6). */
+fun formatClock12(
+    instant: Instant,
+    zone: TimeZone = NEW_YORK,
+): String {
+    val ldt = instant.toLocalDateTime(zone)
+    val h12 = ((ldt.hour + 11) % 12) + 1
+    return "$h12:${pad2(ldt.minute)} ${if (ldt.hour < 12) "AM" else "PM"}"
+}
+
+/**
+ * "8:00 AM – 12:00 PM" for the inclusive block span [lo..hi] (the end is the last block's
+ * start + 30 min). The leading meridiem is dropped when both ends share it ("8:00 – 11:00 AM").
+ */
+fun prefRangeLabel(
+    blocks: List<PrefBlock>,
+    fromIndex: Int,
+    toIndex: Int,
+    zone: TimeZone = NEW_YORK,
+): String {
+    if (blocks.isEmpty()) return ""
+    val lo = minOf(fromIndex, toIndex).coerceIn(blocks.indices)
+    val hi = maxOf(fromIndex, toIndex).coerceIn(blocks.indices)
+    val start = blocks[lo].start
+    val end = blocks[hi].start + BLOCK_MINUTES.minutes
+    val startMer = if (start.toLocalDateTime(zone).hour < 12) "AM" else "PM"
+    val endMer = if (end.toLocalDateTime(zone).hour < 12) "AM" else "PM"
+    val startLabel =
+        if (startMer == endMer) formatClock12(start, zone).removeSuffix(" $startMer") else formatClock12(start, zone)
+    return "$startLabel – ${formatClock12(end, zone)}"
+}
+
+/** The selected day's timeline: header ("Wed · Jun 10"), bare segments, gutter hours, run labels, tally. */
 fun buildPrefDay(
     period: PreferencePeriod,
     grid: PreferenceGrid,
@@ -174,19 +248,60 @@ fun buildPrefDay(
     zone: TimeZone = NEW_YORK,
 ): PrefDayView {
     val blocks = period.days.getOrElse(selectedDayIndex) { emptyList() }
+    val date = period.weekStart.plus(selectedDayIndex, DateTimeUnit.DAY)
+    val title = "${DOW_SHORT[selectedDayIndex]} · ${MONTH_SHORT[date.month.ordinal]} ${date.day}"
+    if (blocks.isEmpty()) {
+        return PrefDayView(selectedDayIndex, title, emptyList(), emptyList(), emptyList(), PrefDaySummary(0, 0, 0))
+    }
     val cells =
         blocks.map { b ->
-            PrefBlockCell(blockId = b.blockId, timeLabel = formatBlockTime(b.start, zone), brush = grid.statusOf(b.blockId))
+            val onHour = b.start.toLocalDateTime(zone).minute == 0
+            val brush = grid.statusOf(b.blockId)
+            PrefBlockCell(
+                blockId = b.blockId,
+                brush = brush,
+                isHourStart = onHour,
+                a11yLabel = "${formatClock12(b.start, zone)} – ${formatClock12(b.start + BLOCK_MINUTES.minutes, zone)} · ${brush.dbStatus}",
+            )
         }
+    // Gutter marks at every on-the-hour boundary, from the first block's start through the
+    // end of the last block; meridiem only on the first mark and at noon/midnight.
+    val hourMarks = mutableListOf<PrefHourMark>()
+    for (b in 0..blocks.size) {
+        val time = if (b < blocks.size) blocks[b].start else blocks.last().start + BLOCK_MINUTES.minutes
+        val ldt = time.toLocalDateTime(zone)
+        if (ldt.minute == 0) {
+            hourMarks += PrefHourMark(b, formatHourMark(time, withMeridiem = b == 0 || ldt.hour == 0 || ldt.hour == 12, zone))
+        }
+    }
+    // Group consecutive same-brush non-AVAILABLE cells into labelled runs.
+    val runs = mutableListOf<PrefBlockRun>()
+    var i = 0
+    while (i < cells.size) {
+        val brush = cells[i].brush
+        if (brush == PrefBrush.AVAILABLE) {
+            i++
+            continue
+        }
+        var j = i
+        while (j + 1 < cells.size && cells[j + 1].brush == brush) j++
+        runs += PrefBlockRun(brush, i, j - i + 1, prefRangeLabel(blocks, i, j, zone))
+        i = j + 1
+    }
     val summary =
         PrefDaySummary(
             preferred = cells.count { it.brush == PrefBrush.PREFERRED },
             available = cells.count { it.brush == PrefBrush.AVAILABLE },
             cannot = cells.count { it.brush == PrefBrush.CANNOT },
         )
-    val date = period.weekStart.plus(selectedDayIndex, DateTimeUnit.DAY)
-    val title = "${DOW_SHORT[selectedDayIndex]} · ${MONTH_SHORT[date.month.ordinal]} ${date.day}"
-    return PrefDayView(dayIndex = selectedDayIndex, title = title, cells = cells, summary = summary)
+    return PrefDayView(
+        dayIndex = selectedDayIndex,
+        title = title,
+        cells = cells,
+        hourMarks = hourMarks,
+        runs = runs,
+        summary = summary,
+    )
 }
 
 // ── Target hours ───────────────────────────────────────────────────────────────
@@ -229,12 +344,16 @@ data class PreferenceBanner(
     val body: String,
 )
 
-fun buildPreferenceBanner(period: PreferencePeriod): PreferenceBanner =
+fun buildPreferenceBanner(
+    period: PreferencePeriod,
+    isDirty: Boolean = false,
+): PreferenceBanner =
     when {
-        period.submitted ->
+        // Deadline passed → the window is closed for everyone (the only read-only state).
+        period.deadlinePassed && period.submitted ->
             PreferenceBanner(
                 tone = PrefBannerTone.SUCCESS,
-                title = "Submitted · read-only",
+                title = "Submitted · window closed",
                 body = "Deadline passed. Your manager builds next week from these.",
             )
         // D9 (§4.2): never submitted AND the window closed — the RPC would reject a
@@ -245,6 +364,33 @@ fun buildPreferenceBanner(period: PreferencePeriod): PreferenceBanner =
                 tone = PrefBannerTone.INFO,
                 title = "Deadline passed — preferences are locked",
                 body = "The submission window closed. Your manager builds the week without them.",
+            )
+        // Submitted but still editable: dirty → nudge to re-submit (or lose the edits);
+        // clean → reassure they can keep editing until the deadline.
+        period.submitted && isDirty ->
+            PreferenceBanner(
+                tone = PrefBannerTone.INFO,
+                title = "Unsaved changes",
+                body =
+                    period.deadlineLabel?.let { "Submit your edits before $it or they'll be lost." }
+                        ?: "Submit your edits before the deadline or they'll be lost.",
+            )
+        period.submitted ->
+            PreferenceBanner(
+                tone = PrefBannerTone.SUCCESS,
+                title = "Submitted — you can still edit",
+                body =
+                    period.deadlineLabel?.let { "Change anything and re-submit before $it." }
+                        ?: "Change anything and re-submit before the deadline.",
+            )
+        // Open + dirty (never submitted) → same lose-your-edits nudge.
+        isDirty ->
+            PreferenceBanner(
+                tone = PrefBannerTone.INFO,
+                title = "Unsaved changes",
+                body =
+                    period.deadlineLabel?.let { "Submit before $it or your edits won't be saved." }
+                        ?: "Submit before the deadline or your edits won't be saved.",
             )
         else ->
             PreferenceBanner(

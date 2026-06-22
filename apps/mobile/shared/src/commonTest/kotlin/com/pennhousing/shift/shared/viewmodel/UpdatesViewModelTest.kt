@@ -108,7 +108,7 @@ class UpdatesViewModelTest {
 
     @Test fun resolve_swap_removes_the_actionable_entry_and_keeps_the_rest() {
         val swapEntry =
-            item("n-swap", "2026-01-15T18:00:00-05:00", unread = true).copy(swapId = "s-1", swapAcceptable = true)
+            item("n-swap", "2026-01-15T18:00:00-05:00", unread = true).copy(swapId = "s-1")
         val other = item("a", "2026-01-15T17:00:00-05:00", unread = true)
         val vm = vm(listOf(swapEntry, other))
         assertEquals(2, vm.uiState.value.feed.today.size)

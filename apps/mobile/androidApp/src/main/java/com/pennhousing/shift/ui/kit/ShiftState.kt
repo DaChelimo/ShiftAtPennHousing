@@ -66,11 +66,13 @@ data class StateVisual(
     val tagIcon: ImageVector?,
     val tagColor: Color?,
     val dot: Boolean = false, // 8px pickup dot
-    val leftBorder: Color? = null, // golden break border
+    val leftBorder: Color? = null, // slate break border
     val dashed: Boolean = false, // open / one-time gap
     val muted: Boolean = false, // unpickable
     val strike: Boolean = false, // dropped (time line-through)
-    val showsPending: Boolean = false, // adds the amber "(Pending)" tag
+    val showsPending: Boolean = false, // adds the "(Pending)" caution tag
+    val prominentBorder: Boolean = false, // full accent border on a plain card body (permanent openings)
+    val suppressPill: Boolean = false, // keep tagLabel for the legend but hide the pill on the card
 )
 
 /** The per-state config — a 1:1 port of worker-app.html `STATE_CFG`. */
@@ -104,7 +106,7 @@ fun ShiftColors.visual(state: ShiftState): StateVisual =
                 breakShift.badge,
                 breakShift.deep,
                 "Break",
-                ShiftIcons.Coffee,
+                ShiftIcons.Snowflake,
                 breakShift.deep,
                 leftBorder = breakShift.accent,
             )
@@ -112,13 +114,15 @@ fun ShiftColors.visual(state: ShiftState): StateVisual =
             StateVisual(surface, null, scheduledBadge, ter, null, null, null, dashed = true)
         ShiftState.PERMANENT ->
             StateVisual(
-                permanent.tint,
+                surface,
                 permanent.accent,
                 permanent.badge,
                 permanent.deep,
                 "Permanent opening",
                 ShiftIcons.Refresh,
                 permanent.deep,
+                prominentBorder = true,
+                suppressPill = true,
             )
         ShiftState.UNPICKABLE ->
             StateVisual(surfaceVar, null, unpickBadge, ter, "Unpickable", ShiftIcons.Lock, ter, muted = true)
@@ -173,7 +177,7 @@ fun StatePill(
     }
 }
 
-/** The amber "(Pending)" tag — a force-triggered float not yet acknowledged (§11.2). */
+/** The "(Pending)" caution tag — a force-triggered float not yet acknowledged (§11.2). */
 @Composable
 fun PendingTag(modifier: Modifier = Modifier) {
     val c = ShiftTheme.colors
@@ -271,7 +275,7 @@ private fun LegendSwatch(v: StateVisual) {
         when {
             v.dot -> Box(Modifier.size(8.dp).background(c.pickupDot, RoundedCornerShape(50)))
             v.tagIcon != null -> Icon(v.tagIcon, contentDescription = null, tint = v.tagColor ?: c.ink, modifier = Modifier.size(15.dp))
-            v.leftBorder != null -> Icon(ShiftIcons.Coffee, contentDescription = null, tint = v.leftBorder, modifier = Modifier.size(15.dp))
+            v.leftBorder != null -> Icon(ShiftIcons.Snowflake, contentDescription = null, tint = v.leftBorder, modifier = Modifier.size(15.dp))
         }
     }
 }

@@ -14,13 +14,23 @@ not-yet-implemented shared ViewModels under test in `:shared`'s `commonTest`.
 
 | Flow                       | Behavioral spec | What it verifies                                            |
 | -------------------------- | --------------- | ----------------------------------------------------------- |
-| `01-view-my-shifts.yaml`   | §5.6            | The three-tab structure + Tab 1's three subsections.        |
-| `02-claim-shift.yaml`      | §5.3, §5.4      | Claim an open shift (soft-cap warning if any) → My Shifts.  |
-| `03-drop-shift.yaml`       | §5.2            | Drop a shift (occurrence) → it lands in the Dropped section.|
+| `01-view-my-shifts.yaml`   | §5.6, §11.2     | The tab structure; My Shifts is the calendar (default tab); Open Shifts collapses the two feeds under "My House" / "Others" sub-tabs. |
+| `02-claim-shift.yaml`      | §5.3, §5.4      | Claim an open shift (soft-cap warning if any) → it shows in My Shifts (the agenda). |
+| `03-drop-shift.yaml`       | §5.2            | Drop a shift from the agenda → it leaves My Shifts and shows in the Open-Shifts feed. |
 | `04-acknowledge-float.yaml`| §7.1, §7.2      | Acknowledge a float from the ack/decline modal.             |
-| `05-submit-preferences.yaml`| §6 prefs       | Paint a block + submit the preference grid → read-only.     |
-| `06-claim-break.yaml`      | §6 Phase 11     | Claim a break shift (FCFS) → "Break shift claimed" toast.   |
+| `05-submit-preferences.yaml`| §6 prefs       | Paint a block + submit the preference timeline (editable until the deadline).|
+| `06-claim-break.yaml`      | §4.4 break      | Open the break CALENDAR (via the active-break banner), tap an open block, claim the (trimmed) range → "Break shift claimed" toast. |
 | `07-settings.yaml`         | §6 settings     | Open Settings, toggle the broadcast subscription.           |
+| `08-calendar-week.yaml`    | §11.2 calendar  | My Shifts (calendar) defaults to the whole-week overview; Day/Week toggle drills in and back; the day-strip is hidden in Week and shown in Day. |
+| `09-my-shifts-week.yaml`   | §11.2           | My Shifts (calendar) week navigation — step to next week (future shifts show), jump back via the picker. |
+| `12-open-shifts-week.yaml` | §5.1, §5.6      | Open-Shifts week navigation (last week … +4) — current week by default, step forward shows a later week's openings, the picker jumps back; already-started openings sit in the collapsed "Earlier this week" card. Applies to both sub-tabs. |
+| `13-house-grid.yaml`       | §11.4           | House schedule as an Excel-style week grid: the time rail stays frozen while the day columns scroll sideways, week navigation (last week … +4) re-renders the grid, and tapping a staffed block opens the §11.4 contact sheet. |
+
+> **Live-data-only surfaces (no demo flow).** The `open_shift_count_badge` ("N open") and
+> the open-shift `claim_range_selector` only appear with **multi-block / concurrent** data.
+> The demo open-shift pool is single-block, so these are exercised against a live backend or
+> verified manually — not by the demo flows above. (The break calendar's multi-lane drag IS
+> exercised by the demo, whose Harnwell window seeds 2 lanes.)
 
 > **Login** has no flow here: it is the LIVE path only (the demo bypasses it on both
 > platforms), so it cannot run without a configured backend. Its selectors are listed
@@ -47,47 +57,119 @@ maestro test --app-id <ios.bundle.identifier> apps/mobile/maestro/
 The screens MUST expose these stable ids. On Android attach them with
 `Modifier.testTag("…")`; on iOS with `.accessibilityIdentifier("…")`.
 
+> **Navigation is a BOTTOM bar** (Android: Material 3 `NavigationBar`; iOS: a custom
+> HIG-style bottom bar). Four frequent destinations are always visible — `tab_my_shifts`,
+> `tab_open_shifts`, `tab_house`, `tab_swaps` — plus `tab_more`, which opens the
+> `more_sheet` overflow. The less-frequent destinations (`tab_updates`, `tab_preferences`,
+> `tab_break`, `tab_settings`) live as rows INSIDE `more_sheet`: tap `tab_more` first,
+> then the row. The unread dot rides on `tab_more` (Updates lives inside it). Every tab
+> also shows a large page title top-left, and My Shifts' week navigator sits at the
+> BOTTOM (above the nav bar). (Swaps is also reachable by tapping a
+> `swap_request_notification` mirror in the Updates screen, which deep-links into it.)
+
 | id                          | Element                                                  |
 | --------------------------- | -------------------------------------------------------- |
 | `shifts_screen`             | Shifts screen root.                                      |
-| `tab_my_shifts`             | Tab 1 selector ("My Shifts").                            |
-| `tab_open_home`             | Tab 2 selector ("Open Shifts in My House").              |
-| `tab_open_other`            | Tab 3 selector ("Open Shifts in Other Houses").          |
-| `section_picked_up`         | My Shifts → Picked-up subsection (top).                  |
-| `section_dropped`           | My Shifts → Dropped subsection (middle).                 |
-| `section_scheduled`         | My Shifts → their (scheduled) subsection (bottom).       |
-| `home_weekly_feed`          | Tab 2 weekly feed container.                             |
-| `home_permanent_feed`       | Tab 2 permanent-openings container.                      |
-| `other_houses_tab`          | Tab 3 container (grouped houses or empty state).         |
+| `tab_my_shifts`             | Bottom-bar item 1 ("My Shifts" — the Personal Calendar; the default tab). |
+| `tab_open_shifts`           | Bottom-bar item 2 ("Open Shifts") — collapses the My-House + cross-house feeds under sub-tabs. |
+| `tab_house`                 | Bottom-bar item 3 ("House" — the §11.4 home-house schedule). |
+| `tab_swaps`                 | Bottom-bar item 4 ("Swaps" — the dedicated Swaps tab, DESIGN §6). |
+| `tab_more`                  | Bottom-bar overflow item ("More") — opens `more_sheet`; carries the unread dot. |
+| `more_sheet`                | The "More" overflow sheet (Updates / Preferences / Break shifts / Settings rows). |
+| `open_shifts_subtabs`       | The "My House" / "Others" sub-tab control (iOS; Android uses a SecondaryTabRow). |
+| `tab_open_home`             | Open Shifts → "My House" sub-tab (the default).          |
+| `tab_open_other`            | Open Shifts → "Others" sub-tab (cross-house feeds).      |
+| `home_weekly_feed`          | My-House sub-tab weekly feed container.                  |
+| `home_permanent_feed`       | My-House sub-tab permanent-openings container.           |
+| `other_houses_tab`          | Others sub-tab container (grouped feed or empty state).  |
+| `other_houses_sort`         | Others sub-tab "By house" / "By day" grouping toggle.    |
+| `group_header`              | A collapsible Others-tab group header (tap to collapse/expand). |
+| `past_open_section`         | "Earlier this week" — collapsed-by-default greyed card of already-started openings (both sub-tabs). |
+| `open_week_picker_open`     | Open-Shifts week navigator (bottom bar) — tap to open the week picker. |
+| `open_prev_week` / `open_next_week` | Open-Shifts week navigator — step to the previous / next week (last week … +4). |
+| `open_week_picker_sheet`    | The Open-Shifts week-picker sheet.                       |
+| `open_week_picker_option`   | One quick-week row in the Open-Shifts picker.            |
 | `open_shift_card`           | An open-shift card in a feed.                            |
+| `open_shift_count_badge`    | "N open" badge — concurrent identical openings at a multi-staff house (live multi-staff data only). |
 | `claim_button`              | Claim affordance on an open-shift card.                  |
+| `claim_range_selector`      | Open-shift partial-claim "How much can you cover?" selector (multi-block opening). |
+| `claim_range_label`         | Live range/duration summary in the claim sheet.          |
 | `soft_cap_warning_modal`    | >20h soft-cap warning (§5.3).                            |
 | `soft_cap_confirm_button`   | Confirm-through-warning button.                          |
 | `claim_confirm_button`      | Final claim confirmation.                                |
 | `claim_success`             | Claim success state.                                     |
-| `picked_up_shift_card`      | A card in the Picked-up subsection.                      |
-| `scheduled_shift_card`      | A card in the their-shifts subsection.                   |
-| `drop_options_sheet`        | Drop-type popup ("this occurrence" / "permanently").     |
+| `drop_options_sheet`        | Drop-type popup ("this occurrence" / "permanently"), opened by tapping a `calendar_shift_card`. |
 | `drop_occurrence_option`    | "Drop this occurrence".                                  |
 | `drop_permanent_option`     | "Drop permanently".                                      |
 | `drop_short_notice_warning` | <20m short-notice warning (§5.2).                        |
 | `drop_short_notice_continue`| Continue-through short-notice warning.                   |
-| `drop_confirm_button`       | Final drop confirmation.                                 |
-| `dropped_shift_card`        | A card in the Dropped subsection.                        |
-| `tab_updates`               | Updates tab (where pending floats surface).              |
+| `drop_confirm_button`       | Final drop confirmation. A dropped shift leaves the agenda and shows in the Open-Shifts feed (no "reclaim"). |
+| `swap_propose_option`       | "Propose a swap instead" pivot in the drop sheet (§8).   |
+| `swap_sheet`                | The swap-proposal sheet (kind + counterparty + pickers). |
+| `swap_candidate_list`       | The counterparty picker list.                            |
+| `swap_candidate_row`        | One pickable counterparty (run, or person for permanent).|
+| `swap_give_range`           | §8.1 partial picker — "your hours to give" range slider (clamped to the active free run once a leg is banked). |
+| `swap_take_range`           | §8.1 partial picker — "hours you want" range slider (clamped to the active free run). |
+| `swap_give_timeline`        | Segmented give timeline — appears once a part is banked; locked/free/active runs. |
+| `swap_take_timeline`        | Segmented take timeline — appears when re-taking a counterparty shift you already took part of. |
+| `swap_seg_locked` / `_active` / `_free` | One timeline segment: given-away (locked), current selection (active), or tap-to-focus (free). |
+| `swap_suggestion`           | "Give the next part to X too" chip — one tap re-pins the last counterparty for the next free run. |
+| `swap_overlap_warning`      | Shown when the chosen give-hours overlap an already-added leg. |
+| `swap_add_leg_button`       | "Add another person" — multi-leg (independent legs) entry. |
+| `swap_legs`                 | Committed-legs container (multi-party compose).          |
+| `swap_leg_row`              | One committed leg chip; `swap_leg_remove` removes it.    |
+| `swap_submit_button`        | Submit the proposal(s) — one `create-swap` per leg.      |
+| `swap_proposed_toast`       | "Swap proposed" confirmation toast.                      |
+| `tab_updates`               | Updates row inside `more_sheet` (where pending floats + swap mirrors surface).|
 | `pending_float_notification`| A pending-float entry in the updates tab.                |
+| `swap_request_notification` | An incoming-swap MIRROR row in Updates — tap to deep-link to the Swaps tab (DESIGN §6). |
+| `swaps_screen`              | The Swaps tab root.                                      |
+| `swaps_subtab_incoming`     | Swaps → Incoming sub-tab (received requests).            |
+| `swaps_subtab_outgoing`     | Swaps → Outgoing sub-tab (requests I made).              |
+| `swaps_incoming_list`       | Incoming list container.                                 |
+| `swaps_outgoing_list`       | Outgoing list container.                                 |
+| `swaps_group_header`        | "Proposed together · N people" header over co-created legs. |
+| `swap_request_row`          | One Incoming/Outgoing swap card.                         |
+| `swap_accept_button`        | Accept an incoming temporary swap (Swaps → Incoming).    |
+| `swap_reject_button`        | Decline an incoming swap.                                |
+| `swap_void_button`          | Cancel an outgoing swap leg (Swaps → Outgoing).          |
 | `ack_modal`                 | Float ack/decline modal (§7).                            |
 | `ack_button`                | Acknowledge.                                             |
 | `decline_button`            | Decline.                                                 |
 | `ack_success`               | Acknowledge success state.                               |
 | `ack_deadline_passed`       | Disabled state after the T-10m deadline (§7.1).          |
-| `tab_calendar`              | Calendar tab (agenda-first personal calendar).           |
-| `calendar_screen`           | Calendar screen root.                                    |
-| `calendar_week_strip`       | The Mon–Sun day-picker strip.                            |
+| `calendar_screen`           | My Shifts (the Personal Calendar) screen root — Tab 1.   |
+| `week_total_chip`           | "This week — Xh of cap" hours chip, under the week header. |
+| `calendar_week_strip`       | The Mon–Sun day-picker strip — shown in Day mode only (hidden in Week mode). |
 | `calendar_day_cell`         | A day cell in the week strip.                            |
-| `calendar_agenda`           | The selected day's agenda list.                          |
-| `calendar_shift_card`       | A shift card in the agenda.                              |
-| `tab_preferences`           | Preferences tab (preference submission).                 |
+| `calendar_view_toggle`      | The Week / Day view toggle.                              |
+| `calendar_view_week`        | "Week" segment — the whole-week overview (the DEFAULT).  |
+| `calendar_view_day`         | "Day" segment — the single-day drill-in.                 |
+| `calendar_week_overview`    | The whole-week stacked-day overview (default view).      |
+| `calendar_day_section`      | One day's section (header + agenda) in the week overview.|
+| `calendar_agenda`           | The selected day's agenda list (Day view).               |
+| `calendar_shift_card`       | A shift card in the agenda. Tapping it opens the drop sheet (§5.2; pivots to swap, §8). |
+| `calendar_shift_card_swap`  | A shift card flagged with a pending swap. Tapping an INCOMING one opens the accept/decline popup (`swap_decision_sheet`); an OUTGOING one opens the "swap pending" notice (`pending_swap_notice_sheet`) — it can't be dropped/swapped while the swap is live. |
+| `pending_swap_notice_sheet` | The "swap pending" card for an OUTGOING swap, opened by tapping an outgoing `calendar_shift_card_swap`. |
+| `pending_swap_cancel`       | "Cancel swap / hand-off" in the notice — voids the swap, freeing the shift. |
+| `pending_swap_keep_waiting` | "Keep waiting" in the notice — minimises the card (no action); the corner ✕ does the same. |
+| `calendar_week_picker_open` | Week header — tap to open the week picker.               |
+| `calendar_prev_week` / `calendar_next_week` | Week header — step to the previous / next week. |
+| `week_picker_sheet`         | The week-picker sheet (quick weeks + derived template).  |
+| `week_picker_option`        | One quick-week row in the picker.                        |
+| `house_screen`              | The House tab root (§11.4 home-house schedule).          |
+| `house_call_desk`           | "Call desk" button in the house header card.             |
+| `house_grid`                | The week-grid container (time rail + scrolling day columns). |
+| `house_time_rail`           | The fixed left time rail — stays put while the day columns scroll sideways. |
+| `house_day_column`          | One Mon–Sun day column (surface card + lane-placed blocks). |
+| `house_grid_block`          | One positioned desk block; tap a staffed one → the contact sheet. |
+| `house_week_picker_open`    | House week navigator (bottom bar) — tap to open the week picker. |
+| `house_prev_week` / `house_next_week` | House week navigator — step to the previous / next week (last week … +4; the chevron hides at the bound). |
+| `house_week_picker_sheet`   | The House week-picker sheet.                             |
+| `house_week_picker_option`  | One quick-week row in the House picker.                  |
+| `contact_sheet`             | The §11.4 contact sheet (who covers a block + call affordance). |
+| `contact_call_button`       | "Call {worker}" in the contact sheet; `contact_call_desk` calls the desk line. |
+| `tab_preferences`           | Preferences row inside `more_sheet` (preference submission). |
 | `preferences_screen`        | Preferences screen root.                                 |
 | `pref_week_strip`           | The Mon–Sun day picker for the preference week.          |
 | `pref_day_cell`             | A day cell in the preference week strip.                 |
@@ -98,17 +180,26 @@ The screens MUST expose these stable ids. On Android attach them with
 | `pref_brush_available`      | Brush: Available.                                        |
 | `pref_brush_preferred`      | Brush: Preferred.                                        |
 | `pref_brush_cannot`         | Brush: Cannot.                                           |
-| `pref_block_grid`           | The 2-column paintable block grid (selected day).        |
-| `pref_block_cell`           | A paintable 30-min block in the grid.                    |
-| `submit_preferences_button` | Submit the preference grid.                              |
-| `tab_break`                 | Break-shifts tab (break claim picker).                   |
-| `break_claim_screen`        | Break claim screen root.                                 |
-| `break_hours_meter`         | The "this week / 40h" hard-cap meter.                    |
-| `break_shift_card`          | A claimable/claimed break-shift card.                    |
-| `break_claim_button`        | Claim a break shift.                                     |
-| `break_drop_button`         | Drop a claimed break shift back to the pool.             |
-| `break_claim_success`       | "Break shift claimed" toast.                             |
-| `tab_settings`              | Settings tab (profile + preferences).                    |
+| `pref_block_grid`           | The selected day's paintable timeline (gutter + segments).|
+| `pref_block_cell`           | A paintable 30-min segment. A single tap paints one block (Maestro/accessibility); humans long-press-drag to paint a range. |
+| `submit_preferences_button` | Submit the preferences (label "Submit changes" when re-submitting edits). Shown only when there are unsaved edits or no prior submission. |
+| `pref_discard_button`       | Discard unsaved edits → revert to the last-saved state. Shown only when dirty. |
+| `pref_unsaved_sheet`        | The unsaved-changes guard sheet raised on leaving the tab dirty (Android). Buttons: `pref_unsaved_submit` / `pref_unsaved_discard`. |
+| `tab_break`                 | Break-shifts row inside `more_sheet` (break CALENDAR picker). |
+| `break_open_banner`         | Active-break promotion banner (shown on other tabs while the claim window is open) → opens the Break calendar. |
+| `break_calendar_screen`     | Break calendar screen root.                              |
+| `break_hours_meter`         | The "this break / 40h" hard-cap meter.                  |
+| `break_calendar_week_tabs`  | Week pager (multi-week breaks, e.g. winter).            |
+| `break_calendar_week_strip` | Mon–Sun day strip (in-window days are claimable).        |
+| `break_calendar_day`        | The selected day's vertical lane grid (drag surface).    |
+| `break_block_row`           | One 30-min block row; tap = single-block select, long-press-drag = range. |
+| `break_calendar_claim_bar`  | The pinned bottom action bar (claim/drop) shown after a selection. |
+| `break_calendar_claim_button`| Claim the selected (trimmed) range.                     |
+| `break_calendar_drop_button`| Drop your own coverage (shown when the selection is entirely your shifts). |
+| `break_no_hours_toggle`     | The §4.4 "no break hours" opt-out tick.                  |
+| `break_calendar_readonly_banner`| Round-2 "claiming closed → see Open Shifts" banner (open_feed phase). |
+| `break_calendar_success`    | "Break shift claimed" toast.                             |
+| `tab_settings`              | Settings row inside `more_sheet` (profile + preferences). |
 | `settings_screen`           | Settings screen root.                                    |
 | `settings_broadcast_toggle` | "General updates" broadcast-subscription switch.         |
 | `settings_theme_segmented`  | Appearance theme segmented control (System/Light/Dark).  |

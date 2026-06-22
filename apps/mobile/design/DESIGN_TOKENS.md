@@ -57,10 +57,10 @@ platforms.
 | float-in | `#2E8B57` → `#4FC07E` | `#E4F4EA` → `#13271B` | `#1E6B40` → `#A6E7BE` | `#CDEAD8` → `#1C3A27` |
 | permanent | `#D14185` → `#F072AE` | `#FBE9F2` → `#311425` | `#9E2566` → `#FFC2DD` | `#F7D6E5` → `#3D1C30` |
 | allied | `#007D79` → `#2FC2BB` | `#D7F5F4` → `#0D2A28` | — | `#BEEBE9` → `#123B38` |
-| break | `#C28A1A` → `#E0AE4A` | `#F8F1E2` → `#281F12` | `#7C5A12` → `#F0CE8A` | `#F2E7CB` → `#322816` |
+| break (slate) | `#3F6079` → `#93ADC9` | `#E8EDF3` → `#19232F` | `#2C4256` → `#C6D7E8` | `#D6E0EB` → `#28384A` |
 | success / ack | `#1E874B` → `#4FC07E` | `#DCFBE7` → `#13271B` | `#176B3B` → `#8FE0AE` | `#C3F0CE` → `#1C3A27` |
 | error | `#DA1E28` → `#FF6B6B` | `#FFF0F0` → `#311818` | `#A8151D` → `#FF9B9B` | — |
-| pending | `#9A7400` → `#E0B341` | (uses `warn-soft` bg) | | |
+| pending (orange) | `#BD5B1C` → `#EFA268` | (uses `warn-soft` bg) | | |
 | pickup dot | `#0061FC` → `#0A84FF` | 8px filled dot | | |
 | unpick badge | `#E0E3EA` → `#262B35` | muted | | |
 
@@ -72,7 +72,7 @@ platforms.
 | scrim | `rgba(18,22,34,.32)` | `rgba(0,0,0,.55)` |
 | toast bg / fg | `#121622` / `#FFFFFF` | `#ECF0F6` / `#121622` |
 | switch track | `#E3E6EC` | `#3C4350` |
-| warn-soft (pending/countdown bg) | `#F4ECD6` | `#2A2414` |
+| warn-soft (pending/countdown bg) | `#FAEADF` | `#2B1F15` |
 | skeleton ramp | `#ECEFF3` → `#F4F6F9` | `#1E232C` → `#272D38` |
 
 ## 2. The load-bearing shift-state legend (the contract)
@@ -85,11 +85,11 @@ Each state = **card tint + (border accent | left/dashed treatment) + a `StatePil
 | ------------ | ---- | ------------------ | ------- |
 | `SCHEDULED` | white surface, divider border | _none_ | — |
 | `FLOAT_OUT` | purple tint, accent border | "Float-out" · arrow-out | destination shown |
-| `PENDING_FLOAT` | purple tint | "Float-out" + **amber "Pending"** · clock | — |
+| `PENDING_FLOAT` | purple tint | "Float-out" + **orange "Pending"** · clock | — |
 | `PICKUP_HOME` | white surface | "Picked up" · check | **8px pickup dot** |
 | `PICKUP_CROSS` | purple tint | "Picked up" · check | **pickup dot** + destination |
 | `FLOAT_IN` | green tint, accent border | "Float-in" · arrow-in | home house shown |
-| `BREAK` | white surface | "Break" · coffee | **4px golden left border** |
+| `BREAK` | white surface | "Break" · snowflake | **4px slate left border** |
 | `OPEN` | white surface | _none_ | **dashed outline** |
 | `PERMANENT` | magenta tint, accent border | "Permanent opening" · refresh | weeks-remaining meta |
 | `UNPICKABLE` | surface-var | "Unpickable" · lock | **muted (0.72)** |
@@ -146,7 +146,7 @@ switch (M3 `Switch` / native `Toggle`) · bottom sheet (`ModalBottomSheet` /
 `.sheet`+detents+grabber) + confirm + alert dialog · large-title top bar + bottom
 nav (M3 `NavigationBar` / `TabView` tab bar) · icon button + count badge · gradient
 avatar · toast · urgent banner · countdown chip · skeleton loaders · empty states ·
-atoms (8px **pickup dot**, **golden break border**, **deadline countdown chip**,
+atoms (8px **pickup dot**, **slate break border**, **deadline countdown chip**,
 duration chip, house badge).
 
 The **native chrome difference** is intentional: Android = M3 `NavigationBar`

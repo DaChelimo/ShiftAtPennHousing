@@ -1,11 +1,13 @@
 package com.pennhousing.shift.shared.shifts
 
 import com.pennhousing.shift.shared.model.AssignmentKind
-import com.pennhousing.shift.shared.model.House
 import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.model.MyShiftsSection
 import com.pennhousing.shift.shared.model.OpenFeed
 import com.pennhousing.shift.shared.model.OpenShift
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.isoDayNumber
+import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.DurationUnit
@@ -85,41 +87,96 @@ fun buildHomeOpenShiftsTab(openShifts: List<OpenShift>): HomeOpenShiftsTab {
 // Tab 3 — Open Shifts in Other Houses (§5.6 Tab 3).
 // ===================================================================
 
-data class HouseGroup(
-    val house: House,
-    val weekly: List<OpenShift>,
-    val permanentOpenings: List<OpenShift>,
-)
+/** How the cross-house open feed is grouped: by house (Quad, DuBois, …) or by weekday. */
+enum class OpenShiftSort { BY_HOUSE, BY_DAY }
+
+/**
+ * One collapsible group of the cross-house feed — either all openings at ONE house
+ * (BY_HOUSE) or all openings on ONE weekday across houses (BY_DAY). [key] is a stable
+ * id for per-group expand/collapse UI state; [title] is the header label; [shifts] are
+ * the ordered cards (each card still shows its own day AND house, so either grouping
+ * reads unambiguously).
+ */
+data class OpenShiftGroup(
+    val key: String,
+    val title: String,
+    val shifts: List<OpenShift>,
+) {
+    val count: Int get() = shifts.size
+}
+
+val WEEKDAY_FULL: List<String> =
+    listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
 data class OtherHousesTab(
-    val groups: List<HouseGroup>,
+    val openShifts: List<OpenShift>,
 ) {
     /** Empty when no eligible cross-house feed exists — e.g. winter break (§5.6 / decision #6). */
-    val isEmpty: Boolean get() = groups.isEmpty()
+    val isEmpty: Boolean get() = openShifts.isEmpty()
+
+    /**
+     * The feed grouped per [sort]. BY_HOUSE: groups ordered by `house.name`, weekly cards
+     * before permanent within a house (preserving the prior layout). BY_DAY: groups ordered
+     * Mon→Sun by the shift's NY-local weekday (permanent openings sort under their recurring
+     * weekday), cards within a day ordered by NY-local time-of-day then house name.
+     */
+    fun grouped(
+        sort: OpenShiftSort,
+        zone: TimeZone = NEW_YORK,
+    ): List<OpenShiftGroup> =
+        when (sort) {
+            OpenShiftSort.BY_HOUSE ->
+                openShifts
+                    .groupBy { it.house }
+                    .toList()
+                    .sortedBy { (house, _) -> house.name }
+                    .map { (house, shifts) ->
+                        OpenShiftGroup(
+                            key = house.id,
+                            title = house.name,
+                            shifts =
+                                shifts.sortedWith(
+                                    compareBy({ it.feed == OpenFeed.PERMANENT_OPENING }, { it.start }),
+                                ),
+                        )
+                    }
+            OpenShiftSort.BY_DAY ->
+                openShifts
+                    .groupBy { isoWeekday(it.start, zone) }
+                    .toList()
+                    .sortedBy { (dow, _) -> dow }
+                    .map { (dow, shifts) ->
+                        OpenShiftGroup(
+                            key = "dow-$dow",
+                            title = WEEKDAY_FULL[dow - 1],
+                            shifts =
+                                shifts.sortedWith(
+                                    compareBy({ localMinutes(it.start, zone) }, { it.house.name }, { it.start }),
+                                ),
+                        )
+                    }
+        }
+}
+
+private fun isoWeekday(
+    instant: Instant,
+    zone: TimeZone,
+): Int = instant.toLocalDateTime(zone).dayOfWeek.isoDayNumber
+
+private fun localMinutes(
+    instant: Instant,
+    zone: TimeZone,
+): Int {
+    val t = instant.toLocalDateTime(zone)
+    return t.hour * 60 + t.minute
 }
 
 /**
- * Cross-house feeds only; grouped by house, groups ordered by `house.name`;
- * within a group split weekly/permanent, each sorted by start (decision #5).
- * The client does NOT re-derive cross-house eligibility — it renders the
- * matrix-filtered feed it is given (decision #6).
+ * Cross-house feeds only (the matrix-filtered feed the client is given — it does NOT
+ * re-derive eligibility, decision #6). Grouping/sorting is deferred to
+ * [OtherHousesTab.grouped] so the screen can offer a by-house / by-day toggle.
  */
-fun buildOtherHousesTab(openShifts: List<OpenShift>): OtherHousesTab {
-    val groups =
-        openShifts
-            .filter { !it.homeHouse }
-            .groupBy { it.house }
-            .toList()
-            .sortedBy { (house, _) -> house.name }
-            .map { (house, shifts) ->
-                HouseGroup(
-                    house = house,
-                    weekly = shifts.filter { it.feed == OpenFeed.WEEKLY }.sortedBy { it.start },
-                    permanentOpenings = shifts.filter { it.feed == OpenFeed.PERMANENT_OPENING }.sortedBy { it.start },
-                )
-            }
-    return OtherHousesTab(groups)
-}
+fun buildOtherHousesTab(openShifts: List<OpenShift>): OtherHousesTab = OtherHousesTab(openShifts.filter { !it.homeHouse })
 
 // ===================================================================
 // Claim (§5.3 / §5.4).
@@ -246,6 +303,62 @@ fun weeklyHours(
         .filter { !it.droppedStillOpen }
         .filter { com.pennhousing.shift.shared.calendar.weekDayIndexInWeekOf(it.start, now, zone) != null }
         .sumOf { hoursBetween(it.start, it.end) }
+
+// ===================================================================
+// Open-shift week scoping + past split (UI filter — design, this session).
+//
+// The open feeds are a UI-side week filter: the backend snapshot carries every
+// open shift in the semester, but the worker browses ONE Mon–Sun week at a time
+// (last week through +4) so they never claim a shift weeks out and forget it. A
+// cross-house pickup is facilitated the same way — the filter is week-only, not
+// house-only, so a Rodin SW can page to next week and claim a DuBois opening.
+// ===================================================================
+
+/**
+ * The subset of [openShifts] that belong in [anchor]'s NY Mon–Sun week — the
+ * week-scoping the Open-Shifts tabs apply. WEEKLY (dated) openings are kept only
+ * when their start falls in the week; PERMANENT openings recur every week, so they
+ * pass through on ANY anchor (they carry their own "weeks remaining" instead). DST-safe
+ * via the LocalDate-derived week boundary (invariant #6). The underlying open-shift
+ * read is date-unbounded, so other weeks' openings are already in the snapshot.
+ */
+fun openShiftsInWeekOf(
+    openShifts: List<OpenShift>,
+    anchor: Instant,
+    zone: TimeZone = NEW_YORK,
+): List<OpenShift> =
+    openShifts.filter {
+        it.feed == OpenFeed.PERMANENT_OPENING ||
+            com.pennhousing.shift.shared.calendar.weekDayIndexInWeekOf(it.start, anchor, zone) != null
+    }
+
+/**
+ * A WEEKLY opening is "past" once it has already STARTED (now >= start) — it's being
+ * worked or has finished, so it moves into the collapsed-by-default "Earlier this week"
+ * card (greyed) rather than the live feed. This keeps it claimable for the edge case of
+ * a worker who just worked it and wants it on the books, without it cluttering the
+ * upcoming list. PERMANENT (recurring) openings are never "past".
+ */
+fun isPastOpenShift(
+    shift: OpenShift,
+    now: Instant,
+): Boolean = shift.feed != OpenFeed.PERMANENT_OPENING && now >= shift.start
+
+/** [upcoming] (live feed) vs [past] (collapsed greyed card) split of an open feed. */
+data class OpenShiftSplit(
+    val upcoming: List<OpenShift>,
+    val past: List<OpenShift>,
+)
+
+/** Partition [openShifts] into upcoming vs already-started (see [isPastOpenShift]). */
+fun splitPastOpenShifts(
+    openShifts: List<OpenShift>,
+    now: Instant,
+): OpenShiftSplit =
+    OpenShiftSplit(
+        upcoming = openShifts.filterNot { isPastOpenShift(it, now) },
+        past = openShifts.filter { isPastOpenShift(it, now) },
+    )
 
 // ===================================================================
 // Partial drop (§5.2, T2-11) — a sub-range of a coalesced card's blocks.

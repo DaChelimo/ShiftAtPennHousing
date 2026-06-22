@@ -1,9 +1,11 @@
-# Phase 13a E2E — §5.6 Shifts screen: the three-tab structure.
+# Phase 13a E2E — §5.6 / §11.2 Shifts screen structure.
 #
-# Runs on BOTH the Android emulator and the iOS simulator (Maestro). TDD-RED: the
-# worker UI is not built yet, so every selector here is a CONTRACT the Compose
-# (`Modifier.testTag`) and SwiftUI (`.accessibilityIdentifier`) screens must expose.
-# The visible-text assertions use the exact §5.6 tab titles.
+# "My Shifts" is now the chronological Personal Calendar (the old picked-up/dropped/
+# scheduled bucket tab was removed — a single chronological view reads clearer). It is
+# the first tab and the default landing screen. The Open-Shifts tabs are unchanged.
+#
+# Runs on BOTH the Android emulator and the iOS simulator (Maestro): selectors are the
+# cross-platform contract.
 appId: com.pennhousing.shift
 ---
 - launchApp:
@@ -11,36 +13,43 @@ appId: com.pennhousing.shift
 - assertVisible:
     id: "shifts_screen"
 
-# All three tabs are present (§5.6).
+# The primary tabs are present. "My Shifts" is the calendar; the two open feeds are
+# collapsed under a single "Open Shifts" tab (§5.6).
 - assertVisible:
     id: "tab_my_shifts"
 - assertVisible: "My Shifts"
 - assertVisible:
+    id: "tab_open_shifts"
+- assertVisible: "Open Shifts"
+
+# My Shifts (the default tab) is the agenda-first calendar: the week header, the
+# "This week — Xh of cap" hours chip beneath it, the Week/Day toggle, and the
+# whole-week overview (§11.2).
+- assertVisible:
+    id: "calendar_screen"
+- assertVisible:
+    id: "week_total_chip"
+- assertVisible:
+    id: "calendar_view_toggle"
+- assertVisible:
+    id: "calendar_week_overview"
+
+# Open Shifts is one tab with "My House" / "Others" sub-tabs; My House is the default,
+# showing the home-house weekly feed + permanent openings (§5.6 Tab 2 / §5.1).
+- tapOn:
+    id: "tab_open_shifts"
+- assertVisible:
     id: "tab_open_home"
-- assertVisible: "Open Shifts in My House"
 - assertVisible:
     id: "tab_open_other"
-- assertVisible: "Open Shifts in Other Houses"
-
-# Tab 1 (My Shifts) is the default and shows its three subsections, top to bottom:
-# picked-up, then dropped, then their (scheduled) shifts (§5.6 Tab 1).
-- assertVisible:
-    id: "section_picked_up"
-- assertVisible:
-    id: "section_dropped"
-- assertVisible:
-    id: "section_scheduled"
-
-# Tab 2 — the home-house weekly feed + permanent openings (§5.6 Tab 2 / §5.1).
-- tapOn:
-    id: "tab_open_home"
 - assertVisible:
     id: "home_weekly_feed"
 - assertVisible:
     id: "home_permanent_feed"
 
-# Tab 3 — cross-house feeds grouped by house, OR the empty state when no eligible
-# cross-house feed exists (e.g. winter break, §5.6).
+# The "Others" sub-tab — cross-house feeds in collapsible groups (by house or by day, via
+# the sort toggle), OR the empty state when no eligible cross-house feed exists (e.g. winter
+# break, §5.6).
 - tapOn:
     id: "tab_open_other"
 - assertVisible:

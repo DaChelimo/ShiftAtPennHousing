@@ -1,0 +1,57 @@
+# Phase 13a E2E — House schedule as an Excel-style WEEK GRID (design `HouseScheduleScreen`).
+# The House tab is a fixed left time rail + Mon–Sun day columns that scroll sideways (the
+# rail stays put), concurrent desks side-by-side, with a week navigator (last week … +4).
+# The demo seeds a full Harnwell week: named housemates, the worker's own "You" blocks,
+# a "You · float-in", a pending floater, and open gaps.
+#
+# Android emulator + iOS simulator (Maestro): selectors are the cross-platform contract.
+appId: com.pennhousing.shift
+---
+- launchApp:
+    clearState: true
+- tapOn:
+    id: "tab_house"
+- assertVisible:
+    id: "house_screen"
+
+# The grid, the always-present left time rail, and the "call the desk" header.
+- assertVisible:
+    id: "house_grid"
+- assertVisible:
+    id: "house_time_rail"
+- assertVisible:
+    id: "house_call_desk"
+
+# The week navigator starts on the current week.
+- assertVisible:
+    id: "house_week_picker_open"
+- assertVisible: "This week"
+
+# Scroll the day columns sideways — the time rail stays frozen on the left.
+- swipe:
+    id: "house_grid"
+    direction: LEFT
+- assertVisible:
+    id: "house_time_rail"
+
+# Step forward a week: the header reflects it and the grid re-renders.
+- tapOn:
+    id: "house_next_week"
+- assertVisible: "Next week"
+- assertVisible:
+    id: "house_grid"
+
+# Open the picker and jump straight back to this week.
+- tapOn:
+    id: "house_week_picker_open"
+- assertVisible:
+    id: "house_week_picker_sheet"
+- tapOn: "This week"
+- assertVisible: "This week"
+
+# Tap a staffed block → the §11.4 contact sheet (who's working + call affordance).
+- tapOn:
+    id: "house_grid_block"
+    index: 0
+- assertVisible:
+    id: "contact_sheet"

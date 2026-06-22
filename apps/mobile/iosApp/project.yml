@@ -1,0 +1,51 @@
+name: iosApp
+options:
+  bundleIdPrefix: com.pennhousing
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+configFiles:
+  Debug: Configuration/Config.xcconfig
+  Release: Configuration/Config.xcconfig
+
+settings:
+  base:
+    PRODUCT_NAME: Shift PennHousing
+    PRODUCT_BUNDLE_IDENTIFIER: com.pennhousing.shift
+    # The KMP :shared framework is built + embedded by the gradle run script below;
+    # link against it from the xcode-frameworks output dir.
+    FRAMEWORK_SEARCH_PATHS:
+      - $(inherited)
+      - $(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)
+    OTHER_LDFLAGS:
+      - $(inherited)
+      - -framework
+      - Shared
+    # Simulator runs need no code signing.
+    CODE_SIGNING_REQUIRED: "NO"
+    CODE_SIGNING_ALLOWED: "NO"
+    CODE_SIGN_IDENTITY: ""
+
+targets:
+  iosApp:
+    type: application
+    platform: iOS
+    sources:
+      - path: iosApp
+        excludes:
+          - "Info.plist"
+    resources:
+      - iosApp/Fonts
+      - iosApp/GoogleService-Info.plist
+    settings:
+      base:
+        INFOPLIST_FILE: iosApp/Info.plist
+        ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+        ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS: "NO"
+    preBuildScripts:
+      - name: "Build & embed KMP Shared framework"
+        basedOnDependencyAnalysis: false
+        script: |
+          cd "$SRCROOT/.."
+          ./gradlew :shared:embedAndSignAppleFrameworkForXcode

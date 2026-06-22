@@ -1,5 +1,8 @@
 package com.pennhousing.shift.shared.data
 
+import com.pennhousing.shift.shared.breakclaim.BreakCalendarSeat
+import com.pennhousing.shift.shared.breakclaim.BreakCalendarSnapshot
+import com.pennhousing.shift.shared.breakclaim.BreakPhase
 import com.pennhousing.shift.shared.calendar.calendarWeekBounds
 import com.pennhousing.shift.shared.calendar.calendarWeekDates
 import com.pennhousing.shift.shared.house.HouseScheduleSnapshot
@@ -17,6 +20,9 @@ import com.pennhousing.shift.shared.notifications.NotificationItem
 import com.pennhousing.shift.shared.notifications.notificationFromPayload
 import com.pennhousing.shift.shared.shifts.BLOCK
 import com.pennhousing.shift.shared.shifts.NEW_YORK
+import com.pennhousing.shift.shared.swaps.HandoffWorker
+import com.pennhousing.shift.shared.swaps.PendingSwap
+import com.pennhousing.shift.shared.swaps.SwapDirection
 import com.pennhousing.shift.shared.swaps.SwapProposal
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
@@ -26,10 +32,18 @@ import io.github.jan.supabase.postgrest.rpc
 import io.github.jan.supabase.realtime.PostgresAction
 import io.github.jan.supabase.realtime.channel
 import io.github.jan.supabase.realtime.postgresChangeFlow
+import io.github.jan.supabase.realtime.realtime
+import kotlin.random.Random
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.LocalTime
 import kotlinx.datetime.isoDayNumber
+import kotlinx.datetime.plus
+import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -38,6 +52,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -265,6 +281,24 @@ class WorkerShiftsRepository(
     }
 
     /**
+     * Break CALENDAR drag claim (Break redesign B3): claim one open seat per dragged
+     * 30-min block ("system-assigned lane") in ONE `break-claim` POST carrying the
+     * `block_ids`. The EF's `claim_break_blocks` RPC is FCFS + cap + Harnwell-aware and
+     * returns exactly the seats it actually claimed — the SERVER-SIDE TRIM. The picker
+     * applies the optimistic drag locally, then reconciles to [BreakRangeResult.claimedAssignmentIds].
+     */
+    suspend fun claimBreakRange(blockIds: List<String>): BreakRangeResult {
+        if (blockIds.isEmpty()) return BreakRangeResult(ok = true, claimedAssignmentIds = emptyList())
+        val result =
+            edge.invoke(
+                "break-claim",
+                Json.encodeToString(BreakRangeRequest(blockIds = blockIds, claimType = "temporary")),
+            )
+        if (!result.ok) return BreakRangeResult(ok = false, claimedAssignmentIds = emptyList())
+        return BreakRangeResult(ok = true, claimedAssignmentIds = parseClaimedAssignmentIds(result.body))
+    }
+
+    /**
      * The worker's CURRENT pending float, mapped to the pure [FloatAck] the ack/decline
      * modal renders, or `null` if none is outstanding. Worker-readable end-to-end:
      * `float_assignments` has an own-row SELECT policy (`user_id = auth.uid()`), and the
@@ -382,7 +416,20 @@ class WorkerShiftsRepository(
      * (known gotcha), and the open-ended tail is small. Reading the wall clock
      * here is fine (host/data layer).
      */
-    suspend fun fetchHouseSchedule(userId: String): HouseScheduleSnapshot? {
+    suspend fun fetchHouseSchedule(userId: String): HouseScheduleSnapshot? =
+        fetchHouseScheduleForWeek(userId, kotlin.time.Clock.System.now())
+
+    /**
+     * The home-house grid for the NY week containing [anchor] — the week-navigable form
+     * the swap CALENDAR (CALENDAR_REDESIGN.md) pages through so a worker can swap into
+     * next week / back to last week. Same read model + RLS + same-column-filter handling
+     * as the current-week [fetchHouseSchedule], just bounded by [anchor]'s week. The
+     * House tab keeps using the current-week call; only the swap picker pages weeks.
+     */
+    suspend fun fetchHouseScheduleForWeek(
+        userId: String,
+        anchor: kotlin.time.Instant,
+    ): HouseScheduleSnapshot? {
         val houseId =
             runCatching {
                 supabase
@@ -391,7 +438,7 @@ class WorkerShiftsRepository(
                     .decodeSingleOrNull<HomeHouseRow>()
                     ?.homeHouseId
             }.getOrNull() ?: return null
-        val (weekStart, weekEnd) = calendarWeekBounds(kotlin.time.Clock.System.now())
+        val (weekStart, weekEnd) = calendarWeekBounds(anchor)
         val rows =
             runCatching {
                 supabase
@@ -411,6 +458,123 @@ class WorkerShiftsRepository(
         val houseName = rows.firstOrNull()?.houseName ?: houseId
         val deskPhone = rows.firstOrNull { it.deskPhone != null }?.deskPhone
         return HouseScheduleSnapshot(houseName = houseName, deskPhone = deskPhone, seats = seats)
+    }
+
+    /**
+     * The cross-house staff-worker directory for the §8.5 hand-off recipient picker —
+     * every active worker (`worker_directory`, the owner-rights full-contact view any
+     * authenticated worker may read per the 2026-06-12 ruling) tagged with their home
+     * house's display name (the `houses` table, `houses_authenticated_read` RLS). Two
+     * reads joined in Kotlin: a worker with no home house (e.g. a building manager) is
+     * dropped — they staff no house's shifts. Best-effort: an unreadable result yields an
+     * empty list (the picker then shows only the demo/My-House fallback). The SERVER stays
+     * authoritative for eligibility on create/accept; the pure `buildHandoffDirectory`
+     * pre-filter is UX only.
+     */
+    suspend fun fetchWorkerDirectory(): List<HandoffWorker> {
+        val houseNames =
+            runCatching {
+                supabase
+                    .from(TABLE_HOUSES)
+                    .select(Columns.list("id", "name"))
+                    .decodeList<DirectoryHouseRow>()
+            }.getOrDefault(emptyList())
+                .associate { it.id to it.name }
+        val workers =
+            runCatching {
+                supabase
+                    .from(VIEW_WORKER_DIRECTORY)
+                    .select(Columns.list("user_id", "name", "home_house_id"))
+                    .decodeList<WorkerDirectoryRow>()
+            }.getOrDefault(emptyList())
+        return workers.mapNotNull { row ->
+            val houseId = row.homeHouseId ?: return@mapNotNull null
+            HandoffWorker(
+                userId = row.userId,
+                name = row.name,
+                homeHouseId = houseId,
+                homeHouseName = houseNames[houseId] ?: houseId,
+            )
+        }
+    }
+
+    /**
+     * The break CALENDAR snapshot (Break redesign B3): the worker's home-house
+     * `house_schedule_grid` scoped to the break window [startDate, endDate], plus the
+     * live `break_claim_phase`. The grid (security_invoker) is RLS-scoped to the home
+     * house and carries `block_id` + `required_headcount` (migration 20260615000001) so
+     * the pure picker can address blocks and render coverage. Returns null when the
+     * profile/grid can't be read (the caller keeps the demo snapshot).
+     *
+     * Range: `start_at >= windowStart` is filtered server-side; the inclusive end is
+     * enforced in Kotlin (supabase-kt drops a second filter on the same column). Reading
+     * the wall clock for the phase is fine (host/data layer).
+     */
+    /**
+     * Host-friendly overload — the androidApp has no direct kotlinx-datetime dependency, so
+     * it passes the whole [BreakRepository.ActiveBreak] rather than naming its LocalDate
+     * window fields.
+     */
+    suspend fun fetchBreakCalendarFor(
+        userId: String,
+        activeBreak: BreakRepository.ActiveBreak,
+    ): BreakCalendarSnapshot? =
+        fetchBreakCalendar(userId, activeBreak.breakId, activeBreak.breakName, activeBreak.startDate, activeBreak.endDate)
+
+    suspend fun fetchBreakCalendar(
+        userId: String,
+        breakId: String,
+        breakName: String,
+        startDate: LocalDate,
+        endDate: LocalDate,
+    ): BreakCalendarSnapshot? {
+        val houseId =
+            runCatching {
+                supabase
+                    .from(TABLE_USERS)
+                    .select(Columns.list("home_house_id")) { filter { eq("user_id", userId) } }
+                    .decodeSingleOrNull<HomeHouseRow>()
+                    ?.homeHouseId
+            }.getOrNull() ?: return null
+        val windowStart = LocalDateTime(startDate, LocalTime(0, 0)).toInstant(NEW_YORK)
+        val windowEndExclusive = LocalDateTime(endDate.plus(1, DateTimeUnit.DAY), LocalTime(0, 0)).toInstant(NEW_YORK)
+        val rows =
+            runCatching {
+                supabase
+                    .from(VIEW_HOUSE_GRID)
+                    .select {
+                        filter {
+                            eq("house_id", houseId)
+                            gte("start_at", windowStart.toString())
+                        }
+                    }
+                    .decodeList<BreakGridRow>()
+            }.getOrNull() ?: return null
+        val seats =
+            rows
+                .map { it.toBreakSeat() }
+                .filter { it.start < windowEndExclusive } // inclusive end, client-side (same-column gotcha)
+        val phase =
+            runCatching {
+                supabase.postgrest
+                    .rpc(
+                        "break_claim_phase",
+                        buildJsonObject {
+                            put("p_break_id", breakId)
+                            put("p_as_of", kotlin.time.Clock.System.now().toString())
+                        },
+                    ).decodeAs<String>()
+            }.getOrNull()
+        val houseName = rows.firstOrNull()?.houseName ?: houseId
+        return BreakCalendarSnapshot(
+            houseName = houseName,
+            breakName = breakName,
+            phase = BreakPhase.fromWire(phase),
+            meUserId = userId,
+            seats = seats,
+            windowStart = startDate,
+            windowEnd = endDate,
+        )
     }
 
     suspend fun fetchWorkerWeek(userId: String): WorkerSnapshot {
@@ -437,13 +601,22 @@ class WorkerShiftsRepository(
     fun observeWorkerWeek(userId: String): Flow<WorkerSnapshot> =
         flow {
             emit(fetchWorkerWeek(userId))
-            val channel = supabase.channel("worker-shifts-$userId")
+            // Unique topic per collection. The Shifts AND Calendar observables both
+            // collect this flow concurrently, and supabase.channel() caches by name —
+            // a shared name means the second collector calls postgresChangeFlow on an
+            // already-joined channel and throws ("You cannot call postgresChangeFlow
+            // after joining the channel"), which crashed the app right after login.
+            val channel = supabase.channel("worker-shifts-$userId-${Random.nextLong()}")
             val changes =
                 channel.postgresChangeFlow<PostgresAction>(schema = "public") {
                     table = "shift_block_assignments"
                 }
             channel.subscribe()
-            changes.collect { emit(fetchWorkerWeek(userId)) }
+            try {
+                changes.collect { emit(fetchWorkerWeek(userId)) }
+            } finally {
+                runCatching { supabase.realtime.removeChannel(channel) }
+            }
         }
 
     /**
@@ -510,6 +683,38 @@ class WorkerShiftsRepository(
             }
 
     /**
+     * The worker's pending swaps (BOTH directions), enriched with each side's span — the
+     * `worker_pending_swaps` read model (SECURITY DEFINER, scoped to `auth.uid()`). Powers
+     * the My-Shifts pending-swap indicator and the incoming-swap accept/decline popup.
+     * Best-effort: an unreadable result yields an empty list (the calendar simply shows no
+     * swap marks).
+     */
+    suspend fun fetchPendingSwaps(): List<PendingSwap> =
+        runCatching {
+            supabase.postgrest
+                .rpc("worker_pending_swaps")
+                .decodeList<WorkerPendingSwapRow>()
+                .map { row ->
+                    PendingSwap(
+                        swapId = row.swapId,
+                        swapType = row.swapType,
+                        direction = if (row.direction == "outgoing") SwapDirection.OUTGOING else SwapDirection.INCOMING,
+                        otherUserName = row.otherUserName ?: "A housemate",
+                        createdAt = Instant.parse(row.createdAt),
+                        expiresAt = Instant.parse(row.expiresAt),
+                        initiatorAssignmentIds = row.initiatorAssignmentIds,
+                        counterpartyAssignmentIds = row.counterpartyAssignmentIds ?: emptyList(),
+                        initiatorStart = row.initiatorStart?.let { Instant.parse(it) },
+                        initiatorEnd = row.initiatorEnd?.let { Instant.parse(it) },
+                        initiatorBlocks = row.initiatorBlocks,
+                        counterpartyStart = row.counterpartyStart?.let { Instant.parse(it) },
+                        counterpartyEnd = row.counterpartyEnd?.let { Instant.parse(it) },
+                        counterpartyBlocks = row.counterpartyBlocks,
+                    )
+                }
+        }.getOrDefault(emptyList())
+
+    /**
      * Propose a swap (§8.1–§8.4, D2/D3) → the `create-swap` Edge Function. The
      * SERVER is authoritative for §8 eligibility (the packages/core module),
      * ownership, pending-swap conflicts, break-profile guards and expiry; this
@@ -525,14 +730,16 @@ class WorkerShiftsRepository(
                 put("swap_type", proposal.swapType)
                 put("counterparty_user_id", proposal.counterpartyUserId)
                 putJsonArray("initiator_assignment_ids") {
-                    proposal.initiatorShift.blockIds.forEach { add(it) }
+                    proposal.initiatorAssignmentIds.forEach { add(it) }
                 }
                 proposal.counterpartyAssignmentIds?.let { ids ->
                     putJsonArray("counterparty_assignment_ids") { ids.forEach { add(it) } }
                 }
                 if (proposal.swapType == "permanent_swap") {
-                    val slot =
-                        slotFor(proposal.initiatorShift.house.id, proposal.initiatorShift.start, proposal.initiatorShift.end)
+                    // A partial permanent swap names only its trimmed span; whole-slot when unset.
+                    val slotStart = proposal.recurringSlotStart ?: proposal.initiatorShift.start
+                    val slotEnd = proposal.recurringSlotEnd ?: proposal.initiatorShift.end
+                    val slot = slotFor(proposal.initiatorShift.house.id, slotStart, slotEnd)
                     putJsonObject("recurring_pattern") {
                         put("house_id", slot.houseId)
                         put("day_of_week", slot.dayOfWeek)
@@ -615,14 +822,20 @@ class WorkerShiftsRepository(
     /** Live new-notification stream for the top-of-screen toast (§10.1, deliverable #7). */
     fun observeNotifications(userId: String): Flow<ToastNotification> =
         flow {
-            val channel = supabase.channel("worker-notifications-$userId")
+            // Unique topic per collection (see observeWorkerWeek) so a second collector
+            // never calls postgresChangeFlow on an already-joined channel.
+            val channel = supabase.channel("worker-notifications-$userId-${Random.nextLong()}")
             val inserts =
                 channel.postgresChangeFlow<PostgresAction.Insert>(schema = "public") {
                     table = "notifications"
                 }
             channel.subscribe()
-            inserts.collect { action ->
-                action.record.toToast()?.let { emit(it) }
+            try {
+                inserts.collect { action ->
+                    action.record.toToast()?.let { emit(it) }
+                }
+            } finally {
+                runCatching { supabase.realtime.removeChannel(channel) }
             }
         }
 
@@ -634,8 +847,25 @@ class WorkerShiftsRepository(
         const val TABLE_USERS = "users"
         const val TABLE_SWAP_REQUESTS = "swap_requests"
         const val VIEW_HOUSE_GRID = "house_schedule_grid"
+        const val VIEW_WORKER_DIRECTORY = "worker_directory"
+        const val TABLE_HOUSES = "houses"
     }
 }
+
+/** One `worker_directory` row — the §8.5 hand-off recipient pool (active workers). */
+@Serializable
+internal data class WorkerDirectoryRow(
+    @SerialName("user_id") val userId: String,
+    val name: String,
+    @SerialName("home_house_id") val homeHouseId: String? = null,
+)
+
+/** A `houses` row → the home-house display name for the directory (grouping label). */
+@Serializable
+internal data class DirectoryHouseRow(
+    val id: String,
+    val name: String,
+)
 
 /** One `house_schedule_grid` row (T3b wire shape) → [HouseSeat]. */
 @Serializable
@@ -665,6 +895,55 @@ internal fun HouseGridRow.toSeat(): HouseSeat =
         workerPhone = workerPhone,
     )
 
+/** A `house_schedule_grid` row for the break calendar (carries block_id + required_headcount). */
+@Serializable
+internal data class BreakGridRow(
+    val id: String,
+    @SerialName("house_name") val houseName: String,
+    @SerialName("start_at") val startAt: String,
+    @SerialName("end_at") val endAt: String,
+    val status: String,
+    @SerialName("block_id") val blockId: String,
+    @SerialName("required_headcount") val requiredHeadcount: Int = 1,
+    @SerialName("user_id") val userId: String? = null,
+    @SerialName("worker_name") val workerName: String? = null,
+)
+
+internal fun BreakGridRow.toBreakSeat(): BreakCalendarSeat =
+    BreakCalendarSeat(
+        id = id,
+        blockId = blockId,
+        start = Instant.parse(startAt),
+        end = Instant.parse(endAt),
+        status = status,
+        requiredHeadcount = requiredHeadcount,
+        userId = userId,
+        workerName = workerName,
+    )
+
+/** Result of a [WorkerShiftsRepository.claimBreakRange]: which seats the server truly claimed. */
+data class BreakRangeResult(
+    val ok: Boolean,
+    val claimedAssignmentIds: List<String>,
+)
+
+/** `break-claim` drag request — the dragged block ids the EF claims one open seat each. */
+@Serializable
+private data class BreakRangeRequest(
+    @SerialName("block_ids") val blockIds: List<String>,
+    @SerialName("claim_type") val claimType: String,
+)
+
+/** Parse the `break-claim` drag response `{ claimed: [{ block_id, assignment_id }] }`. */
+internal fun parseClaimedAssignmentIds(body: String): List<String> =
+    runCatching {
+        Json { ignoreUnknownKeys = true }
+            .decodeFromString<JsonObject>(body)["claimed"]
+            ?.jsonArray
+            ?.mapNotNull { it.jsonObject["assignment_id"]?.jsonPrimitive?.content }
+            ?: emptyList()
+    }.getOrDefault(emptyList())
+
 /** The worker's own pending counterparty `swap_requests` row (T3a wire shape). */
 @Serializable
 internal data class SwapRequestRow(
@@ -672,6 +951,25 @@ internal data class SwapRequestRow(
     @SerialName("swap_type") val swapType: String,
     @SerialName("created_at") val createdAt: String,
     @SerialName("expires_at") val expiresAt: String,
+)
+
+/** A row of the `worker_pending_swaps` read model (both directions, enriched spans). */
+@Serializable
+internal data class WorkerPendingSwapRow(
+    @SerialName("swap_id") val swapId: String,
+    @SerialName("swap_type") val swapType: String,
+    val direction: String, // 'incoming' | 'outgoing'
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("expires_at") val expiresAt: String,
+    @SerialName("other_user_name") val otherUserName: String? = null,
+    @SerialName("initiator_assignment_ids") val initiatorAssignmentIds: List<String> = emptyList(),
+    @SerialName("counterparty_assignment_ids") val counterpartyAssignmentIds: List<String>? = null,
+    @SerialName("initiator_start") val initiatorStart: String? = null,
+    @SerialName("initiator_end") val initiatorEnd: String? = null,
+    @SerialName("initiator_blocks") val initiatorBlocks: Int = 0,
+    @SerialName("counterparty_start") val counterpartyStart: String? = null,
+    @SerialName("counterparty_end") val counterpartyEnd: String? = null,
+    @SerialName("counterparty_blocks") val counterpartyBlocks: Int = 0,
 )
 
 /** The worker's own `home_house_id` (own-row `users` RLS) — for the closed-day lookup. */

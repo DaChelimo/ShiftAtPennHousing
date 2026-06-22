@@ -112,10 +112,10 @@ struct ShiftColors {
         floatIn: StateColors(accent: Color(hex: 0x2E8B57), tint: Color(hex: 0xE4F4EA), deep: Color(hex: 0x1E6B40), badge: Color(hex: 0xCDEAD8)),
         permanent: StateColors(accent: Color(hex: 0xD14185), tint: Color(hex: 0xFBE9F2), deep: Color(hex: 0x9E2566), badge: Color(hex: 0xF7D6E5)),
         allied: StateColors(accent: Color(hex: 0x007D79), tint: Color(hex: 0xD7F5F4), deep: Color(hex: 0x007D79), badge: Color(hex: 0xBEEBE9)),
-        breakShift: StateColors(accent: Color(hex: 0xC28A1A), tint: Color(hex: 0xF8F1E2), deep: Color(hex: 0x7C5A12), badge: Color(hex: 0xF2E7CB)),
+        breakShift: StateColors(accent: Color(hex: 0x3F6079), tint: Color(hex: 0xE8EDF3), deep: Color(hex: 0x2C4256), badge: Color(hex: 0xD6E0EB)),
         success: StateColors(accent: Color(hex: 0x1E874B), tint: Color(hex: 0xDCFBE7), deep: Color(hex: 0x176B3B), badge: Color(hex: 0xC3F0CE)),
         danger: StateColors(accent: Color(hex: 0xDA1E28), tint: Color(hex: 0xFFF0F0), deep: Color(hex: 0xA8151D), badge: Color(hex: 0xFFF0F0)),
-        pending: Color(hex: 0x9A7400),
+        pending: Color(hex: 0xBD5B1C),
         pickupDot: Color(hex: 0x0061FC),
         unpickBadge: Color(hex: 0xE0E3EA),
         scheduledBadge: Color(hex: 0xEDF0F5),
@@ -124,7 +124,7 @@ struct ShiftColors {
         toastBg: Color(hex: 0x121622),
         toastFg: Color(hex: 0xFFFFFF),
         switchTrack: Color(hex: 0xE3E6EC),
-        warnSoft: Color(hex: 0xF4ECD6),
+        warnSoft: Color(hex: 0xFAEADF),
         floatSoft: Color(hex: 0xF5F2FC),
         skeletonA: Color(hex: 0xECEFF3),
         skeletonB: Color(hex: 0xF4F6F9)
@@ -148,10 +148,10 @@ struct ShiftColors {
         floatIn: StateColors(accent: Color(hex: 0x4FC07E), tint: Color(hex: 0x13271B), deep: Color(hex: 0xA6E7BE), badge: Color(hex: 0x1C3A27)),
         permanent: StateColors(accent: Color(hex: 0xF072AE), tint: Color(hex: 0x311425), deep: Color(hex: 0xFFC2DD), badge: Color(hex: 0x3D1C30)),
         allied: StateColors(accent: Color(hex: 0x2FC2BB), tint: Color(hex: 0x0D2A28), deep: Color(hex: 0x2FC2BB), badge: Color(hex: 0x123B38)),
-        breakShift: StateColors(accent: Color(hex: 0xE0AE4A), tint: Color(hex: 0x281F12), deep: Color(hex: 0xF0CE8A), badge: Color(hex: 0x322816)),
+        breakShift: StateColors(accent: Color(hex: 0x93ADC9), tint: Color(hex: 0x19232F), deep: Color(hex: 0xC6D7E8), badge: Color(hex: 0x28384A)),
         success: StateColors(accent: Color(hex: 0x4FC07E), tint: Color(hex: 0x13271B), deep: Color(hex: 0x8FE0AE), badge: Color(hex: 0x1C3A27)),
         danger: StateColors(accent: Color(hex: 0xFF6B6B), tint: Color(hex: 0x311818), deep: Color(hex: 0xFF9B9B), badge: Color(hex: 0x311818)),
-        pending: Color(hex: 0xE0B341),
+        pending: Color(hex: 0xEFA268),
         pickupDot: Color(hex: 0x0A84FF),
         unpickBadge: Color(hex: 0x262B35),
         scheduledBadge: Color(hex: 0x232834),
@@ -160,7 +160,7 @@ struct ShiftColors {
         toastBg: Color(hex: 0xECF0F6),
         toastFg: Color(hex: 0x121622),
         switchTrack: Color(hex: 0x3C4350),
-        warnSoft: Color(hex: 0x2A2414),
+        warnSoft: Color(hex: 0x2B1F15),
         floatSoft: Color(hex: 0x1E1A2C),
         skeletonA: Color(hex: 0x1E232C),
         skeletonB: Color(hex: 0x272D38)
@@ -287,7 +287,7 @@ enum ShiftIcons {
     static let check = "checkmark"
     static let checkCircle = "checkmark.circle"
     static let clock = "clock"
-    static let coffee = "cup.and.saucer"
+    static let snowflake = "snowflake"
     static let refresh = "arrow.triangle.2.circlepath"
     static let lock = "lock"
     static let dropped = "arrow.down"
@@ -308,4 +308,5 @@ enum ShiftIcons {
     static let ban = "nosign"
     static let tune = "slider.horizontal.3"
     static let logout = "rectangle.portrait.and.arrow.right"
+    static let more = "ellipsis"
 }

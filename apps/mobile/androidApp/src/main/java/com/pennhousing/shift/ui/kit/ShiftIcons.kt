@@ -93,18 +93,31 @@ object ShiftIcons {
             lineTo(15.5f, 13.5f)
         }
 
-    /** Break — coffee cup. */
-    val Coffee: ImageVector =
-        stroked("Coffee") {
-            moveTo(6.5f, 8.5f)
-            lineTo(15.5f, 8.5f)
-            lineTo(14.5f, 16.5f)
-            lineTo(7.5f, 16.5f)
-            close()
-            moveTo(15.5f, 10f)
-            lineTo(17.5f, 10f)
-            arcTo(2.2f, 2.2f, 0f, false, true, 17.5f, 14.4f)
-            lineTo(15f, 14.4f)
+    /** Break period — snowflake (winter / short break). */
+    val Snowflake: ImageVector =
+        stroked("Snowflake") {
+            // Three axes through the centre — vertical, horizontal, two diagonals.
+            moveTo(12f, 3f)
+            lineTo(12f, 21f)
+            moveTo(3f, 12f)
+            lineTo(21f, 12f)
+            moveTo(5.6f, 5.6f)
+            lineTo(18.4f, 18.4f)
+            moveTo(18.4f, 5.6f)
+            lineTo(5.6f, 18.4f)
+            // Tip chevrons on the four cardinal arms.
+            moveTo(9.5f, 5.5f)
+            lineTo(12f, 3f)
+            lineTo(14.5f, 5.5f)
+            moveTo(9.5f, 18.5f)
+            lineTo(12f, 21f)
+            lineTo(14.5f, 18.5f)
+            moveTo(5.5f, 9.5f)
+            lineTo(3f, 12f)
+            lineTo(5.5f, 14.5f)
+            moveTo(18.5f, 9.5f)
+            lineTo(21f, 12f)
+            lineTo(18.5f, 14.5f)
         }
 
     /** Permanent opening — recurring arrows. */
@@ -152,6 +165,14 @@ object ShiftIcons {
             circle(12f, 7.5f, 3.5f)
             moveTo(5.5f, 19.5f)
             arcTo(6.5f, 6.5f, 0f, false, true, 18.5f, 19.5f)
+        }
+
+    /** Search — magnifier. */
+    val Search: ImageVector =
+        stroked("Search") {
+            circle(11f, 11f, 6f)
+            moveTo(20f, 20f)
+            lineTo(15.5f, 15.5f)
         }
 
     /** My Shifts — list. */
@@ -220,6 +241,14 @@ object ShiftIcons {
             moveTo(9.5f, 5f)
             lineTo(16.5f, 12f)
             lineTo(9.5f, 19f)
+        }
+
+    /** More — horizontal ellipsis (the bottom-nav overflow item). */
+    val MoreHorizontal: ImageVector =
+        stroked("MoreHorizontal") {
+            circle(5.5f, 12f, 1.4f)
+            circle(12f, 12f, 1.4f)
+            circle(18.5f, 12f, 1.4f)
         }
 
     val ChevronLeft: ImageVector =

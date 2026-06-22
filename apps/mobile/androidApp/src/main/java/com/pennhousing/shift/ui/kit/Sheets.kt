@@ -2,6 +2,8 @@ package com.pennhousing.shift.ui.kit
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,6 +60,11 @@ fun ShiftBottomSheet(
         Column(
             Modifier
                 .fillMaxWidth()
+                // Scroll the body so tall sheets (e.g. the multi-leg swap composer) can always
+                // reach their bottom actions — without this the content overflowed the sheet and
+                // the submit/add buttons were unreachable. (ShiftBanner already pins itself with
+                // IntrinsicSize.Min for exactly this scrollable context.)
+                .verticalScroll(rememberScrollState())
                 // The modal sheet is its own window — re-enable resource-id testTags
                 // so Maestro's `id:` selectors see the sheet's controls.
                 .semantics { testTagsAsResourceId = true }

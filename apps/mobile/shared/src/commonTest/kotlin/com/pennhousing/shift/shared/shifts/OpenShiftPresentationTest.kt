@@ -112,6 +112,13 @@ class OpenShiftPresentationTest {
         assertEquals("Pick up", r.actionLabel)
     }
 
+    @Test fun row_count_label_shows_only_when_more_than_one_concurrent_opening() {
+        assertNull(open().toRow(claimable = true).countLabel) // single opening → no badge
+        val multi = open().copy(count = 3).toRow(claimable = true)
+        assertEquals(3, multi.count)
+        assertEquals("3 open", multi.countLabel)
+    }
+
     // ----- claim-sheet hours meter -----
 
     @Test fun meter_under_soft_cap_is_ok() {
@@ -138,5 +145,32 @@ class OpenShiftPresentationTest {
     @Test fun meter_fractions_clamp_to_one() {
         val m = claimMeter(currentWeeklyHours = 30.0, addedHours = 20.0, breakProfile = false)
         assertEquals(1.0, m.afterFraction)
+    }
+
+    // ----- permanent-pickup success toast -----
+
+    @Test fun pickup_toast_all_weeks_taken() {
+        assertEquals(
+            "Picked up 22 of 22 weeks",
+            permanentPickupToast(weeksPickedUp = 22, totalWeeks = 22, weeksSkipped = 0),
+        )
+    }
+
+    @Test fun pickup_toast_some_weeks_skipped() {
+        assertEquals(
+            "Picked up 20 of 22 weeks · 2 skipped",
+            permanentPickupToast(weeksPickedUp = 20, totalWeeks = 22, weeksSkipped = 2),
+        )
+    }
+
+    @Test fun pickup_toast_single_week_is_singular() {
+        assertEquals(
+            "Picked up 1 of 1 week",
+            permanentPickupToast(weeksPickedUp = 1, totalWeeks = 1, weeksSkipped = 0),
+        )
+    }
+
+    @Test fun pickup_toast_generic_when_scope_unknown() {
+        assertEquals("Picked up — it's now in My Shifts", PICKUP_SUCCESS_TOAST_GENERIC)
     }
 }

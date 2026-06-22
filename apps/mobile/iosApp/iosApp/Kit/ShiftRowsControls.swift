@@ -8,16 +8,34 @@ struct SectionHeader: View {
     let title: String
     var count: Int? = nil
     var trailing: AnyView? = nil
+    /// Prominent variant — larger ink title led by an accent-tinted icon, so adjacent
+    /// sections (e.g. weekly vs permanent openings) read as clearly distinct groups.
+    var prominent: Bool = false
+    var icon: String? = nil
+    var accent: Color? = nil
     @Environment(\.colorScheme) private var scheme
     private var c: ShiftColors { .resolve(scheme) }
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(title.uppercased()).font(ShiftFont.sans(13, .bold)).tracking(0.6).foregroundColor(c.sec)
+            if prominent, let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(accent ?? c.ink)
+                    .frame(width: 24, height: 24)
+                    .background((accent ?? c.ink).opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            }
+            Text(prominent ? title : title.uppercased())
+                .font(ShiftFont.sans(prominent ? 16 : 13, prominent ? .semibold : .bold))
+                .tracking(prominent ? 0 : 0.6)
+                .foregroundColor(prominent ? c.ink : c.sec)
             if let count {
                 Text("\(count)").font(ShiftType.monoId).monospacedDigit()
                     .padding(.horizontal, 7).padding(.vertical, 1)
-                    .foregroundColor(c.ter).background(c.surfaceVar).clipShape(Capsule())
+                    .foregroundColor(prominent ? (accent ?? c.ter) : c.ter)
+                    .background(prominent ? (accent ?? c.sec).opacity(0.14) : c.surfaceVar)
+                    .clipShape(Capsule())
             }
             Spacer(minLength: 0)
             if let trailing { trailing }
@@ -33,13 +51,16 @@ struct ShiftSection<Content: View>: View {
     let isEmpty: Bool
     var count: Int? = nil
     var emptyText: String = "None this week"
+    var prominent: Bool = false
+    var icon: String? = nil
+    var accent: Color? = nil
     @ViewBuilder let content: () -> Content
     @Environment(\.colorScheme) private var scheme
     private var c: ShiftColors { .resolve(scheme) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(title: title, count: count)
+            SectionHeader(title: title, count: count, prominent: prominent, icon: icon, accent: accent)
             if isEmpty {
                 Text(emptyText).font(ShiftFont.sans(13.5)).foregroundColor(c.ter)
             } else {
@@ -145,10 +166,14 @@ struct ShiftSheet<Content: View>: View {
                 }
                 .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 4)
             }
-            content()
-                .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 28)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Spacer(minLength: 0)
+            // Scroll the body so tall sheets (e.g. the multi-leg swap composer) can always
+            // reach their bottom actions — without this the content overflowed the detent
+            // and the submit/add buttons were unreachable.
+            ScrollView {
+                content()
+                    .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 28)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .background(c.surface)
         .presentationDetents([.medium, .large])

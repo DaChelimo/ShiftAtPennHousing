@@ -216,25 +216,22 @@ class NotificationsTest {
         expiresAt = at("2026-01-16T18:30:00-05:00"),
     )
 
-    @Test fun incoming_temporary_swap_synthesizes_an_urgent_acceptable_entry() {
+    @Test fun incoming_swap_synthesizes_an_urgent_mirror_entry() {
         val merged = withIncomingSwapEntries(emptyList(), listOf(swap("s-1", "shift_swap")))
         val entry = merged.single()
         assertEquals(NotificationCategory.SWAP, entry.category)
         assertEquals("s-1", entry.swapId)
-        assertTrue(entry.swapAcceptable)
         assertTrue(entry.urgent)
         assertTrue(entry.unread)
         assertEquals("Swap request — Shift swap", entry.title)
-        // a float swap is also a plain {swap_id} acceptance
-        assertTrue(withIncomingSwapEntries(emptyList(), listOf(swap("s-2", "float_swap"))).single().swapAcceptable)
     }
 
-    @Test fun incoming_permanent_swap_offers_decline_only() {
-        // §8.4: a permanent acceptance must enumerate affected assignments — not
-        // computed by this slice, so Accept is withheld (Decline remains).
+    @Test fun incoming_permanent_swap_is_also_a_mirror() {
+        // Actions (incl. the desk/web permanent acceptance note) live in the Swaps tab;
+        // Updates just mirrors every leg the same way.
         val entry = withIncomingSwapEntries(emptyList(), listOf(swap("s-3", "permanent_swap"))).single()
         assertEquals("s-3", entry.swapId)
-        assertFalse(entry.swapAcceptable)
+        assertEquals("Swap request — Permanent swap", entry.title)
         assertTrue(entry.urgent)
     }
 
@@ -245,32 +242,12 @@ class NotificationsTest {
         assertEquals(1, merged.count { it.swapId == "s-1" })
     }
 
-    @Test fun swap_row_carries_the_action_fields() {
+    @Test fun incoming_swap_row_opens_the_swaps_tab_not_the_ack_hero() {
         val entry = withIncomingSwapEntries(emptyList(), listOf(swap("s-1", "shift_swap"))).single()
         val row = entry.toRow(now)
         assertEquals("s-1", row.swapId)
-        assertTrue(row.swapAcceptable)
-        assertFalse(row.opensAck) // a swap entry never opens the float ack hero
-        assertFalse(row.swapOutgoing)
-    }
-
-    // ----- outgoing swap entries (D4 — the initiator's void affordance) -----
-
-    @Test fun outgoing_swap_synthesizes_a_voidable_non_urgent_entry() {
-        val entry = withOutgoingSwapEntries(emptyList(), listOf(swap("s-7", "shift_swap"))).single()
-        assertEquals("s-7", entry.swapId)
-        assertTrue(entry.swapOutgoing)
-        assertFalse(entry.urgent) // waiting on the counterparty — no action REQUIRED
-        assertFalse(entry.unread)
-        assertFalse(entry.swapAcceptable)
-        assertEquals("Your swap request — Shift swap", entry.title)
-        assertTrue(entry.toRow(now).swapOutgoing)
-    }
-
-    @Test fun outgoing_swap_entry_is_not_duplicated_when_already_represented() {
-        val incoming = withIncomingSwapEntries(emptyList(), listOf(swap("s-7", "shift_swap")))
-        val merged = withOutgoingSwapEntries(incoming, listOf(swap("s-7", "shift_swap")))
-        assertEquals(1, merged.size)
+        assertTrue(row.opensSwaps) // tapping deep-links to Swaps → Incoming
+        assertFalse(row.opensAck) // a swap mirror never opens the float ack hero
     }
 
     // ----- pending-float ack countdown (D7 — §7 T-10m deadline) -----

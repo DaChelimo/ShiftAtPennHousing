@@ -1,3 +1,5 @@
+import java.util.Properties
+
 // :androidApp — the Android (Jetpack Compose) front end. UI only; all state and
 // behavior live in :shared.
 plugins {
@@ -16,6 +18,14 @@ if (file("google-services.json").exists()) {
     logger.warn("⚠ :androidApp — google-services.json not found; skipping Google Services plugin (FCM disabled).")
 }
 
+// Read local.properties so Android Studio's Run button picks up dev backend config
+// without needing -P flags. local.properties is gitignored; values here are for
+// local dev only.
+val localProps = Properties().also { props ->
+    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { props.load(it) }
+}
+fun localOrGradle(key: String) = project.findProperty(key) as String? ?: localProps.getProperty(key) ?: ""
+
 android {
     namespace = "com.pennhousing.shift"
     compileSdk = 36
@@ -29,8 +39,8 @@ android {
         // Supabase config is injected at build time (gradle property / CI secret /
         // -PSUPABASE_URL=…). Empty by default → the app runs on DemoData with no
         // backend, which is what the Maestro flows exercise.
-        buildConfigField("String", "SUPABASE_URL", "\"${project.findProperty("SUPABASE_URL") ?: ""}\"")
-        buildConfigField("String", "SUPABASE_ANON_KEY", "\"${project.findProperty("SUPABASE_ANON_KEY") ?: ""}\"")
+        buildConfigField("String", "SUPABASE_URL", "\"${localOrGradle("SUPABASE_URL")}\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"${localOrGradle("SUPABASE_ANON_KEY")}\"")
     }
     buildFeatures {
         compose = true

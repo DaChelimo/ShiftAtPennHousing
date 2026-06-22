@@ -50,7 +50,7 @@ object Dimens {
     val hairline = 1.dp
     val outlineStroke = 1.5.dp
     val focusRing = 2.dp
-    val breakBorder = 4.dp // golden left border on a break card
+    val breakBorder = 4.dp // slate left border on a break card
     val cardAccentRing = 2.dp // selected-card blue ring
 
     // Atoms.

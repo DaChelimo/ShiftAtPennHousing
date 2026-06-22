@@ -47,6 +47,7 @@ fun roleLabel(role: String): String =
         "sw" -> "Student Worker"
         "sm" -> "Shift Manager"
         "hm" -> "House Manager"
+        "rsm" -> "Residential Services Manager"
         "bm" -> "Building Manager"
         else -> "Staff"
     }

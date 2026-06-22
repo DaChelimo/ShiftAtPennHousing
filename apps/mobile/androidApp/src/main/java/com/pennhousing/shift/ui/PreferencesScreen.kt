@@ -3,13 +3,18 @@ package com.pennhousing.shift.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,17 +30,25 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pennhousing.shift.shared.preferences.PrefBlockCell
+import com.pennhousing.shift.shared.preferences.PrefBlockRun
 import com.pennhousing.shift.shared.preferences.PrefBrush
+import com.pennhousing.shift.shared.preferences.PrefDayView
+import com.pennhousing.shift.shared.preferences.PrefHourMark
 import com.pennhousing.shift.shared.preferences.PrefWeekCell
 import com.pennhousing.shift.shared.preferences.PrefWeekStrip
 import com.pennhousing.shift.shared.preferences.PREF_BRUSH_ORDER
@@ -45,24 +58,29 @@ import com.pennhousing.shift.shared.preferences.TargetMeter
 import com.pennhousing.shift.shared.viewmodel.PreferencesViewModel
 import com.pennhousing.shift.ui.kit.BannerTone
 import com.pennhousing.shift.ui.kit.ButtonSize
+import com.pennhousing.shift.ui.kit.ButtonVariant
 import com.pennhousing.shift.ui.kit.EmptyState
 import com.pennhousing.shift.ui.kit.ShiftBanner
+import com.pennhousing.shift.ui.kit.ShiftBottomSheet
 import com.pennhousing.shift.ui.kit.ShiftButton
 import com.pennhousing.shift.ui.kit.ShiftIcons
 import com.pennhousing.shift.ui.theme.ShiftTheme
 
 /**
- * Preference submission (the tri-state paint grid + target weekly hours) — Compose UI
- * over the shared [PreferencesViewModel]. Rebuilds worker-app.html `PreferenceScreen`
- * with the canonical kit: the context eyebrow, the deadline banner, a Mon–Sun strip,
- * the target-hours stepper card, the Available/Preferred/Cannot brush selector, the
- * 2-column block grid (tap to paint), and the bottom submit bar. Read-only once
- * submitted. Selector ids match `apps/mobile/maestro/README.md`.
+ * Preference submission (the tri-state paint timeline + target weekly hours) — Compose UI
+ * over the shared [PreferencesViewModel]. The canonical kit: the context eyebrow, the
+ * deadline/unsaved banner, a Mon–Sun strip, the target-hours stepper card, the
+ * Available/Preferred/Cannot brush selector, the day TIMELINE (hours in a left gutter,
+ * bare colored segments, one label per painted run — long-press-drag to paint a range,
+ * tap for one block), and a Submit/Discard bar that appears only when there are unsaved
+ * edits. Editable until the deadline; read-only only once it has passed. Selector ids
+ * match `apps/mobile/maestro/README.md`.
  */
 @Composable
 fun PreferencesTabContent(
     vm: PreferencesViewModel,
     onSubmit: () -> Unit = vm::submit,
+    onDiscard: () -> Unit = vm::revert,
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val c = ShiftTheme.colors
@@ -92,7 +110,7 @@ fun PreferencesTabContent(
             TargetCard(
                 meter = state.targetMeter,
                 optedOut = state.optedOut,
-                enabled = !state.submitted,
+                enabled = !state.readOnly,
                 onIncrement = vm::incrementTarget,
                 onDecrement = vm::decrementTarget,
                 onToggleNoHours = vm::toggleOptedOut,
@@ -105,36 +123,105 @@ fun PreferencesTabContent(
                     body = "You won't be scheduled next week. Untick \"no hours\" to set availability.",
                 )
             } else {
-                BrushSelector(state.brush, enabled = !state.submitted, onSelect = vm::setBrush)
-                if (!state.submitted) {
+                BrushSelector(state.brush, enabled = !state.readOnly, onSelect = vm::setBrush)
+                if (!state.readOnly) {
                     Text(
-                        "Tap a block to paint it for the selected day",
+                        "Long-press and drag to paint a range · tap a block for 30 min",
                         color = c.ter,
                         fontSize = 12.sp,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                Text("${state.day.title}", color = c.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                BlockGrid(state.day.cells, enabled = !state.submitted, onPaint = vm::paint)
+                Text(state.day.title, color = c.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                PrefTimeline(
+                    day = state.day,
+                    enabled = !state.readOnly,
+                    onPaint = vm::paint,
+                    onPaintRange = vm::paintRange,
+                )
                 Box(Modifier.height(8.dp))
             }
         }
 
-        if (!state.submitted) {
-            Column(
+        if (state.showSubmit || state.showDiscard) {
+            Row(
                 Modifier
                     .fillMaxWidth()
                     .background(c.surface)
                     .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                ShiftButton(
-                    text = "Submit preferences",
-                    onClick = onSubmit,
-                    modifier = Modifier.fillMaxWidth().testTag("submit_preferences_button"),
-                    size = ButtonSize.Lg,
-                    fullWidth = true,
-                )
+                if (state.showDiscard) {
+                    ShiftButton(
+                        text = "Discard",
+                        onClick = onDiscard,
+                        modifier = Modifier.testTag("pref_discard_button"),
+                        variant = ButtonVariant.Outlined,
+                        size = ButtonSize.Lg,
+                    )
+                }
+                if (state.showSubmit) {
+                    ShiftButton(
+                        text = state.submitLabel,
+                        onClick = onSubmit,
+                        modifier = Modifier.weight(1f).testTag("submit_preferences_button"),
+                        size = ButtonSize.Lg,
+                        fullWidth = true,
+                    )
+                }
             }
+        }
+    }
+}
+
+/**
+ * The unsaved-changes guard shown when the worker leaves the Preferences tab with edits
+ * they haven't submitted (BEH §4 save-safety). Submit & leave persists then navigates;
+ * Discard & leave reverts then navigates; Keep editing (or a scrim tap) cancels the move.
+ * Hosted by [ShiftsApp]; carries the `pref_unsaved_sheet` selector.
+ */
+@Composable
+fun PrefUnsavedChangesSheet(
+    onSubmitAndLeave: () -> Unit,
+    onDiscardAndLeave: () -> Unit,
+    onKeepEditing: () -> Unit,
+) {
+    val c = ShiftTheme.colors
+    ShiftBottomSheet(
+        onDismiss = onKeepEditing,
+        modifier = Modifier.testTag("pref_unsaved_sheet"),
+        title = "Unsaved preferences",
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                "You've changed your preferences but haven't submitted. Submit them before leaving, or discard them.",
+                color = c.sec,
+                fontSize = 15.sp,
+                lineHeight = 21.sp,
+            )
+            ShiftButton(
+                text = "Submit & leave",
+                onClick = onSubmitAndLeave,
+                modifier = Modifier.fillMaxWidth().testTag("pref_unsaved_submit"),
+                size = ButtonSize.Lg,
+                fullWidth = true,
+            )
+            ShiftButton(
+                text = "Discard & leave",
+                onClick = onDiscardAndLeave,
+                modifier = Modifier.fillMaxWidth().testTag("pref_unsaved_discard"),
+                variant = ButtonVariant.Outlined,
+                size = ButtonSize.Lg,
+                fullWidth = true,
+            )
+            ShiftButton(
+                text = "Keep editing",
+                onClick = onKeepEditing,
+                modifier = Modifier.fillMaxWidth(),
+                variant = ButtonVariant.Text,
+                size = ButtonSize.Lg,
+                fullWidth = true,
+            )
         }
     }
 }
@@ -342,48 +429,140 @@ private fun BrushChip(
     }
 }
 
-/** The 2-column block grid — each cell shows its time + state icon; tap to paint. */
+// ── Day timeline (the drag-paint picker) ─────────────────────────────────────────
+
+private val PREF_BLOCK_HEIGHT = 26.dp
+private val PREF_GUTTER_WIDTH = 46.dp
+
+/**
+ * The selected day's vertical timeline: hours in a left gutter (on the dividing lines),
+ * bare colored 30-min segments (no per-cell text), and ONE label pill per painted run.
+ * Long-press then drag to paint a contiguous range with the current brush; a single tap
+ * paints one block. The whole screen scrolls; the long-press handoff keeps a plain swipe
+ * scrolling rather than painting. [enabled] is false once the deadline has passed.
+ */
 @Composable
-private fun BlockGrid(
-    cells: List<PrefBlockCell>,
+private fun PrefTimeline(
+    day: PrefDayView,
     enabled: Boolean,
     onPaint: (String) -> Unit,
+    onPaintRange: (String, String) -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth().testTag("pref_block_grid"), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        cells.chunked(2).forEach { pair ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                pair.forEach { cell -> BlockCellView(cell, enabled, Modifier.weight(1f)) { onPaint(cell.blockId) } }
-                if (pair.size == 1) Box(Modifier.weight(1f))
-            }
+    val cells = day.cells
+    if (cells.isEmpty()) return
+    val total = PREF_BLOCK_HEIGHT * cells.size
+    val blockPx = with(LocalDensity.current) { PREF_BLOCK_HEIGHT.toPx() }
+    fun idxAt(y: Float): Int = (y / blockPx).toInt().coerceIn(0, cells.size - 1)
+
+    Row(Modifier.fillMaxWidth().height(total)) {
+        PrefGutter(day.hourMarks, total)
+        Box(
+            Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .testTag("pref_block_grid")
+                .then(
+                    if (enabled) {
+                        Modifier
+                            .pointerInput(cells) {
+                                detectTapGestures { offset -> onPaint(cells[idxAt(offset.y)].blockId) }
+                            }
+                            .pointerInput(cells) {
+                                var startId = cells.first().blockId
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = { offset ->
+                                        startId = cells[idxAt(offset.y)].blockId
+                                        onPaint(startId)
+                                    },
+                                    onDrag = { change, _ ->
+                                        change.consume()
+                                        onPaintRange(startId, cells[idxAt(change.position.y)].blockId)
+                                    },
+                                )
+                            }
+                    } else {
+                        Modifier
+                    },
+                ),
+        ) {
+            Column(Modifier.fillMaxSize()) { cells.forEach { PrefSegment(it) } }
+            day.runs.forEach { PrefRunPill(it) }
         }
     }
 }
 
+/** The left hour gutter — each label sits on its boundary line (so a fill below it is that hour). */
 @Composable
-private fun BlockCellView(
-    cell: PrefBlockCell,
-    enabled: Boolean,
-    modifier: Modifier,
-    onClick: () -> Unit,
+private fun PrefGutter(
+    marks: List<PrefHourMark>,
+    totalHeight: Dp,
 ) {
     val c = ShiftTheme.colors
+    Box(Modifier.width(PREF_GUTTER_WIDTH).height(totalHeight)) {
+        marks.forEach { mark ->
+            Text(
+                mark.label,
+                modifier =
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(y = (PREF_BLOCK_HEIGHT * mark.boundaryIndex - 7.dp).coerceAtLeast(0.dp))
+                        .padding(end = 8.dp),
+                color = c.ter,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+    }
+}
+
+/** One 30-min segment: a bare brush fill with a hour/half-hour top divider + the left axis. */
+@Composable
+private fun PrefSegment(cell: PrefBlockCell) {
+    val c = ShiftTheme.colors
     val style = brushStyle(cell.brush)
-    val border = if (cell.brush == PrefBrush.AVAILABLE) c.divider else style.accent.copy(alpha = 0.33f)
-    Row(
-        modifier
-            .height(30.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(style.bg)
-            .border(1.dp, border, RoundedCornerShape(8.dp))
-            .clickable(enabled = enabled, onClick = onClick)
-            .testTag("pref_block_cell")
-            .padding(horizontal = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
+    val fill = if (cell.brush == PrefBrush.AVAILABLE) Color.Transparent else style.bg
+    val divider = c.divider
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(PREF_BLOCK_HEIGHT)
+            .background(fill)
+            .drawBehind {
+                drawLine(
+                    if (cell.isHourStart) divider else divider.copy(alpha = 0.4f),
+                    Offset(0f, 0f),
+                    Offset(size.width, 0f),
+                    1.dp.toPx(),
+                )
+                drawLine(divider, Offset(0f, 0f), Offset(0f, size.height), 1.dp.toPx())
+            }
+            .testTag("pref_block_cell"),
+    )
+}
+
+/** The single span label centered over a painted run (e.g. "8:00 AM – 12:00 PM"). */
+@Composable
+private fun BoxScope.PrefRunPill(run: PrefBlockRun) {
+    val c = ShiftTheme.colors
+    val style = brushStyle(run.brush)
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(PREF_BLOCK_HEIGHT * run.blockCount)
+            .offset(y = PREF_BLOCK_HEIGHT * run.startBlockIndex),
+        contentAlignment = Alignment.Center,
     ) {
-        Text(cell.timeLabel, style = ShiftTheme.type.monoId.copy(fontSize = 11.5.sp), color = style.fg)
-        if (cell.brush != PrefBrush.AVAILABLE) {
-            Icon(style.icon, contentDescription = null, tint = style.accent, modifier = Modifier.size(12.dp))
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(50))
+                .background(c.surface)
+                .border(1.dp, style.accent.copy(alpha = 0.45f), RoundedCornerShape(50))
+                .padding(horizontal = 9.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            Icon(style.icon, contentDescription = null, tint = style.accent, modifier = Modifier.size(11.dp))
+            Text(run.label, color = style.fg, fontSize = 11.5.sp, fontWeight = FontWeight.Medium)
         }
     }
 }

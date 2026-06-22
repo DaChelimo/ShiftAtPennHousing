@@ -1,23 +1,28 @@
 package com.pennhousing.shift.shared.samples
 
-import com.pennhousing.shift.shared.breakclaim.BreakClaimSnapshot
+import com.pennhousing.shift.shared.breakclaim.BreakCalendarSnapshot
+import com.pennhousing.shift.shared.breakclaim.noBreakCalendar
 import com.pennhousing.shift.shared.data.ProfileSnapshot
 import com.pennhousing.shift.shared.data.WorkerSnapshot
 import com.pennhousing.shift.shared.shifts.weeklyHours
 import com.pennhousing.shift.shared.house.HouseScheduleSnapshot
 import com.pennhousing.shift.shared.model.FloatAck
+import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.notifications.IncomingSwap
 import com.pennhousing.shift.shared.notifications.NotificationItem
+import com.pennhousing.shift.shared.swaps.HandoffWorker
+import com.pennhousing.shift.shared.swaps.PendingSwap
 import com.pennhousing.shift.shared.notifications.withIncomingSwapEntries
-import com.pennhousing.shift.shared.notifications.withOutgoingSwapEntries
 import com.pennhousing.shift.shared.notifications.withPendingFloatEntry
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
-import com.pennhousing.shift.shared.viewmodel.BreakClaimViewModel
+import com.pennhousing.shift.shared.viewmodel.BreakCalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.HouseScheduleViewModel
 import com.pennhousing.shift.shared.viewmodel.PreferencesViewModel
 import com.pennhousing.shift.shared.viewmodel.SettingsViewModel
 import com.pennhousing.shift.shared.viewmodel.ShiftsScreenViewModel
+import com.pennhousing.shift.shared.viewmodel.SwapCalendarViewModel
+import com.pennhousing.shift.shared.viewmodel.SwapsViewModel
 import com.pennhousing.shift.shared.viewmodel.UpdatesViewModel
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -93,56 +98,88 @@ object DemoFactory {
     ): UpdatesViewModel = updatesViewModel(notifications, float, emptyList())
 
     /**
-     * Live Updates VM that additionally surfaces the worker's INCOMING pending swaps
-     * (§8.2, T3a) — `withIncomingSwapEntries` synthesizes the actionable Accept/Decline
-     * entries from the `swap_requests` rows `fetchIncomingSwaps` returns (`create-swap`
-     * writes no counterparty notification row). iOS calls this from
+     * Live Updates VM that additionally surfaces the worker's INCOMING pending swaps as
+     * deep-link mirrors (DESIGN §6) — `withIncomingSwapEntries` synthesizes one urgent
+     * mirror per leg from the `swap_requests` rows `fetchIncomingSwaps` returns
+     * (`create-swap` writes no counterparty notification row); tapping a mirror opens the
+     * Swaps tab. Outgoing swaps are NOT mirrored into Updates — they live in the Swaps
+     * tab's Outgoing list (see [swapsViewModel]). iOS calls this from
      * `UpdatesObservable.activateLive`; Android applies the same merge in `MainActivity`.
      */
     fun updatesViewModel(
         notifications: List<NotificationItem>,
         float: FloatAck?,
         swaps: List<IncomingSwap>,
-    ): UpdatesViewModel = updatesViewModel(notifications, float, swaps, emptyList())
-
-    /**
-     * Live Updates VM with the worker's OUTGOING pending swaps too (D4 — voidable
-     * entries via `withOutgoingSwapEntries`). iOS calls this from
-     * `UpdatesObservable.activateLive`; Android applies the same merge inline.
-     */
-    fun updatesViewModel(
-        notifications: List<NotificationItem>,
-        float: FloatAck?,
-        swaps: List<IncomingSwap>,
-        outgoing: List<IncomingSwap>,
     ): UpdatesViewModel =
         UpdatesViewModel(
-            withOutgoingSwapEntries(
+            withIncomingSwapEntries(
                 items =
-                    withIncomingSwapEntries(
-                        items =
-                            withPendingFloatEntry(
-                                items = notifications,
-                                pendingFloatId = float?.floatId,
-                                pendingFloatStart = float?.floatStart,
-                                destinationHouseName = float?.destinationHouse?.name,
-                            ),
-                        swaps = swaps,
+                    withPendingFloatEntry(
+                        items = notifications,
+                        pendingFloatId = float?.floatId,
+                        pendingFloatStart = float?.floatStart,
+                        destinationHouseName = float?.destinationHouse?.name,
                     ),
-                swaps = outgoing,
+                swaps = swaps,
             ),
             now(),
         )
+
+    /** The demo Swaps tab — the enriched pending swaps (give/get hours + deadline). */
+    fun swapsViewModel(): SwapsViewModel {
+        val now = now()
+        return SwapsViewModel(DemoData.pendingSwaps(now), now)
+    }
+
+    /**
+     * Live Swaps VM from the worker's enriched pending swaps (DESIGN §6) — both directions
+     * with each side's span, from `worker_pending_swaps`. Supplies `now` Kotlin-side (no
+     * Instant across the Swift bridge).
+     */
+    fun swapsViewModel(pendingSwaps: List<PendingSwap>): SwapsViewModel = SwapsViewModel(pendingSwaps, now())
+
+    /**
+     * Calendar swap VM (CALENDAR_REDESIGN.md) seeded with the tapped shift as the pinned
+     * "give" — the My-Shifts-card entry. Supplies `now` Kotlin-side (no Instant across the
+     * Swift bridge); the host feeds per-week housemate seats via `setWeekSeats`. Pass the
+     * full week's `myShifts` to also offer other own shifts as the give (standalone entry).
+     */
+    fun swapCalendarViewModel(
+        giveShift: MyShift,
+        meUserId: String,
+        breakProfile: Boolean = false,
+        // Own assignment ids already in a pending swap — filtered out of the give pool so an
+        // already-pending shift can't be re-offered (the server would reject it).
+        pendingGiveAssignmentIds: Set<String> = emptySet(),
+    ): SwapCalendarViewModel =
+        SwapCalendarViewModel(listOf(giveShift), meUserId, now(), breakProfile, giveShift.id, pendingGiveAssignmentIds)
+
+    /**
+     * The demo cross-house staff-worker directory for the §8.5 hand-off recipient picker
+     * (live: `WorkerShiftsRepository.fetchWorkerDirectory`). Exposed here so SwiftUI seeds
+     * the demo picker without reaching into `DemoData` across the bridge.
+     */
+    fun workerDirectory(): List<HandoffWorker> = DemoData.workerDirectory()
 
     fun calendarViewModel(): CalendarViewModel {
         val now = now()
         return CalendarViewModel(DemoData.snapshot(now).myShifts, now)
     }
 
+    /** Demo calendar VM seeded with demo pending swaps — the My-Shifts swap indicators + popup. */
+    fun calendarViewModelWithSwaps(): CalendarViewModel {
+        val now = now()
+        return CalendarViewModel(DemoData.snapshot(now).myShifts, now, emptySet(), DemoData.pendingSwaps(now))
+    }
+
     fun houseScheduleViewModel(): HouseScheduleViewModel {
         val now = now()
-        return HouseScheduleViewModel(DemoData.houseSchedule(now), now)
+        return HouseScheduleViewModel(DemoData.houseSchedule(now), now, meUserId = DemoData.DEMO_ME_USER_ID)
     }
+
+    /** The demo Harnwell roster for a navigated week — the House tab's week-nav data source. */
+    fun houseWeekSeats(anchor: Instant): List<com.pennhousing.shift.shared.house.HouseSeat> =
+        DemoData.houseWeekSeats(anchor, DemoData.DEMO_ME_USER_ID)
 
     /**
      * Live house-schedule VM from the worker's real `house_schedule_grid` snapshot
@@ -150,7 +187,10 @@ object DemoFactory {
      * bridge). iOS calls this from `HouseObservable.activateLive`; Android builds
      * the live VM inline in `MainActivity`.
      */
-    fun houseScheduleViewModel(snapshot: HouseScheduleSnapshot): HouseScheduleViewModel = HouseScheduleViewModel(snapshot, now())
+    fun houseScheduleViewModel(
+        snapshot: HouseScheduleSnapshot,
+        meUserId: String? = null,
+    ): HouseScheduleViewModel = HouseScheduleViewModel(snapshot, now(), meUserId)
 
     /**
      * Calendar VM with the worker's LIVE closed-house days (§3.4/§11.3, T2-12c) —
@@ -168,12 +208,36 @@ object DemoFactory {
         closedDayIndexes: Set<Int>,
     ): CalendarViewModel = CalendarViewModel(snapshot.myShifts, now(), closedDayIndexes)
 
+    /** Live calendar VM + closed days + the worker's pending swaps (My-Shifts swap indicators). */
+    fun calendarViewModel(
+        snapshot: WorkerSnapshot,
+        closedDayIndexes: Set<Int>,
+        pendingSwaps: List<PendingSwap>,
+    ): CalendarViewModel = CalendarViewModel(snapshot.myShifts, now(), closedDayIndexes, pendingSwaps)
+
     fun preferencesViewModel(): PreferencesViewModel = PreferencesViewModel(DemoData.preferencePeriod(now()))
 
-    fun breakClaimViewModel(): BreakClaimViewModel = BreakClaimViewModel(breakClaimSnapshot())
+    /** The demo break CALENDAR VM (Break redesign) — supplies `now` Kotlin-side. */
+    fun breakCalendarViewModel(): BreakCalendarViewModel = BreakCalendarViewModel(DemoData.breakCalendar(now()), now())
 
-    /** The demo break-claim snapshot — the iOS host overlays live context onto it. */
-    fun breakClaimSnapshot(): BreakClaimSnapshot = DemoData.breakClaim(now())
+    /**
+     * The "no break scheduled" VM the LIVE build uses when there is no active break — the
+     * honest replacement for the demo calendar (whose fake ids make claims silently fail).
+     * iOS calls this from `BreakCalendarObservable` when `fetchActiveBreak` resolves to none.
+     */
+    fun emptyBreakCalendarViewModel(): BreakCalendarViewModel =
+        BreakCalendarViewModel(noBreakCalendar(meUserId = null, now = now()), now())
+
+    /**
+     * Live break-calendar VM from the worker's real grid snapshot + active break id +
+     * §4.4 opt-out — `now` Kotlin-side (no Instant across the Swift bridge). iOS calls this
+     * from `BreakCalendarObservable.activateLive`; Android builds it inline in MainActivity.
+     */
+    fun breakCalendarViewModel(
+        snapshot: BreakCalendarSnapshot,
+        breakId: String?,
+        optedOut: Boolean,
+    ): BreakCalendarViewModel = BreakCalendarViewModel(snapshot, now(), breakId, optedOut)
 
     fun settingsViewModel(): SettingsViewModel =
         SettingsViewModel(DemoData.settingsProfile(), DemoData.DEMO_BROADCAST_SUBSCRIBED, DemoData.DEMO_APP_VERSION)

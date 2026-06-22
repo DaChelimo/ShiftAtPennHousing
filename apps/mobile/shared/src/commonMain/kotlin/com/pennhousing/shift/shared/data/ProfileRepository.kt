@@ -97,12 +97,12 @@ class ProfileRepository(
         return edge.patch("users-broadcast-subscription/users/$userId/broadcast_subscribed", body)
     }
 
-    /** Role precedence for the profile label (bm > hm > sm > sw). */
+    /** Role precedence for the profile label (bm > hm > rsm > sm > sw). */
     private fun highestRole(roles: List<String>): String =
         ROLE_PRECEDENCE.firstOrNull { it in roles } ?: "sw"
 
     private companion object {
-        val ROLE_PRECEDENCE = listOf("bm", "hm", "sm", "sw")
+        val ROLE_PRECEDENCE = listOf("bm", "hm", "rsm", "sm", "sw")
     }
 }
 

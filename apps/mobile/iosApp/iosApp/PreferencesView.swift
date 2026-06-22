@@ -67,6 +67,7 @@ struct PreferencesScreen: View {
         let c = ShiftColors.resolve(scheme)
         let st = model.state
         return VStack(alignment: .leading, spacing: 0) {
+            PageTitle(title: "Preferences")
             Text(st.contextLabel)
                 .font(ShiftFont.sans(11, .semibold)).tracking(0.5).foregroundColor(c.blue)
                 .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 6)
@@ -90,20 +91,35 @@ struct PreferencesScreen: View {
                     )
                 } else {
                     brushSelector(st, c)
-                    if !st.submitted {
-                        Text("Tap a block to paint it for the selected day")
+                    if !st.readOnly {
+                        Text("Long-press and drag to paint a range · tap a block for 30 min")
                             .font(ShiftFont.sans(12)).foregroundColor(c.ter)
                     }
                     Text(st.day.title).font(ShiftFont.sans(14, .semibold)).foregroundColor(c.ink)
-                    blockGrid(st.day.cells, st.submitted, c)
+                    PrefTimelineView(
+                        day: st.day,
+                        enabled: !st.readOnly,
+                        onPaint: { model.vm.paint(blockId: $0) },
+                        onPaintRange: { model.vm.paintRange(fromBlockId: $0, toBlockId: $1) },
+                        c: c
+                    )
                 }
             }
             .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 16)
 
-            if !st.submitted {
-                ShiftButton(title: "Submit preferences", action: { model.submit() }, size: .lg, fullWidth: true)
-                    .padding(.horizontal, 16).padding(.bottom, 24)
-                    .accessibilityIdentifier("submit_preferences_button")
+            if st.showSubmit || st.showDiscard {
+                HStack(spacing: 10) {
+                    if st.showDiscard {
+                        ShiftButton(title: "Discard", action: { model.vm.revert() }, variant: .outlined, size: .lg)
+                            .accessibilityIdentifier("pref_discard_button")
+                    }
+                    if st.showSubmit {
+                        ShiftButton(title: st.submitLabel, action: { model.submit() }, size: .lg, fullWidth: true)
+                            .frame(maxWidth: .infinity)
+                            .accessibilityIdentifier("submit_preferences_button")
+                    }
+                }
+                .padding(.horizontal, 16).padding(.bottom, 24)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -148,11 +164,11 @@ struct PreferencesScreen: View {
                 }
                 Spacer(minLength: 8)
                 HStack(spacing: 12) {
-                    stepButton(ShiftIcons.minus, enabled: !st.submitted && !st.optedOut) { model.vm.decrementTarget() }
+                    stepButton(ShiftIcons.minus, enabled: !st.readOnly && !st.optedOut) { model.vm.decrementTarget() }
                     Text(st.targetMeter.label)
                         .font(ShiftType.monoTimeHero).monospacedDigit().foregroundColor(c.ink)
                         .frame(width: 52)
-                    stepButton(ShiftIcons.plus, enabled: !st.submitted && !st.optedOut) { model.vm.incrementTarget() }
+                    stepButton(ShiftIcons.plus, enabled: !st.readOnly && !st.optedOut) { model.vm.incrementTarget() }
                 }
                 .opacity(st.optedOut ? 0.35 : 1)
             }
@@ -180,7 +196,7 @@ struct PreferencesScreen: View {
                 }
             }
             .buttonStyle(.plain)
-            .disabled(st.submitted)
+            .disabled(st.readOnly)
             .accessibilityIdentifier("pref_no_hours_toggle")
         }
         .padding(.horizontal, 14).padding(.vertical, 12)
@@ -223,40 +239,130 @@ struct PreferencesScreen: View {
                     .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(on ? style.accent : c.divider, lineWidth: 1.5))
                 }
                 .buttonStyle(.plain)
-                .disabled(st.submitted)
+                .disabled(st.readOnly)
                 .accessibilityIdentifier(brushTag(brush))
             }
         }
     }
 
-    // MARK: block grid
+}
 
-    private func blockGrid(_ cells: [PrefBlockCell], _ submitted: Bool, _ c: ShiftColors) -> some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)], spacing: 6) {
-            ForEach(cells, id: \.blockId) { cell in
-                blockCell(cell, submitted, c)
-            }
-        }
-        .accessibilityIdentifier("pref_block_grid")
+// MARK: - Day timeline (the drag-paint picker)
+
+private let prefBlockHeight: CGFloat = 26
+private let prefGutterWidth: CGFloat = 46
+
+/// The selected day's vertical timeline: hours in a left gutter (on the dividing lines),
+/// bare colored 30-min segments (no per-cell text), and ONE label pill per painted run.
+/// Long-press then drag to paint a contiguous range with the current brush; a single tap
+/// paints one block. The long-press handoff keeps a plain swipe scrolling the page rather
+/// than painting. `enabled` is false once the deadline has passed.
+struct PrefTimelineView: View {
+    let day: PrefDayView
+    let enabled: Bool
+    let onPaint: (String) -> Void
+    let onPaintRange: (String, String) -> Void
+    let c: ShiftColors
+    @State private var dragStart: String?
+
+    private var cells: [PrefBlockCell] { day.cells }
+    private var total: CGFloat { prefBlockHeight * CGFloat(cells.count) }
+
+    private func idxAt(_ y: CGFloat) -> Int {
+        let i = Int((y / prefBlockHeight).rounded(.down))
+        return min(max(i, 0), cells.count - 1)
     }
 
-    private func blockCell(_ cell: PrefBlockCell, _ submitted: Bool, _ c: ShiftColors) -> some View {
-        let style = brushStyle(cell.brush, c)
-        let border = cell.brush == .available ? c.divider : style.accent.opacity(0.33)
-        return HStack {
-            Text(cell.timeLabel).font(ShiftFont.mono(11.5, .medium)).monospacedDigit().foregroundColor(style.fg)
-            Spacer(minLength: 0)
-            if cell.brush != .available {
-                Image(systemName: style.icon).font(.system(size: 11, weight: .semibold)).foregroundColor(style.accent)
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            gutter
+            timeline
+        }
+        .frame(height: total)
+    }
+
+    private var gutter: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.clear
+            ForEach(day.hourMarks, id: \.boundaryIndex) { mark in
+                Text(mark.label)
+                    .font(ShiftFont.sans(11, .medium))
+                    .foregroundColor(c.ter)
+                    .padding(.trailing, 8)
+                    .offset(y: max(prefBlockHeight * CGFloat(mark.boundaryIndex) - 7, 0))
             }
         }
-        .padding(.horizontal, 10).frame(height: 30)
-        .background(style.bg)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(border, lineWidth: 1))
+        .frame(width: prefGutterWidth, height: total, alignment: .topTrailing)
+    }
+
+    private var timeline: some View {
+        ZStack(alignment: .topLeading) {
+            VStack(spacing: 0) {
+                ForEach(cells, id: \.blockId) { segment($0) }
+            }
+            ForEach(day.runs, id: \.startBlockIndex) { runPill($0) }
+        }
+        .frame(maxWidth: .infinity, minHeight: total, maxHeight: total, alignment: .topLeading)
         .contentShape(Rectangle())
-        .onTapGesture { if !submitted { model.vm.paint(blockId: cell.blockId) } }
-        .accessibilityIdentifier("pref_block_cell")
+        .accessibilityIdentifier("pref_block_grid")
+        .gesture(paintDrag, including: enabled ? .all : .none)
+        .simultaneousGesture(paintTap, including: enabled ? .all : .none)
+    }
+
+    private var paintTap: some Gesture {
+        SpatialTapGesture().onEnded { value in
+            onPaint(cells[idxAt(value.location.y)].blockId)
+        }
+    }
+
+    private var paintDrag: some Gesture {
+        LongPressGesture(minimumDuration: 0.2)
+            .sequenced(before: DragGesture(minimumDistance: 0))
+            .onChanged { value in
+                if case .second(true, let drag?) = value {
+                    let id = cells[idxAt(drag.location.y)].blockId
+                    if let start = dragStart {
+                        onPaintRange(start, id)
+                    } else {
+                        dragStart = id
+                        onPaint(id)
+                    }
+                }
+            }
+            .onEnded { _ in dragStart = nil }
+    }
+
+    private func segment(_ cell: PrefBlockCell) -> some View {
+        let style = brushStyle(cell.brush, c)
+        let fill: Color = cell.brush == .available ? Color.clear : style.bg
+        return Rectangle()
+            .fill(fill)
+            .frame(height: prefBlockHeight)
+            .overlay(alignment: .top) {
+                Rectangle().fill(c.divider.opacity(cell.isHourStart ? 1 : 0.4)).frame(height: 1)
+            }
+            .overlay(alignment: .leading) {
+                Rectangle().fill(c.divider).frame(width: 1)
+            }
+            .accessibilityIdentifier("pref_block_cell")
+            .accessibilityLabel(cell.a11yLabel)
+    }
+
+    private func runPill(_ run: PrefBlockRun) -> some View {
+        let style = brushStyle(run.brush, c)
+        return ZStack {
+            HStack(spacing: 5) {
+                Image(systemName: style.icon).font(.system(size: 11, weight: .semibold)).foregroundColor(style.accent)
+                Text(run.label).font(ShiftFont.sans(11.5, .medium)).foregroundColor(style.fg)
+            }
+            .padding(.horizontal, 9).padding(.vertical, 3)
+            .background(c.surface)
+            .clipShape(Capsule())
+            .overlay(Capsule().strokeBorder(style.accent.opacity(0.45), lineWidth: 1))
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: prefBlockHeight * CGFloat(run.blockCount))
+        .offset(y: prefBlockHeight * CGFloat(run.startBlockIndex))
     }
 }
 

@@ -1,0 +1,38 @@
+# Phase 13a E2E — §11.2 My Shifts (calendar) week navigation. The tab defaults to the
+# current week; stepping forward shows a future week's shifts in the agenda (so a pickup
+# or drop that lands in a later week is visible), and the picker jumps back.
+#
+# The demo seeds a next-week pickup (`nw-pk-1`) + scheduled shift (`nw-sc-1`), so the
+# next-week overview reliably has agenda cards.
+#
+# Android emulator + iOS simulator (Maestro): selectors are the cross-platform contract.
+appId: com.pennhousing.shift
+---
+- launchApp:
+    clearState: true
+- tapOn:
+    id: "tab_my_shifts"
+- assertVisible:
+    id: "calendar_screen"
+
+# The week header is present and starts on the current week.
+- assertVisible:
+    id: "calendar_week_picker_open"
+- assertVisible: "This week"
+
+# Step forward a week: the header reflects it and next week's shifts appear in the agenda.
+- tapOn:
+    id: "calendar_next_week"
+- assertVisible: "Next week"
+- assertVisible:
+    id: "calendar_shift_card"
+
+# Open the picker and jump straight back to this week.
+- tapOn:
+    id: "calendar_week_picker_open"
+- assertVisible:
+    id: "week_picker_sheet"
+- tapOn: "This week"
+- assertVisible: "This week"
+- assertVisible:
+    id: "calendar_week_overview"

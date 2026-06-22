@@ -36,7 +36,7 @@ data class MyShift(
     val kind: AssignmentKind,
     val crossHouse: Boolean = false, // pickup/float at a non-home house → destination shown (§11.2)
     val pending: Boolean = false, // force-triggered float not yet acked → "(Pending)" (§11.2)
-    val breakShift: Boolean = false, // short/winter break shift → golden border (§11.2)
+    val breakShift: Boolean = false, // short/winter break shift → slate border (§11.2)
     val droppedStillOpen: Boolean = false, // personally dropped this week, still unclaimed (§5.6 #2)
     // The constituent 30-min block assignment_ids, in time order. A raw read-model row
     // is one block (the default); a coalesced card carries every merged block id so
@@ -58,6 +58,13 @@ data class OpenShift(
     val weeksRemaining: Int? = null, // permanent openings only (§5.1)
     // The constituent vacant 30-min block assignment_ids, in time order (see MyShift.blockIds).
     val blockIds: List<String> = listOf(id),
+    // How many IDENTICAL concurrent openings this card stands for. A multi-staff house
+    // (e.g. the Quad) can have several desks vacant for the same span; coalescing threads
+    // them into separate lanes, then groups lanes with the same (start,end) into one card
+    // with count = #lanes ("2 open"). [blockIds] carries ONE representative lane, so a
+    // claim/partial-claim consumes exactly one desk and the next snapshot re-coalesces to
+    // count − 1. Always ≥ 1 (a single opening).
+    val count: Int = 1,
 )
 
 data class FloatAck(

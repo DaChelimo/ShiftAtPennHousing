@@ -60,11 +60,28 @@ data class CalendarDayHeader(
     val closed: Boolean = false,
 )
 
-/** One agenda row: a [shift] (with [active] = in progress) OR the now-line ([nowLabel] non-null). */
+/**
+ * A pending-swap flag on an agenda card (lives in the calendar package to avoid a cycle
+ * with `swaps/`): the swap id plus whether it's [incoming] (someone asked to swap with you
+ * → tap opens the accept/decline popup) vs outgoing (a swap you proposed → just a marker).
+ */
+data class AgendaSwapMark(
+    val swapId: String,
+    val incoming: Boolean,
+)
+
+/**
+ * One agenda row: a [shift] (with [active] = in progress) OR the now-line ([nowLabel]
+ * non-null). [past] is true once the shift has fully ended (now >= end) so the UI can
+ * render it inactive/greyed; future + in-progress shifts have past = false. [swap] is
+ * non-null when this shift has a pending swap (see [AgendaSwapMark]).
+ */
 data class CalendarAgendaItem(
     val shift: MyShiftRow?,
     val active: Boolean,
     val nowLabel: String?,
+    val past: Boolean = false,
+    val swap: AgendaSwapMark? = null,
 )
 
 data class CalendarAgenda(
@@ -110,6 +127,23 @@ fun weekDayIndexInWeekOf(
 ): Int? = weekDayIndexOf(start, mondayOf(now, zone), zone)
 
 /**
+ * The subset of [shifts] whose start falls in [anchor]'s NY Mon–Sun week — the
+ * week-scoping the Shifts screen's My-Shifts tab applies so a future-week pickup
+ * or drop shows under the week it actually belongs to (and not the current one).
+ * DST-safe: the week boundary is derived from [anchor]'s LocalDate, not wall-clock
+ * arithmetic (invariant #6). The underlying `worker_my_shifts` read is date-unbounded,
+ * so other weeks' shifts are already in the snapshot.
+ */
+fun shiftsInWeekOf(
+    shifts: List<MyShift>,
+    anchor: Instant,
+    zone: TimeZone = NEW_YORK,
+): List<MyShift> {
+    val monday = mondayOf(anchor, zone)
+    return shifts.filter { weekDayIndexOf(it.start, monday, zone) != null }
+}
+
+/**
  * The Mon–Sun strip for [anchor]'s week (default: [now]'s — the current week),
  * with a dot on days that have shifts. [closedDayIndexes] (0=Mon..6=Sun) marks
  * dates the worker's HOME house is closed (§3.4/§11.3 — the backend
@@ -130,7 +164,9 @@ fun buildCalendarWeek(
     val monday = mondayOf(anchor, zone)
     val today = now.toLocalDateTime(zone).date
     val hasShifts = BooleanArray(DAYS_IN_WEEK)
-    shifts.forEach { s -> weekDayIndexOf(s.start, monday, zone)?.let { hasShifts[it] = true } }
+    // Dropped-still-open blocks have left the worker's week (they live in the open feed
+    // now), so they don't light a strip dot.
+    shifts.filter { !it.droppedStillOpen }.forEach { s -> weekDayIndexOf(s.start, monday, zone)?.let { hasShifts[it] = true } }
     val days =
         (0 until DAYS_IN_WEEK).map { i ->
             val d = monday.plus(i, DateTimeUnit.DAY)
@@ -204,6 +240,8 @@ fun buildCalendarAgenda(
     zone: TimeZone = NEW_YORK,
     closedDayIndexes: Set<Int> = emptySet(),
     anchor: Instant = now,
+    // assignment_id → pending-swap mark; a card is flagged when any of its blocks match.
+    swapMarks: Map<String, AgendaSwapMark> = emptyMap(),
 ): CalendarAgenda {
     val monday = mondayOf(anchor, zone)
     val date = monday.plus(selectedDayIndex, DateTimeUnit.DAY)
@@ -211,9 +249,14 @@ fun buildCalendarAgenda(
     // so the header shows the weekday and no NOW line is inserted.
     val isToday = date == now.toLocalDateTime(zone).date
     // Coalesce first: the live snapshot is one row per 30-min block, and the agenda
-    // (like the Shifts tabs) shows one card per displayed shift, not per block.
+    // (like the Shifts tabs) shows one card per displayed shift, not per block. A
+    // dropped-still-open shift is excluded — once dropped it's no longer the worker's
+    // shift; it shows in the open feed for anyone (incl. the worker) to claim.
     val dayShifts =
-        coalesceMyShifts(shifts).filter { weekDayIndex(it, monday, zone) == selectedDayIndex }.sortedBy { it.start }
+        coalesceMyShifts(shifts)
+            .filter { !it.droppedStillOpen }
+            .filter { weekDayIndex(it, monday, zone) == selectedDayIndex }
+            .sortedBy { it.start }
 
     val totalMinutes = dayShifts.sumOf { (it.end - it.start).inWholeMinutes }
     val summary =
@@ -239,12 +282,74 @@ fun buildCalendarAgenda(
             items.add(CalendarAgendaItem(shift = null, active = false, nowLabel = nowLabel))
             nowInserted = true
         }
-        items.add(CalendarAgendaItem(shift = s.toRow(zone), active = now >= s.start && now < s.end, nowLabel = null))
+        // A card carries the pending-swap mark of any of its blocks; prefer an INCOMING
+        // mark (actionable — opens the popup) over an outgoing one when both touch it.
+        val marks = s.blockIds.mapNotNull { swapMarks[it] }
+        items.add(
+            CalendarAgendaItem(
+                shift = s.toRow(zone),
+                active = now >= s.start && now < s.end,
+                nowLabel = null,
+                past = now >= s.end,
+                swap = marks.firstOrNull { it.incoming } ?: marks.firstOrNull(),
+            ),
+        )
     }
     if (isToday && !nowInserted) {
         items.add(CalendarAgendaItem(shift = null, active = false, nowLabel = nowLabel))
     }
     return CalendarAgenda(header = header, items = items)
+}
+
+// ===================================================================
+// Week overview — every Mon–Sun day's agenda at once (the DEFAULT calendar view, so
+// the worker sees the whole week without tapping each day). A vertical list of day
+// sections; the single-day agenda (above) is the per-day drill-in.
+// ===================================================================
+
+/** One day's section in the week overview: its header, agenda rows, and today-ness. */
+data class CalendarDaySection(
+    val dayIndex: Int, // 0=Mon..6=Sun
+    val header: CalendarDayHeader,
+    val items: List<CalendarAgendaItem>,
+    val isToday: Boolean,
+) {
+    val isEmpty: Boolean get() = items.none { it.shift != null }
+}
+
+/** The whole week as stacked day sections (Mon..Sun). */
+data class CalendarWeekOverview(
+    val days: List<CalendarDaySection>,
+)
+
+/**
+ * Build the week overview for [anchor]'s week: each Mon–Sun day's [buildCalendarAgenda]
+ * wrapped as a [CalendarDaySection]. The "NOW" line is inserted only in today's section
+ * (buildCalendarAgenda already gates it on the date), and only the current week has it at
+ * all (a navigated [anchor] has no "today"). Reuses the per-day builder so the agenda
+ * shape, coalescing, and now-line stay identical to the drill-in view.
+ */
+fun buildCalendarWeekOverview(
+    shifts: List<MyShift>,
+    now: Instant,
+    zone: TimeZone = NEW_YORK,
+    closedDayIndexes: Set<Int> = emptySet(),
+    anchor: Instant = now,
+    swapMarks: Map<String, AgendaSwapMark> = emptyMap(),
+): CalendarWeekOverview {
+    val monday = mondayOf(anchor, zone)
+    val today = now.toLocalDateTime(zone).date
+    val days =
+        (0 until DAYS_IN_WEEK).map { i ->
+            val agenda = buildCalendarAgenda(shifts, i, now, zone, closedDayIndexes, anchor, swapMarks)
+            CalendarDaySection(
+                dayIndex = i,
+                header = agenda.header,
+                items = agenda.items,
+                isToday = monday.plus(i, DateTimeUnit.DAY) == today,
+            )
+        }
+    return CalendarWeekOverview(days = days)
 }
 
 // ===================================================================

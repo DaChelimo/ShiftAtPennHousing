@@ -107,6 +107,11 @@ struct StateVisual {
     var muted = false
     var strike = false
     var showsPending = false
+    /// Render a full accent-colored border (white card body) instead of a tinted fill —
+    /// used by permanent openings so the recurring slot reads at a glance without a pill.
+    var prominentBorder = false
+    /// Keep [tagLabel] for the legend but DON'T render the status pill on the card itself.
+    var suppressPill = false
 }
 
 extension ShiftColors {
@@ -125,11 +130,11 @@ extension ShiftColors {
         case .floatIn:
             return StateVisual(tint: floatIn.tint, accent: floatIn.accent, badgeBg: floatIn.badge, badgeFg: floatIn.deep, tagLabel: "Float-in", tagIcon: ShiftIcons.floatIn, tagColor: floatIn.deep)
         case .breakShift:
-            return StateVisual(tint: surface, accent: nil, badgeBg: breakShift.badge, badgeFg: breakShift.deep, tagLabel: "Break", tagIcon: ShiftIcons.coffee, tagColor: breakShift.deep, leftBorder: breakShift.accent)
+            return StateVisual(tint: surface, accent: nil, badgeBg: breakShift.badge, badgeFg: breakShift.deep, tagLabel: "Break", tagIcon: ShiftIcons.snowflake, tagColor: breakShift.deep, leftBorder: breakShift.accent)
         case .open:
             return StateVisual(tint: surface, accent: nil, badgeBg: scheduledBadge, badgeFg: ter, tagLabel: nil, tagIcon: nil, tagColor: nil, dashed: true)
         case .permanent:
-            return StateVisual(tint: permanent.tint, accent: permanent.accent, badgeBg: permanent.badge, badgeFg: permanent.deep, tagLabel: "Permanent opening", tagIcon: ShiftIcons.refresh, tagColor: permanent.deep)
+            return StateVisual(tint: surface, accent: permanent.accent, badgeBg: permanent.badge, badgeFg: permanent.deep, tagLabel: "Permanent opening", tagIcon: ShiftIcons.refresh, tagColor: permanent.deep, prominentBorder: true, suppressPill: true)
         case .unpickable:
             return StateVisual(tint: surfaceVar, accent: nil, badgeBg: unpickBadge, badgeFg: ter, tagLabel: "Unpickable", tagIcon: ShiftIcons.lock, tagColor: ter, muted: true)
         case .dropped:
@@ -304,6 +309,8 @@ struct ShiftCard: View {
     var destination: String? = nil
     var durationLabel: String? = nil
     var meta: String? = nil
+    /// "2 open" — concurrent identical openings at a multi-staff house (nil = single).
+    var countLabel: String? = nil
     var active: Bool = false
     var onTap: (() -> Void)? = nil
     var trailing: AnyView? = nil
@@ -330,8 +337,17 @@ struct ShiftCard: View {
                 if hasMeta(v) {
                     HStack(spacing: 6) {
                         if let houseName { Text(houseName).font(ShiftFont.sans(13.5, .medium)).foregroundColor(c.sec) }
+                        if let countLabel {
+                            Text(countLabel)
+                                .font(ShiftFont.sans(11.5, .semibold))
+                                .foregroundColor(v.accent ?? c.sec)
+                                .padding(.horizontal, 7).padding(.vertical, 2)
+                                .background((v.accent ?? c.sec).opacity(0.12))
+                                .clipShape(Capsule())
+                                .accessibilityIdentifier("open_shift_count_badge")
+                        }
                         if let destination { Text("→ \(destination)").font(ShiftFont.sans(13.5, .medium)).foregroundColor(v.accent ?? c.sec) }
-                        if v.tagLabel != nil { StatePill(state: state) }
+                        if v.tagLabel != nil && !v.suppressPill { StatePill(state: state) }
                         if v.showsPending { PendingTag() }
                     }
                 }
@@ -358,7 +374,7 @@ struct ShiftCard: View {
         }
     }
 
-    private func hasMeta(_ v: StateVisual) -> Bool { houseName != nil || destination != nil || v.tagLabel != nil || v.showsPending }
+    private func hasMeta(_ v: StateVisual) -> Bool { houseName != nil || destination != nil || v.tagLabel != nil || v.showsPending || countLabel != nil }
 
     @ViewBuilder private func cardBorder(_ v: StateVisual) -> some View {
         let shape = RoundedRectangle(cornerRadius: Radii.card, style: .continuous)
@@ -366,6 +382,8 @@ struct ShiftCard: View {
             shape.strokeBorder(c.pickupDot, lineWidth: 2)
         } else if v.dashed {
             shape.strokeBorder(c.outline, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+        } else if v.prominentBorder, let a = v.accent {
+            shape.strokeBorder(a.opacity(0.65), lineWidth: 1.5)
         } else if let a = v.accent {
             shape.strokeBorder(a.opacity(0.22), lineWidth: 1)
         } else {

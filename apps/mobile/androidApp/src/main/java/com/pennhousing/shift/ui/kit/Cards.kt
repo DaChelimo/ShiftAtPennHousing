@@ -25,6 +25,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -72,6 +73,29 @@ fun DurationChip(
     )
 }
 
+/**
+ * A small "N open" pill for an open-shift card that stands for several concurrent
+ * identical openings at a multi-staff house. Tinted with the card's [accent].
+ */
+@Composable
+fun CountBadge(
+    label: String,
+    accent: Color,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        label,
+        modifier =
+            modifier
+                .background(accent.copy(alpha = 0.12f), ShiftShapes.durationChip)
+                .padding(horizontal = 7.dp, vertical = 2.dp)
+                .testTag("open_shift_count_badge"),
+        color = accent,
+        fontSize = 11.5.sp,
+        fontWeight = FontWeight.SemiBold,
+    )
+}
+
 /** The leading 40×40 house-initial square on a shift card. */
 @Composable
 fun HouseBadge(
@@ -93,7 +117,7 @@ fun HouseBadge(
 /**
  * The one card that renders every shift state (worker-app.html `ShiftCard`).
  * Differentiation is entirely from [state] via [ShiftColors.visual]: tint, accent
- * hairline, badge, the status [StatePill], pickup dot, golden break border, dashed
+ * hairline, badge, the status [StatePill], pickup dot, slate break border, dashed
  * open border, muted/strike modifiers. Pass [action] for a trailing button (Claim
  * / Pick up / Reclaim); otherwise an [onClick] card shows a chevron.
  *
@@ -111,6 +135,8 @@ fun ShiftCard(
     destination: String? = null,
     durationLabel: String? = null,
     meta: String? = null,
+    // "2 open" — concurrent identical openings at a multi-staff house (null = single).
+    countLabel: String? = null,
     active: Boolean = false,
     onClick: (() -> Unit)? = null,
     action: (@Composable () -> Unit)? = null,
@@ -128,6 +154,7 @@ fun ShiftCard(
         when {
             active -> box.border(Dimens.cardAccentRing, c.pickupDot, shape)
             v.dashed -> box.dashedBorder(c.outline, cornerRadius = 16.dp)
+            v.prominentBorder && v.accent != null -> box.border(1.5.dp, v.accent.copy(alpha = 0.65f), shape)
             v.accent != null -> box.border(Dimens.hairline, v.accent.copy(alpha = 0.22f), shape)
             else -> box.border(Dimens.hairline, c.divider, shape)
         }
@@ -135,7 +162,7 @@ fun ShiftCard(
     if (v.muted) box = box.alpha(0.72f)
 
     Box(box) {
-        // Golden break left border (4dp), rounded by the card clip.
+        // Slate break left border (4dp), rounded by the card clip.
         if (v.leftBorder != null) {
             Box(
                 Modifier
@@ -174,13 +201,14 @@ fun ShiftCard(
                     if (durationLabel != null) DurationChip(durationLabel)
                     if (v.dot) PickupDot()
                 }
-                val hasMeta = houseName != null || destination != null || v.tagLabel != null || v.showsPending
+                val hasMeta = houseName != null || destination != null || v.tagLabel != null || v.showsPending || countLabel != null
                 if (hasMeta) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         if (houseName != null) Text(houseName, color = c.sec, fontSize = 13.5.sp, fontWeight = FontWeight.Medium)
+                        if (countLabel != null) CountBadge(countLabel, v.accent ?: c.sec)
                         if (destination != null) {
                             Text(
                                 "→ $destination",
@@ -191,7 +219,7 @@ fun ShiftCard(
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
-                        if (v.tagLabel != null) StatePill(state)
+                        if (v.tagLabel != null && !v.suppressPill) StatePill(state)
                         if (v.showsPending) PendingTag()
                     }
                 }

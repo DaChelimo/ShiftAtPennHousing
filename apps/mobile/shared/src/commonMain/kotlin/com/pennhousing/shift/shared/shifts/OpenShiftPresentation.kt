@@ -70,6 +70,10 @@ data class OpenShiftRow(
     val durationLabel: String,
     val meta: String?,
     val actionLabel: String?,
+    // How many identical concurrent openings this card stands for (multi-staff houses).
+    val count: Int = 1,
+    // "2 open" badge text when [count] > 1, else null (a single opening shows no badge).
+    val countLabel: String? = null,
 )
 
 /**
@@ -107,7 +111,37 @@ fun OpenShift.toRow(
         durationLabel = formatDuration(start, end),
         meta = meta,
         actionLabel = actionLabel,
+        count = count,
+        countLabel = if (count > 1) "$count open" else null,
     )
+}
+
+/** The success toast shown after a WEEKLY open-shift claim commits. */
+const val CLAIM_SUCCESS_TOAST: String = "Claimed — it's now in My Shifts"
+
+/**
+ * The success toast after a PERMANENT pickup when the scope is unknown (the dry-run GET
+ * failed, a sub-range pickup, or the demo path) — no X-of-Y breakdown to show.
+ */
+const val PICKUP_SUCCESS_TOAST_GENERIC: String = "Picked up — it's now in My Shifts"
+
+/**
+ * The success toast shown after a PERMANENT pickup commits: "Picked up X of Y weeks"
+ * (+ " · K skipped" when the worker's hours-cap / existing shifts dropped some weeks).
+ * [totalWeeks] is the recurring slot's pickable (non-break, in-semester) week count;
+ * [weeksPickedUp] the weeks actually taken; [weeksSkipped] the rest. A permanent pickup
+ * never includes break weeks (those route through break-claim), so Y is "all the shifts
+ * for that slot" the worker could take — the toast tells them how many landed. When the
+ * scope is unknown, use [PICKUP_SUCCESS_TOAST_GENERIC] instead.
+ */
+fun permanentPickupToast(
+    weeksPickedUp: Int,
+    totalWeeks: Int,
+    weeksSkipped: Int,
+): String {
+    val unit = if (totalWeeks == 1) "week" else "weeks"
+    val base = "Picked up $weeksPickedUp of $totalWeeks $unit"
+    return if (weeksSkipped > 0) "$base · $weeksSkipped skipped" else base
 }
 
 /**

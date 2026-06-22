@@ -34,16 +34,26 @@ Deno.serve(
     }
 
     if (swap.swap_type === 'permanent_swap') {
-      if (!isUuidArray(affectedAssignmentIds)) {
-        return jsonResponse(
-          { error: 'affected_assignment_ids must be a non-empty UUID array' },
-          400,
+      // A {swap_id}-only client (mobile) lets the server expand the recurring slot to the
+      // initiator-owned future regular-school-year seats; an explicit affected list (web,
+      // which scopes its own dry-run) is honored as an override. apply_permanent_swap
+      // re-filters to still-owned regular_school_year seats, so a generous list is safe.
+      let affected = affectedAssignmentIds;
+      if (!isUuidArray(affected)) {
+        const { data: resolved, error: resolveError } = await auth.supabase.rpc(
+          'resolve_permanent_swap_affected',
+          { p_swap_id: swapId, p_now: new Date().toISOString() },
         );
+        if (resolveError !== null) return jsonResponse({ error: resolveError.message }, 400);
+        affected = resolved ?? [];
+      }
+      if (!isUuidArray(affected)) {
+        return jsonResponse({ error: 'no_affected_assignments' }, 400);
       }
       const { data, error } = await auth.supabase.rpc('apply_permanent_swap', {
         p_swap_id: swapId,
         p_new_owner_user_id: auth.userId,
-        p_affected_assignment_ids: affectedAssignmentIds,
+        p_affected_assignment_ids: affected,
         p_now: new Date().toISOString(),
       });
       if (error !== null) return jsonResponse({ error: error.message }, 400);

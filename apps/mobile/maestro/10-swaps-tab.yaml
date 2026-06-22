@@ -1,0 +1,37 @@
+# Swaps enhancement (DESIGN docs/swaps-enhancement/DESIGN.md §6) — the dedicated Swaps
+# tab: an Updates row deep-links into it, Incoming offers Accept/Decline, Outgoing groups
+# co-created legs and offers Cancel.
+#
+# Android emulator + iOS simulator (Maestro). Selectors are the cross-platform UI contract.
+appId: com.pennhousing.shift
+---
+- launchApp:
+    clearState: true
+
+# Swaps is a primary bottom-bar tab now — open it directly. (An incoming-swap row in
+# the Updates screen also deep-links here via a mirror, but the tab is the main entry.)
+- tapOn:
+    id: "tab_swaps"
+- assertVisible:
+    id: "swaps_screen"
+
+# Incoming sub-tab: a temporary swap offers Accept + Decline; declining removes the row.
+- assertVisible:
+    id: "swap_accept_button"
+- assertVisible:
+    id: "swap_reject_button"
+- tapOn:
+    id: "swap_reject_button"
+
+# Outgoing sub-tab: co-created legs (independent) group under one "Proposed together"
+# header; each leg is independently cancelable.
+- tapOn:
+    id: "swaps_subtab_outgoing"
+- assertVisible:
+    id: "swaps_outgoing_list"
+- assertVisible:
+    id: "swaps_group_header"
+- assertVisible:
+    id: "swap_void_button"
+- tapOn:
+    id: "swap_void_button"

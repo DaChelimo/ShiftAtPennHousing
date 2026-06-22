@@ -65,6 +65,11 @@ data class SwapDay(
  * and housemates' shifts ([SwapDay.others], from [seats] via [swapCandidates], the
  * proposer excluded). Both filtered to the day by the shift's own start, so a shift in
  * another week never lands on this week's day (cross-week shifts share a weekday).
+ *
+ * [pendingGiveAssignmentIds] are the worker's own assignment ids already tied up in a
+ * pending swap (either direction). A shift touching any of them is EXCLUDED from "give":
+ * it can't be offered again — the server would reject a second proposal — so it's removed
+ * from the picker rather than left to fail (matches the My-Shifts "swap pending" guard).
  */
 fun buildSwapDay(
     myShifts: List<MyShift>,
@@ -74,11 +79,13 @@ fun buildSwapDay(
     anchor: Instant,
     breakProfile: Boolean = false,
     zone: TimeZone = NEW_YORK,
+    pendingGiveAssignmentIds: Set<String> = emptySet(),
 ): SwapDay {
     val mine =
         coalesceMyShifts(myShifts)
             .asSequence()
             .filter { !it.droppedStillOpen }
+            .filter { shift -> shift.blockIds.none { it in pendingGiveAssignmentIds } }
             .filter { weekDayIndexInWeekOf(it.start, anchor, zone) == selectedDayIndex }
             .map { s ->
                 SwapDayCard(
@@ -142,10 +149,12 @@ fun swapWeekDaysWithShifts(
     meUserId: String,
     anchor: Instant,
     zone: TimeZone = NEW_YORK,
+    pendingGiveAssignmentIds: Set<String> = emptySet(),
 ): Set<Int> {
     val mineDays =
         coalesceMyShifts(myShifts)
             .filter { !it.droppedStillOpen }
+            .filter { shift -> shift.blockIds.none { it in pendingGiveAssignmentIds } }
             .mapNotNull { weekDayIndexInWeekOf(it.start, anchor, zone) }
     val otherDays =
         swapCandidates(seats, excludeUserId = meUserId, zone = zone)

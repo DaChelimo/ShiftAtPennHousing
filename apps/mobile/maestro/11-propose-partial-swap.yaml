@@ -1,0 +1,39 @@
+# Swaps enhancement (DESIGN docs/swaps-enhancement/DESIGN.md §5/§7) — propose a swap with
+# the §8.1 partial block-picker. From a My-Shifts card, pivot to the swap sheet, pick a
+# counterparty, and the "hours to give" / "hours you want" range pickers appear, plus the
+# "add another person" multi-leg entry. Proposing surfaces the confirmation toast.
+#
+# Android emulator + iOS simulator (Maestro). Selectors are the cross-platform UI contract.
+appId: com.pennhousing.shift
+---
+- launchApp:
+    clearState: true
+
+# My Shifts (the calendar). Tapping a card opens the drop sheet, which pivots to a swap.
+- tapOn:
+    id: "tab_my_shifts"
+- assertVisible:
+    id: "calendar_shift_card"
+- tapOn:
+    id: "calendar_shift_card"
+- assertVisible:
+    id: "drop_options_sheet"
+- tapOn:
+    id: "swap_propose_option"
+- assertVisible:
+    id: "swap_sheet"
+
+# Pick a counterparty → the §8.1 partial pickers appear (give/take), and the multi-leg
+# "add another person" entry is offered (independent legs, decision 2026-06-15).
+- tapOn:
+    id: "swap_candidate_row"
+- assertVisible:
+    id: "swap_give_range"
+- assertVisible:
+    id: "swap_add_leg_button"
+
+# Propose the swap → the housemate is asked; the request shows under the Swaps tab.
+- tapOn:
+    id: "swap_submit_button"
+- assertVisible:
+    id: "swap_proposed_toast"

@@ -48,7 +48,7 @@
 
 BEGIN;
 
-SELECT plan(58);
+SELECT plan(59);
 
 -- ============================================================
 -- 0. Fixtures.
@@ -208,7 +208,7 @@ VALUES
   -- recurring slot occurrences: all VACANT (never_assigned) so a permanent assign fills them.
   ('51000003-0000-0000-0000-0000000019a0', '51000002-0000-0000-0000-0000000019a0', NULL, 'vacant', 'never_assigned', false, NULL), -- b_now
   ('51000003-0000-0000-0000-0000000019a1', '51000002-0000-0000-0000-0000000019a1', NULL, 'vacant', 'permanent_drop', false, NULL), -- +1w (a permanent opening)
-  ('51000003-0000-0000-0000-0000000019a2', '51000002-0000-0000-0000-0000000019a2', NULL, 'vacant', 'permanent_drop', false, NULL), -- +2w (a permanent opening)
+  ('51000003-0000-0000-0000-0000000019a2', '51000002-0000-0000-0000-0000000019a2', NULL, 'vacant', 'never_assigned', false, NULL), -- +2w: a PLAIN open seat (never permanently dropped) — admin permanent assign must still fill it (regression guard)
   ('51000003-0000-0000-0000-0000000019a3', '51000002-0000-0000-0000-0000000019a3', NULL, 'vacant', 'permanent_drop', false, NULL), -- +5w (a permanent opening)
   ('51000003-0000-0000-0000-0000000019a4', '51000002-0000-0000-0000-0000000019a4', NULL, 'vacant', 'never_assigned', false, NULL), -- +6w (next semester; never scheduled → NOT a current permanent opening, so the feed must not count it)
   -- this-week assign happy path: a vacant seat.
@@ -404,6 +404,15 @@ SELECT is(
   (SELECT status::text FROM public.shift_block_assignments WHERE assignment_id = '51000003-0000-0000-0000-0000000019a3'),
   'claimed',
   'permanent assign: the +5w (in-semester) occurrence is filled (status claimed)'
+);
+-- +2w is a PLAIN 'never_assigned' open seat (never permanently dropped). Admin
+-- permanent assign must fill it too — regression guard for the bug where the
+-- write delegated to permanent_pickup_slot (vacancy_origin='permanent_drop' only)
+-- and silently assigned zero seats on ordinary recurring open shifts.
+SELECT is(
+  (SELECT user_id FROM public.shift_block_assignments WHERE assignment_id = '51000003-0000-0000-0000-0000000019a2'),
+  '51000001-0000-0000-0000-000000000001'::uuid,
+  'permanent assign: a plain never_assigned future occurrence is filled (not just permanent_drop openings)'
 );
 -- b_now (== anchor, the clicked occurrence) is NOT strictly future ⇒ untouched.
 SELECT is(

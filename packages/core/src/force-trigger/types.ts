@@ -11,7 +11,7 @@
 
 import type { BlockStepStatusValue, ChainStepName } from '../orchestrator/types.js';
 
-export type ForceTriggerRole = 'sw' | 'sm' | 'hm' | 'bm';
+export type ForceTriggerRole = 'sw' | 'sm' | 'hm' | 'rsm' | 'bm';
 
 export type ForceTriggerBlockStatus =
   | 'scheduled'

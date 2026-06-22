@@ -37,11 +37,11 @@ SELECT has_table('public', 'users',      'users table exists');
 SELECT has_table('public', 'user_roles', 'user_roles table exists');
 SELECT has_type ('public', 'user_role_enum', 'user_role_enum type exists');
 
--- enum values cover all four roles from §2.1–2.3
+-- enum values cover all roles from §2.1–2.3a (rsm sits between hm and bm)
 SELECT enum_has_labels(
   'public', 'user_role_enum',
-  ARRAY['sw', 'sm', 'hm', 'bm'],
-  'user_role_enum has labels sw, sm, hm, bm'
+  ARRAY['sw', 'sm', 'hm', 'rsm', 'bm'],
+  'user_role_enum has labels sw, sm, hm, rsm, bm'
 );
 
 -- ============================================================

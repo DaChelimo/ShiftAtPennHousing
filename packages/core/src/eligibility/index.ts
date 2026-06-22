@@ -1,4 +1,4 @@
-export type UserRole = 'sw' | 'sm' | 'hm' | 'bm';
+export type UserRole = 'sw' | 'sm' | 'hm' | 'rsm' | 'bm';
 
 export type UserEligibilityProfile = {
   userId: string;
@@ -41,10 +41,13 @@ function roleAppliesToHouse(
 
 export function hasRole(user: UserEligibilityProfile, role: UserRole, houseId?: string): boolean {
   return user.roles.some((userRole) => {
+    // RSM sits below the HM and above the SM: it implies SM (schedule-building)
+    // and SW (holds shifts), exactly like the HM, but neither implies the other.
     const roleMatches =
       userRole.role === role ||
-      (role === 'sw' && (userRole.role === 'sm' || userRole.role === 'hm')) ||
-      (role === 'sm' && userRole.role === 'hm');
+      (role === 'sw' &&
+        (userRole.role === 'sm' || userRole.role === 'hm' || userRole.role === 'rsm')) ||
+      (role === 'sm' && (userRole.role === 'hm' || userRole.role === 'rsm'));
 
     if (!roleMatches) {
       return false;
@@ -80,6 +83,11 @@ export function isEligibleForFloatLookup(user: UserEligibilityProfile): Eligibil
     return ineligible('hm_excluded_from_float_lookup');
   }
 
+  // RSM, like HM, is never auto-floated by the system.
+  if (hasRole(user, 'rsm')) {
+    return ineligible('rsm_excluded_from_float_lookup');
+  }
+
   if (hasRole(user, 'bm')) {
     return ineligible('bm_excluded_from_worker_pipelines');
   }
@@ -95,6 +103,11 @@ export function isEligibleForBroadcast(user: UserEligibilityProfile): Eligibilit
 
   if (hasRole(user, 'hm')) {
     return ineligible('hm_excluded_from_broadcast');
+  }
+
+  // RSM is admin, not a broadcast SW (like HM/BM).
+  if (hasRole(user, 'rsm')) {
+    return ineligible('rsm_excluded_from_broadcast');
   }
 
   if (hasRole(user, 'bm')) {
@@ -125,6 +138,11 @@ export function isEligibleForSwapCounterparty(user: UserEligibilityProfile): Eli
 
   if (hasRole(user, 'hm')) {
     return ineligible('hm_excluded_from_swap_counterparties');
+  }
+
+  // RSM, like HM, is not an automatic swap counterparty.
+  if (hasRole(user, 'rsm')) {
+    return ineligible('rsm_excluded_from_swap_counterparties');
   }
 
   if (hasRole(user, 'bm')) {

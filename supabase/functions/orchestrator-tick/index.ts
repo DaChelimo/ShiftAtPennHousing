@@ -1041,6 +1041,23 @@ async function recordHealth(supabase: Supabase, summary: TickSummary): Promise<v
   if (error !== null) throw error;
 }
 
+// Source the orchestrator's "now" from the database app_now() so a dev simulated
+// clock (dev_sim_clock offset) fast-forwards every escalation step. app_now()
+// equals now() when the offset is 0, so production ticks are unaffected. Falls
+// back to wall-clock time if the RPC is unavailable.
+async function fetchAppNow(supabase: Supabase): Promise<Date> {
+  try {
+    const { data, error } = await supabase.rpc('app_now');
+    if (error === null && typeof data === 'string') {
+      const parsed = new Date(data);
+      if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
+  } catch {
+    // fall through to wall clock
+  }
+  return new Date();
+}
+
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders });
@@ -1068,7 +1085,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     },
   });
 
-  const now = new Date();
+  const now = await fetchAppNow(supabase);
   const summary: TickSummary = {
     tickedAt: now.toISOString(),
     blocksScanned: 0,

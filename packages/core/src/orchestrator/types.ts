@@ -20,7 +20,9 @@ export type ChainStepEvaluation = {
   trigger?: 'on_float_failure';
 };
 
-export type NotificationRecipient = 'hm' | 'hmod';
+// §10.1: during HM working hours the in-house contact is the RSM (the HM is only
+// reached in their HMOD capacity); outside those hours it is the HMOD on duty.
+export type NotificationRecipient = 'rsm' | 'hm' | 'hmod';
 
 export type ResolveNotificationRecipientInput = {
   now: Date;

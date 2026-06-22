@@ -21,7 +21,8 @@ function isPermittedSourceHouse(sourceHouseId: HouseId, destinationHouseId: Hous
 }
 
 function hasAdminWorkerExclusion(worker: NormalizedWorker): boolean {
-  return worker.roles.includes('hm') || worker.roles.includes('bm');
+  // RSM, like HM and BM, is never an automatic float candidate.
+  return worker.roles.includes('hm') || worker.roles.includes('rsm') || worker.roles.includes('bm');
 }
 
 // Source-level early exit (pinned-decision #1): the source can admit

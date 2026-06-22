@@ -75,6 +75,13 @@ export type Database = {
             foreignKeyName: 'ack_cadence_config_modified_by_fkey';
             columns: ['modified_by'];
             isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'ack_cadence_config_modified_by_fkey';
+            columns: ['modified_by'];
+            isOneToOne: false;
             referencedRelation: 'worker_open_shifts';
             referencedColumns: ['eligible_user_id'];
           },
@@ -103,6 +110,13 @@ export type Database = {
           updated_at?: string;
         };
         Relationships: [
+          {
+            foreignKeyName: 'block_step_status_block_id_fkey';
+            columns: ['block_id'];
+            isOneToOne: false;
+            referencedRelation: 'house_schedule_grid';
+            referencedColumns: ['block_id'];
+          },
           {
             foreignKeyName: 'block_step_status_block_id_fkey';
             columns: ['block_id'];
@@ -141,6 +155,13 @@ export type Database = {
             columns: ['user_id'];
             isOneToOne: false;
             referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'break_optouts_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
             referencedColumns: ['user_id'];
           },
           {
@@ -216,6 +237,49 @@ export type Database = {
           },
         ];
       };
+      dev_sim_clock: {
+        Row: {
+          id: boolean;
+          offset_seconds: number;
+          set_at: string | null;
+          set_by: string | null;
+        };
+        Insert: {
+          id?: boolean;
+          offset_seconds?: number;
+          set_at?: string | null;
+          set_by?: string | null;
+        };
+        Update: {
+          id?: boolean;
+          offset_seconds?: number;
+          set_at?: string | null;
+          set_by?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'dev_sim_clock_set_by_fkey';
+            columns: ['set_by'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'dev_sim_clock_set_by_fkey';
+            columns: ['set_by'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'dev_sim_clock_set_by_fkey';
+            columns: ['set_by'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
+        ];
+      };
       draft_block_assignments: {
         Row: {
           block_id: string;
@@ -246,6 +310,13 @@ export type Database = {
             foreignKeyName: 'draft_block_assignments_block_id_fkey';
             columns: ['block_id'];
             isOneToOne: false;
+            referencedRelation: 'house_schedule_grid';
+            referencedColumns: ['block_id'];
+          },
+          {
+            foreignKeyName: 'draft_block_assignments_block_id_fkey';
+            columns: ['block_id'];
+            isOneToOne: false;
             referencedRelation: 'shift_blocks';
             referencedColumns: ['block_id'];
           },
@@ -254,6 +325,13 @@ export type Database = {
             columns: ['created_by'];
             isOneToOne: false;
             referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'draft_block_assignments_created_by_fkey';
+            columns: ['created_by'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
             referencedColumns: ['user_id'];
           },
           {
@@ -275,6 +353,13 @@ export type Database = {
             columns: ['user_id'];
             isOneToOne: false;
             referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'draft_block_assignments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
             referencedColumns: ['user_id'];
           },
           {
@@ -341,6 +426,13 @@ export type Database = {
             foreignKeyName: 'float_assignments_force_triggered_by_fkey';
             columns: ['force_triggered_by'];
             isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'float_assignments_force_triggered_by_fkey';
+            columns: ['force_triggered_by'];
+            isOneToOne: false;
             referencedRelation: 'worker_open_shifts';
             referencedColumns: ['eligible_user_id'];
           },
@@ -349,6 +441,13 @@ export type Database = {
             columns: ['user_id'];
             isOneToOne: false;
             referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'float_assignments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
             referencedColumns: ['user_id'];
           },
           {
@@ -401,6 +500,13 @@ export type Database = {
             columns: ['user_id'];
             isOneToOne: false;
             referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'float_exclusions_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
             referencedColumns: ['user_id'];
           },
           {
@@ -495,6 +601,13 @@ export type Database = {
             foreignKeyName: 'hm_leave_replacement_user_id_fkey';
             columns: ['replacement_user_id'];
             isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'hm_leave_replacement_user_id_fkey';
+            columns: ['replacement_user_id'];
+            isOneToOne: false;
             referencedRelation: 'worker_open_shifts';
             referencedColumns: ['eligible_user_id'];
           },
@@ -503,6 +616,13 @@ export type Database = {
             columns: ['user_id'];
             isOneToOne: false;
             referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'hm_leave_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
             referencedColumns: ['user_id'];
           },
           {
@@ -539,6 +659,13 @@ export type Database = {
             foreignKeyName: 'hmod_rotor_hmod_user_id_fkey';
             columns: ['hmod_user_id'];
             isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'hmod_rotor_hmod_user_id_fkey';
+            columns: ['hmod_user_id'];
+            isOneToOne: false;
             referencedRelation: 'worker_open_shifts';
             referencedColumns: ['eligible_user_id'];
           },
@@ -546,18 +673,101 @@ export type Database = {
       };
       houses: {
         Row: {
+          desk_phone: string | null;
           id: string;
           name: string;
         };
         Insert: {
+          desk_phone?: string | null;
           id: string;
           name: string;
         };
         Update: {
+          desk_phone?: string | null;
           id?: string;
           name?: string;
         };
         Relationships: [];
+      };
+      leave_config_errors: {
+        Row: {
+          chain_user_ids: string[];
+          detected_at: string;
+          error_id: string;
+          house_id: string;
+          leaving_user_id: string;
+          resolved_at: string | null;
+          resolved_by: string | null;
+        };
+        Insert: {
+          chain_user_ids?: string[];
+          detected_at?: string;
+          error_id?: string;
+          house_id: string;
+          leaving_user_id: string;
+          resolved_at?: string | null;
+          resolved_by?: string | null;
+        };
+        Update: {
+          chain_user_ids?: string[];
+          detected_at?: string;
+          error_id?: string;
+          house_id?: string;
+          leaving_user_id?: string;
+          resolved_at?: string | null;
+          resolved_by?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'leave_config_errors_house_id_fkey';
+            columns: ['house_id'];
+            isOneToOne: false;
+            referencedRelation: 'houses';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'leave_config_errors_leaving_user_id_fkey';
+            columns: ['leaving_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'leave_config_errors_leaving_user_id_fkey';
+            columns: ['leaving_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'leave_config_errors_leaving_user_id_fkey';
+            columns: ['leaving_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
+          {
+            foreignKeyName: 'leave_config_errors_resolved_by_fkey';
+            columns: ['resolved_by'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'leave_config_errors_resolved_by_fkey';
+            columns: ['resolved_by'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'leave_config_errors_resolved_by_fkey';
+            columns: ['resolved_by'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
+        ];
       };
       notifications: {
         Row: {
@@ -608,6 +818,13 @@ export type Database = {
             foreignKeyName: 'notifications_recipient_user_id_fkey';
             columns: ['recipient_user_id'];
             isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'notifications_recipient_user_id_fkey';
+            columns: ['recipient_user_id'];
+            isOneToOne: false;
             referencedRelation: 'worker_open_shifts';
             referencedColumns: ['eligible_user_id'];
           },
@@ -616,6 +833,13 @@ export type Database = {
             columns: ['resolved_by'];
             isOneToOne: false;
             referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'notifications_resolved_by_fkey';
+            columns: ['resolved_by'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
             referencedColumns: ['user_id'];
           },
           {
@@ -767,6 +991,13 @@ export type Database = {
             foreignKeyName: 'period_house_publications_published_by_fkey';
             columns: ['published_by'];
             isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'period_house_publications_published_by_fkey';
+            columns: ['published_by'];
+            isOneToOne: false;
             referencedRelation: 'worker_open_shifts';
             referencedColumns: ['eligible_user_id'];
           },
@@ -804,6 +1035,13 @@ export type Database = {
             columns: ['user_id'];
             isOneToOne: false;
             referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'period_targets_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
             referencedColumns: ['user_id'];
           },
           {
@@ -856,6 +1094,13 @@ export type Database = {
             foreignKeyName: 'preference_reminder_sends_user_id_fkey';
             columns: ['user_id'];
             isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'preference_reminder_sends_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
             referencedRelation: 'worker_open_shifts';
             referencedColumns: ['eligible_user_id'];
           },
@@ -885,6 +1130,13 @@ export type Database = {
             foreignKeyName: 'preferences_block_id_fkey';
             columns: ['block_id'];
             isOneToOne: false;
+            referencedRelation: 'house_schedule_grid';
+            referencedColumns: ['block_id'];
+          },
+          {
+            foreignKeyName: 'preferences_block_id_fkey';
+            columns: ['block_id'];
+            isOneToOne: false;
             referencedRelation: 'shift_blocks';
             referencedColumns: ['block_id'];
           },
@@ -900,6 +1152,13 @@ export type Database = {
             columns: ['user_id'];
             isOneToOne: false;
             referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'preferences_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
             referencedColumns: ['user_id'];
           },
           {
@@ -942,6 +1201,13 @@ export type Database = {
             columns: ['user_id'];
             isOneToOne: false;
             referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'push_tokens_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
             referencedColumns: ['user_id'];
           },
           {
@@ -1036,6 +1302,13 @@ export type Database = {
             foreignKeyName: 'shift_block_assignments_block_id_fkey';
             columns: ['block_id'];
             isOneToOne: false;
+            referencedRelation: 'house_schedule_grid';
+            referencedColumns: ['block_id'];
+          },
+          {
+            foreignKeyName: 'shift_block_assignments_block_id_fkey';
+            columns: ['block_id'];
+            isOneToOne: false;
             referencedRelation: 'shift_blocks';
             referencedColumns: ['block_id'];
           },
@@ -1044,6 +1317,13 @@ export type Database = {
             columns: ['dropped_by_user_id'];
             isOneToOne: false;
             referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'shift_block_assignments_dropped_by_user_id_fkey';
+            columns: ['dropped_by_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
             referencedColumns: ['user_id'];
           },
           {
@@ -1072,6 +1352,13 @@ export type Database = {
             columns: ['user_id'];
             isOneToOne: false;
             referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'shift_block_assignments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
             referencedColumns: ['user_id'];
           },
           {
@@ -1197,6 +1484,13 @@ export type Database = {
             foreignKeyName: 'swap_requests_counterparty_user_id_fkey';
             columns: ['counterparty_user_id'];
             isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'swap_requests_counterparty_user_id_fkey';
+            columns: ['counterparty_user_id'];
+            isOneToOne: false;
             referencedRelation: 'worker_open_shifts';
             referencedColumns: ['eligible_user_id'];
           },
@@ -1205,6 +1499,13 @@ export type Database = {
             columns: ['initiator_user_id'];
             isOneToOne: false;
             referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'swap_requests_initiator_user_id_fkey';
+            columns: ['initiator_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
             referencedColumns: ['user_id'];
           },
           {
@@ -1253,6 +1554,13 @@ export type Database = {
             foreignKeyName: 'system_config_modified_by_fkey';
             columns: ['modified_by'];
             isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'system_config_modified_by_fkey';
+            columns: ['modified_by'];
+            isOneToOne: false;
             referencedRelation: 'worker_open_shifts';
             referencedColumns: ['eligible_user_id'];
           },
@@ -1287,6 +1595,13 @@ export type Database = {
             columns: ['user_id'];
             isOneToOne: false;
             referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'user_roles_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
             referencedColumns: ['user_id'];
           },
           {
@@ -1373,6 +1688,13 @@ export type Database = {
             foreignKeyName: 'weekly_cap_overrides_modified_by_fkey';
             columns: ['modified_by'];
             isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'weekly_cap_overrides_modified_by_fkey';
+            columns: ['modified_by'];
+            isOneToOne: false;
             referencedRelation: 'worker_open_shifts';
             referencedColumns: ['eligible_user_id'];
           },
@@ -1380,6 +1702,86 @@ export type Database = {
       };
     };
     Views: {
+      house_schedule_grid: {
+        Row: {
+          block_id: string | null;
+          desk_phone: string | null;
+          end_at: string | null;
+          house_id: string | null;
+          house_name: string | null;
+          id: string | null;
+          is_cross_house_pickup: boolean | null;
+          is_float: boolean | null;
+          required_headcount: number | null;
+          start_at: string | null;
+          status: string | null;
+          user_id: string | null;
+          worker_name: string | null;
+          worker_phone: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'shift_block_assignments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'shift_block_assignments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'shift_block_assignments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
+          {
+            foreignKeyName: 'shift_blocks_house_id_fkey';
+            columns: ['house_id'];
+            isOneToOne: false;
+            referencedRelation: 'houses';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      worker_directory: {
+        Row: {
+          home_house_id: string | null;
+          is_active: boolean | null;
+          name: string | null;
+          phone: string | null;
+          user_id: string | null;
+        };
+        Insert: {
+          home_house_id?: string | null;
+          is_active?: boolean | null;
+          name?: string | null;
+          phone?: string | null;
+          user_id?: string | null;
+        };
+        Update: {
+          home_house_id?: string | null;
+          is_active?: boolean | null;
+          name?: string | null;
+          phone?: string | null;
+          user_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'users_home_house_id_fkey';
+            columns: ['home_house_id'];
+            isOneToOne: false;
+            referencedRelation: 'houses';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       worker_my_shifts: {
         Row: {
           break_shift: boolean | null;
@@ -1439,6 +1841,7 @@ export type Database = {
       admin_assign_worker: {
         Args: {
           p_block_ids: string[];
+          p_incumbent_user_id?: string;
           p_now: string;
           p_operator_user_id: string;
           p_override_advisories: boolean;
@@ -1464,6 +1867,7 @@ export type Database = {
         };
         Returns: Json;
       };
+      app_now: { Args: never; Returns: string };
       apply_permanent_swap: {
         Args: {
           p_affected_assignment_ids: string[];
@@ -1506,6 +1910,13 @@ export type Database = {
       break_is_highlighted: {
         Args: { p_as_of: string; p_break_id: string };
         Returns: boolean;
+      };
+      claim_break_blocks: {
+        Args: { p_as_of: string; p_block_ids: string[]; p_user_id: string };
+        Returns: {
+          claimed_assignment_id: string;
+          claimed_block_id: string;
+        }[];
       };
       claim_break_shift: {
         Args: { p_as_of: string; p_assignment_id: string; p_user_id: string };
@@ -1567,6 +1978,19 @@ export type Database = {
         Args: { p_initiator: string; p_now?: string; p_user_id: string };
         Returns: Json;
       };
+      first_uncovered_date_for_house: {
+        Args: { p_end_date: string; p_house_id: string; p_start_date: string };
+        Returns: string;
+      };
+      flag_leave_depth_error: {
+        Args: {
+          p_chain: string[];
+          p_house_id: string;
+          p_leaving_user_id: string;
+          p_now: string;
+        };
+        Returns: string;
+      };
       force_trigger_float: {
         Args: {
           p_destination_assignment_ids: string[];
@@ -1611,6 +2035,10 @@ export type Database = {
         Args: { p_house_id: string; p_on_date: string };
         Returns: boolean;
       };
+      house_has_open_leave_config_error: {
+        Args: { p_house_id: string };
+        Returns: boolean;
+      };
       is_assignment_claimable: {
         Args: { p_as_of: string; p_assignment_id: string };
         Returns: boolean;
@@ -1622,6 +2050,10 @@ export type Database = {
       };
       is_valid_block_headcounts: { Args: { p: Json }; Returns: boolean };
       is_valid_escalation_chain: { Args: { p: Json }; Returns: boolean };
+      leave_resolution_walk: {
+        Args: { p_resolution_date: string; p_user_id: string };
+        Returns: Record<string, unknown>;
+      };
       mark_notification_read: {
         Args: { p_notification_id: string; p_now: string; p_user_id: string };
         Returns: boolean;
@@ -1938,7 +2370,7 @@ export type Database = {
         | 'vacant';
       swap_status_enum: 'pending' | 'accepted' | 'rejected' | 'expired' | 'voided';
       swap_type_enum: 'shift_swap' | 'float_swap' | 'permanent_swap';
-      user_role_enum: 'sw' | 'sm' | 'hm' | 'bm';
+      user_role_enum: 'sw' | 'sm' | 'hm' | 'rsm' | 'bm';
       vacancy_origin_enum:
         | 'none'
         | 'temporary_drop'
@@ -2114,7 +2546,7 @@ export const Constants = {
       ],
       swap_status_enum: ['pending', 'accepted', 'rejected', 'expired', 'voided'],
       swap_type_enum: ['shift_swap', 'float_swap', 'permanent_swap'],
-      user_role_enum: ['sw', 'sm', 'hm', 'bm'],
+      user_role_enum: ['sw', 'sm', 'hm', 'rsm', 'bm'],
       vacancy_origin_enum: [
         'none',
         'temporary_drop',

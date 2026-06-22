@@ -28,10 +28,10 @@ import type {
 
 const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
 
-// SM/HM/BM hold admin powers at their scoped house (BSpec §2.7: BM == HM).
-// `sw` is never an admin role. The role list is already filtered to the
-// destination house by the caller (ARCH §6.2 #1).
-const ADMIN_ROLES: ReadonlySet<ForceTriggerRole> = new Set(['sm', 'hm', 'bm']);
+// SM/HM/RSM/BM hold admin powers at their scoped house (BSpec §2.7: BM == HM;
+// §2.3a: RSM == HM minus HMOD). `sw` is never an admin role. The role list is
+// already filtered to the destination house by the caller (ARCH §6.2 #1).
+const ADMIN_ROLES: ReadonlySet<ForceTriggerRole> = new Set(['sm', 'hm', 'rsm', 'bm']);
 
 export function validateForceTrigger(
   input: ForceTriggerValidationInput,

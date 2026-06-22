@@ -48,7 +48,7 @@
 
 BEGIN;
 
-SELECT plan(54);
+SELECT plan(58);
 
 -- ============================================================
 -- 0. Fixtures.
@@ -175,6 +175,11 @@ VALUES
   -- A FUTURE occupied (incumbent) single seat for the this-week reassign path (house-05 17:00, +1w).
   ('51000002-0000-0000-0000-000000001701', 'house-05',
    (current_setting('test.s1.anchor')::timestamptz + interval '7 days') - interval '2 hours', 1),
+  -- A FUTURE 2-seat block (house-05 17:30, +1w): seat 1 occupied by the incumbent,
+  -- seat 2 VACANT. The phantom-seat fixture — a Replace targeting the incumbent must
+  -- overwrite seat 1, NOT fill the sibling vacant seat (the old reassign bug).
+  ('51000002-0000-0000-0000-000000001751', 'house-05',
+   (current_setting('test.s1.anchor')::timestamptz + interval '7 days') - interval '90 minutes', 2),
   -- A PAST block for block_started (house-05 18:00, -1w).
   ('51000002-0000-0000-0000-000000001802', 'house-05',
    (current_setting('test.s1.anchor')::timestamptz - interval '7 days') - interval '1 hour', 1),
@@ -211,6 +216,11 @@ VALUES
   -- this-week reassign: an occupied (incumbent) non-float seat.
   ('51000003-0000-0000-0000-000000001701', '51000002-0000-0000-0000-000000001701',
    '51000001-0000-0000-0000-000000000002', 'scheduled', 'none', false, NULL),
+  -- phantom-seat 2-seat block: seat 1 = incumbent (scheduled), seat 2 = VACANT.
+  ('51000003-0000-0000-0000-000000001751', '51000002-0000-0000-0000-000000001751',
+   '51000001-0000-0000-0000-000000000002', 'scheduled', 'none', false, NULL),
+  ('51000003-0000-0000-0000-000000001752', '51000002-0000-0000-0000-000000001751',
+   NULL, 'vacant', 'never_assigned', false, NULL),
   -- past block (block_started): a vacant seat.
   ('51000003-0000-0000-0000-000000001802', '51000002-0000-0000-0000-000000001802', NULL, 'vacant', 'never_assigned', false, NULL),
   -- float-committed seat: pending_float_in (a floater inbound), occupant = the incumbent.
@@ -264,8 +274,8 @@ FROM generate_series(0, 79) AS n;
 
 SELECT has_function(
   'public', 'admin_assign_worker',
-  ARRAY['uuid', 'uuid[]', 'uuid', 'text', 'boolean', 'timestamptz'],
-  'admin_assign_worker(operator, block_ids[], user, scope, override_advisories, now) exists (TEST_PLAN §3)'
+  ARRAY['uuid', 'uuid[]', 'uuid', 'text', 'boolean', 'timestamptz', 'uuid'],
+  'admin_assign_worker(operator, block_ids[], user, scope, override_advisories, now, incumbent) exists (TEST_PLAN §3)'
 );
 SELECT has_function(
   'public', 'admin_remove_worker',
@@ -333,6 +343,38 @@ SELECT is(
      AND user_id = '51000001-0000-0000-0000-000000000002'),
   0,
   'reassign: the incumbent no longer holds the seat (vacated atomically)'
+);
+
+-- Replace targeting a named incumbent on a 2-seat block: overwrite the incumbent's
+-- seat, NOT the sibling vacant seat (the phantom-seat regression — migration
+-- 20260614000003 p_incumbent_user_id). Without the incumbent arg the write prefers
+-- the vacant seat and would leave the incumbent in place beside a new worker.
+SELECT lives_ok(
+  $$ SELECT public.admin_assign_worker(
+       '51000001-0000-0000-0000-000000000003'::uuid,                 -- operator (SM of house-05)
+       ARRAY['51000002-0000-0000-0000-000000001751']::uuid[],        -- the 2-seat block
+       '51000001-0000-0000-0000-000000000001'::uuid,                 -- new worker (target)
+       'this_week', false,
+       current_setting('test.s1.anchor')::timestamptz,
+       '51000001-0000-0000-0000-000000000002'::uuid) $$,             -- incumbent to replace
+  'replace this_week: a 2-seat block with a named incumbent is reassigned in one call'
+);
+SELECT is(
+  (SELECT user_id FROM public.shift_block_assignments WHERE assignment_id = '51000003-0000-0000-0000-000000001751'),
+  '51000001-0000-0000-0000-000000000001'::uuid,
+  'replace: the incumbent seat now holds the new worker'
+);
+SELECT is(
+  (SELECT status::text FROM public.shift_block_assignments WHERE assignment_id = '51000003-0000-0000-0000-000000001752'),
+  'vacant',
+  'replace: the sibling vacant seat is untouched (no phantom fill)'
+);
+SELECT is(
+  (SELECT count(*)::integer FROM public.shift_block_assignments
+   WHERE block_id = '51000002-0000-0000-0000-000000001751'
+     AND user_id = '51000001-0000-0000-0000-000000000002'),
+  0,
+  'replace: the incumbent no longer holds any seat on the block'
 );
 
 -- ============================================================

@@ -2,10 +2,13 @@
 -- Manual Test seed — clean 3-house world for hands-on SM-tool drafting.
 --
 -- Houses:   Harnwell (2/block), Quad (3/block), DuBois (1/block)
--- People:   8 SW + 1 SM + 1 HM per house = 30 accounts
+-- People:   8 SW + 1 SM + 1 HM + 1 RSM per house = 33 accounts
 --           name  "<First> <n> <House>"        e.g. "Alice 1 Harnwell"
 --           email "<first>-<house>@upenn.edu"  e.g. alice-harnwell@upenn.edu
 --           password: abc123   (everyone)
+--           The RSM (Residential Services Manager, §2.3a) is Diana per house:
+--           "Diana 11 <House>" / diana-<house>@upenn.edu — HM powers minus HMOD,
+--           plus read-only cross-house schedule visibility.
 -- Period:   Fall 2026 — 2026-06-15 .. 2026-12-17 (regular_school_year)
 --           Whole-semester blocks generated; preferences + targets seeded so the
 --           Phase-1 "preference-assisted" drafter (draft 1) shows real grouping.
@@ -100,7 +103,7 @@ WITH houses_t(house_id, house_label, house_digit) AS (
 roster(person_num, first_name, role) AS (
   VALUES (1, 'Alice', 'sw'), (2, 'Ben',  'sw'), (3, 'Cara', 'sw'), (4, 'Dan',  'sw'),
          (5, 'Erin',  'sw'), (6, 'Finn', 'sw'), (7, 'Gina', 'sw'), (8, 'Hank', 'sw'),
-         (9, 'Sam',   'sm'), (10, 'Hana', 'hm')
+         (9, 'Sam',   'sm'), (10, 'Hana', 'hm'), (11, 'Diana', 'rsm')
 )
 SELECT
   ('f0000000-0000-4000-8000-0000000' || h.house_digit || '00'

@@ -17,7 +17,8 @@ const HARD_BREAK_PROFILES = new Set<DayProfile>([
 ]);
 
 export function canModifyCap(role: AdminRole): CapModificationAuthResult {
-  return role === 'hm' || role === 'bm'
+  // §9.3 cap modification is HM/BM authority; §2.3a grants the RSM all HM powers.
+  return role === 'hm' || role === 'bm' || role === 'rsm'
     ? { authorized: true }
     : { authorized: false, reason: 'role_not_permitted' };
 }

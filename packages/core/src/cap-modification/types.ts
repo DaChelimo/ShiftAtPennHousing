@@ -1,4 +1,4 @@
-export type AdminRole = 'sw' | 'sm' | 'hm' | 'bm';
+export type AdminRole = 'sw' | 'sm' | 'hm' | 'rsm' | 'bm';
 export type CapEnforcement = 'soft' | 'hard';
 export type CapHours = 20 | 40;
 export type CapSetting = { hoursCap: CapHours; capEnforcement: CapEnforcement };

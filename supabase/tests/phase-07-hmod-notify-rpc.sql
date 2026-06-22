@@ -36,7 +36,7 @@ SELECT plan(12);
 -- fail by physical scan order. Remove ALL pre-existing house-03 hm roles (rolled back at
 -- the end) so the fixture HM inserted below is the sole house-03 hm.
 DELETE FROM public.user_roles
-  WHERE role = 'hm'
+  WHERE role IN ('hm', 'rsm')
     AND scope_house_id = 'house-03';
 
 -- ============================================================
@@ -51,7 +51,9 @@ VALUES
   ('e000050a-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 'p07hm-hm@test.local'),
   ('e000050a-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000000',
-   'authenticated', 'authenticated', 'p07hm-hmod@test.local')
+   'authenticated', 'authenticated', 'p07hm-hmod@test.local'),
+  ('e000050a-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000000',
+   'authenticated', 'authenticated', 'p07hm-rsm@test.local')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active)
@@ -59,12 +61,17 @@ VALUES
   ('e000050a-0000-0000-0000-000000000001', 'Test HM', 'p07hm-hm@test.local',
    'house-03', true),
   ('e000050a-0000-0000-0000-000000000002', 'Test HMOD', 'p07hm-hmod@test.local',
-   'harnwell', true);
+   'harnwell', true),
+  ('e000050a-0000-0000-0000-000000000003', 'Test RSM', 'p07hm-rsm@test.local',
+   'house-03', true);
 
+-- §2.3a/§10.1: during HM hours the in-house recipient is the house's RSM, not the
+-- HM. The fixture RSM is the sole house-03 rsm (pre-existing ones were deleted above).
 INSERT INTO public.user_roles (user_id, role, scope_house_id)
 VALUES
   ('e000050a-0000-0000-0000-000000000001', 'hm', 'house-03'),
-  ('e000050a-0000-0000-0000-000000000002', 'hm', 'harnwell');
+  ('e000050a-0000-0000-0000-000000000002', 'hm', 'harnwell'),
+  ('e000050a-0000-0000-0000-000000000003', 'rsm', 'house-03');
 
 -- Anchor: a Wednesday 30 days out, 12:00 EDT — solidly inside HM
 -- working hours so the HM path is exercised. We resolve the
@@ -153,16 +160,16 @@ SELECT is(
   (SELECT recipient_user_id FROM public.notifications
    WHERE type = 'hmod_urgent'
      AND payload ->> 'block_id' = 'f000050a-0000-0000-0000-000000000001'),
-  'e000050a-0000-0000-0000-000000000001'::uuid,
-  'B-1 hmod: HM-hours recipient is the HM (not the HMOD)'
+  'e000050a-0000-0000-0000-000000000003'::uuid,
+  'B-1 hmod: HM-hours recipient is the RSM (not the HM, not the HMOD)'
 );
 
 SELECT is(
   (SELECT payload ->> 'target' FROM public.notifications
    WHERE type = 'hmod_urgent'
      AND payload ->> 'block_id' = 'f000050a-0000-0000-0000-000000000001'),
-  'hm',
-  'B-1 hmod: notification payload.target = hm'
+  'rsm',
+  'B-1 hmod: notification payload.target = rsm'
 );
 
 SELECT is(

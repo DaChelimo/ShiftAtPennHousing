@@ -24,7 +24,7 @@ import com.pennhousing.shift.shared.viewmodel.ShiftsScreenViewModel
 import com.pennhousing.shift.shared.viewmodel.SwapCalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.SwapsViewModel
 import com.pennhousing.shift.shared.viewmodel.UpdatesViewModel
-import kotlin.time.Clock
+import com.pennhousing.shift.shared.platform.SimClock
 import kotlin.time.Instant
 
 /**
@@ -36,9 +36,14 @@ import kotlin.time.Instant
  * no-clock rule applies only to the pure decision surface, which receives `now`
  * as a parameter. [now] is also exposed so SwiftUI can supply the action instant
  * for `acknowledge` / `decline`.
+ *
+ * `now()` resolves through [SimClock], so on the iOS LIVE path (which builds its
+ * ViewModels through these factories) the app's `now` tracks the server's simulated
+ * clock once `WorkerBackend.syncSimClock` has run at launch. In demo and production
+ * the offset is 0, so `now()` is exactly the device wall clock — unchanged.
  */
 object DemoFactory {
-    fun now(): Instant = Clock.System.now()
+    fun now(): Instant = SimClock.now()
 
     fun shiftsViewModel(): ShiftsScreenViewModel {
         val now = now()

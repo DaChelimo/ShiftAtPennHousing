@@ -3,7 +3,12 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, useSyncExternalStore, useTransition } from 'react';
 
-import { clearSimClock, setSimClock } from '../lib/actions/devClock';
+import {
+  clearSimClock,
+  runOrchestratorTick,
+  setSimClock,
+  type OrchestratorTickSummary,
+} from '../lib/actions/devClock';
 
 // Dev-only time-travel control. Sits left of the HMOD pill. Shows the live
 // simulated clock (ticking forward at 1x) and lets you set it to any instant via
@@ -64,7 +69,9 @@ export function DevClockCard({ offsetSeconds }: { offsetSeconds: number }) {
   const [open, setOpen] = useState(false);
   const [pick, setPick] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, startTransition] = useTransition();
+  const [ticking, startTick] = useTransition();
   const nowMs = useSyncExternalStore(subscribeTick, getTickSnapshot, getTickServerSnapshot);
 
   useEffect(() => {
@@ -116,6 +123,20 @@ export function DevClockCard({ offsetSeconds }: { offsetSeconds: number }) {
         return;
       }
       setOpen(false);
+      router.refresh();
+    });
+  }
+
+  function runTick() {
+    setError(null);
+    startTick(async () => {
+      const result = await runOrchestratorTick();
+      if (!result.ok) {
+        setTick({ ok: false, text: result.error });
+        return;
+      }
+      setTick({ ok: true, text: summarizeTick(result.summary) });
+      // The action revalidated the layout; pull the refreshed board into view.
       router.refresh();
     });
   }
@@ -249,10 +270,47 @@ export function DevClockCard({ offsetSeconds }: { offsetSeconds: number }) {
               Reset
             </button>
           </div>
+
+          <div style={{ height: 1, background: 'var(--border, #e5e7eb)', margin: '2px 0' }} />
+
+          <div style={{ fontWeight: 600, fontSize: 13 }}>Orchestrator</div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted, #6b7280)', lineHeight: 1.4 }}>
+            Runs the escalation tick now (it auto-runs every minute). Set the clock into a boundary,
+            then tick to fire broadcast / float lookup / no-ack void at the simulated instant.
+          </div>
+          <button
+            type="button"
+            disabled={ticking}
+            data-testid="dev-clock-tick"
+            onClick={runTick}
+            style={{
+              ...chipStyle,
+              background: '#0061FC',
+              color: '#fff',
+              borderColor: '#0061FC',
+              fontWeight: 600,
+            }}
+          >
+            {ticking ? 'Running…' : 'Run orchestrator now'}
+          </button>
+          {tick && (
+            <div
+              data-testid="dev-clock-tick-result"
+              style={{ fontSize: 11, lineHeight: 1.4, color: tick.ok ? '#15803d' : '#dc2626' }}
+            >
+              {tick.text}
+            </div>
+          )}
         </div>
       )}
     </div>
   );
+}
+
+// One-line outcome of a tick for the panel — counts plus any errors.
+function summarizeTick(s: OrchestratorTickSummary): string {
+  const base = `Ticked · ${s.blocksScanned} scanned · ${s.stepsFired} fired · ${s.floatsVoided} voided · ${s.swapsExpired} swaps expired`;
+  return s.errors.length ? `${base} · ${s.errors.length} error(s): ${s.errors.join('; ')}` : base;
 }
 
 const chipStyle: React.CSSProperties = {

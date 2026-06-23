@@ -4,11 +4,15 @@ import com.pennhousing.shift.shared.auth.AuthSession
 import com.pennhousing.shift.shared.auth.SessionValidity
 import com.pennhousing.shift.shared.network.createAppSupabaseClient
 import com.pennhousing.shift.shared.platform.AppConfig
+import com.pennhousing.shift.shared.platform.SimClock
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.rpc
 import kotlinx.datetime.toStdlibInstant
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 
 /**
  * Worker auth — the single shared Supabase client + token wiring (DESIGN §5, item 2).
@@ -86,5 +90,29 @@ object WorkerBackend {
         val valid = if (SessionValidity.isValid(session, Clock.System.now())) session else null
         if (valid != null) wireAccessToken()
         return valid
+    }
+
+    /**
+     * The server's simulated "now" via the `app_now()` RPC (GRANTed to PUBLIC, so the
+     * anon/worker JWT may call it). In production — and any environment where the dev
+     * clock is unset — this equals the live `now()`. Best-effort: null on any failure,
+     * so the caller falls back to the device wall clock.
+     */
+    suspend fun fetchAppNow(): Instant? =
+        runCatching {
+            Instant.parse(client.postgrest.rpc("app_now").decodeAs<String>())
+        }.getOrNull()
+
+    /**
+     * Capture the dev sim-clock offset (server_now − device_now) into [SimClock] so the
+     * app's injected `now` tracks the simulated instant the web/orchestrator use. Called
+     * once at live launch (the offset is captured per launch; relaunch to pick up a clock
+     * change). A no-op when [fetchAppNow] is unavailable — the app keeps the wall clock.
+     * Never throws (the caller stays best-effort). At offset 0 (production/demo) this is
+     * a harmless ~0 ms correction.
+     */
+    suspend fun syncSimClock() {
+        val serverNow = fetchAppNow() ?: return
+        SimClock.offsetMillis = (serverNow - Clock.System.now()).inWholeMilliseconds
     }
 }

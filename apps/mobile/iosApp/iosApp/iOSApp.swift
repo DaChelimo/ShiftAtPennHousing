@@ -89,6 +89,10 @@ struct LiveRootView: View {
             // and wires the worker JWT on success, so a valid restored session routes
             // straight to shifts and carries the bearer on every privileged read.
             guard restored == nil else { return }
+            // Capture the dev sim-clock offset BEFORE building any live ViewModel, so the
+            // app's `now` (sourced via DemoFactory.now() → SimClock) tracks the
+            // time-travelled server clock. No-op at offset 0 (demo/production).
+            try? await WorkerBackend.shared.syncSimClock()
             let session = try? await WorkerBackend.shared.restoreValidSession()
             restored = .some(session)
         }

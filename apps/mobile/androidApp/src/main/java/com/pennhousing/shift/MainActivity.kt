@@ -46,6 +46,7 @@ import com.pennhousing.shift.shared.notifications.NotificationItem
 import com.pennhousing.shift.shared.notifications.withIncomingSwapEntries
 import com.pennhousing.shift.shared.notifications.withPendingFloatEntry
 import com.pennhousing.shift.shared.platform.AppConfig
+import com.pennhousing.shift.shared.platform.SimClock
 import com.pennhousing.shift.shared.preferences.PreferencePeriod
 import com.pennhousing.shift.shared.samples.DemoData
 import com.pennhousing.shift.shared.shifts.weeklyHours
@@ -177,12 +178,18 @@ private fun DemoRoot(launchFloatAckId: String? = null) {
  */
 @Composable
 private fun LiveOrLoginRoot(launchFloatAckId: String? = null) {
-    val now = remember { Clock.System.now() }
-
-    // Restore the session off the gateway exactly once. null while loading; the
-    // Optional wrapper distinguishes "still loading" from "loaded: no session".
+    // Restore the session off the gateway exactly once. RestoreResult.Loading while in
+    // flight; Loaded carries the (maybe-null) session AND the resolved business `now`.
+    //
+    // The business `now` is the SERVER's simulated clock (app_now()) captured once at
+    // launch via WorkerBackend.syncSimClock — so the worker app's countdowns and
+    // ack-deadline checks agree with the time-travelled web/orchestrator. Falls back to
+    // the device wall clock when app_now() is unavailable (and in prod, where offset 0
+    // makes SimClock.now() == the wall clock). Session VALIDITY below stays on the real
+    // wall clock — the Supabase JWT is real, so a future sim-now must not expire it.
     val restored by produceState<RestoreResult>(initialValue = RestoreResult.Loading) {
-        value = RestoreResult.Loaded(WorkerBackend.authGateway.currentSession())
+        WorkerBackend.syncSimClock()
+        value = RestoreResult.Loaded(WorkerBackend.authGateway.currentSession(), SimClock.now())
     }
 
     val scope = rememberCoroutineScope()
@@ -195,7 +202,11 @@ private fun LiveOrLoginRoot(launchFloatAckId: String? = null) {
         RestoreResult.Loading -> LoadingScreen()
         is RestoreResult.Loaded -> {
             val session = if (signedOut) null else (authedSession ?: result.session)
-            val decision = AppBootstrap.decide(backendConfigured = true, session = session, now = now)
+            // Session validity uses the real wall clock (the JWT is real); the business
+            // `now` below is the simulated clock.
+            val decision =
+                AppBootstrap.decide(backendConfigured = true, session = session, now = Clock.System.now())
+            val now = result.now
 
             // decision.source is LIVE on this path; route on the start destination.
             if (decision.start == StartDestination.SHIFTS && decision.source == DataSource.LIVE && session != null) {
@@ -645,5 +656,7 @@ private sealed interface RestoreResult {
 
     data class Loaded(
         val session: AuthSession?,
+        // The business `now`: the server's simulated clock captured at launch.
+        val now: Instant,
     ) : RestoreResult
 }

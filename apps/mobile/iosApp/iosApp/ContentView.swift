@@ -1689,7 +1689,13 @@ struct ShiftsRootView: View {
                         )
                     }
                     .coordinateSpace(name: "houseHBody")
+                    // Mirror the body's live horizontal offset to the frozen header row so the
+                    // dates track the columns. `onScrollGeometryChange` (iOS 18+) reads the
+                    // scroll's `contentOffset` continuously during the gesture — reliable where
+                    // the preference-frame read below silently fails to update mid-scroll. The
+                    // preference path stays as the pre-iOS-18 fallback.
                     .onPreferenceChange(HouseHScrollKey.self) { houseHOffset = $0 }
+                    .houseTrackHScroll { houseHOffset = $0 }
                 }
                 .padding(.leading, 12).padding(.top, 2).padding(.bottom, 8)
             }
@@ -3847,6 +3853,24 @@ extension HouseGridBlock: Identifiable {}
 private struct HouseHScrollKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+private extension View {
+    /// Continuously mirror a horizontal `ScrollView`'s content offset to `onOffset` (≤ 0,
+    /// matching the preference convention) so the House grid's frozen day-header row tracks
+    /// the columns as they scroll sideways. `onScrollGeometryChange` (iOS 18+) updates on
+    /// every offset change during the drag; on older systems this is a no-op and the
+    /// `HouseHScrollKey` preference path remains the (best-effort) fallback.
+    @ViewBuilder
+    func houseTrackHScroll(_ onOffset: @escaping (CGFloat) -> Void) -> some View {
+        if #available(iOS 18.0, *) {
+            self.onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, x in
+                onOffset(-x)
+            }
+        } else {
+            self
+        }
+    }
 }
 
 #Preview {

@@ -106,13 +106,19 @@ object WorkerBackend {
     /**
      * Capture the dev sim-clock offset (server_now − device_now) into [SimClock] so the
      * app's injected `now` tracks the simulated instant the web/orchestrator use. Called
-     * once at live launch (the offset is captured per launch; relaunch to pick up a clock
-     * change). A no-op when [fetchAppNow] is unavailable — the app keeps the wall clock.
-     * Never throws (the caller stays best-effort). At offset 0 (production/demo) this is
-     * a harmless ~0 ms correction.
+     * at live launch AND when the app returns to the foreground (so a clock change made on
+     * the web is reflected without a relaunch). A no-op when [fetchAppNow] is unavailable —
+     * the app keeps the wall clock. Never throws (the caller stays best-effort).
+     *
+     * Returns `true` when the offset MOVED meaningfully (> 5s) — i.e. the dev clock was
+     * actually changed — so the foreground caller can rebuild the UI only then. A plain
+     * re-sync with no web change leaves the offset within RPC jitter and returns `false`;
+     * at offset 0 (production/demo) it is always `false`.
      */
-    suspend fun syncSimClock() {
-        val serverNow = fetchAppNow() ?: return
+    suspend fun syncSimClock(): Boolean {
+        val before = SimClock.offsetMillis
+        val serverNow = fetchAppNow() ?: return false
         SimClock.offsetMillis = (serverNow - Clock.System.now()).inWholeMilliseconds
+        return kotlin.math.abs(SimClock.offsetMillis - before) > 5_000
     }
 }

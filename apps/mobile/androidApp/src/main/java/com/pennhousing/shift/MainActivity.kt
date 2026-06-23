@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -27,6 +29,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pennhousing.shift.shared.auth.AppBootstrap
 import com.pennhousing.shift.shared.auth.AuthSession
@@ -181,18 +186,36 @@ private fun LiveOrLoginRoot(launchFloatAckId: String? = null) {
     // Restore the session off the gateway exactly once. RestoreResult.Loading while in
     // flight; Loaded carries the (maybe-null) session AND the resolved business `now`.
     //
-    // The business `now` is the SERVER's simulated clock (app_now()) captured once at
-    // launch via WorkerBackend.syncSimClock — so the worker app's countdowns and
-    // ack-deadline checks agree with the time-travelled web/orchestrator. Falls back to
-    // the device wall clock when app_now() is unavailable (and in prod, where offset 0
-    // makes SimClock.now() == the wall clock). Session VALIDITY below stays on the real
-    // wall clock — the Supabase JWT is real, so a future sim-now must not expire it.
+    // The business `now` is the SERVER's simulated clock (app_now()), captured via
+    // WorkerBackend.syncSimClock — so the worker app's countdowns and ack-deadline checks
+    // agree with the time-travelled web/orchestrator. Falls back to the device wall clock
+    // when app_now() is unavailable (and in prod, where offset 0 makes SimClock.now() ==
+    // the wall clock). Session VALIDITY below stays on the real wall clock — the Supabase
+    // JWT is real, so a future sim-now must not expire it.
+    val scope = rememberCoroutineScope()
     val restored by produceState<RestoreResult>(initialValue = RestoreResult.Loading) {
         WorkerBackend.syncSimClock()
-        value = RestoreResult.Loaded(WorkerBackend.authGateway.currentSession(), SimClock.now())
+        value = RestoreResult.Loaded(WorkerBackend.authGateway.currentSession())
     }
 
-    val scope = rememberCoroutineScope()
+    // Re-read the dev sim-clock when the app returns to the foreground, so a clock change
+    // made on the web is reflected WITHOUT a relaunch. `clockEpoch` only bumps when the
+    // offset actually moved (syncSimClock returns true), and re-keys the live UI below so
+    // every ViewModel rebuilds with the fresh `now`. Normal foregrounding (no clock change)
+    // leaves the UI untouched.
+    var clockEpoch by remember { mutableIntStateOf(0) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer =
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    scope.launch { if (WorkerBackend.syncSimClock()) clockEpoch++ }
+                }
+            }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     // An in-session sign-in promotes us to live shifts without re-running the restore.
     var authedSession by remember { mutableStateOf<AuthSession?>(null) }
     // A sign-out forces LOGIN even though the launch-restored session is still cached.
@@ -206,23 +229,27 @@ private fun LiveOrLoginRoot(launchFloatAckId: String? = null) {
             // `now` below is the simulated clock.
             val decision =
                 AppBootstrap.decide(backendConfigured = true, session = session, now = Clock.System.now())
-            val now = result.now
 
             // decision.source is LIVE on this path; route on the start destination.
             if (decision.start == StartDestination.SHIFTS && decision.source == DataSource.LIVE && session != null) {
                 // A session restored at launch (or just authenticated) is the live
                 // worker — carry their JWT on every privileged request.
                 LaunchedEffect(session.userId) { WorkerBackend.wireAccessToken() }
-                LiveShiftsRoot(
-                    session = session,
-                    now = now,
-                    launchFloatAckId = launchFloatAckId,
-                    onSignOut = {
-                        scope.launch { WorkerBackend.authGateway.signOut() }
-                        authedSession = null
-                        signedOut = true
-                    },
-                )
+                // Re-keyed on clockEpoch: a foreground clock change tears down + rebuilds
+                // the whole live tree, so `now` (and every VM built from it) is recaptured.
+                key(clockEpoch) {
+                    val now = remember { SimClock.now() }
+                    LiveShiftsRoot(
+                        session = session,
+                        now = now,
+                        launchFloatAckId = launchFloatAckId,
+                        onSignOut = {
+                            scope.launch { WorkerBackend.authGateway.signOut() }
+                            authedSession = null
+                            signedOut = true
+                        },
+                    )
+                }
             } else {
                 LoginRoute(
                     gateway = WorkerBackend.authGateway,
@@ -656,7 +683,5 @@ private sealed interface RestoreResult {
 
     data class Loaded(
         val session: AuthSession?,
-        // The business `now`: the server's simulated clock captured at launch.
-        val now: Instant,
     ) : RestoreResult
 }

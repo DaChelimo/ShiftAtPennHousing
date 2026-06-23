@@ -64,6 +64,10 @@ struct LiveRootView: View {
     @StateObject private var login = LoginObservable(gateway: WorkerBackend.shared.authGateway)
     /// nil while the launch restore runs; .some(session?) once it has resolved.
     @State private var restored: AuthSession?? = nil
+    @Environment(\.scenePhase) private var scenePhase
+    /// Bumped when a foreground re-sync finds the dev clock actually changed; `.id()`
+    /// below then rebuilds the live tree so every ViewModel recaptures the fresh `now`.
+    @State private var clockEpoch = 0
 
     var body: some View {
         Group {
@@ -76,6 +80,7 @@ struct LiveRootView: View {
                     // A sign-out forces LOGIN even though a session was restored at launch.
                     restored = .some(nil)
                 }, liveUserId: session.userId)
+                .id(clockEpoch)
             } else if restored == nil {
                 LaunchRestoreView()
             } else {
@@ -92,9 +97,20 @@ struct LiveRootView: View {
             // Capture the dev sim-clock offset BEFORE building any live ViewModel, so the
             // app's `now` (sourced via DemoFactory.now() → SimClock) tracks the
             // time-travelled server clock. No-op at offset 0 (demo/production).
-            try? await WorkerBackend.shared.syncSimClock()
+            _ = try? await WorkerBackend.shared.syncSimClock()
             let session = try? await WorkerBackend.shared.restoreValidSession()
             restored = .some(session)
+        }
+        .onChange(of: scenePhase) { phase in
+            // Returning to the foreground: re-read the dev clock. If it actually moved
+            // (a clock change made on the web), bump clockEpoch to rebuild the live tree
+            // with the fresh `now` — no relaunch needed. No-op otherwise (incl. prod).
+            guard phase == .active else { return }
+            Task { @MainActor in
+                if (try? await WorkerBackend.shared.syncSimClock()) == true {
+                    clockEpoch += 1
+                }
+            }
         }
     }
 }

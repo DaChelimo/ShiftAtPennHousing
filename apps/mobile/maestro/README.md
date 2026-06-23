@@ -140,6 +140,10 @@ The screens MUST expose these stable ids. On Android attach them with
 | `ack_deadline_passed`       | Disabled state after the T-10m deadline (§7.1).          |
 | `calendar_screen`           | My Shifts (the Personal Calendar) screen root — Tab 1.   |
 | `week_total_chip`           | "This week — Xh of cap" hours chip, under the week header. |
+| `float_carousel`            | The §7.1 float-request carousel (brand-blue card stack) directly under the hours chip — rendered only when the worker has pending floats; swipe between cards (sorted closest-start first). |
+| `float_card`                | One full-width float-request card. Tapping the body opens the ack detail (`ack_modal`) for that float. |
+| `float_card_accept`         | Accept the float on the current card — POSTs `acknowledge-float` and advances to the next closest float. |
+| `float_card_decline`        | Decline the float on the current card — POSTs `decline-float` and advances. After the LAST one resolves, the carousel collapses and an "All float requests handled" success toast shows (then auto-dismisses). |
 | `calendar_week_strip`       | The Mon–Sun day-picker strip — shown in Day mode only (hidden in Week mode). |
 | `calendar_day_cell`         | A day cell in the week strip.                            |
 | `calendar_view_toggle`      | The Week / Day view toggle.                              |

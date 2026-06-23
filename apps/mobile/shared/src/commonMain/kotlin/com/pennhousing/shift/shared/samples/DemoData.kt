@@ -12,6 +12,7 @@ import com.pennhousing.shift.shared.model.House
 import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.model.OpenFeed
 import com.pennhousing.shift.shared.model.OpenShift
+import com.pennhousing.shift.shared.model.PendingFloat
 import com.pennhousing.shift.shared.notifications.IncomingSwap
 import com.pennhousing.shift.shared.notifications.NotificationCategory
 import com.pennhousing.shift.shared.notifications.NotificationItem
@@ -137,7 +138,36 @@ object DemoData {
         }
     }
 
-    fun pendingFloat(now: Instant): FloatAck = FloatAck(floatId = "float-demo", destinationHouse = quad, floatStart = now + 2.hours)
+    private val dubois = House("dubois", "DuBois")
+
+    /**
+     * The worker's outstanding float requests for the My-Shifts carousel — two demo
+     * floats at different houses/times so the swipe + "next closest" advance and the
+     * "all handled" completion are demonstrable (and Maestro-checkable). Closest first.
+     */
+    fun pendingFloats(now: Instant): List<PendingFloat> {
+        // Anchor on a 30-minute boundary so the windows read like real block shifts
+        // (e.g. 18:00 – 20:00), not the wall-clock minute the demo happens to load at.
+        val base = roundDownToBlock(now)
+        return listOf(
+            PendingFloat(
+                floatId = "float-demo-1",
+                destinationHouse = dubois,
+                start = base + 2.hours,
+                end = base + 4.hours,
+                blockCount = 4,
+            ),
+            PendingFloat(
+                floatId = "float-demo-2",
+                destinationHouse = harnwell,
+                start = base + 5.hours,
+                end = base + 7.hours,
+                blockCount = 4,
+            ),
+        )
+    }
+
+    fun pendingFloat(now: Instant): FloatAck = pendingFloats(now).first().toFloatAck()
 
     /**
      * A deterministic Updates feed: the urgent pending-float entry (its `floatId`

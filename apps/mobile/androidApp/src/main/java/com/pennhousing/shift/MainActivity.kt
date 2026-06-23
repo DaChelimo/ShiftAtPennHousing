@@ -46,6 +46,7 @@ import com.pennhousing.shift.shared.data.WorkerBackend
 import com.pennhousing.shift.shared.data.WorkerSnapshot
 import com.pennhousing.shift.shared.house.HouseScheduleSnapshot
 import com.pennhousing.shift.shared.model.FloatAck
+import com.pennhousing.shift.shared.model.PendingFloat
 import com.pennhousing.shift.shared.notifications.IncomingSwap
 import com.pennhousing.shift.shared.notifications.NotificationItem
 import com.pennhousing.shift.shared.notifications.withIncomingSwapEntries
@@ -159,6 +160,9 @@ private fun DemoRoot(launchFloatAckId: String? = null) {
         breakCalendarVm = breakCalendarVm,
         settingsVm = settingsVm,
         currentWeeklyHours = DemoData.DEMO_WEEKLY_HOURS,
+        now = now,
+        // Demo float-request carousel — two floats so the swipe + completion are visible.
+        pendingFloats = remember(now) { DemoData.pendingFloats(now) },
         // Demo has no backend session → sign-out is a no-op (login is the live path).
         onSignOut = {},
         launchFloatAckId = launchFloatAckId,
@@ -283,7 +287,7 @@ private fun LiveShiftsRoot(
 ) {
     val repo = remember { WorkerBackend.shiftsRepository }
     val snapshotState by remember(session.userId) {
-        repo.observeWorkerWeek(session.userId)
+        repo.observeWorkerWeek(session.userId, now)
     }.collectAsStateWithLifecycle(initialValue = null)
 
     when (val snapshot: WorkerSnapshot? = snapshotState) {
@@ -318,15 +322,17 @@ private fun LiveShiftsRoot(
                 remember(snapshot, revertKey) {
                     ShiftsScreenViewModel(snapshot.myShifts, snapshot.openShifts, now)
                 }
-            // Float ack: load the worker's live pending float (own `float_assignments`
-            // row + own pending float-out blocks, both RLS-scoped); fall back to the demo
-            // float while the read is in flight or when none is outstanding. Ack/decline
-            // POST to `acknowledge-float` / `decline-float` (best-effort) when the
-            // optimistic local transition succeeds. Mirrors the live-notifications pattern.
-            val livePendingFloat by
-                produceState<FloatAck?>(initialValue = null, session.userId, revertKey) {
-                    value = runCatching { repo.fetchPendingFloat(session.userId) }.getOrNull()
+            // Float requests: load ALL the worker's outstanding floats (the bounded,
+            // RLS-scoped `worker_pending_floats` view — immune to the 1000-row personal-
+            // calendar cap) for the My-Shifts carousel. The closest one also feeds the
+            // deep-link ack VM + the Updates urgent entry. Empty list while in flight / when
+            // none is outstanding — NO demo fallback on live, so a worker without a float
+            // never sees a phantom one. Ack/decline POST `acknowledge-float`/`decline-float`.
+            val livePendingFloats by
+                produceState(initialValue = emptyList<PendingFloat>(), session.userId, revertKey) {
+                    value = runCatching { repo.fetchPendingFloats(session.userId) }.getOrDefault(emptyList())
                 }
+            val livePendingFloat = livePendingFloats.firstOrNull()?.toFloatAck()
             val ackVm = remember(livePendingFloat) { AckDeclineViewModel(livePendingFloat ?: DemoData.pendingFloat(now), now) }
             // Updates: load the worker's real `notifications` rows (RLS-scoped) for the
             // feed; fall back to the demo notifications while the fetch is in flight or
@@ -497,6 +503,8 @@ private fun LiveShiftsRoot(
                 // D8 — the live "This week — Xh" total from the real snapshot (the demo
                 // constant was a placeholder; dropped-still-open blocks don't count).
                 currentWeeklyHours = remember(snapshot) { weeklyHours(snapshot.myShifts, now) },
+                now = now,
+                pendingFloats = livePendingFloats,
                 writeError = writeError,
                 onSignOut = onSignOut,
                 onSubmitPreferences = {

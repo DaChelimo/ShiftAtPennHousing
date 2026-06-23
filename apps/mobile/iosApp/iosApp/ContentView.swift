@@ -41,8 +41,10 @@ final class ShiftsObservable: ObservableObject {
         guard !live else { return }
         live = true
         liveTask = Task { [weak self] in
-            // Initial snapshot + a fresh one on every Realtime change (RLS-scoped).
-            for await snapshot in repo.observeWorkerWeek(userId: userId) {
+            // Initial snapshot + a fresh one on every Realtime change (RLS-scoped). Pass
+            // the business `now` (SimClock-resolved) so a time-travelled window matches the
+            // displayed weeks — SKIE did NOT default the new Kotlin `now` param.
+            for await snapshot in repo.observeWorkerWeek(userId: userId, now: DemoFactory.shared.now()) {
                 guard let self else { return }
                 self.vm = DemoFactory.shared.shiftsViewModel(snapshot: snapshot)
                 self.weeklyHours = DemoFactory.shared.weeklyHoursFor(snapshot: snapshot)
@@ -57,7 +59,7 @@ final class ShiftsObservable: ObservableObject {
     /// card snaps back). Best-effort: a failed re-fetch leaves the optimistic move until
     /// the next Realtime change.
     func revertToServer(repo: WorkerShiftsRepository, userId: String) async {
-        guard let snapshot = try? await repo.fetchWorkerWeek(userId: userId) else { return }
+        guard let snapshot = try? await repo.fetchWorkerWeek(userId: userId, now: DemoFactory.shared.now()) else { return }
         self.vm = DemoFactory.shared.shiftsViewModel(snapshot: snapshot)
         self.weeklyHours = DemoFactory.shared.weeklyHoursFor(snapshot: snapshot)
         self.subscribe()
@@ -105,7 +107,7 @@ final class CalendarObservable: ObservableObject {
         liveTask = Task { [weak self] in
             // D8 — the calendar reads the REAL week too (closed days overlaid once).
             let closed = (try? await repo.fetchCalendarClosedDays(userId: userId)) ?? Set()
-            for await snapshot in repo.observeWorkerWeek(userId: userId) {
+            for await snapshot in repo.observeWorkerWeek(userId: userId, now: DemoFactory.shared.now()) {
                 guard let self else { return }
                 // Re-read pending swaps per tick so an accept/decline (which fires a realtime
                 // assignment change) reconciles the My-Shifts swap marks to server truth.
@@ -121,7 +123,7 @@ final class CalendarObservable: ObservableObject {
     func refreshFromServer(repo: WorkerShiftsRepository, userId: String) async {
         let closed = (try? await repo.fetchCalendarClosedDays(userId: userId)) ?? Set()
         let swaps = (try? await repo.fetchPendingSwaps()) ?? []
-        guard let snapshot = try? await repo.fetchWorkerWeek(userId: userId) else { return }
+        guard let snapshot = try? await repo.fetchWorkerWeek(userId: userId, now: DemoFactory.shared.now()) else { return }
         self.vm = DemoFactory.shared.calendarViewModel(snapshot: snapshot, closedDayIndexes: closed, pendingSwaps: swaps)
         self.subscribe()
     }
@@ -285,6 +287,56 @@ final class AckHostObservable: ObservableObject {
     }
 }
 
+/// Holds the My-Shifts float-request carousel (§7.1) — the closest-first stack of the
+/// worker's outstanding floats. Builds a `FloatCarouselViewModel` from a list of
+/// `PendingFloat` (live `fetchPendingFloats` or `DemoData.pendingFloats`) and observes
+/// its `StateFlow`. Accept/Decline are the SAME local advance (the host POSTs
+/// `acknowledge-float` / `decline-float`); `allHandled` flips true only when the LAST
+/// float resolves, which the host turns into the "all handled" confirmation toast.
+/// Mirrors Android's `carouselVm` wiring in `ShiftsScreen`.
+@MainActor
+final class FloatCarouselObservable: ObservableObject {
+    private(set) var vm: FloatCarouselViewModel
+    /// The floats the VM was built from — tapping a card resolves its `PendingFloat` to
+    /// open the full ack hero for THAT float.
+    private(set) var floats: [PendingFloat]
+    @Published var state: FloatCarouselUiState
+    private var task: Task<Void, Never>?
+
+    init(floats: [PendingFloat]) {
+        self.floats = floats
+        let vm = FloatCarouselViewModel(floats: floats, now: DemoFactory.shared.now())
+        self.vm = vm
+        self.state = vm.uiState.value
+        subscribe()
+    }
+
+    private func subscribe() {
+        task?.cancel()
+        state = vm.uiState.value
+        task = Task { [weak self] in
+            guard let self else { return }
+            for await s in self.vm.uiState { self.state = s }
+        }
+    }
+
+    /// Rebuild the VM from a fresh float list (the live `fetchPendingFloats` read). A new
+    /// `now` is sampled so the cards' respondable/deadline state is decided at load time.
+    func rebuild(floats: [PendingFloat]) {
+        self.floats = floats
+        vm = FloatCarouselViewModel(floats: floats, now: DemoFactory.shared.now())
+        subscribe()
+    }
+
+    func acknowledge(_ floatId: String) { vm.acknowledge(floatId: floatId) }
+    func decline(_ floatId: String) { vm.decline(floatId: floatId) }
+
+    /// The `PendingFloat` for a tapped card, so the host can open the ack hero on it.
+    func float(_ floatId: String) -> PendingFloat? { floats.first { $0.floatId == floatId } }
+
+    deinit { task?.cancel() }
+}
+
 private enum Tab: Int { case mine, openShifts, house, updates, preferences, breakShifts, settings, swaps }
 
 /// Observes the §11.4 house-schedule `StateFlow` (T3b), now week-paged (last week … +4).
@@ -364,6 +416,10 @@ struct ShiftsRootView: View {
     @StateObject private var ackModel = AckHostObservable()
     @StateObject private var updatesModel = UpdatesObservable(vm: DemoFactory.shared.updatesViewModel())
     @StateObject private var swapsModel = SwapsObservable(vm: DemoFactory.shared.swapsViewModel())
+    // §7.1 — the My-Shifts float-request carousel. Demo-seeded (two floats) so the swipe +
+    // completion are visible in the login-bypass build; the live host rebuilds it from the
+    // worker's real `worker_pending_floats` read in `.task`.
+    @StateObject private var floatCarouselModel = FloatCarouselObservable(floats: DemoData().pendingFloats(now: DemoFactory.shared.now()))
     @Environment(\.colorScheme) private var scheme
 
     @State private var tab: Tab = .mine
@@ -379,6 +435,9 @@ struct ShiftsRootView: View {
     @State private var dropTarget: MyShift?
     @State private var claimTarget: OpenShift?
     @State private var showAck = false
+    // §7.1 — the float the worker tapped in the carousel to see in the full ack hero.
+    // Identified so `.sheet(item:)` presents it; nil = no detail open.
+    @State private var floatDetail: IdentifiedFloatDetail?
     // The success toast after a claim / permanent pickup; carries the "Picked up X of Y
     // weeks" message for a pickup, the fixed claim message otherwise. Nil = no toast.
     @State private var claimSuccessMessage: String?
@@ -718,6 +777,22 @@ struct ShiftsRootView: View {
         .sheet(isPresented: $showAck) {
             ackSurface
         }
+        .sheet(item: $floatDetail) { wrapped in
+            // §7.1 — tapping a carousel card opens the existing full float-ack hero for THAT
+            // float. Acting here POSTs the same EF AND advances the carousel stack (so the
+            // resolved card drops), exactly like the on-card Accept/Decline.
+            FloatAcknowledgmentView(
+                vm: DemoFactory.shared.ackViewModel(float: wrapped.float.toFloatAck()),
+                onAcknowledge: liveUserId == nil ? nil : { id in
+                    acceptFloat(id)
+                    floatCarouselModel.acknowledge(id)
+                },
+                onDecline: liveUserId == nil ? nil : { id in
+                    declineFloat(id)
+                    floatCarouselModel.decline(id)
+                }
+            )
+        }
         .fullScreenCover(
             // T2-13 — push-launched FULL-SCREEN FloatAckSurface (same hero as the sheet).
             isPresented: Binding(
@@ -734,6 +809,26 @@ struct ShiftsRootView: View {
             try? await Task.sleep(nanoseconds: 4_000_000_000)
             writeError = nil
         }
+        .task(id: claimSuccessMessage) {
+            // Auto-dismiss the claim/pickup success toast (~3.5s), mirroring writeError.
+            guard claimSuccessMessage != nil else { return }
+            try? await Task.sleep(nanoseconds: 3_500_000_000)
+            claimSuccessMessage = nil
+        }
+        .task(id: swapProposed) {
+            // Auto-dismiss the swap-proposed toast (~3.5s), mirroring writeError.
+            guard swapProposed else { return }
+            try? await Task.sleep(nanoseconds: 3_500_000_000)
+            swapProposed = false
+        }
+        .task(id: floatCarouselModel.state.allHandled) {
+            // §7.1 — when the LAST float resolves (accept OR decline), reuse the auto-dismissing
+            // success-toast slot to confirm the whole stack is cleared. `allHandled` flips
+            // false→true exactly once, so this fires once per cleared stack.
+            guard floatCarouselModel.state.allHandled else { return }
+            claimSuccessMessage =
+                floatCarouselModel.state.total > 1 ? "All float requests handled" : "Float request handled"
+        }
         .task {
             // Backend-configured path: load the worker's real active period + wire the
             // live submit. Demo (liveUserId == nil) keeps the DemoFactory period.
@@ -744,6 +839,12 @@ struct ShiftsRootView: View {
                 await updatesModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
                 await swapsModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
                 await ackModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
+                // §7.1 — load ALL the worker's outstanding floats (bounded, RLS-scoped
+                // `worker_pending_floats` view) for the My-Shifts carousel and rebuild the VM.
+                // Empty list on live with none outstanding → the carousel hides (NO demo
+                // fallback on live, so a worker without a float never sees a phantom one).
+                let liveFloats = (try? await WorkerBackend.shared.shiftsRepository.fetchPendingFloats(userId: uid)) ?? []
+                floatCarouselModel.rebuild(floats: liveFloats)
                 await settingsModel.activateLive(repo: WorkerBackend.shared.profileRepository, userId: uid)
                 // Closed-house days + the live week for the calendar (§3.4/§11.3 + D8).
                 calendarModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
@@ -757,6 +858,26 @@ struct ShiftsRootView: View {
                     userId: uid
                 )
             }
+        }
+    }
+
+    /// §7.1 carousel Accept — the SAME EF path the ack hero uses. POST `acknowledge-float`
+    /// (best-effort) on the live path; demo is local-only (the VM advance is the move). The
+    /// carousel VM is NOT reverted on failure — a float reappears on the next live read.
+    private func acceptFloat(_ floatId: String) {
+        guard liveUserId != nil else { return }
+        let repo = WorkerBackend.shared.shiftsRepository
+        liveWrite(revert: false) {
+            (try? await repo.acknowledgeFloat(floatId: floatId))?.ok ?? false
+        }
+    }
+
+    /// §7.1 carousel Decline — POST `decline-float` (best-effort) on the live path.
+    private func declineFloat(_ floatId: String) {
+        guard liveUserId != nil else { return }
+        let repo = WorkerBackend.shared.shiftsRepository
+        liveWrite(revert: false) {
+            (try? await repo.declineFloat(floatId: floatId))?.ok ?? false
         }
     }
 
@@ -1911,6 +2032,25 @@ struct ShiftsRootView: View {
             WeekTotalChip(currentWeeklyHours: st.weekHours, weekOffset: Int(st.weekOffset))
                 .padding(.horizontal, 16).padding(.vertical, 4)
                 .accessibilityIdentifier("week_total_chip")
+            // §7.1 — the float-request carousel sits directly under the hours chip, above
+            // the week/day content, so it shows in BOTH modes and an outstanding float can't
+            // be missed. Renders nothing when there are no pending floats.
+            FloatCarouselView(
+                cards: floatCarouselModel.state.cards,
+                onAccept: { id in
+                    // Accept = POST `acknowledge-float` (host, best-effort) AND advance the stack.
+                    acceptFloat(id)
+                    floatCarouselModel.acknowledge(id)
+                },
+                onDecline: { id in
+                    declineFloat(id)
+                    floatCarouselModel.decline(id)
+                },
+                onOpenDetail: { id in
+                    if let float = floatCarouselModel.float(id) { floatDetail = IdentifiedFloatDetail(float: float) }
+                }
+            )
+            .padding(.top, 4).padding(.bottom, 6)
             // The whole-week overview is the default; the Day segment drills into a single day.
             calendarViewToggle(st.mode, c)
             if st.mode == .day {
@@ -3167,6 +3307,13 @@ private struct IdentifiedSwapDecision: Identifiable {
 private struct IdentifiedPendingSwapNotice: Identifiable {
     let id = UUID()
     let notice: PendingSwapNotice
+}
+
+/// `.sheet(item:)` needs Identifiable; the Kotlin `PendingFloat` isn't. `id` is the
+/// floatId so re-tapping the same card doesn't churn the sheet.
+private struct IdentifiedFloatDetail: Identifiable {
+    var id: String { float.floatId }
+    let float: PendingFloat
 }
 
 /// The accept/decline popup for an INCOMING swap, opened by tapping a flagged My-Shifts

@@ -13,6 +13,7 @@ import com.pennhousing.shift.shared.model.House
 import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.model.OpenFeed
 import com.pennhousing.shift.shared.model.OpenShift
+import com.pennhousing.shift.shared.model.PendingFloat
 import com.pennhousing.shift.shared.network.EdgeFunctionClient
 import com.pennhousing.shift.shared.network.EdgeResult
 import com.pennhousing.shift.shared.notifications.IncomingSwap
@@ -28,6 +29,7 @@ import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.postgrest.rpc
 import io.github.jan.supabase.realtime.PostgresAction
 import io.github.jan.supabase.realtime.channel
@@ -299,50 +301,35 @@ class WorkerShiftsRepository(
     }
 
     /**
-     * The worker's CURRENT pending float, mapped to the pure [FloatAck] the ack/decline
-     * modal renders, or `null` if none is outstanding. Worker-readable end-to-end:
-     * `float_assignments` has an own-row SELECT policy (`user_id = auth.uid()`), and the
-     * destination house + float start come from the worker's own `pending_float_in`
-     * blocks (`worker_my_shifts`, kind `float_out`, `pending = true`), which are
-     * RLS-scoped to the worker.
+     * EVERY float awaiting this worker's acknowledgment (§7.1), closest-start first —
+     * the source for the My-Shifts float-request carousel. Reads the bounded
+     * `worker_pending_floats` view: one row per pending float with the destination
+     * house and the full window (`float_start` / `float_end`), RLS-scoped to the worker
+     * (`float_assignments` own-row SELECT + the worker's own destination blocks).
      *
-     * Resolution: read the single `status = 'pending'` float row for `float_id` +
-     * `destination_assignment_ids`, then pick the earliest pending float-out block among
-     * those ids for the destination house and float start. A float already
-     * acked/declined server-side simply has no `pending` row → `null` (terminal state is
-     * resolved by the absence of a pending float, matching the modal's idempotent phase
-     * machine).
+     * This is INDEPENDENT of `worker_my_shifts`, which PostgREST caps at 1000 rows: a
+     * worker holding a full semester of 30-minute blocks had the late-inserted float
+     * blocks truncated out, so the old lookup returned null and the app fell back to a
+     * demo float (the "wrong time" bug). The view is bounded to the handful of pending
+     * floats, so it always resolves the exact window.
      */
-    suspend fun fetchPendingFloat(userId: String): FloatAck? {
-        val float =
-            supabase
-                .from(TABLE_FLOAT_ASSIGNMENTS)
-                .select {
-                    filter {
-                        eq("user_id", userId)
-                        eq("status", "pending")
-                    }
-                }
-                .decodeList<PendingFloatRow>()
-                .firstOrNull() ?: return null
+    suspend fun fetchPendingFloats(userId: String): List<PendingFloat> =
+        supabase
+            .from(VIEW_PENDING_FLOATS)
+            .select {
+                filter { eq("user_id", userId) }
+                order("float_start", Order.ASCENDING)
+            }
+            .decodeList<PendingFloatDetailRow>()
+            .map { it.toModel() }
+            .sortedBy { it.start }
 
-        val destinationIds = float.destinationAssignmentIds.toSet()
-        if (destinationIds.isEmpty()) return null
-
-        // The destination blocks live in the worker's own pending float-out rows; pick
-        // the earliest by start to anchor the hero's "Starts in" + destination house.
-        val destinationBlock =
-            fetchWorkerWeek(userId).myShifts
-                .asSequence()
-                .filter { it.id in destinationIds }
-                .minByOrNull { it.start } ?: return null
-
-        return FloatAck(
-            floatId = float.floatId,
-            destinationHouse = destinationBlock.house,
-            floatStart = destinationBlock.start,
-        )
-    }
+    /**
+     * The worker's NEXT (closest-start) pending float as the narrower [FloatAck] the
+     * existing ack hero/modal renders, or `null` if none is outstanding. Derived from
+     * [fetchPendingFloats] so it shares the robust bounded read.
+     */
+    suspend fun fetchPendingFloat(userId: String): FloatAck? = fetchPendingFloats(userId).firstOrNull()?.toFloatAck()
 
     /**
      * Acknowledge the worker's pending float → the `acknowledge-float` Edge Function,
@@ -577,17 +564,62 @@ class WorkerShiftsRepository(
         )
     }
 
-    suspend fun fetchWorkerWeek(userId: String): WorkerSnapshot {
+    /**
+     * Monday (NY) of [now]'s week minus one week, at 00:00 NY — the lower bound of the
+     * navigable calendar window (last-week … +4). DST-correct: built from LocalDate
+     * arithmetic then converted.
+     */
+    private fun navigableWindowStart(now: Instant): Instant {
+        val date = now.toLocalDateTime(NEW_YORK).date
+        val monday = date.plus(-(date.dayOfWeek.isoDayNumber - 1), DateTimeUnit.DAY)
+        return LocalDateTime(monday.plus(-7, DateTimeUnit.DAY), LocalTime(0, 0)).toInstant(NEW_YORK)
+    }
+
+    /**
+     * The worker's week snapshot, scoped to the navigable calendar window
+     * [Monday(now) − 1 week, ∞), ascending by start.
+     *
+     * Why the lower bound + order: PostgREST hard-caps every response at
+     * `db-max-rows` (1000). A worker holding a full semester of 30-minute blocks has
+     * thousands of `worker_my_shifts` rows, so an UNbounded read returned an arbitrary
+     * 1000 of them — and the late-inserted float-destination blocks were truncated out,
+     * which is why a freshly-assigned DuBois float never appeared on the personal
+     * calendar. Filtering `start_at >= Monday(now) − 7d` and ordering ASCENDING spends
+     * the 1000-row budget on the relevant near-future weeks (the calendar navigates
+     * last-week … +4), so the current week — and any imminent float in it — always
+     * survives. The upper bound is intentionally omitted: a SECOND filter on the same
+     * column is dropped by supabase-kt, and ascending + the cap already stops well
+     * before the far future for a heavy worker. [now] defaults to the wall clock but
+     * the live callers pass the business `now` (the sim-clock) so a time-travelled
+     * test window matches the displayed weeks.
+     */
+    suspend fun fetchWorkerWeek(
+        userId: String,
+        now: Instant = kotlin.time.Clock.System.now(),
+    ): WorkerSnapshot {
+        val windowStart = navigableWindowStart(now).toString()
         val myShifts =
             supabase
                 .from(VIEW_MY_SHIFTS)
-                .select { filter { eq("user_id", userId) } }
+                .select {
+                    filter {
+                        eq("user_id", userId)
+                        gte("start_at", windowStart)
+                    }
+                    order("start_at", Order.ASCENDING)
+                }
                 .decodeList<MyShiftRow>()
                 .map { it.toModel() }
         val openShifts =
             supabase
                 .from(VIEW_OPEN_SHIFTS)
-                .select { filter { eq("eligible_user_id", userId) } }
+                .select {
+                    filter {
+                        eq("eligible_user_id", userId)
+                        gte("start_at", windowStart)
+                    }
+                    order("start_at", Order.ASCENDING)
+                }
                 .decodeList<OpenShiftRow>()
                 .map { it.toModel() }
         return WorkerSnapshot(myShifts = myShifts, openShifts = openShifts)
@@ -596,11 +628,16 @@ class WorkerShiftsRepository(
     /**
      * Emits an initial snapshot, then a fresh snapshot on every change to the
      * worker's `shift_block_assignments` (e.g. a float assigned at T-2h). The
-     * subscription relies on RLS to scope rows to the authenticated worker.
+     * subscription relies on RLS to scope rows to the authenticated worker. [now]
+     * fixes the navigable window (see [fetchWorkerWeek]); the live tree rebuilds the
+     * subscription on a sim-clock change, so a fixed window per collection is fine.
      */
-    fun observeWorkerWeek(userId: String): Flow<WorkerSnapshot> =
+    fun observeWorkerWeek(
+        userId: String,
+        now: Instant = kotlin.time.Clock.System.now(),
+    ): Flow<WorkerSnapshot> =
         flow {
-            emit(fetchWorkerWeek(userId))
+            emit(fetchWorkerWeek(userId, now))
             // Unique topic per collection. The Shifts AND Calendar observables both
             // collect this flow concurrently, and supabase.channel() caches by name —
             // a shared name means the second collector calls postgresChangeFlow on an
@@ -613,7 +650,7 @@ class WorkerShiftsRepository(
                 }
             channel.subscribe()
             try {
-                changes.collect { emit(fetchWorkerWeek(userId)) }
+                changes.collect { emit(fetchWorkerWeek(userId, now)) }
             } finally {
                 runCatching { supabase.realtime.removeChannel(channel) }
             }
@@ -842,6 +879,7 @@ class WorkerShiftsRepository(
     private companion object {
         const val VIEW_MY_SHIFTS = "worker_my_shifts"
         const val VIEW_OPEN_SHIFTS = "worker_open_shifts"
+        const val VIEW_PENDING_FLOATS = "worker_pending_floats"
         const val TABLE_NOTIFICATIONS = "notifications"
         const val TABLE_FLOAT_ASSIGNMENTS = "float_assignments"
         const val TABLE_USERS = "users"
@@ -1039,15 +1077,28 @@ private fun parseAssignmentKind(raw: String): AssignmentKind =
     }
 
 /**
- * The worker's own `float_assignments` row (own-row RLS). Only the fields the pending
- * read needs: `float_id` for the RPC and `destination_assignment_ids` to locate the
- * destination house + float start among the worker's own pending float-out blocks.
+ * A `worker_pending_floats` row — one pending float for the worker, with the
+ * destination house and full window aggregated from the destination blocks (RLS-scoped
+ * to the worker). Drives the float-request carousel and the ack hero.
  */
 @Serializable
-internal data class PendingFloatRow(
+internal data class PendingFloatDetailRow(
     @SerialName("float_id") val floatId: String,
-    @SerialName("destination_assignment_ids") val destinationAssignmentIds: List<String> = emptyList(),
+    @SerialName("destination_house_id") val houseId: String,
+    @SerialName("destination_house_name") val houseName: String,
+    @SerialName("float_start") val floatStart: String,
+    @SerialName("float_end") val floatEnd: String,
+    @SerialName("block_count") val blockCount: Int,
 )
+
+private fun PendingFloatDetailRow.toModel(): PendingFloat =
+    PendingFloat(
+        floatId = floatId,
+        destinationHouse = House(houseId, houseName),
+        start = Instant.parse(floatStart),
+        end = Instant.parse(floatEnd),
+        blockCount = blockCount,
+    )
 
 @Serializable
 internal data class NotificationWireRow(

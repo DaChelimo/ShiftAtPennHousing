@@ -18,6 +18,7 @@
 		499DB39C5F33726A0A0B09E4 /* IBMPlexMono-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F463F963D7A6C3E1B63F7F0F /* IBMPlexMono-Medium.ttf */; };
 		56B0305B5D3847FC6B326502 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE8509E5A49E4A5CAAEB3ADB /* ContentView.swift */; };
 		585A305A37626C285BD4D97E /* FloatAcknowledgmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB03F885E14A777B71EA9DFD /* FloatAcknowledgmentView.swift */; };
+		FACA00010000000000000FC1 /* FloatCarouselView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FACA00020000000000000FC2 /* FloatCarouselView.swift */; };
 		AAB1C2D3E4F5061728394A5B /* BreakCalendarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBC1D2E3F405162738495A6B /* BreakCalendarView.swift */; };
 		8ACF8940AE973BEAF8843F3D /* ShiftRowsControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = CED2A8032A88F44B9B3961D1 /* ShiftRowsControls.swift */; };
 		983A85F9E98253907723D163 /* IBMPlexSans-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 7B34AA86864B6EC1606F1447 /* IBMPlexSans-SemiBold.ttf */; };
@@ -48,6 +49,7 @@
 		B845EEA4BDF47624BE8BCD36 /* ShiftChromeFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftChromeFeedback.swift; sourceTree = "<group>"; };
 		BB69E5DD1A1A12D4AD674B2A /* IBMPlexSans-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "IBMPlexSans-Bold.ttf"; sourceTree = "<group>"; };
 		CB03F885E14A777B71EA9DFD /* FloatAcknowledgmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatAcknowledgmentView.swift; sourceTree = "<group>"; };
+		FACA00020000000000000FC2 /* FloatCarouselView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatCarouselView.swift; sourceTree = "<group>"; };
 		CE8509E5A49E4A5CAAEB3ADB /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		CED2A8032A88F44B9B3961D1 /* ShiftRowsControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftRowsControls.swift; sourceTree = "<group>"; };
 		E321591A5774BE7504F9E121 /* PreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesView.swift; sourceTree = "<group>"; };
@@ -66,6 +68,7 @@
 				BBC1D2E3F405162738495A6B /* BreakCalendarView.swift */,
 				CE8509E5A49E4A5CAAEB3ADB /* ContentView.swift */,
 				CB03F885E14A777B71EA9DFD /* FloatAcknowledgmentView.swift */,
+				FACA00020000000000000FC2 /* FloatCarouselView.swift */,
 				A55143988C4C8F291BE72E9A /* GoogleService-Info.plist */,
 				668CECA83ACC03A83C85A623 /* iOSApp.swift */,
 				5EF4A054A43ED6B6C286E46F /* LoginView.swift */,
@@ -239,6 +242,7 @@
 				AAB1C2D3E4F5061728394A5B /* BreakCalendarView.swift in Sources */,
 				56B0305B5D3847FC6B326502 /* ContentView.swift in Sources */,
 				585A305A37626C285BD4D97E /* FloatAcknowledgmentView.swift in Sources */,
+				FACA00010000000000000FC1 /* FloatCarouselView.swift in Sources */,
 				D488747AD197BC7C1635E66B /* LoginView.swift in Sources */,
 				FFED10F38574A818A51A669E /* PreferencesView.swift in Sources */,
 				BC176A83C0F9CCC0CA18F75B /* SettingsView.swift in Sources */,

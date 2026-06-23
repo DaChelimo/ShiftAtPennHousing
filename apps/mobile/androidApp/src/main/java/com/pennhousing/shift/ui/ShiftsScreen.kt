@@ -100,6 +100,7 @@ import com.pennhousing.shift.shared.house.HouseSeat
 import com.pennhousing.shift.shared.samples.DemoData
 import com.pennhousing.shift.shared.samples.DemoFactory
 import com.pennhousing.shift.shared.model.MyShift
+import com.pennhousing.shift.shared.model.PendingFloat
 import com.pennhousing.shift.shared.model.OpenFeed
 import com.pennhousing.shift.shared.model.OpenShift
 import com.pennhousing.shift.shared.notifications.NotificationCategory
@@ -145,6 +146,8 @@ import com.pennhousing.shift.shared.swaps.swapPeople
 import com.pennhousing.shift.shared.shifts.toRow
 import com.pennhousing.shift.shared.shifts.weeklyHoursSummary
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
+import com.pennhousing.shift.shared.viewmodel.FloatCarouselUiState
+import com.pennhousing.shift.shared.viewmodel.FloatCarouselViewModel
 import com.pennhousing.shift.shared.breakclaim.BreakPhase
 import com.pennhousing.shift.shared.viewmodel.BreakCalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
@@ -181,7 +184,9 @@ import com.pennhousing.shift.ui.kit.ShiftToast
 import com.pennhousing.shift.ui.kit.ToastTone
 import com.pennhousing.shift.ui.theme.ShiftTheme
 import com.pennhousing.shift.ui.theme.resolveDark
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Instant
 
 // The constants MUST match each tab's render position in the PrimaryScrollableTabRow —
 // selectedTabIndex positions the indicator by row position (a mismatched constant
@@ -224,6 +229,12 @@ fun ShiftsApp(
     breakCalendarVm: BreakCalendarViewModel,
     settingsVm: SettingsViewModel,
     currentWeeklyHours: Double,
+    // The worker's load instant (the sim-clock on live) — builds the per-float ack
+    // detail VM for the carousel's tap-to-detail. The screen VMs embed their own `now`.
+    now: Instant,
+    // Outstanding float requests for the My-Shifts carousel (§7.1), closest-start first.
+    // Live host reads `worker_pending_floats`; demo seeds a couple. Empty → no carousel.
+    pendingFloats: List<PendingFloat> = emptyList(),
     breakProfile: Boolean = false,
     toast: ToastNotification? = null,
     // Non-null when a best-effort live write (drop/claim/reclaim/pickup/…) failed to
@@ -317,6 +328,39 @@ fun ShiftsApp(
         // Overflow ("More") bottom sheet — the episodic destinations.
         var showMore by remember { mutableStateOf(false) }
 
+        // Auto-dismiss the transient confirmation toasts (~3.5s) so they don't linger
+        // forever; the effect restarts whenever the state changes (matches iOS's
+        // .task(id:) auto-dismiss). writeError carries its own timer where it's owned.
+        LaunchedEffect(claimSuccessMessage) {
+            if (claimSuccessMessage != null) {
+                delay(3500)
+                claimSuccessMessage = null
+            }
+        }
+        LaunchedEffect(swapProposed) {
+            if (swapProposed) {
+                delay(3500)
+                swapProposed = false
+            }
+        }
+
+        // Float-request carousel (§7.1): the closest-first stack of outstanding floats on
+        // My Shifts. Accept/Decline POST the EF (host) AND advance the local stack; tapping
+        // a card opens the full ack hero for THAT float. Rebuilt whenever the live
+        // `worker_pending_floats` read changes.
+        val carouselVm = remember(pendingFloats, now) { FloatCarouselViewModel(pendingFloats, now) }
+        val carouselState by carouselVm.uiState.collectAsStateWithLifecycle()
+        // Which float (if any) the worker tapped to see in the full ack hero.
+        var floatDetail by remember { mutableStateOf<PendingFloat?>(null) }
+        // The "all handled" confirmation — reuses the auto-dismissing success-toast slot so
+        // the worker knows they've cleared the whole stack (accept OR decline).
+        LaunchedEffect(carouselState.allHandled) {
+            if (carouselState.allHandled) {
+                claimSuccessMessage =
+                    if (carouselState.total > 1) "All float requests handled" else "Float request handled"
+            }
+        }
+
         // TAB_MY (calendar) and TAB_OPEN read the same snapshot regardless of the
         // ShiftsScreenViewModel's selected tab; the Open-Shifts sub-tabs set it themselves.
         fun navigateTo(target: Int) {
@@ -368,6 +412,18 @@ fun ShiftsApp(
                             vm = calendarVm,
                             shiftsVm = shiftsVm,
                             breakProfile = breakProfile,
+                            // §7.1 float-request carousel under the hours chip. Accept/Decline
+                            // POST the EF and advance the stack; tapping a card opens the hero.
+                            floatCarousel = carouselState,
+                            onFloatAccept = { id ->
+                                onAcknowledgeFloat(id)
+                                carouselVm.acknowledge(id)
+                            },
+                            onFloatDecline = { id ->
+                                onDeclineFloat(id)
+                                carouselVm.decline(id)
+                            },
+                            onFloatDetail = { id -> floatDetail = pendingFloats.firstOrNull { it.floatId == id } },
                             onDropShift = onDropShift,
                             swapMeUserId = swapMeUserId,
                             swapDemoSeats = swapDemoSeats,
@@ -522,6 +578,25 @@ fun ShiftsApp(
                 onAcknowledgeFloat = onAcknowledgeFloat,
                 onDeclineFloat = onDeclineFloat,
                 onClose = { showFullScreenAck = false },
+            )
+        }
+
+        // §7.1 — tap-for-detail on a carousel card opens the full ack hero for THAT float
+        // (a per-float ack VM, independent of the deep-link `ackVm`). Accept/Decline POST
+        // the EF, advance the carousel stack, and dismiss.
+        floatDetail?.let { f ->
+            val detailVm = remember(f) { AckDeclineViewModel(f.toFloatAck(), now) }
+            FloatAcknowledgmentModal(
+                ackVm = detailVm,
+                onAcknowledgeFloat = { id ->
+                    onAcknowledgeFloat(id)
+                    carouselVm.acknowledge(id)
+                },
+                onDeclineFloat = { id ->
+                    onDeclineFloat(id)
+                    carouselVm.decline(id)
+                },
+                onClose = { floatDetail = null },
             )
         }
 
@@ -1982,6 +2057,12 @@ private fun CalendarTabContent(
     vm: CalendarViewModel,
     shiftsVm: ShiftsScreenViewModel,
     breakProfile: Boolean = false,
+    // §7.1 float-request carousel state + actions (the blue card stack under the hours
+    // chip). Empty state → no carousel renders.
+    floatCarousel: FloatCarouselUiState = FloatCarouselUiState(emptyList(), 0, false),
+    onFloatAccept: (String) -> Unit = {},
+    onFloatDecline: (String) -> Unit = {},
+    onFloatDetail: (String) -> Unit = {},
     onDropShift: (MyShift, Boolean) -> Unit = { _, _ -> },
     swapMeUserId: String? = null,
     swapDemoSeats: List<HouseSeat> = emptyList(),
@@ -2076,6 +2157,16 @@ private fun CalendarTabContent(
             breakProfile = breakProfile,
             weekOffset = state.weekOffset,
             modifier = Modifier.padding(horizontal = 16.dp).testTag("week_total_chip"),
+        )
+        // §7.1 — the float-request carousel sits directly under the hours chip, above the
+        // week/day content, so it shows in BOTH modes and an outstanding float can't be
+        // missed. Renders nothing when there are no pending floats.
+        FloatRequestCarousel(
+            state = floatCarousel,
+            onAccept = onFloatAccept,
+            onDecline = onFloatDecline,
+            onOpenDetail = onFloatDetail,
+            modifier = Modifier.padding(top = 4.dp, bottom = 6.dp),
         )
         // The whole-week overview is the default; the Day segment drills into a single day.
         CalendarViewToggle(

@@ -1,5 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+import { fetchAppNow } from '../_shared/clock.ts';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -99,7 +101,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const { data, error } = await supabase.rpc('decline_float', {
     p_float_id: floatId,
     p_user_id: user.id,
-    p_now: new Date().toISOString(),
+    p_now: (await fetchAppNow(supabase)).toISOString(),
   });
 
   if (error !== null) {

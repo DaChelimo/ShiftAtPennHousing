@@ -31,6 +31,8 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+import { fetchAppNow } from '../_shared/clock.ts';
+
 const TIMEZONE = 'America/New_York';
 const BLOCK_MINUTES = 30;
 const FLOAT_RETENTION_DAYS = 14;
@@ -577,7 +579,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return jsonResponse({ error: 'initiator_user_id must match the authenticated user' }, 403);
   }
   const initiator = user.id;
-  const now = new Date();
+  // Honor the dev sim clock so a force-trigger under time-travel uses simulated
+  // "now" for the within-2h gate, HMOD resolution, and ack-reminder snapshot
+  // (no-op in production where app_now() === now()).
+  const now = await fetchAppNow(supabase);
 
   try {
     // ----- snapshot + validation gate (ARCH §6.2) -----

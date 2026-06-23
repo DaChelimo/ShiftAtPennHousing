@@ -36,12 +36,19 @@ struct iOSApp: App {
 /// Demo vs. live decision (mirrors Android `MainActivity`): no backend → demo shifts;
 /// backend configured → the login/live path.
 struct RootView: View {
+    /// The in-app appearance override (System / Light / Dark). Applied here at the very
+    /// top so it covers login, the loading restore, and the live/demo shifts UI alike.
+    @StateObject private var theme = ThemeController.shared
+
     var body: some View {
-        if AppConfig.shared.supabaseUrl.isEmpty {
-            ShiftsRootView()
-        } else {
-            LiveRootView()
+        Group {
+            if AppConfig.shared.supabaseUrl.isEmpty {
+                ShiftsRootView()
+            } else {
+                LiveRootView()
+            }
         }
+        .preferredColorScheme(theme.preferredColorScheme)
     }
 }
 

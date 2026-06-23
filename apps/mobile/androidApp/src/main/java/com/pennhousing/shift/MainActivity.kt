@@ -24,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -63,6 +64,8 @@ import com.pennhousing.shift.ui.LoginRoute
 import com.pennhousing.shift.ui.ShiftsApp
 import com.pennhousing.shift.ui.kit.SkeletonShiftCard
 import com.pennhousing.shift.ui.theme.ShiftTheme
+import com.pennhousing.shift.ui.theme.ThemePrefs
+import com.pennhousing.shift.ui.theme.rememberPersistedDarkTheme
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.coroutines.delay
@@ -132,8 +135,13 @@ private fun DemoRoot(launchFloatAckId: String? = null) {
     val houseVm = remember { HouseScheduleViewModel(DemoData.houseSchedule(now), now, meUserId = DemoData.DEMO_ME_USER_ID) }
     val preferencesVm = remember { PreferencesViewModel(DemoData.preferencePeriod(now)) }
     val breakCalendarVm = remember { BreakCalendarViewModel(DemoData.breakCalendar(now), now) }
+    val context = LocalContext.current
     val settingsVm =
-        remember { SettingsViewModel(DemoData.settingsProfile(), DemoData.DEMO_BROADCAST_SUBSCRIBED, DemoData.DEMO_APP_VERSION) }
+        remember {
+            // Seed the in-session theme from the persisted choice so the toggle survives relaunch.
+            SettingsViewModel(DemoData.settingsProfile(), DemoData.DEMO_BROADCAST_SUBSCRIBED, DemoData.DEMO_APP_VERSION)
+                .apply { setTheme(ThemePrefs.read(context)) }
+        }
     ShiftsApp(
         shiftsVm = shiftsVm,
         ackVm = ackVm,
@@ -428,13 +436,15 @@ private fun LiveShiftsRoot(
                 produceState<ProfileSnapshot?>(initialValue = null, session.userId, revertKey) {
                     value = runCatching { profileRepo.fetchProfile(session.userId) }.getOrNull()
                 }
+            val settingsContext = LocalContext.current
             val settingsVm =
                 remember(liveProfile) {
+                    // Seed the in-session theme from the persisted choice (survives relaunch).
                     SettingsViewModel(
                         liveProfile?.profile ?: DemoData.settingsProfile(),
                         liveProfile?.broadcastSubscribed ?: DemoData.DEMO_BROADCAST_SUBSCRIBED,
                         DemoData.DEMO_APP_VERSION,
-                    )
+                    ).apply { setTheme(ThemePrefs.read(settingsContext)) }
                 }
             ShiftsApp(
                 shiftsVm = shiftsVm,
@@ -612,7 +622,7 @@ private fun LiveShiftsRoot(
 /** Loading state for the worker's week — a skeleton My-Shifts list (design shimmer). */
 @Composable
 private fun LoadingScreen() {
-    ShiftTheme {
+    ShiftTheme(darkTheme = rememberPersistedDarkTheme()) {
         Scaffold(modifier = Modifier.fillMaxSize().testTag("loading_screen")) { padding ->
             Column(
                 modifier =

@@ -180,6 +180,7 @@ import com.pennhousing.shift.ui.kit.ShiftState
 import com.pennhousing.shift.ui.kit.ShiftToast
 import com.pennhousing.shift.ui.kit.ToastTone
 import com.pennhousing.shift.ui.theme.ShiftTheme
+import com.pennhousing.shift.ui.theme.resolveDark
 import kotlinx.coroutines.launch
 
 // The constants MUST match each tab's render position in the PrimaryScrollableTabRow —
@@ -292,7 +293,11 @@ fun ShiftsApp(
     // D4 — cancel an own outgoing pending swap → `void-swap` (best-effort).
     onVoidSwap: (String) -> Unit = {},
 ) {
-    ShiftTheme {
+    // Appearance override: the settings VM holds the live choice so an in-app toggle
+    // re-themes the whole app immediately (System → follow OS). Collected OUTSIDE the
+    // theme so it can pick the palette.
+    val settingsState by settingsVm.uiState.collectAsStateWithLifecycle()
+    ShiftTheme(darkTheme = settingsState.theme.resolveDark()) {
         val state by shiftsVm.uiState.collectAsStateWithLifecycle()
         val updatesState by updatesVm.uiState.collectAsStateWithLifecycle()
         val swapsState by swapsVm.uiState.collectAsStateWithLifecycle()

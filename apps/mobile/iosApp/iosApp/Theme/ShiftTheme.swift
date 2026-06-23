@@ -1,4 +1,5 @@
 import SwiftUI
+import Shared
 
 /// Mobile reskin foundation (iOS) — the token layer.
 ///
@@ -165,6 +166,54 @@ struct ShiftColors {
         skeletonA: Color(hex: 0x1E232C),
         skeletonB: Color(hex: 0x272D38)
     )
+}
+
+// MARK: - Appearance preference (in-app theme override)
+
+/// Owns the user's in-app appearance choice (System / Light / Dark) and applies it
+/// app-wide. The token palettes already resolve from the active `ColorScheme`; this is
+/// the missing "host concern" the shared `Settings` model defers to it — it persists the
+/// choice (UserDefaults) and exposes the `ColorScheme?` the root binds via
+/// `.preferredColorScheme`. `nil` = follow the system (no override).
+@MainActor
+final class ThemeController: ObservableObject {
+    static let shared = ThemeController()
+    private static let storageKey = "appearance_theme_choice"
+
+    @Published var choice: ThemeChoice {
+        didSet { UserDefaults.standard.set(choice.persistedValue, forKey: Self.storageKey) }
+    }
+
+    private init() {
+        choice = ThemeChoice.fromPersisted(UserDefaults.standard.string(forKey: Self.storageKey))
+    }
+
+    /// The override SwiftUI applies at the root; `nil` lets the OS appearance win.
+    var preferredColorScheme: ColorScheme? {
+        switch choice {
+        case .light: return .light
+        case .dark: return .dark
+        default: return nil
+        }
+    }
+}
+
+extension ThemeChoice {
+    var persistedValue: String {
+        switch self {
+        case .light: return "light"
+        case .dark: return "dark"
+        default: return "system"
+        }
+    }
+
+    static func fromPersisted(_ raw: String?) -> ThemeChoice {
+        switch raw {
+        case "light": return .light
+        case "dark": return .dark
+        default: return .system
+        }
+    }
 }
 
 // MARK: - Typography (IBM Plex + Dynamic Type)

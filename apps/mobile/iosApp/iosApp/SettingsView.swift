@@ -51,6 +51,10 @@ struct SettingsScreen: View {
     /// updates" channel is interactive — the three personal-notif rows stay disabled (§10.1).
     var onToggleBroadcast: ((Bool) -> Void)? = nil
     @Environment(\.colorScheme) private var scheme
+    /// The app-wide appearance override the segmented control drives (and that the root
+    /// applies via `.preferredColorScheme`). Persisted, so it is the source of truth for
+    /// the selected segment — not the in-session-only VM theme.
+    @ObservedObject private var theme = ThemeController.shared
 
     private let themes: [ThemeChoice] = [.system, .light, .dark]
 
@@ -74,8 +78,13 @@ struct SettingsScreen: View {
                     ShiftSegmented(
                         options: themes.map { themeLabel($0) },
                         selection: Binding(
-                            get: { themes.firstIndex(of: st.theme) ?? 0 },
-                            set: { model.vm.setTheme(choice: themes[$0]) }
+                            get: { themes.firstIndex(of: theme.choice) ?? 0 },
+                            set: {
+                                // Apply + persist the choice app-wide, and keep the shared VM
+                                // state in step so any consumer of `st.theme` stays consistent.
+                                theme.choice = themes[$0]
+                                model.vm.setTheme(choice: themes[$0])
+                            }
                         )
                     )
                     .accessibilityIdentifier("settings_theme_segmented")

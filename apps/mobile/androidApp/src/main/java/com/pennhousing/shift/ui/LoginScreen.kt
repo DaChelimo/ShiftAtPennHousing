@@ -62,6 +62,7 @@ import com.pennhousing.shift.ui.kit.ShiftBanner
 import com.pennhousing.shift.ui.kit.ShiftButton
 import com.pennhousing.shift.ui.kit.ShiftIcons
 import com.pennhousing.shift.ui.theme.ShiftTheme
+import com.pennhousing.shift.ui.theme.rememberPersistedDarkTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -154,7 +155,7 @@ fun LoginScreen(
     state: LoginUiState,
     onEvent: (LoginEvent) -> Unit,
 ) {
-    ShiftTheme {
+    ShiftTheme(darkTheme = rememberPersistedDarkTheme()) {
         val c = ShiftTheme.colors
         val submitting = state.phase == LoginPhase.SUBMITTING
         var showPassword by remember { mutableStateOf(false) }

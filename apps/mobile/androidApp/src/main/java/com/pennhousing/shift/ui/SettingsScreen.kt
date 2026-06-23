@@ -27,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -43,6 +44,7 @@ import com.pennhousing.shift.ui.kit.SegmentedControl
 import com.pennhousing.shift.ui.kit.ShiftIcons
 import com.pennhousing.shift.ui.kit.ShiftSwitch
 import com.pennhousing.shift.ui.theme.ShiftTheme
+import com.pennhousing.shift.ui.theme.ThemePrefs
 
 /**
  * Settings / Profile — Compose UI over the shared [SettingsViewModel]. Rebuilds
@@ -61,6 +63,7 @@ fun SettingsTabContent(
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val c = ShiftTheme.colors
+    val context = LocalContext.current
 
     LazyColumn(
         Modifier.fillMaxSize().background(c.bg).testTag("settings_screen"),
@@ -104,7 +107,13 @@ fun SettingsTabContent(
                     SegmentedControl(
                         options = THEME_CHOICES.map { it.label() },
                         selectedIndex = THEME_CHOICES.indexOf(state.theme),
-                        onSelect = { vm.setTheme(THEME_CHOICES[it]) },
+                        onSelect = {
+                            val choice = THEME_CHOICES[it]
+                            // Re-theme live (VM drives ShiftTheme) and persist so the choice
+                            // survives relaunch and seeds the next launch's login chrome.
+                            vm.setTheme(choice)
+                            ThemePrefs.write(context, choice)
+                        },
                         modifier = Modifier.testTag("settings_theme_segmented"),
                     )
                 }

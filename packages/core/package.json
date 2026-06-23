@@ -15,6 +15,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:quick": "vitest run --reporter=dot",
     "lint": "eslint src tests --ext .ts",
     "type-check": "tsc --noEmit"
   },

@@ -145,8 +145,6 @@ INSERT INTO staffing_patterns (profile_name, house_id, day_type, block_headcount
   ('short_break', 'harnwell', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":2}]'),
   ('short_break', 'quad',     'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":3}]'),
   ('short_break', 'quad',     'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":3}]'),
-  ('short_break', 'dubois',   'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('short_break', 'dubois',   'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
   ('short_break', 'house-03', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
   ('short_break', 'house-03', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
   ('short_break', 'house-04', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),

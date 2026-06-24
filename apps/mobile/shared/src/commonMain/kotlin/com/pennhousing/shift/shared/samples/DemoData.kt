@@ -4,6 +4,7 @@ import com.pennhousing.shift.shared.breakclaim.BreakCalendarSeat
 import com.pennhousing.shift.shared.breakclaim.BreakCalendarSnapshot
 import com.pennhousing.shift.shared.breakclaim.BreakPhase
 import com.pennhousing.shift.shared.data.WorkerSnapshot
+import com.pennhousing.shift.shared.house.HouseOption
 import com.pennhousing.shift.shared.house.HouseScheduleSnapshot
 import com.pennhousing.shift.shared.house.HouseSeat
 import com.pennhousing.shift.shared.model.AssignmentKind
@@ -309,9 +310,13 @@ object DemoData {
                     initiatorStart = now + 3.days,
                     initiatorEnd = now + 3.days + 2.hours,
                     initiatorBlocks = 4,
+                    // Ben's shift was floated to Quad — so accepting puts YOU at Quad, not his
+                    // home desk. Surfacing this is the whole point (you'd otherwise show up blind).
+                    initiatorHouseName = "Quad",
                     counterpartyStart = mineShift.start,
                     counterpartyEnd = mineShift.end,
                     counterpartyBlocks = mineShift.blockIds.size,
+                    counterpartyHouseName = mineShift.house.name,
                 )
             },
             outgoingMine?.let { mineShift ->
@@ -327,9 +332,11 @@ object DemoData {
                     initiatorStart = mineShift.start,
                     initiatorEnd = mineShift.end,
                     initiatorBlocks = mineShift.blockIds.size,
+                    initiatorHouseName = mineShift.house.name,
                     counterpartyStart = now + 4.days,
                     counterpartyEnd = now + 4.days + 2.hours,
                     counterpartyBlocks = 4,
+                    counterpartyHouseName = "DuBois",
                 )
             },
         )
@@ -442,6 +449,24 @@ object DemoData {
     /** The demo signed-in worker (its desk blocks render as "You" in the grid). */
     const val DEMO_ME_USER_ID = "demo-me"
 
+    /** The demo worker's home house — the House tab's default selection. */
+    const val DEMO_HOME_HOUSE_ID = "harnwell"
+
+    /**
+     * The pickable houses for the House-tab switcher (2026-06-23 cross-house ruling) —
+     * each with a demo desk phone so tap-to-call works in the login-bypass build. Live,
+     * this comes from `WorkerShiftsRepository.fetchHouses`.
+     */
+    fun houses(): List<HouseOption> =
+        listOf(
+            HouseOption("harnwell", "Harnwell", "+1 215 555 0142"),
+            HouseOption("quad", "Quad", "+1 215 555 0150"),
+            HouseOption("house-03", "Gregory", "+1 215 555 0163"),
+            HouseOption("house-04", "Stouffer", "+1 215 555 0174"),
+            HouseOption("house-05", "Du Bois", "+1 215 555 0185"),
+            HouseOption("house-06", "Hill", "+1 215 555 0196"),
+        )
+
     /**
      * A deterministic home-house WEEK grid (design `HouseScheduleScreen`): Harnwell, a
      * two-desk house, with a full Mon–Sun roster — named housemates (with phones — the
@@ -454,6 +479,7 @@ object DemoData {
             houseName = "Harnwell",
             deskPhone = "+1 215 555 0142",
             seats = houseWeekSeats(now, DEMO_ME_USER_ID),
+            houseId = DEMO_HOME_HOUSE_ID,
         )
 
     /**
@@ -464,6 +490,7 @@ object DemoData {
     fun houseWeekSeats(
         anchor: Instant,
         meUserId: String,
+        isHome: Boolean = true,
     ): List<HouseSeat> {
         val monday = anchor.toLocalDateTime(NEW_YORK).date.let { it.minus(it.dayOfWeek.ordinal, DateTimeUnit.DAY) }
         // Two desks (lane 0 / lane 1) — Harnwell is multi-staff. `who` keys the registry;
@@ -514,7 +541,7 @@ object DemoData {
             entries.forEach { e ->
                 val base = LocalDateTime(date, LocalTime(e.sh, 0)).toInstant(NEW_YORK)
                 val vacant = e.who == "open"
-                val (name, uid, phone) = houseWorker(e.who, meUserId)
+                val (name, uid, phone) = houseWorker(e.who, meUserId, isHome)
                 val blocks = (e.eh - e.sh) * 2
                 for (i in 0 until blocks) {
                     seats +=
@@ -598,13 +625,18 @@ private class HEntry(
     val floatIn: Boolean = false,
 )
 
-/** Registry: `who` key → (name, userId, phone). "me" is the signed-in worker. */
+/**
+ * Registry: `who` key → (name, userId, phone). "me" is the signed-in worker — but only
+ * in the home house; on another house's demo grid the same slot becomes a regular
+ * housemate (no "You" treatment when viewing a house that isn't yours).
+ */
 private fun houseWorker(
     who: String,
     meUserId: String,
+    isHome: Boolean = true,
 ): Triple<String, String, String?> =
     when (who) {
-        "me" -> Triple("You", meUserId, null)
+        "me" -> if (isHome) Triple("You", meUserId, null) else Triple("Devon W.", "u-devon", "+1 215 555 0108")
         "maya" -> Triple("Maya R.", "u-maya", "+1 215 555 0101")
         "bob" -> Triple("Bob L.", "u-bob", "+1 215 555 0103")
         "steve" -> Triple("Steve M.", "u-steve", "+1 215 555 0104")

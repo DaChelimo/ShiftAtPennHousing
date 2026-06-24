@@ -24,8 +24,14 @@ import kotlin.time.Instant
  */
 data class SwapSide(
     val timeRange: String?, // "08:00 – 12:00" — the prominent slot
-    val dayLabel: String?, // "Sat · Jun 20" — context
+    val dayLabel: String?, // "Sat · Jun 20" — context (rendered prominently, never squint-small)
     val hours: String, // "4h" / "2h 30m" — computed so the worker never does the math
+    /**
+     * The desk this side is PHYSICALLY worked at — the float destination when the shift was
+     * floated, not the home house. Decision-critical on the "you get" side: accepting must
+     * never silently relocate the worker. Null when the time isn't resolved yet.
+     */
+    val houseName: String? = null,
 )
 
 /** A fully-formatted Swaps-tab row — the UI renders it verbatim. */
@@ -92,6 +98,7 @@ private fun sideOf(
     start: Instant?,
     end: Instant?,
     blocks: Int,
+    houseName: String?,
     zone: TimeZone,
 ): SwapSide? =
     when {
@@ -101,9 +108,10 @@ private fun sideOf(
                 timeRange = formatTimeRange(start, end, zone),
                 dayLabel = formatDayLabel(start, zone),
                 hours = formatDuration(start, end),
+                houseName = houseName,
             )
         // Hours known but the time isn't (a just-proposed leg) — fills in on the live refetch.
-        else -> SwapSide(timeRange = null, dayLabel = null, hours = hoursFromBlocks(blocks))
+        else -> SwapSide(timeRange = null, dayLabel = null, hours = hoursFromBlocks(blocks), houseName = houseName)
     }
 
 /** A humanized countdown to [at] from [now] — "Expires in 5h" / "Expires in 2d 3h" / "Expired". */
@@ -144,8 +152,8 @@ private fun rowOf(
     val outgoing = swap.direction == SwapDirection.OUTGOING
     // The worker's OWN shift is the initiator side when outgoing, the counterparty side when
     // incoming; the shift they'd RECEIVE is the opposite side. So "give"/"get" flip by direction.
-    val mySide = sideOf(swap.initiatorStart, swap.initiatorEnd, swap.initiatorBlocks, zone)
-    val theirSide = sideOf(swap.counterpartyStart, swap.counterpartyEnd, swap.counterpartyBlocks, zone)
+    val mySide = sideOf(swap.initiatorStart, swap.initiatorEnd, swap.initiatorBlocks, swap.initiatorHouseName, zone)
+    val theirSide = sideOf(swap.counterpartyStart, swap.counterpartyEnd, swap.counterpartyBlocks, swap.counterpartyHouseName, zone)
     return SwapRow(
         swapId = swap.swapId,
         typeLabel = swapTypeLabel(swap.swapType),

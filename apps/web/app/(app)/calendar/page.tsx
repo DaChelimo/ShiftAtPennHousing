@@ -3,7 +3,7 @@ import { canViewOtherHouses, resolveCalendarHouse } from '@shift/core';
 import { HouseCalendar } from '../../../components/calendar/HouseCalendar';
 import { Notification } from '../../../components/ui/Notification';
 import { PageHead } from '../../../components/ui/PageHead';
-import { adminHouseId, canBuildSchedule, getSessionUser } from '../../../lib/auth';
+import { adminHouseId, canBuildSchedule, getSessionUser, isRsm } from '../../../lib/auth';
 import {
   defaultCalendarWeek,
   getHouseCalendar,
@@ -52,6 +52,7 @@ export default async function CalendarPage({
   const canViewOthers = canViewOtherHouses({
     isOnDutyHmod: onDutyId === user.userId,
     isProjectAdmin: await isProjectAdministrator(user.userId),
+    isRsm: isRsm(user),
   });
   const validHouseIds = (await getShellHouses()).map((h) => h.id);
   const viewHouse = resolveCalendarHouse({

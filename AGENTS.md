@@ -282,3 +282,18 @@ iOS framework and the iosApp.
   RSM holds shifts like an HM (claim pool + builder roster; excluded from float
   lookup / broadcast / swap-counterparty). Manual-test seed: Diana per house
   (`diana-<house>@upenn.edu`, person_num 11).
+- [Coverage] **Coverage floor is ONE worker, not required headcount** (BSpec §5.4,
+  revised 2026-06-23). The automated escalation chain (broadcast → float → Allied)
+  fires for a block ONLY when the desk would otherwise be EMPTY (zero present). A
+  multi-staff desk (Quad 3 / Harnwell 2) with ≥1 worker still on is covered; its
+  remaining vacant seats are NOT broadcast/floated/Allied — they stay passively
+  claimable in the open-shifts feed. Full headcount is a BUILD-time target only.
+  Enforced in `orchestrator-tick/index.ts` via `loadCoveredBlockIds`
+  (`PRESENT_STATUSES` = scheduled/claimed/floated_in/pending_float_in/allied):
+  `processVacantBlocks` skips covered blocks and `loadVacantGap` excludes them from
+  the contiguous gap (so a staffed block also splits the run). This ALSO stops the
+  old multi-tick fill-to-headcount loop (each float-in flips a seat to
+  pending_float_in → block reads covered next tick). Do NOT revert this to a
+  "below required headcount" trigger — that was the over-floating bug (Quad evening
+  flooded with floats while a worker was still on the desk). Force-trigger is a
+  deliberate manual override and is intentionally NOT gated by this floor.

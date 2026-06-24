@@ -5,6 +5,7 @@ import com.pennhousing.shift.shared.breakclaim.BreakCalendarSnapshot
 import com.pennhousing.shift.shared.breakclaim.BreakPhase
 import com.pennhousing.shift.shared.calendar.calendarWeekBounds
 import com.pennhousing.shift.shared.calendar.calendarWeekDates
+import com.pennhousing.shift.shared.house.HouseOption
 import com.pennhousing.shift.shared.house.HouseScheduleSnapshot
 import com.pennhousing.shift.shared.house.HouseSeat
 import com.pennhousing.shift.shared.model.AssignmentKind
@@ -444,7 +445,57 @@ class WorkerShiftsRepository(
                 .filter { it.start < weekEnd } // upper bound enforced client-side (same-column-filter gotcha)
         val houseName = rows.firstOrNull()?.houseName ?: houseId
         val deskPhone = rows.firstOrNull { it.deskPhone != null }?.deskPhone
-        return HouseScheduleSnapshot(houseName = houseName, deskPhone = deskPhone, seats = seats)
+        return HouseScheduleSnapshot(houseName = houseName, deskPhone = deskPhone, seats = seats, houseId = houseId)
+    }
+
+    /**
+     * Every house a worker may VIEW in the House tab (2026-06-23 cross-house ruling) —
+     * `houses` (id / name / desk_phone), `houses_authenticated_read` RLS. The switcher
+     * defaults to the worker's home house but lists them all (read-only). Best-effort:
+     * an unreadable result yields an empty list (the tab then shows only the home house).
+     */
+    suspend fun fetchHouses(): List<HouseOption> =
+        runCatching {
+            supabase
+                .from(TABLE_HOUSES)
+                .select(Columns.list("id", "name", "desk_phone"))
+                .decodeList<HouseOptionRow>()
+        }.getOrDefault(emptyList())
+            .map { HouseOption(id = it.id, name = it.name, deskPhone = it.deskPhone) }
+            .sortedBy { it.name }
+
+    /**
+     * Any house's schedule grid for the NY week containing [anchor] (2026-06-23 cross-house
+     * ruling) — the owner-rights `house_schedule_grid_any` view, which exposes EVERY house
+     * (read visibility only; no write path) so a worker can open a house other than their
+     * own. Same projection + same-column-filter handling as the home-house
+     * [fetchHouseScheduleForWeek]; the [houseId] is supplied by the switcher rather than
+     * resolved from the caller's `users` row. Returns null only when the grid can't be read.
+     */
+    suspend fun fetchHouseGridForWeek(
+        houseId: String,
+        anchor: kotlin.time.Instant,
+    ): HouseScheduleSnapshot? {
+        val (weekStart, weekEnd) = calendarWeekBounds(anchor)
+        val rows =
+            runCatching {
+                supabase
+                    .from(VIEW_HOUSE_GRID_ANY)
+                    .select {
+                        filter {
+                            eq("house_id", houseId)
+                            gte("start_at", weekStart.toString())
+                        }
+                    }
+                    .decodeList<HouseGridRow>()
+            }.getOrNull() ?: return null
+        val seats =
+            rows
+                .map { it.toSeat() }
+                .filter { it.start < weekEnd } // upper bound enforced client-side (same-column-filter gotcha)
+        val houseName = rows.firstOrNull()?.houseName ?: houseId
+        val deskPhone = rows.firstOrNull { it.deskPhone != null }?.deskPhone
+        return HouseScheduleSnapshot(houseName = houseName, deskPhone = deskPhone, seats = seats, houseId = houseId)
     }
 
     /**
@@ -744,9 +795,11 @@ class WorkerShiftsRepository(
                         initiatorStart = row.initiatorStart?.let { Instant.parse(it) },
                         initiatorEnd = row.initiatorEnd?.let { Instant.parse(it) },
                         initiatorBlocks = row.initiatorBlocks,
+                        initiatorHouseName = row.initiatorHouseName,
                         counterpartyStart = row.counterpartyStart?.let { Instant.parse(it) },
                         counterpartyEnd = row.counterpartyEnd?.let { Instant.parse(it) },
                         counterpartyBlocks = row.counterpartyBlocks,
+                        counterpartyHouseName = row.counterpartyHouseName,
                     )
                 }
         }.getOrDefault(emptyList())
@@ -885,6 +938,7 @@ class WorkerShiftsRepository(
         const val TABLE_USERS = "users"
         const val TABLE_SWAP_REQUESTS = "swap_requests"
         const val VIEW_HOUSE_GRID = "house_schedule_grid"
+        const val VIEW_HOUSE_GRID_ANY = "house_schedule_grid_any"
         const val VIEW_WORKER_DIRECTORY = "worker_directory"
         const val TABLE_HOUSES = "houses"
     }
@@ -903,6 +957,14 @@ internal data class WorkerDirectoryRow(
 internal data class DirectoryHouseRow(
     val id: String,
     val name: String,
+)
+
+/** A `houses` row for the House-tab switcher (id / name / desk phone). */
+@Serializable
+internal data class HouseOptionRow(
+    val id: String,
+    val name: String,
+    @SerialName("desk_phone") val deskPhone: String? = null,
 )
 
 /** One `house_schedule_grid` row (T3b wire shape) → [HouseSeat]. */
@@ -1005,9 +1067,11 @@ internal data class WorkerPendingSwapRow(
     @SerialName("initiator_start") val initiatorStart: String? = null,
     @SerialName("initiator_end") val initiatorEnd: String? = null,
     @SerialName("initiator_blocks") val initiatorBlocks: Int = 0,
+    @SerialName("initiator_house_name") val initiatorHouseName: String? = null,
     @SerialName("counterparty_start") val counterpartyStart: String? = null,
     @SerialName("counterparty_end") val counterpartyEnd: String? = null,
     @SerialName("counterparty_blocks") val counterpartyBlocks: Int = 0,
+    @SerialName("counterparty_house_name") val counterpartyHouseName: String? = null,
 )
 
 /** The worker's own `home_house_id` (own-row `users` RLS) — for the closed-day lookup. */

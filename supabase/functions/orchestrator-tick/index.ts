@@ -6,6 +6,22 @@ const DEFAULT_NO_ACK_LOOKAHEAD_MINUTES = 15;
 const DEFAULT_BLOCK_MINUTES = 30;
 const DEFAULT_FLOAT_RETENTION_DAYS = 14;
 
+// Desk-presence statuses. A block whose desk is already (or will be) staffed by at
+// least one assignment in one of these statuses is NOT empty, so the coverage chain
+// (broadcast → float → Allied) must NOT fire for it. Per the coverage rule
+// (BEHAVIORAL_SPECIFICATION §5.4) the chain runs ONLY to keep a desk from being
+// EMPTY — it never backfills extra vacant seats up to the full per-house headcount.
+// On a triple-staffed Quad evening where one worker is still on, the other two
+// seats need no coverage. `floated_out` / `pending_float_out` are NOT present (that
+// seat's worker is staffing another desk); `vacant` is not present.
+const PRESENT_STATUSES = [
+  'scheduled',
+  'claimed',
+  'floated_in',
+  'pending_float_in',
+  'allied',
+] as const;
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -399,6 +415,37 @@ async function hmodNotifyAlliedStep(
   return (data as { claimed?: boolean } | null)?.claimed === true;
 }
 
+// Of the given blocks, the subset whose desk is already covered — at least one
+// assignment row in a PRESENT_STATUSES status. A covered block needs no coverage,
+// so both the chain trigger (processVacantBlocks) and the gap builder
+// (loadVacantGap) skip it. This is also what stops the multi-tick fill-to-headcount
+// loop: once a floater flips one seat to pending_float_in the block reads covered on
+// the next tick, so its remaining vacant seats are never floated.
+async function loadCoveredBlockIds(supabase: Supabase, blockIds: string[]): Promise<Set<string>> {
+  const covered = new Set<string>();
+  // Chunk the .in() filter — a full lookahead window of block ids 414s ("URI too
+  // long") as one request (mirrors selectByBlockIdChunks on the web side).
+  const CHUNK = 100;
+  for (let start = 0; start < blockIds.length; start += CHUNK) {
+    const chunk = blockIds.slice(start, start + CHUNK);
+    if (chunk.length === 0) {
+      continue;
+    }
+    const { data, error } = await supabase
+      .from('shift_block_assignments')
+      .select('block_id')
+      .in('block_id', chunk)
+      .in('status', [...PRESENT_STATUSES]);
+    if (error !== null) {
+      throw error;
+    }
+    for (const row of data ?? []) {
+      covered.add(row.block_id);
+    }
+  }
+  return covered;
+}
+
 async function loadVacantGap(
   supabase: Supabase,
   block: VacantAssignment,
@@ -434,9 +481,16 @@ async function loadVacantGap(
     });
   }
 
-  const sorted = [...byBlock.values()].sort(
-    (left, right) => left.blockStartAt.getTime() - right.blockStartAt.getTime(),
-  );
+  // Only EMPTY blocks (no present staff) belong to the gap — a block where someone
+  // is still on the desk is covered and must not pull its remaining vacant seats
+  // into the float. A non-empty block also breaks the contiguous run (mirrors the
+  // user's example: empty 18:00–20:00, staffed 20:00–22:00, empty 22:00–24:00 →
+  // two separate gaps, not one).
+  const coveredBlockIds = await loadCoveredBlockIds(supabase, [...byBlock.keys()]);
+
+  const sorted = [...byBlock.values()]
+    .filter((row) => !coveredBlockIds.has(row.blockId))
+    .sort((left, right) => left.blockStartAt.getTime() - right.blockStartAt.getTime());
   const gap: VacantAssignment[] = [];
   let expectedStart = block.blockStartAt.getTime();
   for (const row of sorted) {
@@ -808,8 +862,19 @@ async function processVacantBlocks(
     throw error;
   }
 
+  // Skip blocks whose desk is already staffed: the coverage chain fires only to
+  // keep a desk from being EMPTY (BEHAVIORAL_SPECIFICATION §5.4), never to backfill
+  // vacant seats to the full headcount. A triple-staffed Quad evening with one
+  // worker still on needs no broadcast/float/Allied for its other two seats.
+  const coveredBlockIds = await loadCoveredBlockIds(supabase, [
+    ...new Set((data ?? []).map((row) => row.block_id)),
+  ]);
+
   let fired = 0;
   for (const row of data ?? []) {
+    if (coveredBlockIds.has(row.block_id)) {
+      continue;
+    }
     const joinedBlock = nestedOne(
       row.shift_blocks as { block_start_at: string; house_id: string } | null,
     );

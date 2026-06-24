@@ -187,6 +187,22 @@ object DemoFactory {
         DemoData.houseWeekSeats(anchor, DemoData.DEMO_ME_USER_ID)
 
     /**
+     * The demo roster for a navigated week of the selected house (cross-house switcher) —
+     * [isHome] drops the "You" treatment on a house that isn't the demo worker's own.
+     */
+    fun houseWeekSeats(
+        anchor: Instant,
+        isHome: Boolean,
+    ): List<com.pennhousing.shift.shared.house.HouseSeat> =
+        DemoData.houseWeekSeats(anchor, DemoData.DEMO_ME_USER_ID, isHome)
+
+    /** The pickable houses for the demo House-tab switcher. */
+    fun houses(): List<com.pennhousing.shift.shared.house.HouseOption> = DemoData.houses()
+
+    /** The demo worker's home house id — the House tab's default selection. */
+    val demoHomeHouseId: String get() = DemoData.DEMO_HOME_HOUSE_ID
+
+    /**
      * Live house-schedule VM from the worker's real `house_schedule_grid` snapshot
      * (§11.4, T3b) — supplies `now` Kotlin-side (no Instant across the Swift
      * bridge). iOS calls this from `HouseObservable.activateLive`; Android builds

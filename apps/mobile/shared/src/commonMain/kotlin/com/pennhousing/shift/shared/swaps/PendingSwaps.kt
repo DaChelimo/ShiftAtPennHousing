@@ -39,9 +39,13 @@ data class PendingSwap(
     val initiatorStart: Instant?,
     val initiatorEnd: Instant?,
     val initiatorBlocks: Int,
+    /** The house the initiator side is PHYSICALLY worked at (the float destination, if floated). */
+    val initiatorHouseName: String? = null,
     val counterpartyStart: Instant?,
     val counterpartyEnd: Instant?,
     val counterpartyBlocks: Int,
+    /** The house the counterparty side is PHYSICALLY worked at (the float destination, if floated). */
+    val counterpartyHouseName: String? = null,
 ) {
     /** The viewing worker's own assignment ids in this swap — the ones on their calendar. */
     val myAssignmentIds: List<String>
@@ -62,7 +66,13 @@ data class SwapDecision(
     val intro: String, // "Ben wants to swap shifts with you."
     val respondBy: String, // "Respond by Mon, 18:30"
     val giveLabel: String?, // "Sat · Jun 20 · 14:00 – 18:00 · 4h" — null if you give nothing
+    val giveHouse: String?, // "Harnwell" — the desk you'd give up (null if you give nothing)
     val getLabel: String?, // the shift you'd gain — null if you get nothing
+    /**
+     * The desk you'd actually WORK if you accept — the float destination when their shift was
+     * floated, not their home house. Load-bearing: accepting must never silently relocate you.
+     */
+    val getHouse: String?, // "Harnwell" — null if you get nothing
     val permanent: Boolean,
     val note: String?, // hand-off / permanent context line
 )
@@ -81,6 +91,7 @@ data class PendingSwapNotice(
     val swapType: String,
     val typeLabel: String, // "Shift swap" / "Float swap" / "Permanent swap" / "Hand-off"
     val title: String, // "Swap pending" / "Hand-off pending"
+    val houseName: String?, // "Harnwell" — the desk this shift is worked at (float destination, if floated)
     val dayLabel: String, // "Sat · Jun 20" — the shift's day-of-week + date
     val timeLabel: String, // "14:00 – 18:00" — start–end
     val durationLabel: String, // "4h"
@@ -116,6 +127,7 @@ fun buildPendingSwapNotice(
         swapType = swap.swapType,
         typeLabel = swapTypeLabelFor(swap.swapType),
         title = if (handoff) "Hand-off pending" else "Swap pending",
+        houseName = swap.initiatorHouseName,
         dayLabel = start?.let { formatDayLabel(it, zone) } ?: "",
         timeLabel = if (start != null && end != null) formatTimeRange(start, end, zone) else "",
         durationLabel = if (start != null && end != null) formatDuration(start, end) else "",
@@ -181,7 +193,9 @@ fun buildSwapDecision(
         intro = intro,
         respondBy = "Respond by ${formatDayLabel(swap.expiresAt, zone)}, ${formatBlockTime(swap.expiresAt, zone)}",
         giveLabel = giveLabel,
+        giveHouse = swap.counterpartyHouseName.takeIf { swap.counterpartyBlocks > 0 },
         getLabel = getLabel,
+        getHouse = swap.initiatorHouseName.takeIf { swap.initiatorBlocks > 0 },
         permanent = permanent,
         note = note,
     )

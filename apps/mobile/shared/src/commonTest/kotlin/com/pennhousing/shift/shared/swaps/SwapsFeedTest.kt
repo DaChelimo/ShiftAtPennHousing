@@ -31,6 +31,8 @@ class SwapsFeedTest {
         cpStart: String? = "2026-01-17T14:00:00-05:00",
         cpEnd: String? = "2026-01-17T18:00:00-05:00",
         cpBlocks: Int = 8,
+        iniHouse: String? = null,
+        cpHouse: String? = null,
     ) = PendingSwap(
         swapId = id,
         swapType = type,
@@ -43,9 +45,11 @@ class SwapsFeedTest {
         initiatorStart = iniStart?.let { at(it) },
         initiatorEnd = iniEnd?.let { at(it) },
         initiatorBlocks = iniBlocks,
+        initiatorHouseName = iniHouse,
         counterpartyStart = cpStart?.let { at(it) },
         counterpartyEnd = cpEnd?.let { at(it) },
         counterpartyBlocks = cpBlocks,
+        counterpartyHouseName = cpHouse,
     )
 
     @Test fun incoming_is_sorted_soonest_deadline_first() {
@@ -80,6 +84,19 @@ class SwapsFeedTest {
         assertNotNull(t.give?.dayLabel)
         assertEquals("Needs your response", t.directionLabel)
         assertEquals("Permanent swap", feed.incoming.single { it.swapId == "p" }.typeLabel)
+    }
+
+    @Test fun each_side_carries_the_house_it_is_worked_at_direction_aware() {
+        // Their shift is floated to Quad; mine sits at Harnwell. INCOMING: get = theirs (Quad),
+        // give = mine (Harnwell). The acceptor sees the float destination, not the home house.
+        val feed =
+            buildSwapsFeed(
+                listOf(swap("h", SwapDirection.INCOMING, iniHouse = "Quad", cpHouse = "Harnwell")),
+                now,
+            )
+        val row = feed.incoming.single()
+        assertEquals("Quad", row.get?.houseName)
+        assertEquals("Harnwell", row.give?.houseName)
     }
 
     @Test fun outgoing_give_get_is_flipped_relative_to_incoming() {

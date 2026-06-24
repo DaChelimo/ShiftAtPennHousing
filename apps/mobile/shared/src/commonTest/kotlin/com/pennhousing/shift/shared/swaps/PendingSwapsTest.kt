@@ -27,6 +27,8 @@ class PendingSwapsTest {
         cpStart: String? = null,
         cpEnd: String? = null,
         cpBlocks: Int = 0,
+        iniHouse: String? = null,
+        cpHouse: String? = null,
     ) = PendingSwap(
         swapId = "s1",
         swapType = type,
@@ -39,9 +41,11 @@ class PendingSwapsTest {
         initiatorStart = iniStart?.let { at(it) },
         initiatorEnd = iniEnd?.let { at(it) },
         initiatorBlocks = iniBlocks,
+        initiatorHouseName = iniHouse,
         counterpartyStart = cpStart?.let { at(it) },
         counterpartyEnd = cpEnd?.let { at(it) },
         counterpartyBlocks = cpBlocks,
+        counterpartyHouseName = cpHouse,
     )
 
     @Test
@@ -72,6 +76,40 @@ class PendingSwapsTest {
         assertTrue(d.giveLabel!!.contains("4h"))
         assertFalse(d.permanent)
         assertTrue(d.respondBy.contains("18:30"))
+    }
+
+    @Test
+    fun decision_surfaces_the_house_each_side_is_worked_at_including_a_float_destination() {
+        // The proposer's shift was floated to Quad; the worker's own is at home (Harnwell).
+        // Accepting must not silently relocate the worker, so each side carries its real desk.
+        val d =
+            buildSwapDecision(
+                swap(
+                    "shift_swap", SwapDirection.INCOMING,
+                    iniIds = listOf("i1"), cpIds = listOf("c1"),
+                    iniStart = "2026-01-20T09:00:00-05:00", iniEnd = "2026-01-20T13:00:00-05:00", iniBlocks = 8,
+                    cpStart = "2026-01-17T14:00:00-05:00", cpEnd = "2026-01-17T18:00:00-05:00", cpBlocks = 8,
+                    iniHouse = "Quad", cpHouse = "Harnwell",
+                ),
+            )
+        assertEquals("Quad", d.getHouse) // where you'd actually work — the float destination
+        assertEquals("Harnwell", d.giveHouse) // the desk you'd give up
+    }
+
+    @Test
+    fun decision_house_is_null_on_an_empty_side() {
+        // A hand-off TO me: I give nothing, so giveHouse stays null even if a name leaks through.
+        val d =
+            buildSwapDecision(
+                swap(
+                    "handoff", SwapDirection.INCOMING,
+                    iniIds = listOf("i1"), cpIds = emptyList(),
+                    iniStart = "2026-01-20T09:00:00-05:00", iniEnd = "2026-01-20T13:00:00-05:00", iniBlocks = 8,
+                    iniHouse = "Quad", cpHouse = "Harnwell",
+                ),
+            )
+        assertEquals("Quad", d.getHouse)
+        assertNull(d.giveHouse) // counterpartyBlocks == 0 → no give side, no house
     }
 
     @Test
@@ -146,6 +184,20 @@ class PendingSwapsTest {
         assertTrue(n.waitingOn.contains("18:30")) // the deadline
         assertEquals("Cancel swap", n.cancelLabel)
         assertEquals("Keep waiting", n.keepWaitingLabel)
+    }
+
+    @Test
+    fun pending_notice_shows_the_house_the_offered_shift_is_worked_at() {
+        val n =
+            buildPendingSwapNotice(
+                swap(
+                    "shift_swap", SwapDirection.OUTGOING,
+                    iniIds = listOf("i1"), cpIds = listOf("c1"),
+                    iniStart = "2026-01-17T14:00:00-05:00", iniEnd = "2026-01-17T18:00:00-05:00", iniBlocks = 8,
+                    iniHouse = "DuBois",
+                ),
+            )
+        assertEquals("DuBois", n.houseName) // the worker's own (initiator) side desk
     }
 
     @Test

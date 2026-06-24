@@ -3,7 +3,7 @@ import { canViewOtherHouses, resolveCoverageScope } from '@shift/core';
 import { CoverageMonitor } from '../../../components/coverage/CoverageMonitor';
 import { Notification } from '../../../components/ui/Notification';
 import { PageHead } from '../../../components/ui/PageHead';
-import { adminHouseId, canBuildSchedule, getSessionUser } from '../../../lib/auth';
+import { adminHouseId, canBuildSchedule, getSessionUser, isRsm } from '../../../lib/auth';
 import { isProjectAdministrator } from '../../../lib/data/config';
 import { getAllHousesCoverageData, getCoverageData } from '../../../lib/data/coverage';
 import { getOnDutyHmodId, getShellHouses } from '../../../lib/data/hmod';
@@ -38,6 +38,7 @@ export default async function CoveragePage({
   const canViewOthers = canViewOtherHouses({
     isOnDutyHmod: onDutyId === user.userId,
     isProjectAdmin: await isProjectAdministrator(user.userId),
+    isRsm: isRsm(user),
   });
   const validHouseIds = (await getShellHouses()).map((h) => h.id);
   const scope = resolveCoverageScope({

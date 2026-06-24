@@ -11,6 +11,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -59,17 +60,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -87,8 +95,9 @@ import com.pennhousing.shift.shared.viewmodel.CalendarMode
 import com.pennhousing.shift.shared.data.PermanentPickupScope
 import com.pennhousing.shift.shared.data.ToastNotification
 import com.pennhousing.shift.shared.data.WorkerBackend
+import com.pennhousing.shift.shared.house.HouseGridBlock
+import com.pennhousing.shift.shared.house.HouseGridDay
 import com.pennhousing.shift.shared.house.HouseOption
-import com.pennhousing.shift.shared.house.HouseRosterRow
 import com.pennhousing.shift.shared.house.HouseSeat
 import com.pennhousing.shift.shared.samples.DemoData
 import com.pennhousing.shift.shared.samples.DemoFactory
@@ -2988,7 +2997,7 @@ private fun HouseTabContent(
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val c = ShiftTheme.colors
-    var contactTarget by remember { mutableStateOf<HouseRosterRow?>(null) }
+    var contactTarget by remember { mutableStateOf<HouseGridBlock?>(null) }
     var showWeekPicker by remember { mutableStateOf(false) }
     var showHousePicker by remember { mutableStateOf(false) }
 
@@ -3033,33 +3042,16 @@ private fun HouseTabContent(
             canSwitchHouse = state.canSwitchHouse,
             onOpenPicker = { if (state.canSwitchHouse) showHousePicker = true },
         )
-        WeekStrip(state.week, state.selectedDayIndex, vm::selectDay, tag = "house_week_strip")
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            if (state.day.isEmpty) {
-                EmptyState(
-                    title = if (state.loadingWeek) "Loading…" else "No desk shifts this day",
-                    icon = ShiftIcons.Building,
-                    body =
-                        if (state.loadingWeek) {
-                            "Fetching ${state.houseName}'s schedule…"
-                        } else {
-                            "Nothing scheduled at ${state.houseName} on this day."
-                        },
-                )
-            } else {
-                LazyColumn(
-                    Modifier.fillMaxSize().testTag("house_roster"),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 24.dp),
-                ) {
-                    item {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            state.day.rows.forEach { row ->
-                                HouseRosterRowCard(row, onTap = { if (!row.vacant) contactTarget = row })
-                            }
-                        }
-                    }
-                }
-            }
+        HouseLegend()
+        Box(Modifier.weight(1f).fillMaxWidth().testTag("house_grid")) {
+            HouseGrid(
+                grid = state.grid,
+                focusDayIndex = state.todayIndex,
+                nowMinOfDay = state.nowMinOfDay,
+                // Re-centre the scroll whenever the house or shown week changes.
+                focusKey = "${state.selectedHouseId}#${state.weekOffset}",
+                onBlockTap = { if (!it.vacant) contactTarget = it },
+            )
         }
         WeekNavBar(
             title = state.weekRelative,
@@ -3100,59 +3092,270 @@ private fun HouseTabContent(
         )
     }
 
-    contactTarget?.let { row ->
-        ContactSheet(row = row, deskPhone = state.deskPhone, onDismiss = { contactTarget = null })
+    contactTarget?.let { block ->
+        ContactSheet(block = block, deskPhone = state.deskPhone, onDismiss = { contactTarget = null })
     }
 }
 
-/** One roster row: time + duration, the worker (or "You" / "Open shift"), state tags. */
+// ── House grid layout constants (design `HouseScheduleScreen`) ──────────────────
+private val HOUSE_RAIL_W = 42.dp
+private val HOUSE_HEADER_H = 46.dp
+private val HOUSE_PX_PER_HOUR = 46.dp
+private val HOUSE_LANE_W = 92.dp
+private val HOUSE_LANE_GAP = 4.dp
+private val HOUSE_COL_PAD = 6.dp
+private val HOUSE_COL_GAP = 6.dp
+
+/** The legend strip (design): You / Float-in / Open, plus the swipe-sideways hint. */
 @Composable
-private fun HouseRosterRowCard(
-    row: HouseRosterRow,
-    onTap: () -> Unit,
+private fun HouseLegend() {
+    val c = ShiftTheme.colors
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        LegendSwatch(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.primary, "You")
+        LegendSwatch(c.floatIn.tint, c.floatIn.accent, "Float-in")
+        LegendSwatch(c.surface, c.outline, "Open", dashed = true)
+        Spacer(Modifier.weight(1f))
+        Text("Swipe", color = c.ter, fontSize = 11.sp)
+        Icon(ShiftIcons.ChevronRight, contentDescription = null, tint = c.ter, modifier = Modifier.size(13.dp))
+    }
+}
+
+@Composable
+private fun LegendSwatch(
+    fill: Color,
+    accent: Color,
+    label: String,
+    dashed: Boolean = false,
 ) {
     val c = ShiftTheme.colors
-    val primary = MaterialTheme.colorScheme.primary
-    val shape = RoundedCornerShape(14.dp)
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(if (row.vacant) c.surfaceVar else c.surface)
-            .border(1.dp, if (row.mine || row.active) primary else c.divider, shape)
-            .clickable(enabled = !row.vacant, onClick = onTap)
-            .padding(horizontal = 14.dp, vertical = 12.dp)
-            .testTag("house_roster_row"),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(row.timeLabel, style = ShiftTheme.type.monoTime, color = c.ink)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    if (row.mine) "You" else (row.workerName ?: "Open shift"),
-                    color = if (row.vacant) c.ter else c.sec,
-                    fontSize = 13.5.sp,
-                    fontWeight = if (row.vacant) FontWeight.Normal else FontWeight.Medium,
-                )
-                if (row.pending) {
-                    Text("Pending float", color = c.pending, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
-                } else if (row.floatIn) {
-                    Text("Float in", color = c.floatIn.accent, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
-                }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Box(
+            Modifier
+                .size(10.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(fill)
+                .then(if (dashed) Modifier.dashedBorder(accent, 3.dp) else Modifier.border(1.dp, accent, RoundedCornerShape(3.dp))),
+        )
+        Text(label, color = c.ter, fontSize = 11.5.sp)
+    }
+}
+
+/**
+ * The grid: a frozen left [HouseTimeRail] + horizontally-scrolling day columns, with a
+ * frozen day-header row above. The header row and the body share one horizontal
+ * `ScrollState` (so they scroll sideways together); the rail lives inside the vertical
+ * scroll but outside the horizontal one, so it stays put when the days scroll sideways
+ * — the load-bearing requirement.
+ */
+@Composable
+private fun HouseGrid(
+    grid: com.pennhousing.shift.shared.house.HouseGridWeek,
+    focusDayIndex: Int,
+    nowMinOfDay: Int,
+    focusKey: String,
+    onBlockTap: (HouseGridBlock) -> Unit,
+) {
+    val hScroll = rememberScrollState()
+    val vScroll = rememberScrollState()
+    val density = LocalDensity.current
+    val laneCount = grid.laneCount
+    val colW = HOUSE_LANE_W * laneCount + HOUSE_LANE_GAP * (laneCount - 1) + HOUSE_COL_PAD * 2
+    val gridHeight = HOUSE_PX_PER_HOUR * (grid.endHour - grid.startHour)
+
+    // Scroll to "now" when the shown week contains today (on open / house-switch / week
+    // change): the today column comes into view (it may sit at the end of the week) and the
+    // body scrolls down to the current hour. Other weeks have no "today" → no auto-scroll.
+    LaunchedEffect(focusKey, focusDayIndex, grid.startHour, grid.endHour, grid.laneCount) {
+        if (focusDayIndex < 0) return@LaunchedEffect
+        val colWpx = with(density) { colW.toPx() }
+        val gapPx = with(density) { HOUSE_COL_GAP.toPx() }
+        hScroll.animateScrollTo((focusDayIndex * (colWpx + gapPx)).toInt().coerceAtLeast(0))
+        val pxPerHour = with(density) { HOUSE_PX_PER_HOUR.toPx() }
+        val y = (pxPerHour * (nowMinOfDay / 60f - grid.startHour) - pxPerHour).toInt().coerceAtLeast(0)
+        vScroll.animateScrollTo(y)
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        // Frozen day-header row — scrolls sideways with the body, never vertically.
+        Row(Modifier.fillMaxWidth().padding(start = 12.dp)) {
+            Spacer(Modifier.width(HOUSE_RAIL_W))
+            Row(
+                Modifier.horizontalScroll(hScroll),
+                horizontalArrangement = Arrangement.spacedBy(HOUSE_COL_GAP),
+            ) {
+                grid.days.forEach { day -> HouseDayHeader(day, colW) }
+                Spacer(Modifier.width(8.dp))
             }
         }
-        Text(row.durationLabel, style = ShiftTheme.type.monoId.copy(fontSize = 12.sp), color = c.ter)
-        if (!row.vacant && row.workerPhone != null) {
-            Icon(
-                ShiftIcons.Phone,
-                contentDescription = null,
-                tint = primary,
-                modifier = Modifier.size(16.dp),
-            )
+        // Body — rail + columns scroll vertically together; columns also scroll sideways.
+        Row(Modifier.weight(1f).fillMaxWidth().verticalScroll(vScroll).padding(start = 12.dp, top = 2.dp, bottom = 8.dp)) {
+            HouseTimeRail(grid.startHour, grid.endHour, gridHeight)
+            Row(
+                Modifier.horizontalScroll(hScroll),
+                horizontalArrangement = Arrangement.spacedBy(HOUSE_COL_GAP),
+            ) {
+                grid.days.forEach { day ->
+                    HouseDayColumn(day, colW, gridHeight, grid.startHour, grid.endHour, onBlockTap)
+                }
+                Spacer(Modifier.width(8.dp))
+            }
         }
     }
 }
+
+/** The fixed left time rail (08:00 … 24:00, every 2h) — frozen during sideways scroll. */
+@Composable
+private fun HouseTimeRail(
+    startHour: Int,
+    endHour: Int,
+    gridHeight: Dp,
+) {
+    val c = ShiftTheme.colors
+    Box(Modifier.width(HOUSE_RAIL_W).height(gridHeight).testTag("house_time_rail")) {
+        var h = startHour
+        while (h <= endHour) {
+            val y = (HOUSE_PX_PER_HOUR * (h - startHour) - 5.dp).coerceAtLeast(0.dp)
+            Text(
+                "${h.toString().padStart(2, '0')}:00",
+                style = ShiftTheme.type.monoId.copy(fontSize = 10.sp),
+                color = c.ter,
+                modifier = Modifier.align(Alignment.TopEnd).offset(y = y).padding(end = 6.dp),
+            )
+            h += 2
+        }
+    }
+}
+
+/** One Mon–Sun header cell (day + date), highlighted when it is today. */
+@Composable
+private fun HouseDayHeader(
+    day: HouseGridDay,
+    colW: Dp,
+) {
+    val c = ShiftTheme.colors
+    val primary = MaterialTheme.colorScheme.primary
+    Column(
+        Modifier
+            .width(colW)
+            .height(HOUSE_HEADER_H)
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (day.isToday) primary.copy(alpha = 0.10f) else Color.Transparent),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(day.dayLabel, color = if (day.isToday) primary else c.ter, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            day.dateLabel,
+            style = ShiftTheme.type.monoTime.copy(fontSize = 13.sp),
+            color = if (day.isToday) primary else c.ink,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+/** One day column: the surface card + 2-hour gridlines + the lane-placed blocks. */
+@Composable
+private fun HouseDayColumn(
+    day: HouseGridDay,
+    colW: Dp,
+    gridHeight: Dp,
+    startHour: Int,
+    endHour: Int,
+    onBlockTap: (HouseGridBlock) -> Unit,
+) {
+    val c = ShiftTheme.colors
+    Box(
+        Modifier
+            .width(colW)
+            .height(gridHeight)
+            .clip(RoundedCornerShape(10.dp))
+            .background(c.surface)
+            .border(1.dp, c.divider, RoundedCornerShape(10.dp))
+            .testTag("house_day_column"),
+    ) {
+        var h = startHour + 2
+        while (h < endHour) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .offset(y = HOUSE_PX_PER_HOUR * (h - startHour))
+                    .background(c.divider.copy(alpha = 0.6f)),
+            )
+            h += 2
+        }
+        day.blocks.forEach { b -> HouseGridBlockCell(b, startHour, onBlockTap) }
+    }
+}
+
+/** One positioned desk block, coloured by its state (design `HouseBlock`). */
+@Composable
+private fun HouseGridBlockCell(
+    b: HouseGridBlock,
+    startHour: Int,
+    onTap: (HouseGridBlock) -> Unit,
+) {
+    val c = ShiftTheme.colors
+    val primary = MaterialTheme.colorScheme.primary
+    val top = HOUSE_PX_PER_HOUR * ((b.startMin - startHour * 60) / 60f)
+    val height = (HOUSE_PX_PER_HOUR * ((b.endMin - b.startMin) / 60f) - 3.dp).coerceAtLeast(18.dp)
+    val x = HOUSE_COL_PAD + (HOUSE_LANE_W + HOUSE_LANE_GAP) * b.lane
+    val (bg, accent, fg) =
+        when {
+            b.vacant -> Triple(c.surface, c.outline, c.ter)
+            b.mine && b.floatIn -> Triple(c.floatIn.tint, c.floatIn.accent, c.floatIn.deep)
+            b.mine -> Triple(MaterialTheme.colorScheme.primaryContainer, primary, MaterialTheme.colorScheme.onPrimaryContainer)
+            b.pending -> Triple(c.surfaceVar, c.pending, c.ink)
+            b.floatIn -> Triple(c.floatIn.tint, c.floatIn.accent, c.floatIn.deep)
+            else -> Triple(c.surfaceVar, c.outline, c.ink)
+        }
+    val shape = RoundedCornerShape(8.dp)
+    Box(
+        Modifier
+            .offset(x = x, y = top)
+            .width(HOUSE_LANE_W)
+            .height(height)
+            .clip(shape)
+            .background(bg)
+            .then(if (b.vacant) Modifier.dashedBorder(accent, 8.dp) else Modifier.border(1.dp, accent.copy(alpha = 0.45f), shape))
+            .drawBehind { drawRect(color = accent, size = Size(3.dp.toPx(), size.height)) }
+            .clickable(enabled = !b.vacant) { onTap(b) }
+            .padding(start = 7.dp, end = 5.dp, top = 4.dp, bottom = 3.dp)
+            .testTag("house_grid_block"),
+    ) {
+        Column {
+            Text(b.timeLabel, style = ShiftTheme.type.monoId.copy(fontSize = 10.5.sp), color = fg, maxLines = 1)
+            Text(
+                b.workerLabel + if (b.mine && b.floatIn) " ·float" else "",
+                color = fg,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (b.pending) {
+                Text("Pending", color = c.pending, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            }
+        }
+    }
+}
+
+/** A dashed rounded outline (open blocks + the legend's "Open" swatch). */
+private fun Modifier.dashedBorder(
+    color: Color,
+    cornerRadius: Dp,
+): Modifier =
+    drawBehind {
+        drawRoundRect(
+            color = color,
+            style = Stroke(width = 1.5.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 4f), 0f)),
+            cornerRadius = CornerRadius(cornerRadius.toPx(), cornerRadius.toPx()),
+        )
+    }
 
 /**
  * The house header — a DROPDOWN (2026-06-23 cross-house ruling): tapping anywhere opens
@@ -3283,10 +3486,11 @@ private fun HousePickerSheet(
  */
 @Composable
 private fun ContactSheet(
-    row: HouseRosterRow,
+    block: HouseGridBlock,
     deskPhone: String?,
     onDismiss: () -> Unit,
 ) {
+    val row = block
     val c = ShiftTheme.colors
     val context = LocalContext.current
     ShiftBottomSheet(onDismiss = onDismiss, title = row.workerName ?: "Shift") {

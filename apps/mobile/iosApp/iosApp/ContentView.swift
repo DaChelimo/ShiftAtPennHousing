@@ -400,7 +400,6 @@ final class HouseObservable: ObservableObject {
     func nextWeek() { vm.nextWeek() }
     func selectWeek(_ offset: Int) { vm.selectWeek(offset: Int32(offset)) }
     func selectHouse(_ houseId: String) { vm.selectHouse(houseId: houseId) }
-    func selectDay(_ index: Int) { vm.selectDay(index: Int32(index)) }
 
     func activateLive(repo: WorkerShiftsRepository, userId: String) async {
         guard !live else { return }
@@ -1714,43 +1713,36 @@ struct ShiftsRootView: View {
         }
     }
 
-    // MARK: House — §11.4 house schedule (day roster) + cross-house switcher + contact lookup (T3b)
+    // MARK: House — §11.4 home-house schedule (Excel-style week grid) + contact lookup (T3b)
 
-    @State private var contactTarget: HouseRosterRow?
+    @State private var contactTarget: HouseGridBlock?
     @State private var showHouseWeekPicker = false
     @State private var showHousePicker = false
+    /// The day columns' horizontal scroll offset (≤ 0), mirrored to the frozen header row.
+    @State private var houseHOffset: CGFloat = 0
 
-    /// The house schedule as a readable day roster: a Mon–Sun day strip + the selected
-    /// day's coalesced shift rows (who covers each desk block). The week navigator (last
-    /// week … +4) pages it; tapping a staffed row opens the contact sheet — the "who do I
-    /// swap with" affordance. The header is a cross-house switcher (any house, read-only).
+    // Grid metrics (design `HouseScheduleScreen`).
+    private static let houseRailW: CGFloat = 42
+    private static let houseHeaderH: CGFloat = 46
+    private static let housePxPerHour: CGFloat = 46
+    private static let houseLaneW: CGFloat = 92
+    private static let houseLaneGap: CGFloat = 4
+    private static let houseColPad: CGFloat = 6
+    private static let houseColGap: CGFloat = 6
+
+    /// The home-house schedule as a week grid: a fixed left time rail + Mon–Sun day
+    /// columns that scroll sideways (the rail stays put), concurrent desks side-by-side.
+    /// The week navigator (last week … +4) pages the grid; tapping a staffed block opens
+    /// the contact sheet — the "who do I swap with" affordance.
     private var houseTab: some View {
         let c = ShiftColors.resolve(scheme)
         let st = houseModel.state
         return VStack(alignment: .leading, spacing: 0) {
             PageTitle(title: "House")
             houseHeaderCard(st, c)
-            houseWeekStrip(st.week, Int(st.selectedDayIndex), c)
-            if st.day.isEmpty {
-                EmptyState(
-                    title: st.loadingWeek ? "Loading…" : "No desk shifts this day",
-                    systemIcon: ShiftIcons.building,
-                    bodyText: st.loadingWeek
-                        ? "Fetching \(st.houseName)'s schedule…"
-                        : "Nothing scheduled at \(st.houseName) on this day."
-                )
+            houseLegend(c)
+            houseGrid(st.grid, st, c)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 10) {
-                        ForEach(st.day.rows, id: \.id) { row in
-                            houseRosterRow(row, c)
-                        }
-                    }
-                    .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 24)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
             houseWeekNavBar(st, c)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1760,8 +1752,8 @@ struct ShiftsRootView: View {
         .task(id: "\(st.selectedHouseId ?? "")#\(st.weekOffset)") { await houseModel.loadWeek() }
         .sheet(isPresented: $showHouseWeekPicker) { houseWeekPickerSheet(st, c) }
         .sheet(isPresented: $showHousePicker) { housePickerSheet(st, c) }
-        .sheet(item: $contactTarget) { row in
-            ContactSheetView(row: row, deskPhone: houseModel.state.deskPhone)
+        .sheet(item: $contactTarget) { block in
+            ContactSheetView(block: block, deskPhone: houseModel.state.deskPhone)
         }
     }
 
@@ -1850,68 +1842,204 @@ struct ShiftsRootView: View {
         }
     }
 
-    /// The same Mon–Sun strip as the calendar, driving the house VM's selectDay.
-    private func houseWeekStrip(_ week: CalendarWeek, _ selected: Int, _ c: ShiftColors) -> some View {
-        HStack(spacing: 2) {
-            ForEach(week.days, id: \.index) { day in
-                Button(action: { houseModel.selectDay(Int(day.index)) }) {
-                    VStack(spacing: 4) {
-                        Text(day.dayLetter).font(ShiftFont.sans(11, .semibold)).foregroundColor(c.ter)
-                        ZStack {
-                            Circle().fill(Int(day.index) == selected ? c.blue : Color.clear).frame(width: 34, height: 34)
-                            if day.isToday && Int(day.index) != selected {
-                                Circle().strokeBorder(c.blue, lineWidth: 1.5).frame(width: 34, height: 34)
-                            }
-                            Text(day.dateLabel)
-                                .font(ShiftFont.sans(14, day.isToday ? .bold : .medium))
-                                .foregroundColor(Int(day.index) == selected ? .white : c.ink)
-                        }
-                        Circle().fill(day.hasShifts ? c.blue : Color.clear).frame(width: 5, height: 5)
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("house_day_cell")
-            }
+    /// Legend strip (design): You / Float-in / Open + the swipe-sideways hint.
+    private func houseLegend(_ c: ShiftColors) -> some View {
+        HStack(spacing: 10) {
+            houseLegendSwatch(c.blueContainer, c.blue, "You", dashed: false, c)
+            houseLegendSwatch(c.floatIn.tint, c.floatIn.accent, "Float-in", dashed: false, c)
+            houseLegendSwatch(c.surface, c.outline, "Open", dashed: true, c)
+            Spacer(minLength: 0)
+            Text("Swipe").font(ShiftFont.sans(11)).foregroundColor(c.ter)
+            Image(systemName: ShiftIcons.chevronRight).font(.system(size: 11, weight: .semibold)).foregroundColor(c.ter)
         }
-        .padding(.horizontal, 12).padding(.vertical, 2)
-        .accessibilityIdentifier("house_week_strip")
+        .padding(.horizontal, 16).padding(.vertical, 4)
     }
 
-    /// One roster row: time + duration, the worker (or "You" / "Open shift"), state tags.
-    private func houseRosterRow(_ row: HouseRosterRow, _ c: ShiftColors) -> some View {
-        Button(action: { if !row.vacant { contactTarget = row } }) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(row.timeLabel).font(ShiftType.monoTime).monospacedDigit().foregroundColor(c.ink)
-                    HStack(spacing: 6) {
-                        Text(row.mine ? "You" : (row.workerName ?? "Open shift"))
-                            .font(ShiftFont.sans(13.5, row.vacant ? .regular : .medium))
-                            .foregroundColor(row.vacant ? c.ter : c.sec)
-                        if row.pending {
-                            Text("Pending float").font(ShiftFont.sans(11.5, .semibold)).foregroundColor(c.pending)
-                        } else if row.floatIn {
-                            Text("Float in").font(ShiftFont.sans(11.5, .semibold)).foregroundColor(c.floatIn.accent)
+    private func houseLegendSwatch(_ fill: Color, _ accent: Color, _ label: String, dashed: Bool, _ c: ShiftColors) -> some View {
+        HStack(spacing: 4) {
+            RoundedRectangle(cornerRadius: 3, style: .continuous).fill(fill)
+                .frame(width: 10, height: 10)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .strokeBorder(accent, style: StrokeStyle(lineWidth: dashed ? 1.5 : 1, dash: dashed ? [3, 2] : []))
+                )
+            Text(label).font(ShiftFont.sans(11.5)).foregroundColor(c.ter)
+        }
+    }
+
+    /// The grid: a frozen left time rail + horizontally-scrolling day columns, with a
+    /// frozen day-header row above. The body's horizontal offset is mirrored to the header
+    /// (`houseHOffset`) so the headers track the columns; the rail sits outside the
+    /// horizontal scroll, so it stays put when the days scroll sideways — the requirement.
+    private func houseGrid(_ grid: HouseGridWeek, _ st: HouseScheduleUiState, _ c: ShiftColors) -> some View {
+        let lanes = max(Int(grid.laneCount), 1)
+        let colW = CGFloat(lanes) * Self.houseLaneW + CGFloat(lanes - 1) * Self.houseLaneGap + Self.houseColPad * 2
+        let startHour = Int(grid.startHour)
+        let endHour = Int(grid.endHour)
+        let gridHeight = Self.housePxPerHour * CGFloat(endHour - startHour)
+        let focusDayIndex = Int(st.todayIndex)
+        let nowMin = Int(st.nowMinOfDay)
+        // Re-centre the scroll on open / house-switch / week-change (and when seats land and
+        // expand the bounds): the today column scrolls into view + the body drops to "now".
+        let scrollTrigger = "\(st.selectedHouseId ?? "")#\(st.weekOffset)#\(startHour)#\(lanes)"
+        return ScrollViewReader { proxy in
+            VStack(spacing: 0) {
+                // Frozen day-header row — horizontally synced to the body via houseHOffset.
+                HStack(spacing: 0) {
+                    Color.clear.frame(width: Self.houseRailW, height: Self.houseHeaderH)
+                    GeometryReader { _ in
+                        HStack(spacing: Self.houseColGap) {
+                            ForEach(grid.days, id: \.index) { day in houseDayHeader(day, colW, c) }
                         }
+                        .offset(x: houseHOffset)
                     }
+                    .frame(height: Self.houseHeaderH, alignment: .leading)
+                    .clipped()
                 }
-                Spacer(minLength: 0)
-                Text(row.durationLabel).font(ShiftType.monoId).monospacedDigit().foregroundColor(c.ter)
-                if !row.vacant && row.workerPhone != nil {
-                    Image(systemName: ShiftIcons.phone).font(.system(size: 14)).foregroundColor(c.blue)
+                .padding(.leading, 12)
+                // Body: rail (frozen horizontally) + horizontally-scrolling columns.
+                ScrollView(.vertical, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 0) {
+                        houseTimeRail(startHour, endHour, gridHeight, nowMin, c)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: Self.houseColGap) {
+                                ForEach(grid.days, id: \.index) { day in
+                                    houseDayColumn(day, colW, gridHeight, startHour, endHour, c)
+                                        .id("house-day-\(day.index)")
+                                }
+                            }
+                            .padding(.trailing, 8)
+                            .background(
+                                GeometryReader { g in
+                                    Color.clear.preference(key: HouseHScrollKey.self, value: g.frame(in: .named("houseHBody")).minX)
+                                }
+                            )
+                        }
+                        .coordinateSpace(name: "houseHBody")
+                        // Mirror the body's live horizontal offset to the frozen header row so the
+                        // dates track the columns. `onScrollGeometryChange` (iOS 18+) reads the
+                        // scroll's `contentOffset` continuously during the gesture — reliable where
+                        // the preference-frame read below silently fails to update mid-scroll. The
+                        // preference path stays as the pre-iOS-18 fallback.
+                        .onPreferenceChange(HouseHScrollKey.self) { houseHOffset = $0 }
+                        .houseTrackHScroll { houseHOffset = $0 }
+                    }
+                    .padding(.leading, 12).padding(.top, 2).padding(.bottom, 8)
                 }
             }
-            .padding(.horizontal, 14).padding(.vertical, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(row.vacant ? c.surfaceVar : c.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(row.mine || row.active ? c.blue : c.divider, lineWidth: 1)
-            )
+            .onChange(of: scrollTrigger) { _ in scrollToToday(proxy, focusDayIndex) }
+            .onAppear { scrollToToday(proxy, focusDayIndex) }
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("house_roster_row")
+    }
+
+    /// Scroll the grid so today's column is visible (it may sit at the end of the week) and
+    /// the body drops to the current hour. No-op when the shown week has no "today".
+    private func scrollToToday(_ proxy: ScrollViewProxy, _ focusDayIndex: Int) {
+        guard focusDayIndex >= 0 else { return }
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                proxy.scrollTo("house-day-\(focusDayIndex)", anchor: .leading)
+                proxy.scrollTo("house-now", anchor: .center)
+            }
+        }
+    }
+
+    /// The fixed left time rail (08:00 … 24:00, every 2h) — frozen during sideways scroll.
+    /// Carries a hidden "house-now" anchor at the current time so the body can scroll to it.
+    private func houseTimeRail(_ startHour: Int, _ endHour: Int, _ gridHeight: CGFloat, _ nowMin: Int, _ c: ShiftColors) -> some View {
+        ZStack(alignment: .topTrailing) {
+            Color.clear.frame(width: Self.houseRailW, height: gridHeight)
+            Color.clear.frame(width: Self.houseRailW, height: 1)
+                .offset(y: max(Self.housePxPerHour * CGFloat(nowMin - startHour * 60) / 60, 0))
+                .id("house-now")
+            ForEach(Array(stride(from: startHour, through: endHour, by: 2)), id: \.self) { h in
+                Text(String(format: "%02d:00", h))
+                    .font(ShiftFont.mono(10)).monospacedDigit().foregroundColor(c.ter)
+                    .offset(y: max(Self.housePxPerHour * CGFloat(h - startHour) - 5, 0))
+                    .padding(.trailing, 6)
+            }
+        }
+        .frame(width: Self.houseRailW, height: gridHeight, alignment: .topTrailing)
+        .accessibilityIdentifier("house_time_rail")
+    }
+
+    /// One Mon–Sun header cell (day + date), highlighted when it is today.
+    private func houseDayHeader(_ day: HouseGridDay, _ colW: CGFloat, _ c: ShiftColors) -> some View {
+        VStack(spacing: 0) {
+            Text(day.dayLabel).font(ShiftFont.sans(11, .semibold)).foregroundColor(day.isToday ? c.blue : c.ter)
+            Text(day.dateLabel).font(ShiftFont.mono(13)).monospacedDigit().fontWeight(.semibold)
+                .foregroundColor(day.isToday ? c.blue : c.ink)
+        }
+        .frame(width: colW, height: Self.houseHeaderH)
+        .background(day.isToday ? c.blue.opacity(0.10) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    /// One day column: the surface card + 2-hour gridlines + the lane-placed blocks.
+    private func houseDayColumn(
+        _ day: HouseGridDay, _ colW: CGFloat, _ gridHeight: CGFloat, _ startHour: Int, _ endHour: Int, _ c: ShiftColors
+    ) -> some View {
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(c.surface)
+                .frame(width: colW, height: gridHeight)
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(c.divider, lineWidth: 1))
+            ForEach(Array(stride(from: startHour + 2, to: endHour, by: 2)), id: \.self) { h in
+                Rectangle().fill(c.divider.opacity(0.6))
+                    .frame(width: colW, height: 1)
+                    .offset(y: Self.housePxPerHour * CGFloat(h - startHour))
+            }
+            ForEach(day.blocks, id: \.id) { b in houseBlockView(b, startHour, c) }
+        }
+        .frame(width: colW, height: gridHeight, alignment: .topLeading)
+        .accessibilityIdentifier("house_day_column")
+    }
+
+    /// One positioned desk block, coloured by its state (design `HouseBlock`).
+    private func houseBlockView(_ b: HouseGridBlock, _ startHour: Int, _ c: ShiftColors) -> some View {
+        let top = Self.housePxPerHour * CGFloat(Int(b.startMin) - startHour * 60) / 60
+        let h = max(Self.housePxPerHour * CGFloat(Int(b.endMin) - Int(b.startMin)) / 60 - 3, 18)
+        let x = Self.houseColPad + (Self.houseLaneW + Self.houseLaneGap) * CGFloat(Int(b.lane))
+        let bg: Color
+        let accent: Color
+        let fg: Color
+        if b.vacant {
+            bg = c.surface; accent = c.outline; fg = c.ter
+        } else if b.mine && b.floatIn {
+            bg = c.floatIn.tint; accent = c.floatIn.accent; fg = c.floatIn.deep
+        } else if b.mine {
+            bg = c.blueContainer; accent = c.blue; fg = c.onBlueContainer
+        } else if b.pending {
+            bg = c.surfaceVar; accent = c.pending; fg = c.ink
+        } else if b.floatIn {
+            bg = c.floatIn.tint; accent = c.floatIn.accent; fg = c.floatIn.deep
+        } else {
+            bg = c.surfaceVar; accent = c.outline; fg = c.ink
+        }
+        return VStack(alignment: .leading, spacing: 1) {
+            Text(b.timeLabel).font(ShiftFont.mono(10.5)).monospacedDigit().foregroundColor(fg).lineLimit(1)
+            Text(b.workerLabel + (b.mine && b.floatIn ? " ·float" : ""))
+                .font(ShiftFont.sans(12, .semibold)).foregroundColor(fg).lineLimit(1)
+            if b.pending {
+                Text("Pending").font(ShiftFont.sans(10, .semibold)).foregroundColor(c.pending).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, 7).padding(.trailing, 5).padding(.top, 4).padding(.bottom, 3)
+        .frame(width: Self.houseLaneW, height: h, alignment: .topLeading)
+        .background(bg)
+        .overlay(alignment: .leading) { Rectangle().fill(accent).frame(width: 3) }
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(
+                    b.vacant ? accent : accent.opacity(0.45),
+                    style: StrokeStyle(lineWidth: b.vacant ? 1.5 : 1, dash: b.vacant ? [6, 4] : [])
+                )
+        )
+        .offset(x: x, y: top)
+        .contentShape(Rectangle())
+        .onTapGesture { if !b.vacant { contactTarget = b } }
+        .accessibilityIdentifier("house_grid_block")
     }
 
     /// The week navigator (last week … +4) — the same slim bottom bar as My Shifts.
@@ -3968,7 +4096,8 @@ private struct DropScopeOption: View {
 /// The §11.4 contact sheet (T3b): who covers the run + call affordances — the
 /// worker's phone (full-directory ruling) and the house desk phone.
 private struct ContactSheetView: View {
-    let row: HouseRosterRow
+    let block: HouseGridBlock
+    private var row: HouseGridBlock { block }
     let deskPhone: String?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
@@ -4010,7 +4139,32 @@ private struct ContactSheetView: View {
 // `sheet(item:)` needs Identifiable; the model ids are stable.
 extension MyShift: Identifiable {}
 extension OpenShift: Identifiable {}
-extension HouseRosterRow: Identifiable {}
+extension HouseGridBlock: Identifiable {}
+
+/// Reports the House grid's horizontal day-column scroll offset (≤ 0) so the frozen
+/// day-header row can track it. Last value wins (one scroll view feeds it).
+private struct HouseHScrollKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+private extension View {
+    /// Continuously mirror a horizontal `ScrollView`'s content offset to `onOffset` (≤ 0,
+    /// matching the preference convention) so the House grid's frozen day-header row tracks
+    /// the columns as they scroll sideways. `onScrollGeometryChange` (iOS 18+) updates on
+    /// every offset change during the drag; on older systems this is a no-op and the
+    /// `HouseHScrollKey` preference path remains the (best-effort) fallback.
+    @ViewBuilder
+    func houseTrackHScroll(_ onOffset: @escaping (CGFloat) -> Void) -> some View {
+        if #available(iOS 18.0, *) {
+            self.onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, x in
+                onOffset(-x)
+            }
+        } else {
+            self
+        }
+    }
+}
 
 #Preview {
     ShiftsRootView()

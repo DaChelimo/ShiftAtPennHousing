@@ -1,20 +1,20 @@
 package com.pennhousing.shift.shared.viewmodel
 
 import androidx.lifecycle.ViewModel
-import com.pennhousing.shift.shared.calendar.CalendarWeek
 import com.pennhousing.shift.shared.calendar.WeekOption
 import com.pennhousing.shift.shared.calendar.buildCalendarWeek
 import com.pennhousing.shift.shared.calendar.shiftWeekAnchor
 import com.pennhousing.shift.shared.calendar.weekPickerOptions
-import com.pennhousing.shift.shared.house.HouseDay
+import com.pennhousing.shift.shared.house.HouseGridWeek
 import com.pennhousing.shift.shared.house.HouseOption
 import com.pennhousing.shift.shared.house.HouseScheduleSnapshot
 import com.pennhousing.shift.shared.house.HouseSeat
-import com.pennhousing.shift.shared.house.buildHouseDay
-import com.pennhousing.shift.shared.house.houseDaysWithSeats
+import com.pennhousing.shift.shared.house.buildHouseGridWeek
+import com.pennhousing.shift.shared.shifts.NEW_YORK
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
 
 data class HouseScheduleUiState(
@@ -29,15 +29,9 @@ data class HouseScheduleUiState(
     val canNextWeek: Boolean,
     /** The pickable weeks (last week … +4) for the week-picker sheet. */
     val weekOptions: List<WeekOption>,
-    /** The Mon–Sun strip for the shown week (dots = days with seats). */
-    val week: CalendarWeek,
-    /** The selected day (0=Mon..6=Sun) within the shown week. */
-    val selectedDayIndex: Int,
-    /** The selected day's roster — a readable list of coalesced shift rows. */
-    val day: HouseDay,
-    /** Strip dots — the Mon..Sun indexes of the shown week that have any seat. */
-    val daysWithSeats: Set<Int>,
-    /** True while the host is (re)fetching this week's seats — the roster is empty until it lands. */
+    /** The Excel-style grid for the shown week (time rail + Mon–Sun day columns). */
+    val grid: HouseGridWeek,
+    /** True while the host is (re)fetching this week's grid — the columns are empty until it lands. */
     val loadingWeek: Boolean,
     /** The raw shown-week seats — the swap counterparty picker derives candidates from these (D2). */
     val seats: List<HouseSeat> = emptyList(),
@@ -51,15 +45,18 @@ data class HouseScheduleUiState(
     val isHomeHouse: Boolean = true,
     /** True once more than one house is known — the header acts as a dropdown. */
     val canSwitchHouse: Boolean = false,
+    /** Index (0=Mon..6=Sun) of today within the shown week, or -1 when today is not in it. */
+    val todayIndex: Int = -1,
+    /** `now`'s minute-of-day in NY (drives the scroll-to-now on open). */
+    val nowMinOfDay: Int = 0,
 )
 
 /**
- * §11.4 (T3b) — the house-schedule ViewModel: a week-paged, day-roster view of who
- * covers each desk block. A thin `StateFlow` wrapper over the pure `house/` builders, in
- * the [CalendarViewModel] shape (synchronous, no `viewModelScope`; `now` injected once).
- * The Mon–Sun strip picks a day; the day's roster lists readable shift cards. Week
- * navigation is clamped to [[MIN_WEEK_OFFSET], [MAX_WEEK_OFFSET]] — last week through
- * four weeks out.
+ * §11.4 (T3b) — the house-schedule ViewModel, a week-paged grid (design
+ * `HouseScheduleScreen`). A thin `StateFlow` wrapper over the pure `house/` builder, in
+ * the [SwapCalendarViewModel] shape (synchronous, no `viewModelScope`; `now` injected
+ * once). Week navigation is clamped to [[MIN_WEEK_OFFSET], [MAX_WEEK_OFFSET]] — last week
+ * through four weeks out.
  *
  * Cross-house view (2026-06-23 ruling): the tab DEFAULTS to the worker's home house but
  * a worker may switch to any other house and read its schedule (read-only). The host
@@ -68,7 +65,7 @@ data class HouseScheduleUiState(
  *
  * Data flow mirrors the swap calendar: the worker's home week starts seeded with the
  * current-week [HouseScheduleSnapshot]; on every (house, week) change the host fetches
- * that week's seats and calls [setWeekSeats]. Until that lands,
+ * that week's grid and calls [setWeekSeats]. Until that lands,
  * [HouseScheduleUiState.loadingWeek] is true.
  */
 class HouseScheduleViewModel(
@@ -92,6 +89,7 @@ class HouseScheduleViewModel(
     }
 
     private val homeHouseId: String? = initialHouseId
+    private val nowMin: Int = now.toLocalDateTime(NEW_YORK).let { it.hour * 60 + it.minute }
 
     private var weekOffset = 0
     private var houses: List<HouseOption> = emptyList()
@@ -99,10 +97,6 @@ class HouseScheduleViewModel(
     private var weekSeats: List<HouseSeat> = initialSeats
     private var seatsForOffset: Int = 0 // which weekOffset weekSeats belong to
     private var seatsForHouseId: String? = initialHouseId // which house weekSeats belong to
-
-    // null = "auto" (default to today if it's in the shown week, else Monday). A manual
-    // selectDay pins it; navigating weeks / switching houses returns it to auto.
-    private var selectedDayIndex: Int? = null
 
     private val _uiState = MutableStateFlow(snapshot())
     val uiState: StateFlow<HouseScheduleUiState> = _uiState.asStateFlow()
@@ -118,16 +112,10 @@ class HouseScheduleViewModel(
 
     private fun snapshot(): HouseScheduleUiState {
         val anchor = shiftWeekAnchor(now, weekOffset)
+        val week = buildCalendarWeek(emptyList(), now, anchor = anchor)
         val current = seatsForOffset == weekOffset && seatsForHouseId == selectedHouseId
         val seats = if (current) weekSeats else emptyList()
-        val daysWithSeats = houseDaysWithSeats(seats, anchor)
-        val week =
-            buildCalendarWeek(emptyList(), now, anchor = anchor).let { w ->
-                w.copy(days = w.days.map { it.copy(hasShifts = it.index in daysWithSeats) })
-            }
-        // Resolve "auto" to today's index when today is in the shown week, else Monday.
-        val dayIndex = selectedDayIndex ?: week.todayIndex.takeIf { it >= 0 } ?: 0
-        val day = buildHouseDay(seats, dayIndex, now, meUserId, anchor)
+        val grid = buildHouseGridWeek(seats, now, meUserId, anchor)
         // Name/phone come from the picker list once it's loaded; before then (or for the
         // home house) the seed values stand in.
         val opt = houses.firstOrNull { it.id == selectedHouseId }
@@ -144,10 +132,7 @@ class HouseScheduleViewModel(
             canPreviousWeek = weekOffset > MIN_WEEK_OFFSET,
             canNextWeek = weekOffset < MAX_WEEK_OFFSET,
             weekOptions = weekPickerOptions(now, offsets = (MIN_WEEK_OFFSET..MAX_WEEK_OFFSET).toList()),
-            week = week,
-            selectedDayIndex = dayIndex,
-            day = day,
-            daysWithSeats = daysWithSeats,
+            grid = grid,
             loadingWeek = !current,
             seats = seats,
             houses = houses,
@@ -155,13 +140,9 @@ class HouseScheduleViewModel(
             homeHouseId = homeHouseId,
             isHomeHouse = selectedHouseId == null || selectedHouseId == homeHouseId,
             canSwitchHouse = houses.size > 1,
+            todayIndex = grid.days.indexOfFirst { it.isToday },
+            nowMinOfDay = nowMin,
         )
-    }
-
-    /** Pick a day (0=Mon..6=Sun) within the shown week — pins the roster to that day. */
-    fun selectDay(index: Int) {
-        selectedDayIndex = index.coerceIn(0, 6)
-        _uiState.value = snapshot()
     }
 
     /** The host loaded the pickable houses (`fetchHouses`); populates the switcher. */
@@ -172,14 +153,14 @@ class HouseScheduleViewModel(
 
     /**
      * Open another house's schedule (cross-house view). Re-centres on the CURRENT week so
-     * the worker lands on "today" (the day strip re-defaults to today), and marks the week
-     * loading until the host fetches the new house's seats. A no-op for the already-shown house.
+     * the worker lands on "today" (the UI then scrolls the grid to today/now), and marks
+     * the grid loading until the host fetches the new house's seats. A no-op for the
+     * already-shown house.
      */
     fun selectHouse(houseId: String) {
         if (houseId == selectedHouseId) return
         selectedHouseId = houseId
         weekOffset = 0
-        selectedDayIndex = null // back to auto → today
         _uiState.value = snapshot()
     }
 
@@ -208,7 +189,6 @@ class HouseScheduleViewModel(
 
     fun selectWeek(offset: Int) {
         weekOffset = offset.coerceIn(MIN_WEEK_OFFSET, MAX_WEEK_OFFSET)
-        selectedDayIndex = null // back to auto → today (if in the new week) else Monday
         _uiState.value = snapshot()
     }
 

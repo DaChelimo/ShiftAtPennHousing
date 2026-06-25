@@ -399,9 +399,15 @@ class WorkerShiftsRepository(
      * full-contact directory per the 2026-06-12 ruling). Returns null when the
      * profile/grid cannot be read (the caller falls back to the demo snapshot).
      *
-     * Range: `start_at >= weekStart` is filtered server-side; the upper bound is
-     * enforced in Kotlin — supabase-kt drops a second filter on the SAME column
-     * (known gotcha), and the open-ended tail is small. Reading the wall clock
+     * Range: the WHOLE week is bounded server-side — `start_at >= weekStart` AND
+     * `end_at <= weekEnd`. The upper bound rides on `end_at` (a DIFFERENT column) on
+     * purpose: a second filter on the SAME column is dropped by supabase-kt, so the
+     * old code over-fetched from weekStart onward and discarded the tail in Kotlin.
+     * Worse, with PostgREST's 1000-row cap that over-fetch returned an ARBITRARY 1000
+     * rows of the house's whole future schedule, so a navigated week came back as a
+     * scattered partial slice (blocks could not coalesce → tiny chips). Bounding both
+     * ends + ordering ASC fetches exactly this week's seats (well under the cap), so
+     * contiguous runs survive and render as full-height blocks. Reading the wall clock
      * here is fine (host/data layer).
      */
     suspend fun fetchHouseSchedule(userId: String): HouseScheduleSnapshot? =
@@ -435,14 +441,13 @@ class WorkerShiftsRepository(
                         filter {
                             eq("house_id", houseId)
                             gte("start_at", weekStart.toString())
+                            lte("end_at", weekEnd.toString())
                         }
+                        order("start_at", Order.ASCENDING)
                     }
                     .decodeList<HouseGridRow>()
             }.getOrNull() ?: return null
-        val seats =
-            rows
-                .map { it.toSeat() }
-                .filter { it.start < weekEnd } // upper bound enforced client-side (same-column-filter gotcha)
+        val seats = rows.map { it.toSeat() }
         val houseName = rows.firstOrNull()?.houseName ?: houseId
         val deskPhone = rows.firstOrNull { it.deskPhone != null }?.deskPhone
         return HouseScheduleSnapshot(houseName = houseName, deskPhone = deskPhone, seats = seats, houseId = houseId)
@@ -468,9 +473,11 @@ class WorkerShiftsRepository(
      * Any house's schedule grid for the NY week containing [anchor] (2026-06-23 cross-house
      * ruling) — the owner-rights `house_schedule_grid_any` view, which exposes EVERY house
      * (read visibility only; no write path) so a worker can open a house other than their
-     * own. Same projection + same-column-filter handling as the home-house
-     * [fetchHouseScheduleForWeek]; the [houseId] is supplied by the switcher rather than
-     * resolved from the caller's `users` row. Returns null only when the grid can't be read.
+     * own. Same projection + same whole-week server-side bound (`start_at >= weekStart`
+     * AND `end_at <= weekEnd`, ordered ASC) as the home-house [fetchHouseScheduleForWeek]
+     * — so paging weeks fetches exactly that week's seats (no over-fetch, no 1000-row-cap
+     * truncation); the [houseId] is supplied by the switcher rather than resolved from the
+     * caller's `users` row. Returns null only when the grid can't be read.
      */
     suspend fun fetchHouseGridForWeek(
         houseId: String,
@@ -485,14 +492,13 @@ class WorkerShiftsRepository(
                         filter {
                             eq("house_id", houseId)
                             gte("start_at", weekStart.toString())
+                            lte("end_at", weekEnd.toString())
                         }
+                        order("start_at", Order.ASCENDING)
                     }
                     .decodeList<HouseGridRow>()
             }.getOrNull() ?: return null
-        val seats =
-            rows
-                .map { it.toSeat() }
-                .filter { it.start < weekEnd } // upper bound enforced client-side (same-column-filter gotcha)
+        val seats = rows.map { it.toSeat() }
         val houseName = rows.firstOrNull()?.houseName ?: houseId
         val deskPhone = rows.firstOrNull { it.deskPhone != null }?.deskPhone
         return HouseScheduleSnapshot(houseName = houseName, deskPhone = deskPhone, seats = seats, houseId = houseId)

@@ -394,12 +394,31 @@ async function broadcastStep(supabase: Supabase, block: BlockRef, firedAt: Date)
 // resolve_hm_for_house, resolve_hmod_on_duty, is_hm_working_time)
 // were moved into SQL in migration 20260528000004; the TS-side helpers
 // they replaced have been deleted.
+// Stamp a block's one-way coverage lock (BEHAVIORAL_SPECIFICATION §5.4/§5.5).
+// Called only from the T-2h coverage-securing steps (float_lookup,
+// hmod_notify_allied) — NEVER from broadcast (T-3h stays claimable). A block
+// reaching these steps is EMPTY (covered blocks are skipped before fireStep), so
+// locking it makes its vacant seats unpickable from here on, even after a
+// floater/Allied later fills the desk. Idempotent + one-way in SQL.
+async function lockBlockCoverage(supabase: Supabase, blockId: string, asOf: Date): Promise<void> {
+  const { error } = await supabase.rpc('lock_block_coverage', {
+    p_block_id: blockId,
+    p_as_of: asOf.toISOString(),
+  });
+  if (error !== null) {
+    throw error;
+  }
+}
+
 async function hmodNotifyAlliedStep(
   supabase: Supabase,
   block: BlockRef,
   firedAt: Date,
   reason = 'escalation_chain',
 ): Promise<boolean> {
+  // §5.5: securing-tier step on an empty desk → lock its seats (one-way).
+  await lockBlockCoverage(supabase, block.blockId, firedAt);
+
   const { data, error } = await supabase.rpc('process_hmod_notify_allied_step', {
     p_block_id: block.blockId,
     p_house_id: block.houseId,
@@ -710,6 +729,26 @@ async function floatLookupStep(
   firedAt: Date,
   config: RuntimeConfig,
 ): Promise<'float_assigned' | 'no_float'> {
+  // §5.5: the desk hit its T-2h float-lookup step while empty → lock its seats
+  // (one-way) before attempting the float, regardless of whether a floater is
+  // found. A later float-in / Allied fill never re-opens them to pickup.
+  await lockBlockCoverage(supabase, block.blockId, firedAt);
+
+  // §7.3 — never assign a float that is ALREADY inside its no-ack window at
+  // creation. Such a float is dead on arrival: its acknowledgment deadline
+  // (T-10m) and no-ack point (T-15m) are already past, so the worker can never
+  // acknowledge it and the no-ack pass voids it immediately — re-opening the gap
+  // into an assign→void→re-assign churn that also burns an unfair no_acknowledgment
+  // exclusion on the floater. A gap discovered or reopened this late routes
+  // straight to HMOD-for-Allied instead (the 'no_float' fallback below — the same
+  // terminal a no-ack void produces). The threshold is the no-ack lookahead
+  // (ack-deadline + no-ack-trigger); a float whose start is beyond it can still be
+  // acknowledged and is unaffected, so normal T-2h floats never hit this guard.
+  const noAckHorizon = addMinutes(firedAt, config.noAckLookaheadMinutes).getTime();
+  if (block.blockStartAt.getTime() <= noAckHorizon) {
+    return 'no_float';
+  }
+
   const snapshot = await buildFloatLookupSnapshot(
     supabase,
     block,
@@ -1171,10 +1210,25 @@ Deno.serve(async (req: Request): Promise<Response> => {
     summary.errors.push(`system_config: ${errorMessage(error)}`);
   }
 
-  const [vacantResult, noAckResult, swapsResult] = await Promise.allSettled([
+  // The vacant/float-lookup pass and swap-expiry are independent — run them
+  // together. The no-ack pass must run AFTER the vacant pass, not concurrently:
+  // a float ASSIGNED by float-lookup this tick whose acknowledgment window is
+  // already in the past (a gap discovered or reopened inside T-15m) must be
+  // voided in the SAME tick and routed to HMOD-for-Allied (BSpec §7.3). Run
+  // concurrently (the prior behavior), the no-ack pass reads a snapshot taken
+  // before float-lookup inserts those rows, so it cannot see them; the float
+  // then lingers in `pending_float_in` — falsely showing the desk covered —
+  // until a later tick. With manual-only orchestration (no pg_cron) that later
+  // tick may be arbitrarily far away or never arrive. Sequencing makes the pass
+  // read a fresh snapshot that includes the just-created float. Normal T-2h
+  // floats are untouched: their start is > now + noAckLookahead, so they fall
+  // outside the no-ack window and are never voided early.
+  const [vacantResult, swapsResult] = await Promise.allSettled([
     processVacantBlocks(supabase, now, runtimeConfig),
-    processNoAckFloats(supabase, now, runtimeConfig),
     expirePendingSwaps(supabase, now),
+  ]);
+  const [noAckResult] = await Promise.allSettled([
+    processNoAckFloats(supabase, now, runtimeConfig),
   ]);
   if (vacantResult.status === 'fulfilled') {
     summary.blocksScanned = vacantResult.value.blocksScanned;

@@ -2,11 +2,13 @@ package com.pennhousing.shift.shared.ack
 
 import com.pennhousing.shift.shared.model.PendingFloat
 import com.pennhousing.shift.shared.shifts.NEW_YORK
+import com.pennhousing.shift.shared.shifts.formatBlockTime
 import com.pennhousing.shift.shared.shifts.formatDayLabel
 import com.pennhousing.shift.shared.shifts.formatDuration
 import com.pennhousing.shift.shared.shifts.formatTimeRange
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
 
 /*
@@ -34,6 +36,14 @@ data class FloatRequestCard(
     val durationLabel: String,
     /** "Starts in 2h" / "Starting now" / "Started". */
     val startsInLabel: String,
+    /**
+     * The time-to-RESPOND countdown — the headline number for a respondable card.
+     * "Accept by 20:20 · 52m left" (deadline is T-10m before the float start, §7.1).
+     * Null once the deadline has passed (the card then shows the reassignment note).
+     */
+    val acceptByLabel: String?,
+    /** True within [ACK_URGENT_REMAINING_MINUTES] of the deadline — render emphasised. */
+    val acceptUrgent: Boolean,
     /** Before the T-10m deadline — Accept/Decline are live. */
     val respondable: Boolean,
     /** At/after T-10m — the float is being reassigned; buttons are replaced by a note. */
@@ -65,6 +75,7 @@ fun buildFloatRequestCards(
         .sortedBy { it.start }
         .map { f ->
             val passed = isPastAckDeadline(f.start, now)
+            val deadline = ackDeadline(f.start)
             FloatRequestCard(
                 floatId = f.floatId,
                 destinationName = f.destinationHouse.name,
@@ -77,6 +88,14 @@ fun buildFloatRequestCards(
                         now < f.end -> "Starting now"
                         else -> "Started"
                     },
+                acceptByLabel =
+                    if (passed) {
+                        null
+                    } else {
+                        val remaining = if (now < deadline) formatDuration(now, deadline) else "0m"
+                        "Accept by ${formatBlockTime(deadline, zone)} · $remaining left"
+                    },
+                acceptUrgent = !passed && deadline - now <= ACK_URGENT_REMAINING_MINUTES.minutes,
                 respondable = canRespondToFloat(f.start, now),
                 deadlinePassed = passed,
             )

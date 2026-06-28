@@ -37,14 +37,17 @@ class FloatCarouselTest {
         val first = cards.first() // sooner
         assertEquals("Harnwell", first.destinationName)
         assertEquals("Today", first.whenLabel)
-        assertEquals("15:30 – 18:00", first.rangeLabel)
+        assertEquals("15:30 - 18:00", first.rangeLabel)
         assertEquals("2h 30m", first.durationLabel)
         assertEquals("Starts in 1h 30m", first.startsInLabel)
+        // Time-to-respond countdown: deadline is T-10m before start (15:20); 1h 20m out.
+        assertEquals("Accept by 15:20 · 1h 20m left", first.acceptByLabel)
+        assertFalse(first.acceptUrgent)
         assertTrue(first.respondable)
         assertFalse(first.deadlinePassed)
 
         val second = cards[1] // later
-        assertEquals("18:00 – 20:00", second.rangeLabel)
+        assertEquals("18:00 - 20:00", second.rangeLabel)
         assertEquals("2h", second.durationLabel)
         assertEquals("Starts in 4h", second.startsInLabel)
     }
@@ -65,6 +68,19 @@ class FloatCarouselTest {
         assertFalse(c.respondable)
         assertTrue(c.deadlinePassed)
         assertEquals("Starts in 5m", c.startsInLabel)
+        // Past the deadline → no accept-by countdown (the reassignment note shows instead).
+        assertEquals(null, c.acceptByLabel)
+        assertFalse(c.acceptUrgent)
+    }
+
+    @Test
+    fun accept_by_turns_urgent_within_30m_of_the_deadline() {
+        // sooner starts 15:30 → deadline 15:20. now 15:05 → 15m left, still respondable.
+        val now = at("2026-01-15T15:05:00-05:00")
+        val c = buildFloatRequestCards(listOf(sooner), now).single()
+        assertEquals("Accept by 15:20 · 15m left", c.acceptByLabel)
+        assertTrue(c.acceptUrgent)
+        assertTrue(c.respondable)
     }
 
     @Test

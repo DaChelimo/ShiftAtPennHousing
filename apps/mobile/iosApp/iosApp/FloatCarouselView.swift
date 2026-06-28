@@ -61,7 +61,8 @@ struct FloatCarouselView: View {
     /// shows a single note line. The paging TabView needs a fixed height, so size for the
     /// tallest card on screen.
     private var cardHeight: CGFloat {
-        cards.contains { $0.respondable } ? 224 : 196
+        // Respondable cards now also carry the accept-by pill above the button row.
+        cards.contains { $0.respondable } ? 258 : 196
     }
 }
 
@@ -75,81 +76,110 @@ private struct FloatRequestCardView: View {
     let c: ShiftColors
 
     var body: some View {
+        // Softer treatment: a white card with elevation + a 2px blue outline, rather
+        // than a solid-blue field. Blue is kept as an ACCENT (eyebrow, countdown pill,
+        // Accept) so the request still stands out without flooding the screen.
         let blue = c.blue
-        let white = Color.white
-        let white80 = Color.white.opacity(0.82)
+        let ink = c.ink
+        let sec = c.sec
+        let ter = c.ter
 
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center) {
                 HStack(spacing: 7) {
                     Image(systemName: ShiftIcons.floatOut)
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(white)
+                        .foregroundColor(blue)
                     Text("FLOAT REQUEST")
                         .font(ShiftFont.sans(12, .bold))
                         .tracking(0.8)
-                        .foregroundColor(white)
+                        .foregroundColor(blue)
                 }
                 Spacer()
                 if total > 1 {
                     Text("\(position) of \(total)")
                         .font(ShiftFont.sans(12, .semibold))
-                        .foregroundColor(white80)
+                        .foregroundColor(ter)
                 }
             }
 
             Text("You're needed at \(card.destinationName)")
                 .font(ShiftFont.sans(20, .bold))
-                .foregroundColor(white)
+                .foregroundColor(ink)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 7) {
                 Image(systemName: ShiftIcons.clock)
                     .font(.system(size: 13, weight: .regular))
-                    .foregroundColor(white80)
+                    .foregroundColor(sec)
                 Text("\(card.whenLabel) · \(card.rangeLabel)")
                     .font(ShiftFont.sans(15, .medium))
-                    .foregroundColor(white)
+                    .foregroundColor(ink)
             }
-            Text("\(card.startsInLabel) · \(card.durationLabel)")
+            Text("\(card.startsInLabel) · \(card.durationLabel) shift")
                 .font(ShiftFont.sans(13, .medium))
-                .foregroundColor(white80)
+                .foregroundColor(ter)
+
+            // The time-to-RESPOND countdown — the load-bearing number. Rendered as a
+            // pill so it reads as the primary call to action, not buried alongside the
+            // shift-start/duration line above. Tinted normally; solid-blue when urgent.
+            if let acceptBy = card.acceptByLabel {
+                HStack(spacing: 6) {
+                    Image(systemName: "hourglass")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(acceptBy)
+                        .font(ShiftFont.sans(13, .semibold))
+                }
+                .foregroundColor(card.acceptUrgent ? Color.white : c.onBlueContainer)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(card.acceptUrgent ? blue : c.blueContainer)
+                .clipShape(Capsule())
+                .accessibilityIdentifier("float_card_accept_by")
+            }
 
             if card.respondable {
                 HStack(spacing: 10) {
-                    // Accept — solid white pill, blue label (primary).
+                    // Accept — solid blue pill, white label (primary).
                     FloatCardButton(
                         text: "Accept",
                         icon: ShiftIcons.check,
-                        container: white,
-                        content: blue,
+                        container: blue,
+                        content: Color.white,
                         bordered: false,
                         action: onAccept
                     )
                     .accessibilityIdentifier("float_card_accept")
-                    // Decline — outlined white (secondary).
+                    // Decline — outlined neutral (secondary).
                     FloatCardButton(
                         text: "Decline",
                         icon: ShiftIcons.close,
                         container: .clear,
-                        content: white,
+                        content: ink,
                         bordered: true,
                         action: onDecline
                     )
                     .accessibilityIdentifier("float_card_decline")
                 }
             } else {
-                Text("This float has been reassigned to another worker.")
+                Text("The window to respond has passed.")
                     .font(ShiftFont.sans(13, .medium))
-                    .foregroundColor(white80)
+                    .foregroundColor(ter)
             }
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(blue)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .contentShape(Rectangle())
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(c.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(blue, lineWidth: 2)
+        )
+        .shadow(color: Color.black.opacity(0.10), radius: 14, x: 0, y: 5)
+        .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .onTapGesture { onOpenDetail() }
         .accessibilityIdentifier("float_card")
     }
@@ -177,7 +207,7 @@ private struct FloatCardButton: View {
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(bordered ? Color.white.opacity(0.7) : Color.clear, lineWidth: 1.5)
+                    .strokeBorder(bordered ? content.opacity(0.32) : Color.clear, lineWidth: 1.5)
             )
             .contentShape(Rectangle())
         }

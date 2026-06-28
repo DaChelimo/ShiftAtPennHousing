@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -100,16 +101,22 @@ private fun FloatRequestCardView(
     onDecline: () -> Unit,
     onOpenDetail: () -> Unit,
 ) {
+    // Softer treatment: a white card with elevation + a 2dp blue outline, rather than a
+    // solid-blue field. Blue is kept as an ACCENT (eyebrow, countdown pill, Accept) so
+    // the request still stands out without flooding the screen.
     val blue = FloatCardBlue
-    val white = Color.White
-    val white80 = Color.White.copy(alpha = 0.82f)
+    val ink = ShiftTheme.colors.ink
+    val sec = ShiftTheme.colors.sec
+    val ter = ShiftTheme.colors.ter
 
     Column(
         modifier =
             Modifier
                 .fillMaxWidth()
+                .shadow(elevation = 8.dp, shape = RoundedCornerShape(20.dp), clip = false)
                 .clip(RoundedCornerShape(20.dp))
-                .background(blue)
+                .background(ShiftTheme.colors.surface)
+                .border(2.dp, blue, RoundedCornerShape(20.dp))
                 .clickable(onClick = onOpenDetail)
                 .padding(18.dp)
                 .testTag("float_card"),
@@ -121,23 +128,23 @@ private fun FloatRequestCardView(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                Icon(ShiftIcons.FloatOut, contentDescription = null, tint = white, modifier = Modifier.size(18.dp))
+                Icon(ShiftIcons.FloatOut, contentDescription = null, tint = blue, modifier = Modifier.size(18.dp))
                 Text(
                     "FLOAT REQUEST",
-                    color = white,
+                    color = blue,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 0.8.sp,
                 )
             }
             if (total > 1) {
-                Text("$position of $total", color = white80, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text("$position of $total", color = ter, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
         }
 
         Text(
             "You're needed at ${card.destinationName}",
-            color = white,
+            color = ink,
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
             maxLines = 2,
@@ -145,39 +152,58 @@ private fun FloatRequestCardView(
         )
 
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            Icon(ShiftIcons.Clock, contentDescription = null, tint = white80, modifier = Modifier.size(16.dp))
+            Icon(ShiftIcons.Clock, contentDescription = null, tint = sec, modifier = Modifier.size(16.dp))
             Text(
                 "${card.whenLabel} · ${card.rangeLabel}",
-                color = white,
+                color = ink,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
             )
         }
         Text(
-            "${card.startsInLabel} · ${card.durationLabel}",
-            color = white80,
+            "${card.startsInLabel} · ${card.durationLabel} shift",
+            color = ter,
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
         )
 
+        // The time-to-RESPOND countdown — the load-bearing number, rendered as a pill
+        // so it reads as the primary call to action rather than blending into the
+        // shift-start/duration line above. Tinted normally; solid-blue when urgent.
+        card.acceptByLabel?.let { acceptBy ->
+            Row(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(if (card.acceptUrgent) blue else blue.copy(alpha = 0.12f))
+                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                    .testTag("float_card_accept_by"),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                val tint = if (card.acceptUrgent) Color.White else ShiftTheme.colors.onBlueContainer
+                Icon(ShiftIcons.Clock, contentDescription = null, tint = tint, modifier = Modifier.size(14.dp))
+                Text(acceptBy, color = tint, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+
         if (card.respondable) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                // Accept — solid white pill, blue label (primary).
+                // Accept — solid blue pill, white label (primary).
                 FloatCardButton(
                     text = "Accept",
                     icon = ShiftIcons.Check,
-                    container = white,
-                    content = blue,
+                    container = blue,
+                    content = Color.White,
                     border = false,
                     onClick = onAccept,
                     modifier = Modifier.weight(1f).testTag("float_card_accept"),
                 )
-                // Decline — outlined white (secondary).
+                // Decline — outlined neutral (secondary).
                 FloatCardButton(
                     text = "Decline",
                     icon = ShiftIcons.Close,
                     container = Color.Transparent,
-                    content = white,
+                    content = ink,
                     border = true,
                     onClick = onDecline,
                     modifier = Modifier.weight(1f).testTag("float_card_decline"),
@@ -185,8 +211,8 @@ private fun FloatRequestCardView(
             }
         } else {
             Text(
-                "This float has been reassigned to another worker.",
-                color = white80,
+                "The window to respond has passed.",
+                color = ter,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
             )
@@ -209,7 +235,7 @@ private fun FloatCardButton(
             modifier
                 .heightIn(min = 44.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .then(if (border) Modifier.border(1.5.dp, Color.White.copy(alpha = 0.7f), RoundedCornerShape(12.dp)) else Modifier)
+                .then(if (border) Modifier.border(1.5.dp, content.copy(alpha = 0.32f), RoundedCornerShape(12.dp)) else Modifier)
                 .background(container)
                 .clickable(onClick = onClick),
         horizontalArrangement = Arrangement.Center,

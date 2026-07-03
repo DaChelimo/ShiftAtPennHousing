@@ -874,6 +874,65 @@ export type Database = {
           },
         ];
       };
+      operating_config_audit: {
+        Row: {
+          action: string;
+          applied_at: string;
+          applied_by: string | null;
+          audit_id: string;
+          impact: Json;
+          payload: Json;
+          season_id: string | null;
+        };
+        Insert: {
+          action: string;
+          applied_at?: string;
+          applied_by?: string | null;
+          audit_id?: string;
+          impact: Json;
+          payload: Json;
+          season_id?: string | null;
+        };
+        Update: {
+          action?: string;
+          applied_at?: string;
+          applied_by?: string | null;
+          audit_id?: string;
+          impact?: Json;
+          payload?: Json;
+          season_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'operating_config_audit_applied_by_fkey';
+            columns: ['applied_by'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'operating_config_audit_applied_by_fkey';
+            columns: ['applied_by'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'operating_config_audit_applied_by_fkey';
+            columns: ['applied_by'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
+          {
+            foreignKeyName: 'operating_config_audit_season_id_fkey';
+            columns: ['season_id'];
+            isOneToOne: false;
+            referencedRelation: 'operating_seasons';
+            referencedColumns: ['season_id'];
+          },
+        ];
+      };
       operating_profiles: {
         Row: {
           claim_phase_alert_offset: string | null;
@@ -915,6 +974,79 @@ export type Database = {
           shift_start_bound?: string;
         };
         Relationships: [];
+      };
+      operating_seasons: {
+        Row: {
+          cap_enforcement: Database['public']['Enums']['cap_enforcement_enum'];
+          created_at: string;
+          created_by: string | null;
+          end_date: string;
+          hours_cap: number;
+          last_applied_at: string | null;
+          preference_deadline: string | null;
+          scheduling_mode: Database['public']['Enums']['scheduling_mode_enum'];
+          season_id: string;
+          season_name: string;
+          shift_end_bound: string;
+          shift_start_bound: string;
+          slug: string;
+          start_date: string;
+        };
+        Insert: {
+          cap_enforcement: Database['public']['Enums']['cap_enforcement_enum'];
+          created_at?: string;
+          created_by?: string | null;
+          end_date: string;
+          hours_cap: number;
+          last_applied_at?: string | null;
+          preference_deadline?: string | null;
+          scheduling_mode?: Database['public']['Enums']['scheduling_mode_enum'];
+          season_id?: string;
+          season_name: string;
+          shift_end_bound?: string;
+          shift_start_bound?: string;
+          slug: string;
+          start_date: string;
+        };
+        Update: {
+          cap_enforcement?: Database['public']['Enums']['cap_enforcement_enum'];
+          created_at?: string;
+          created_by?: string | null;
+          end_date?: string;
+          hours_cap?: number;
+          last_applied_at?: string | null;
+          preference_deadline?: string | null;
+          scheduling_mode?: Database['public']['Enums']['scheduling_mode_enum'];
+          season_id?: string;
+          season_name?: string;
+          shift_end_bound?: string;
+          shift_start_bound?: string;
+          slug?: string;
+          start_date?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'operating_seasons_created_by_fkey';
+            columns: ['created_by'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'operating_seasons_created_by_fkey';
+            columns: ['created_by'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'operating_seasons_created_by_fkey';
+            columns: ['created_by'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
+        ];
       };
       orchestrator_health: {
         Row: {
@@ -1257,6 +1389,89 @@ export type Database = {
           },
         ];
       };
+      season_float_windows: {
+        Row: {
+          end_date: string;
+          season_id: string;
+          start_date: string;
+          window_id: string;
+        };
+        Insert: {
+          end_date: string;
+          season_id: string;
+          start_date: string;
+          window_id?: string;
+        };
+        Update: {
+          end_date?: string;
+          season_id?: string;
+          start_date?: string;
+          window_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'season_float_windows_season_id_fkey';
+            columns: ['season_id'];
+            isOneToOne: false;
+            referencedRelation: 'operating_seasons';
+            referencedColumns: ['season_id'];
+          },
+        ];
+      };
+      season_house_windows: {
+        Row: {
+          band_headcounts: Json | null;
+          days: string;
+          end_date: string;
+          headcount: number;
+          house_id: string;
+          season_id: string;
+          shift_end: string | null;
+          shift_start: string | null;
+          start_date: string;
+          window_id: string;
+        };
+        Insert: {
+          band_headcounts?: Json | null;
+          days?: string;
+          end_date: string;
+          headcount: number;
+          house_id: string;
+          season_id: string;
+          shift_end?: string | null;
+          shift_start?: string | null;
+          start_date: string;
+          window_id?: string;
+        };
+        Update: {
+          band_headcounts?: Json | null;
+          days?: string;
+          end_date?: string;
+          headcount?: number;
+          house_id?: string;
+          season_id?: string;
+          shift_end?: string | null;
+          shift_start?: string | null;
+          start_date?: string;
+          window_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'season_house_windows_house_id_fkey';
+            columns: ['house_id'];
+            isOneToOne: false;
+            referencedRelation: 'houses';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'season_house_windows_season_id_fkey';
+            columns: ['season_id'];
+            isOneToOne: false;
+            referencedRelation: 'operating_seasons';
+            referencedColumns: ['season_id'];
+          },
+        ];
+      };
       shift_block_assignments: {
         Row: {
           assignment_id: string;
@@ -1341,6 +1556,20 @@ export type Database = {
             referencedColumns: ['float_id'];
           },
           {
+            foreignKeyName: 'shift_block_assignments_parent_float_id_fkey';
+            columns: ['parent_float_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_pending_floats';
+            referencedColumns: ['float_id'];
+          },
+          {
+            foreignKeyName: 'shift_block_assignments_parent_float_id_fkey';
+            columns: ['parent_float_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_recent_floats';
+            referencedColumns: ['float_id'];
+          },
+          {
             foreignKeyName: 'shift_block_assignments_source_house_id_fkey';
             columns: ['source_house_id'];
             isOneToOne: false;
@@ -1374,20 +1603,26 @@ export type Database = {
         Row: {
           block_id: string;
           block_start_at: string;
+          coverage_locked_at: string | null;
           house_id: string;
           required_headcount: number;
+          voided_at: string | null;
         };
         Insert: {
           block_id?: string;
           block_start_at: string;
+          coverage_locked_at?: string | null;
           house_id: string;
           required_headcount: number;
+          voided_at?: string | null;
         };
         Update: {
           block_id?: string;
           block_start_at?: string;
+          coverage_locked_at?: string | null;
           house_id?: string;
           required_headcount?: number;
+          voided_at?: string | null;
         };
         Relationships: [
           {
@@ -1750,6 +1985,91 @@ export type Database = {
           },
         ];
       };
+      house_schedule_grid_any: {
+        Row: {
+          desk_phone: string | null;
+          end_at: string | null;
+          house_id: string | null;
+          house_name: string | null;
+          id: string | null;
+          is_cross_house_pickup: boolean | null;
+          is_float: boolean | null;
+          start_at: string | null;
+          status: string | null;
+          user_id: string | null;
+          worker_name: string | null;
+          worker_phone: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'shift_block_assignments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'shift_block_assignments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'shift_block_assignments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
+          {
+            foreignKeyName: 'shift_blocks_house_id_fkey';
+            columns: ['house_id'];
+            isOneToOne: false;
+            referencedRelation: 'houses';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      pg_all_foreign_keys: {
+        Row: {
+          fk_columns: unknown[] | null;
+          fk_constraint_name: unknown;
+          fk_schema_name: unknown;
+          fk_table_name: unknown;
+          fk_table_oid: unknown;
+          is_deferrable: boolean | null;
+          is_deferred: boolean | null;
+          match_type: string | null;
+          on_delete: string | null;
+          on_update: string | null;
+          pk_columns: unknown[] | null;
+          pk_constraint_name: unknown;
+          pk_index_name: unknown;
+          pk_schema_name: unknown;
+          pk_table_name: unknown;
+          pk_table_oid: unknown;
+        };
+        Relationships: [];
+      };
+      tap_funky: {
+        Row: {
+          args: string | null;
+          is_definer: boolean | null;
+          is_strict: boolean | null;
+          is_visible: boolean | null;
+          kind: unknown;
+          langoid: unknown;
+          name: unknown;
+          oid: unknown;
+          owner: unknown;
+          returns: string | null;
+          returns_set: boolean | null;
+          schema: unknown;
+          volatility: string | null;
+        };
+        Relationships: [];
+      };
       worker_directory: {
         Row: {
           home_house_id: string | null;
@@ -1808,6 +2128,8 @@ export type Database = {
       };
       worker_open_shifts: {
         Row: {
+          coverage_locked: boolean | null;
+          desk_covered: boolean | null;
           eligible_user_id: string | null;
           end_at: string | null;
           feed: string | null;
@@ -1828,8 +2150,107 @@ export type Database = {
           },
         ];
       };
+      worker_pending_floats: {
+        Row: {
+          block_count: number | null;
+          created_at: string | null;
+          destination_house_id: string | null;
+          destination_house_name: string | null;
+          float_end: string | null;
+          float_id: string | null;
+          float_start: string | null;
+          user_id: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'float_assignments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'float_assignments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'float_assignments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
+          {
+            foreignKeyName: 'shift_blocks_house_id_fkey';
+            columns: ['destination_house_id'];
+            isOneToOne: false;
+            referencedRelation: 'houses';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      worker_recent_floats: {
+        Row: {
+          destination_house_id: string | null;
+          destination_house_name: string | null;
+          float_end: string | null;
+          float_id: string | null;
+          float_start: string | null;
+          resolved_at: string | null;
+          status: string | null;
+          user_id: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'float_assignments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'float_assignments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'float_assignments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
+          {
+            foreignKeyName: 'shift_blocks_house_id_fkey';
+            columns: ['destination_house_id'];
+            isOneToOne: false;
+            referencedRelation: 'houses';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
     };
     Functions: {
+      _cleanup: { Args: never; Returns: boolean };
+      _contract_on: { Args: { '': string }; Returns: unknown };
+      _currtest: { Args: never; Returns: number };
+      _db_privs: { Args: never; Returns: unknown[] };
+      _extensions: { Args: never; Returns: unknown[] };
+      _get: { Args: { '': string }; Returns: number };
+      _get_latest: { Args: { '': string }; Returns: number[] };
+      _get_note: { Args: { '': string }; Returns: string };
+      _is_verbose: { Args: never; Returns: boolean };
+      _prokind: { Args: { p_oid: unknown }; Returns: unknown };
+      _query: { Args: { '': string }; Returns: string };
+      _refine_vol: { Args: { '': string }; Returns: string };
+      _table_privs: { Args: never; Returns: unknown[] };
+      _temptypes: { Args: { '': string }; Returns: string };
+      _todo: { Args: never; Returns: string };
       accept_swap: {
         Args: { p_accepting_user_id: string; p_now?: string; p_swap_id: string };
         Returns: Json;
@@ -1868,6 +2289,15 @@ export type Database = {
         Returns: Json;
       };
       app_now: { Args: never; Returns: string };
+      apply_compiled_season: {
+        Args: {
+          p_calling_user_id: string;
+          p_dry_run?: boolean;
+          p_payload: Json;
+          p_season_id: string;
+        };
+        Returns: Json;
+      };
       apply_permanent_swap: {
         Args: {
           p_affected_assignment_ids: string[];
@@ -1880,6 +2310,10 @@ export type Database = {
       assignments_outside_regular_school_year: {
         Args: { p_assignment_ids: string[] };
         Returns: string[];
+      };
+      block_has_present_worker: {
+        Args: { p_block_id: string };
+        Returns: boolean;
       };
       break_claim_calendar_pool: {
         Args: { p_as_of?: string; p_house_id: string };
@@ -1938,6 +2372,42 @@ export type Database = {
       };
       clear_break_period: { Args: { p_break_id: string }; Returns: number };
       close_break_claim_pool: { Args: { p_break_id: string }; Returns: number };
+      col_is_null:
+        | {
+            Args: {
+              column_name: unknown;
+              description?: string;
+              schema_name: unknown;
+              table_name: unknown;
+            };
+            Returns: string;
+          }
+        | {
+            Args: {
+              column_name: unknown;
+              description?: string;
+              table_name: unknown;
+            };
+            Returns: string;
+          };
+      col_not_null:
+        | {
+            Args: {
+              column_name: unknown;
+              description?: string;
+              schema_name: unknown;
+              table_name: unknown;
+            };
+            Returns: string;
+          }
+        | {
+            Args: {
+              column_name: unknown;
+              description?: string;
+              table_name: unknown;
+            };
+            Returns: string;
+          };
       craft_hm_leave_mailto: { Args: { p_leave_id: string }; Returns: string };
       craft_hm_return_mailto: { Args: { p_leave_id: string }; Returns: string };
       decline_float: {
@@ -1949,6 +2419,21 @@ export type Database = {
         Returns: boolean;
       };
       deliver_pending_notifications: { Args: never; Returns: number };
+      diag:
+        | {
+            Args: { msg: unknown };
+            Returns: {
+              error: true;
+            } & 'Could not choose the best candidate function between: public.diag(msg => text), public.diag(msg => anyelement). Try renaming the parameters or the function itself in the database so function overloading can be resolved';
+          }
+        | {
+            Args: { msg: string };
+            Returns: {
+              error: true;
+            } & 'Could not choose the best candidate function between: public.diag(msg => text), public.diag(msg => anyelement). Try renaming the parameters or the function itself in the database so function overloading can be resolved';
+          };
+      diag_test_name: { Args: { '': string }; Returns: string };
+      do_tap: { Args: never; Returns: string[] } | { Args: { '': string }; Returns: string[] };
       drop_shift: {
         Args: {
           p_as_of?: string;
@@ -1974,6 +2459,9 @@ export type Database = {
       };
       execute_due_break_transitions: { Args: never; Returns: number };
       expire_pending_swaps: { Args: { p_now: string }; Returns: number };
+      fail: { Args: never; Returns: string } | { Args: { '': string }; Returns: string };
+      findfuncs: { Args: { '': string }; Returns: string[] };
+      finish: { Args: { exception_on_failure?: boolean }; Returns: string[] };
       fire_worker: {
         Args: { p_initiator: string; p_now?: string; p_user_id: string };
         Returns: Json;
@@ -2018,6 +2506,7 @@ export type Database = {
           blocks_inserted: number;
         }[];
       };
+      has_unique: { Args: { '': string }; Returns: string };
       hire_worker: {
         Args: {
           p_email: string;
@@ -2039,10 +2528,12 @@ export type Database = {
         Args: { p_house_id: string };
         Returns: boolean;
       };
+      in_todo: { Args: never; Returns: boolean };
       is_assignment_claimable: {
         Args: { p_as_of: string; p_assignment_id: string };
         Returns: boolean;
       };
+      is_empty: { Args: { '': string }; Returns: string };
       is_hm_working_time: { Args: { p_at: string }; Returns: boolean };
       is_project_administrator: {
         Args: { check_user_id: string };
@@ -2050,14 +2541,21 @@ export type Database = {
       };
       is_valid_block_headcounts: { Args: { p: Json }; Returns: boolean };
       is_valid_escalation_chain: { Args: { p: Json }; Returns: boolean };
+      isnt_empty: { Args: { '': string }; Returns: string };
       leave_resolution_walk: {
         Args: { p_resolution_date: string; p_user_id: string };
         Returns: Record<string, unknown>;
+      };
+      lives_ok: { Args: { '': string }; Returns: string };
+      lock_block_coverage: {
+        Args: { p_as_of: string; p_block_id: string };
+        Returns: undefined;
       };
       mark_notification_read: {
         Args: { p_notification_id: string; p_now: string; p_user_id: string };
         Returns: boolean;
       };
+      no_plan: { Args: never; Returns: boolean[] };
       notification_is_pushable: {
         Args: { p_type: Database['public']['Enums']['notification_type'] };
         Returns: boolean;
@@ -2079,10 +2577,13 @@ export type Database = {
           isSetofReturn: true;
         };
       };
+      num_failed: { Args: never; Returns: number };
       open_break_claim_calendar: {
         Args: { p_break_id: string; p_house_id: string };
         Returns: number;
       };
+      os_name: { Args: never; Returns: string };
+      pass: { Args: never; Returns: string } | { Args: { '': string }; Returns: string };
       pending_notification_deliveries: {
         Args: { p_now: string };
         Returns: {
@@ -2142,6 +2643,9 @@ export type Database = {
         };
         Returns: Json;
       };
+      pg_version: { Args: never; Returns: string };
+      pg_version_num: { Args: never; Returns: number };
+      pgtap_version: { Args: never; Returns: number };
       preference_deadline_is_open: {
         Args: { check_period_id: string };
         Returns: boolean;
@@ -2193,6 +2697,14 @@ export type Database = {
         };
         Returns: number;
       };
+      reconcile_float_source_release: {
+        Args: { p_float_id: string };
+        Returns: undefined;
+      };
+      reopen_float_source_seats: {
+        Args: { p_float_id: string; p_source_assignment_ids: string[] };
+        Returns: number;
+      };
       resolve_hm_for_house: {
         Args: { p_at: string; p_house_id: string };
         Returns: string;
@@ -2206,6 +2718,19 @@ export type Database = {
         Returns: string;
       };
       resolve_hmod_on_duty: { Args: { p_at: string }; Returns: string };
+      resolve_permanent_swap_affected: {
+        Args: { p_now?: string; p_swap_id: string };
+        Returns: string[];
+      };
+      resolve_rsm_for_house: {
+        Args: { p_at: string; p_house_id: string };
+        Returns: string;
+      };
+      runtests: { Args: never; Returns: string[] } | { Args: { '': string }; Returns: string[] };
+      season_target_headcount: {
+        Args: { p_block_start_at: string; p_house_id: string };
+        Returns: number;
+      };
       send_break_nag: { Args: { p_break_id: string }; Returns: number };
       send_preference_reminders: { Args: never; Returns: number };
       set_allied_resolved: {
@@ -2228,6 +2753,9 @@ export type Database = {
           preference_deadline: string;
         }[];
       };
+      skip:
+        | { Args: { '': string }; Returns: string }
+        | { Args: { how_many: number; why: string }; Returns: string };
       snapshot_float_ack_reminders: {
         Args: {
           p_destination_assignment_ids: string[];
@@ -2264,6 +2792,16 @@ export type Database = {
         Args: { p_swap_id: string };
         Returns: string;
       };
+      throws_ok: { Args: { '': string }; Returns: string };
+      todo:
+        | { Args: { how_many: number }; Returns: boolean[] }
+        | { Args: { how_many: number; why: string }; Returns: boolean[] }
+        | { Args: { why: string }; Returns: boolean[] }
+        | { Args: { how_many: number; why: string }; Returns: boolean[] };
+      todo_end: { Args: never; Returns: boolean[] };
+      todo_start:
+        | { Args: never; Returns: boolean[] }
+        | { Args: { '': string }; Returns: boolean[] };
       url_encode_mailto_component: {
         Args: { p_value: string };
         Returns: string;
@@ -2278,6 +2816,12 @@ export type Database = {
       };
       user_has_house_admin_role: {
         Args: { check_house_id: string; check_user_id: string };
+        Returns: boolean;
+      };
+      user_is_admin: { Args: { check_user_id: string }; Returns: boolean };
+      user_is_rsm: { Args: { check_user_id: string }; Returns: boolean };
+      user_is_schedule_admin: {
+        Args: { check_user_id: string };
         Returns: boolean;
       };
       weekly_feed_for_house: {
@@ -2332,6 +2876,32 @@ export type Database = {
         Args: { p_break_id: string; p_user_id: string };
         Returns: boolean;
       };
+      worker_pending_swaps: {
+        Args: never;
+        Returns: {
+          counterparty_assignment_ids: string[];
+          counterparty_blocks: number;
+          counterparty_end: string;
+          counterparty_house_id: string;
+          counterparty_house_name: string;
+          counterparty_start: string;
+          created_at: string;
+          direction: string;
+          expires_at: string;
+          initiator_assignment_ids: string[];
+          initiator_blocks: number;
+          initiator_end: string;
+          initiator_house_id: string;
+          initiator_house_name: string;
+          initiator_start: string;
+          other_user_id: string;
+          other_user_name: string;
+          recurring_pattern: Json;
+          status: string;
+          swap_id: string;
+          swap_type: string;
+        }[];
+      };
     };
     Enums: {
       block_step_status_enum: 'fired' | 'completed_via_force_trigger' | 'rolled_back';
@@ -2367,10 +2937,11 @@ export type Database = {
         | 'pending_float_in'
         | 'pending_float_out'
         | 'allied'
-        | 'vacant';
+        | 'vacant'
+        | 'cancelled_config';
       swap_status_enum: 'pending' | 'accepted' | 'rejected' | 'expired' | 'voided';
-      swap_type_enum: 'shift_swap' | 'float_swap' | 'permanent_swap';
-      user_role_enum: 'sw' | 'sm' | 'hm' | 'rsm' | 'bm';
+      swap_type_enum: 'shift_swap' | 'float_swap' | 'permanent_swap' | 'handoff';
+      user_role_enum: 'sw' | 'sm' | 'hm' | 'rsm' | 'bm' | 'admin';
       vacancy_origin_enum:
         | 'none'
         | 'temporary_drop'
@@ -2381,7 +2952,9 @@ export type Database = {
       value_type_enum: 'integer' | 'interval' | 'time_of_day' | 'enum' | 'uuid';
     };
     CompositeTypes: {
-      [_ in never]: never;
+      _time_trial_type: {
+        a_time: number | null;
+      };
     };
   };
 };
@@ -2543,10 +3116,11 @@ export const Constants = {
         'pending_float_out',
         'allied',
         'vacant',
+        'cancelled_config',
       ],
       swap_status_enum: ['pending', 'accepted', 'rejected', 'expired', 'voided'],
-      swap_type_enum: ['shift_swap', 'float_swap', 'permanent_swap'],
-      user_role_enum: ['sw', 'sm', 'hm', 'rsm', 'bm'],
+      swap_type_enum: ['shift_swap', 'float_swap', 'permanent_swap', 'handoff'],
+      user_role_enum: ['sw', 'sm', 'hm', 'rsm', 'bm', 'admin'],
       vacancy_origin_enum: [
         'none',
         'temporary_drop',

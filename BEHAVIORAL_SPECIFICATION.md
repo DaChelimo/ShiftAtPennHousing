@@ -20,15 +20,31 @@ Penn Housing operates 13 college houses. They are not interchangeable.
 
 ### 1.2 Float Direction Rules
 
-In any period where floating is permitted:
+Float direction depends on the operating period, and is subject to absolute guards that no
+configuration can override. In any period where floating is permitted:
 
-- A Quad worker may NOT float to Harnwell. A Quad worker may float to any of the 11 single-staff houses.
-- A Harnwell worker may float to any house (Quad or any of the 11 single-staff houses).
-- A worker hired at one of the 11 single-staff houses may never float.
+- **Which houses may source floats, and to which destinations, depends on the period.**
+  During the regular school year and breaks it is fixed by training equivalency: the Quad
+  may float to any of the 11 single-staff houses (never to Harnwell), and Harnwell may
+  float to any house. During a summer season floating is **universal**: any open,
+  multi-staffed house may float a worker to any other open house, with the single absolute
+  exception that Harnwell is never a destination. Harnwell itself may source floats. There
+  is no per-season routing configuration to author; summer routing follows directly from
+  which houses are open and staffed.
+- **A source desk is never left below one worker.** A house may only source a floater
+  while it is genuinely multi-staffed for the covered blocks, and lending never drops the
+  source below one present worker. This is what makes a single-staffed house unable to
+  float, regardless of routing configuration.
+- **Harnwell is never a float destination.** A Harnwell coverage gap bypasses float lookup
+  entirely and proceeds to HMOD-for-Allied (Section 6.1).
+- **No non-Harnwell-trained worker ever staffs Harnwell**, by any mechanism (the training
+  invariant, Section 1.1). Harnwell never being a float destination means no float targets
+  it in the first place.
 
-These rules exist because of training equivalency, not distance or convenience. They are absolute when floating is permitted.
-
-The float lookup algorithm (Section 6) MUST enforce these rules as eligibility checks, independent of any routing configuration data, so that data-entry errors cannot bypass them.
+The first two are the training-equivalency and coverage-floor rules; the last two are the
+absolute Harnwell guards. The float lookup algorithm (Section 6) and the assignment write
+path MUST enforce the coverage-floor and Harnwell guards in code, independent of any
+routing configuration data, so that data-entry errors cannot bypass them.
 
 Cross-house pickup (Section 5.3) is governed by a separate, more permissive eligibility rule than floating because the worker is acquiring an additional shift rather than abandoning their home desk; the source-side staffing constraints that restrict floating do not apply. Only the Harnwell training constraint carries over: no worker without Harnwell training may staff the Harnwell desk, regardless of mechanism.
 
@@ -61,7 +77,7 @@ Block durations are uniformly 30 minutes, so 1 hour equals 2 blocks and a worker
 
 ## 2. Roles
 
-The system has six roles. Workers may hold more than one. The roles are: Student Worker, Student Manager, Housing Manager, Residential Services Manager, Building Manager, and Housing Manager On Duty.
+The system has seven roles. Workers may hold more than one. The roles are: Student Worker, Student Manager, Housing Manager, Residential Services Manager, Building Manager, Housing Manager On Duty, and Administrator.
 
 ### 2.1 Student Worker (SW)
 
@@ -177,6 +193,26 @@ An HM or BM may indicate one or more days of leave by selecting dates in the sys
 
 A single person may hold multiple roles concurrently — for example, an SM is also implicitly an SW, and an HM is implicitly an SM and SW for that house's workflows. When a person holds multiple roles, their effective permissions are the union of the roles they hold.
 
+### 2.8 Administrator
+
+The Administrator is a house-agnostic superuser, operated by the project owner in the
+first version and grantable to others later. The Administrator authors the operating
+configuration: which houses are active on which dates, each house's headcount over time,
+and when floating is allowed (Section 3.1). Lower roles (BM, HM, RSM, SM, SW) consume the
+applied configuration through the ordinary runtime paths.
+
+- The Administrator holds every administrative power below it in **every** house:
+  cross-house schedule building and override, people administration (hiring, firing, role
+  grants), weekly-cap modification, and force-trigger. Unlike the RSM (whose people
+  administration is own-house only), the Administrator's reach is campus-wide.
+- The Administrator is admin-only. It never staffs a desk, is never automatically floated,
+  never receives broadcast, is never in the claim pool, and is never a swap counterparty.
+  It is never placed on the HMOD rotor and is never an HMOD-transfer target.
+- The Administrator role carries no house scope (it is not tied to a home house for its
+  powers). It is distinct from the "project administrator" terminal contact of Section 2.6,
+  which is a configured pointer used to break leave-delegation cycles; the same person may
+  hold both, but the role is what confers the powers above.
+
 ---
 
 ## 3. The Operating Calendar and Seasons
@@ -185,7 +221,30 @@ A single person may hold multiple roles concurrently — for example, an SM is a
 
 The operating calendar covers the academic year: fall semester, winter break, spring semester, and any short breaks within those semesters. Every operating date is assigned to exactly one operating-rules profile. There are no overlaps and no ambiguity. The assignment for each date is data; the rules that fire on that date are determined entirely by which profile the date references.
 
-Summer (the period between the end of spring semester and the start of fall semester) is **not** an operating period for this system. Summer dates have no profile assigned and the system is fully dormant for those dates. The decision to scope summer out is deliberate: summer schedules at Penn Housing are essentially static (workers plan their summer lives around the schedule rather than the reverse, so drops and float requests are rare), Harnwell does not float in summer, the Quad is closed, and the few houses that are double-staffed are double-staffed only on some days. When a coverage gap does occur in summer, the operating practice is to call HMOD immediately rather than run an escalation chain. The system's primary value — automated float lookup, broadcast escalation, and drop-driven recovery — does not apply. Summer is therefore left for possible future implementation; until then, summer coverage is handled entirely off-platform.
+A date with no profile assigned in the operating calendar is non-operating: the system is
+fully dormant for it (no blocks, no orchestration, no notifications). This is the mechanism
+by which any stretch of the year can be turned off.
+
+Summer (the period between the end of spring semester and the start of fall semester) is
+highly dynamic and is configured as an **operating season** authored by the Administrator
+(Section 2.8). Summer's dynamics are first-class: houses open on different dates as they
+begin receiving residents (for example one house opening at the start of June, another in
+mid-June); a house may be single-staffed in the first half of summer and double-staffed in
+the second; and floating may be off early in summer and on later. The Administrator models
+a season as a date range plus, per house, the open windows and headcounts over time, and
+the windows during which floating is on. Float routing is not authored: when floating is on
+it is universal (any open, multi-staffed house to any other open house, never into
+Harnwell, per Section 1.2). Every date on which any of these settings changes is a **phase**
+boundary. The system compiles the season into per-phase operating profiles, staffing
+patterns, float routing, and calendar assignments, so the same runtime machinery that
+serves the academic year serves summer with no special cases. A date the Administrator leaves with no open house is simply dormant, exactly as an
+unassigned date is. Changes take effect prospectively (future shifts only); when a change
+reduces a desk that already has more workers scheduled than the new headcount, the extra
+workers are grandfathered rather than removed. Summer schedules are built by SMs like the
+school year, including preference collection (Section 4): before summer begins, workers
+submit the shifts they want and SMs build from those preferences. The Administrator authors
+the preference-submission deadline on the season, where a single value covers all houses;
+it must fall on or before the season's start date.
 
 ### 3.2 Operating-Rules Profiles
 
@@ -265,7 +324,7 @@ Floating is therefore not a binary system-wide flag; it is checked at the moment
 
 ### 4.1 Preference Submission
 
-Before the start of any period that uses SM-built scheduling (regular school year only), workers submit their preferences for the upcoming period.
+Before the start of any period that uses SM-built scheduling (the regular school year and summer operating seasons), workers submit their preferences for the upcoming period. A summer season is SM-built (Section 16) and collects preferences exactly as the school year does.
 
 Workers access a calendar view of the period and select time blocks. For each block, a worker marks one of three statuses:
 
@@ -275,13 +334,13 @@ Workers access a calendar view of the period and select time blocks. For each bl
 
 A worker who wants no hours at all for the period clicks a "no hours" button. This worker is not assigned any shifts by the SM during the preference-assisted phase. They may still pick up open shifts during the period via claiming if they later change their mind.
 
-Workers also indicate a target weekly hour count for the period: any integer from 0 up to the period's hours cap (20 hours for regular school year). The target is a guideline that informs the SM during schedule building.
+Workers also indicate a target weekly hour count for the period: any integer from 0 up to the period's hours cap (20 hours for the regular school year; a summer season uses its own configured cap, for example 40 hours). The target is a guideline that informs the SM during schedule building.
 
 Winter break and short break do not use preference submission; they are claim-based (Section 4.4).
 
 ### 4.2 The Submission Deadline
 
-The SM sets a deadline for preference submission. The system sends reminders to workers who have not yet submitted preferences at 5 days, 3 days, and 1 day before the deadline. Workers who have submitted (including those who clicked "no hours") receive no further reminders.
+The SM sets a deadline for preference submission. For a summer operating season the deadline is authored by the Administrator on the season itself (Section 16), where it is set once and applies to every house; SMs, HMs, and BMs may still set or adjust it. The deadline must fall on or before the period's start date. The system sends reminders to workers who have not yet submitted preferences at 5 days, 3 days, and 1 day before the deadline. Workers who have submitted (including those who clicked "no hours") receive no further reminders.
 
 Preferences cannot be changed after the deadline. The SM begins building the schedule only after the deadline has passed.
 
@@ -453,7 +512,7 @@ This matrix is intentionally more permissive than the float direction rules (Sec
 A temporary claim is permitted when:
 
 - The shift is at the worker's home house, OR the worker is eligible to pick up at the destination house per the matrix above.
-- The shift's escalation has not reached the float-lookup step (T-2 hour for that shift has not yet passed). The T-2h unpickable cutoff applies uniformly to in-house and cross-house claims.
+- The shift's desk is not locked for coverage. The T-2h cutoff is **conditional on coverage, not on the clock alone**: a vacant seat becomes unpickable at T-2h **only if its desk would otherwise be empty** at that block (the coverage floor of Section 5.4) — i.e., only when the empty-desk escalation fires. A seat on a desk that still has at least one worker present is never locked by the T-2h cutoff and stays claimable until the block starts. Once an empty desk is locked, the lock is one-way (Section 5.5): the seat stays unpickable even if a floater or Allied subsequently fills the desk. This conditional cutoff applies uniformly to in-house and cross-house claims.
 - Claiming the shift would not push the worker over the applicable hours cap.
 - **No time conflict.** The claimed blocks must not overlap any block the worker is already assigned to that week (at any house, in any status — scheduled, claimed, float-in, pickup). This check applies across the entire system, not just the home house.
 
@@ -477,15 +536,19 @@ When a shift is open (unclaimed), it progresses through a timed escalation chain
 
 **When the chain fires — coverage floor is one worker, not required headcount.** The escalation chain (broadcast → float → Allied) fires for a block ONLY when that block would otherwise have **zero** staff present — an empty desk. The coverage floor is one worker, not the staffing pattern's required headcount: a multi-staff desk (Harnwell 2, Quad 3) that still has at least one worker present for a block is considered covered, and its remaining vacant seats trigger **no** broadcast, float, or Allied. This holds uniformly for every house and every time of day, and for both structurally-open seats and drop-created gaps. Concretely, on a Quad evening where the schedule tapers to one worker, the two empty seats are not floated; if instead 6:00–8:00pm has nobody, 8:00–10:00pm has one worker, and 10:00pm–midnight has nobody, the system seeks coverage for the two empty windows only and skips the staffed one. Full headcount is a build-time target enforced by the schedule builder, not by runtime escalation. The unstaffed seats remain passively claimable in the open-shifts feed, but the system seeks no active coverage for them. ("Present" = a `scheduled`, `claimed`, `floated_in`, `pending_float_in`, or `allied` assignment; a `floated_out` / `pending_float_out` seat is **not** present — that worker is staffing another desk.)
 
+**The same coverage floor governs the pickup lock.** The T-2h unpickable cutoff (Sections 5.3, 5.5) fires for a block only when this floor is breached — an empty desk. A desk that still has a worker present is never locked: its vacant seats stay claimable until the block starts. Two subtleties are load-bearing and must not be collapsed: (1) The two uses of "present" differ by design. For deciding whether to _escalate_, an `allied` assignment counts as present (a desk Allied is already covering needs no further coverage). For deciding whether a seat is _pickable_, `allied` does **not** count — Allied coverage secured for an otherwise-empty window keeps that window **locked**, rather than re-opening it to student pickup (we do not want a student piling onto a slot already paid for). The "desk still has a real worker" exemption therefore uses the present-set {`scheduled`, `claimed`, `floated_in`, `pending_float_in`}. (2) The lock is **one-way per block** (Section 5.5): once an empty desk reaches the T-2h step, its vacant seats stay locked even after a floater or Allied fills the desk — the remaining empty seats of that window do not re-open. This is recorded as a per-block coverage lock, not recomputed from live coverage.
+
+**Coverage is secured at most 4 hours at a time.** A single securing pass (the float lookup and, on its failure, the Allied notification it triggers) handles at most 8 consecutive blocks (4 hours) of a contiguous vacant gap. A longer empty window is never floated or sent to Allied all at once. The blocks beyond the first 4 hours stay vacant and claimable in the open-shifts feed, and re-escalate through the normal chain (broadcast, float, Allied) as their own blocks approach their escalation offsets. This keeps a long empty window (for example a desk with nobody scheduled from 8am to midnight) from being secured to paid Allied coverage all at once, which would needlessly lock students out of picking up the later hours. The 4-hour cap is an upper bound on a single securing, not a target: the per-block chain routinely secures far less (a single 30-minute block at a time as each block crosses its T-2h step).
+
 **Regular School Year and Short Break Profiles**
 
 1. **T-3 hours: Broadcast.** The system sends a notification to all subscribed Student Workers at the shift's home house, informing them that an open shift is available. The shift remains in the open-shifts feed and is claimable. Broadcast subscription is opt-in and defaults to off; workers must explicitly enable it. The subscription toggle is not available to users holding an `hm` or `bm` role. Personal notifications (your own shift, your own float) are not subject to subscription and are always delivered.
 
-2. **T-2 hours: Float Lookup.** If the shift is still unclaimed, the system runs an automated float lookup. The shift becomes unpickable at this exact moment; any claim attempt strictly after T-2 hours fails. If a claim is in progress at exactly T-2 hours, it fails. Only claims completed strictly before T-2 hours succeed.
+2. **T-2 hours: Float Lookup.** If the block is still unclaimed **and would be empty** (the coverage floor above), the system runs an automated float lookup. The block's vacant seats become unpickable at this exact moment and stay so one-way (Section 5.5) — whether the gap is then covered by a floater or by Allied. For such an empty block, any claim attempt strictly after T-2 hours fails; a claim in progress at exactly T-2 hours fails; only claims completed strictly before T-2 hours succeed. A block that still has a worker present never reaches this step: no float lookup runs for it and its remaining vacant seats stay claimable until the block starts.
 
    The float lookup attempts to assign one or more floaters following the rules in Section 6. If a floater is identified, they are automatically assigned with no human approval step. If no floater is identified, the system proceeds to step 3 immediately.
 
-3. **T-2 hours (on float lookup failure): HMOD Notification.** If float lookup returns no candidate, the HMOD is notified that Allied coverage is required. The notification contains the time of needed coverage and the house. The HMOD places the call to Allied. Allied coverage is the terminal step; once Allied is assigned, the gap is considered resolved.
+3. **T-2 hours (on float lookup failure): HMOD Notification.** If float lookup returns no candidate, the HMOD is notified that Allied coverage is required. The notification contains the time of needed coverage and the house. The HMOD places the call to Allied. Allied coverage is the terminal step; once Allied is assigned, the gap is considered resolved. The window remains unpickable (Section 5.5); securing Allied does not re-open the empty seats for student pickup.
 
 **Winter Break Profile**
 
@@ -495,7 +558,7 @@ When a shift is open (unclaimed), it progresses through a timed escalation chain
 
 ### 5.5 Escalation Is One-Way (with the Float-Drop Exception)
 
-Escalation never moves backward through the same chain. Once a shift reaches the T-2 hour float-lookup step, the open-shifts feed status changes to unpickable and cannot revert.
+Escalation never moves backward through the same chain. Once a block reaches the T-2 hour float-lookup step **because it would be empty**, its vacant seats become unpickable and cannot revert — even if a floater or Allied subsequently fills the desk, the remaining empty seats of that window stay locked. This lock is recorded per block and is one-way. A block that never reaches that step (because at least one worker is present for it) is never locked by escalation; its remaining vacant seats stay passively claimable until the block starts (Section 5.4).
 
 The single exception is that if a worker drops a shift while they have a float assignment — whether they drop their home shift, the float destination, or any portion of either — all positions covered by that worker become uncovered and trigger independent new escalations:
 
@@ -555,21 +618,21 @@ The system never assumes a single floater must cover the entire destination gap.
 
 1. **Source priority.** The system first checks Quad for eligible workers, then Harnwell. Quad is exhausted before Harnwell is considered.
 
-2. **Largest consecutive block run per source.** Within a source house, the system identifies the worker who can cover the largest consecutive sequence of 30-minute blocks in the destination's gap. That worker is assigned that span as their float — subject to the minimum-chunk-size rule (point 4 below). The algorithm then looks at the remaining uncovered blocks within the same source house and repeats. This continues until no more eligible workers in that source can cover any remaining consecutive runs of at least 2 blocks.
+2. **Largest consecutive block run per source.** Within a source house, the system identifies the worker who can cover the largest consecutive sequence of 30-minute blocks in the destination's gap. That worker is assigned that span as their float — subject to the minimum-chunk-size rule (point 4 below). The algorithm then looks at the remaining uncovered blocks within the same source house and repeats. This continues until no more eligible workers in that source can cover any remaining consecutive block.
 
 3. **Move to next source.** Once Quad is exhausted, the algorithm runs the same chunking process at Harnwell for the remaining uncovered blocks.
 
-4. **Minimum chunk size — non-negotiable.** Any individual floater's assigned span MUST be at least 2 consecutive 30-minute blocks (a full hour). If the largest consecutive coverage a worker can provide is only one 30-minute block, that block is not assigned to them and is left for Allied. This minimum applies to every selection, including those resulting from the tiebreaker rules in Section 6.3 and the partial-coverage fallback below.
+4. **Minimum chunk size — 1 block.** Any individual floater's assigned span MUST be at least 1 30-minute block. A worker whose largest consecutive coverage is a single 30-minute block IS assigned that block rather than leaving it for Allied. (This was previously a 2-block, 1-hour floor. It was lowered to a single block so small gaps are absorbed by floats instead of paid Allied coverage, minimizing how often Allied is procured.) This minimum applies to every selection, including those resulting from the tiebreaker rules in Section 6.3 and the partial-coverage fallback below.
 
-5. **Partial-coverage fallback.** If, within a source, no eligible worker can cover the full gap (or the current uncovered run), the algorithm accepts partial coverage: select the worker who can cover the _longest leading portion_ of the gap starting from the gap's start, provided that portion is at least 2 blocks. If multiple workers tie on that portion, apply the tiebreaker chain (Section 6.3) to break the tie. Allied is procured for the uncovered tail. This is a fallback, not a tiebreaker — it only applies when no worker can cover the full largest-consecutive run.
+5. **Partial-coverage fallback.** If, within a source, no eligible worker can cover the full gap (or the current uncovered run), the algorithm accepts partial coverage: select the worker who can cover the _longest leading portion_ of the gap starting from the gap's start (a leading portion of a single block is sufficient). If multiple workers tie on that portion, apply the tiebreaker chain (Section 6.3) to break the tie. Allied is procured for the uncovered tail. This is a fallback, not a tiebreaker — it only applies when no worker can cover the full largest-consecutive run.
 
-6. **Allied fills the rest.** After Quad and Harnwell have been exhausted, any remaining uncovered blocks (including those that failed the minimum-chunk-size check) are escalated to HMOD for Allied procurement.
+6. **Allied fills the rest.** After Quad and Harnwell have been exhausted, any remaining uncovered blocks (those no eligible worker can cover) are escalated to HMOD for Allied procurement.
 
 Each floater receives their own float assignment. A 19:00 to 24:00 destination gap covered by worker B (19:00 to 21:00 from Harnwell) and worker D (21:00 to 24:00 from Harnwell) results in two distinct float assignment records.
 
 ### 6.3 Selecting Among Equally-Eligible Workers Within a Source
 
-When the chunking algorithm has identified the largest-consecutive-coverage span and multiple workers at the source house can cover that exact span, the system selects which one to float using a tiebreaker chain. The 1-hour minimum from Section 6.2 point 4 applies to each check; a check that would select a worker who cannot meet the minimum is skipped.
+When the chunking algorithm has identified the largest-consecutive-coverage span and multiple workers at the source house can cover that exact span, the system selects which one to float using a tiebreaker chain. The 1-block minimum from Section 6.2 point 4 applies to each check; a check that would select a worker who cannot meet the minimum is skipped.
 
 Each check operates on an active **candidate set** that begins as all eligible workers covering the same largest-consecutive span (or, when the partial-coverage fallback in §6.2 #5 is active, all eligible workers covering the same longest leading portion). If a check produces multiple satisfiers rather than one, the algorithm narrows the candidate set to those satisfiers and advances to the next check on the narrowed set.
 
@@ -579,7 +642,7 @@ Each check operates on an active **candidate set** that begins as all eligible w
 
 3. **Check 3 — Arbitrary.** If the candidate set still contains multiple workers after Checks 1–2, the choice is arbitrary among the remaining candidates.
 
-The minimum-2-blocks rule from §6.2 #4 applies at every check. A candidate who cannot meet the minimum is not in the candidate set to begin with.
+The minimum-1-block rule from §6.2 #4 applies at every check. A candidate who cannot meet the minimum is not in the candidate set to begin with.
 
 (The previous Check 3 — "shift ends within the float span" — has been folded into the partial-coverage fallback of §6.2 #5, where it logically belongs. Tiebreakers are only invoked once the algorithm has identified workers who all cover the same selected span.)
 
@@ -1012,7 +1075,8 @@ The following parameters are system-wide configurable by the project administrat
 - **Permanent swap expiry**: 7 days.
 - **Float swap expiry**: 24 hours after float end time.
 - **Shift swap expiry**: T-3h of the earlier shift.
-- **Minimum float chunk size**: 2 blocks (1 hour). Non-negotiable in the algorithm.
+- **Minimum float chunk size**: 1 block (30 minutes). A single coverable block is floated rather than sent to Allied.
+- **Maximum Allied coverage per securing**: 8 blocks (4 hours). A single contiguous vacant gap is secured at most 4 hours at a time; the remainder stays claimable and re-escalates.
 - **HM working hours**: Monday-Friday 08:00 to 17:00.
 - **HMOD rotor cadence**: weekly, Friday 08:00 handoff.
 

@@ -1,2 +1,2 @@
 export * from './types.js';
-export { compileSeason } from './compile.js';
+export { compileSeason, generateUniversalFloatRoutes } from './compile.js';

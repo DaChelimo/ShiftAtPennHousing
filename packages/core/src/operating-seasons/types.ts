@@ -32,19 +32,17 @@ export type SeasonInput = {
   shiftEndBound: string; // 'HH:MM' ('00:00' = 24:00)
 };
 
-export type OperatingDays = 'all' | 'weekdays' | 'weekends';
-
 export type HouseWindowInput = {
   houseId: string;
   startDate: IsoDate;
   endDate: IsoDate;
-  headcount: number;
-  // Per-house desk hours for this window. NULL inherits the season shift bounds.
-  // Single continuous band per day (v1). Must fall on 30-minute boundaries.
-  shiftStart?: string | null; // 'HH:MM'
-  shiftEnd?: string | null; // 'HH:MM' ('00:00' = 24:00)
-  // Which days the house operates. 'weekdays' => no weekend shifts (closed Sat/Sun).
-  days?: OperatingDays;
+  // Per-day-type staffing bands. Each band is a continuous span at a headcount; a day
+  // may have several (e.g. single-staffed 05:30-12:00 then double 12:00-00:00). Bands
+  // are explicit here (no season-bound inheritance) and must land on 30-minute
+  // boundaries. An EMPTY list means the house is closed that day type (weekdays-only
+  // => weekendBands: []). At least one of the two lists must be non-empty.
+  weekdayBands: StaffingBand[];
+  weekendBands: StaffingBand[];
 };
 
 export type FloatWindowInput = {

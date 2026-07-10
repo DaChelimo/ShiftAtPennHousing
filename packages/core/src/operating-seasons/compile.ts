@@ -73,25 +73,32 @@ function timeToMinutes(time: string, isEndBound: boolean): number {
 
 type OpenHouse = { houseId: string; weekdayBands: StaffingBand[]; weekendBands: StaffingBand[] };
 
-// A window contributes a single continuous band (this house's desk hours at its
-// headcount), assigned to weekdays and/or weekends per `days`. A weekdays-only
-// house has no weekend band (closed Sat/Sun), and vice versa. NULL hours inherit
-// the season shift bounds.
-function bandsForWindow(
-  win: HouseWindowInput,
-  seasonStartBound: string,
-  seasonEndBound: string,
-): { weekdayBands: StaffingBand[]; weekendBands: StaffingBand[] } {
-  const band: StaffingBand = {
-    block_start: win.shiftStart ?? seasonStartBound,
-    block_end: win.shiftEnd ?? seasonEndBound,
-    headcount: win.headcount,
-  };
-  const days = win.days ?? 'all';
-  return {
-    weekdayBands: days === 'weekends' ? [] : [band],
-    weekendBands: days === 'weekdays' ? [] : [band],
-  };
+// Validate one day type's band list: every band on 30-minute boundaries, start before
+// end, headcount >= 1, and no two bands overlapping (gaps are allowed — a desk may
+// close mid-day). Throws on the first problem. An empty list is legal (closed).
+function validateBands(houseId: string, dayType: string, bands: StaffingBand[]): void {
+  const spans = bands.map((b) => {
+    if (b.headcount < 1) {
+      throw new SeasonCompileError(`house ${houseId} (${dayType}): band headcount must be >= 1`);
+    }
+    const start = timeToMinutes(b.block_start, false);
+    const end = timeToMinutes(b.block_end, true);
+    if (end <= start) {
+      throw new SeasonCompileError(`house ${houseId} (${dayType}): band end must be after start`);
+    }
+    if (start % 30 !== 0 || (end % 30 !== 0 && end !== 1440)) {
+      throw new SeasonCompileError(
+        `house ${houseId} (${dayType}): bands must fall on 30-minute boundaries`,
+      );
+    }
+    return { start, end };
+  });
+  spans.sort((a, b) => a.start - b.start);
+  for (let i = 1; i < spans.length; i++) {
+    if (spans[i]!.start < spans[i - 1]!.end) {
+      throw new SeasonCompileError(`house ${houseId} (${dayType}): overlapping bands`);
+    }
+  }
 }
 
 function maxHeadcount(house: OpenHouse): number {
@@ -134,7 +141,10 @@ function validate(input: SeasonAuthoringInput): void {
     throw new SeasonCompileError('season shift_end_bound must be after shift_start_bound');
   }
 
-  // House windows: within season range, headcount >= 1, bands legal, no overlap per house.
+  // House windows: within season range, at least one open day type, bands legal
+  // (30-min boundaries, no intra-day overlap), no overlapping windows per house. Bands
+  // are independent of the season envelope (only a default), so a house may open
+  // earlier/later than the season bounds.
   const windowsByHouse = new Map<string, HouseWindowInput[]>();
   for (const win of houseWindows) {
     const ws = toDayIndex(win.startDate);
@@ -147,27 +157,13 @@ function validate(input: SeasonAuthoringInput): void {
         `house ${win.houseId}: window ${win.startDate}..${win.endDate} is outside the season range`,
       );
     }
-    if (win.headcount < 1) {
-      throw new SeasonCompileError(`house ${win.houseId}: headcount must be >= 1`);
+    if (win.weekdayBands.length === 0 && win.weekendBands.length === 0) {
+      throw new SeasonCompileError(
+        `house ${win.houseId}: a window must open at least one day type (weekday or weekend)`,
+      );
     }
-    // Per-house desk hours are independent of the season envelope (which is only a
-    // default), so a house may open earlier/later than the season bounds. They must
-    // still be valid, start before end, and land on 30-minute boundaries (every
-    // shift block is a 30-minute block on a 30-minute boundary).
-    if (win.shiftStart != null || win.shiftEnd != null) {
-      const startStr = win.shiftStart ?? season.shiftStartBound;
-      const endStr = win.shiftEnd ?? season.shiftEndBound;
-      const bs = timeToMinutes(startStr, false);
-      const be = timeToMinutes(endStr, true);
-      if (be <= bs) {
-        throw new SeasonCompileError(`house ${win.houseId}: desk close must be after desk open`);
-      }
-      if (bs % 30 !== 0 || (be % 30 !== 0 && be !== 1440)) {
-        throw new SeasonCompileError(
-          `house ${win.houseId}: desk hours must fall on 30-minute boundaries`,
-        );
-      }
-    }
+    validateBands(win.houseId, 'weekday', win.weekdayBands);
+    validateBands(win.houseId, 'weekend', win.weekendBands);
     const list = windowsByHouse.get(win.houseId) ?? [];
     list.push(win);
     windowsByHouse.set(win.houseId, list);
@@ -220,12 +216,15 @@ function chainFor(floatEnabled: boolean): ChainStep[] {
 type DaySignature = { openHouses: OpenHouse[]; floatEnabled: boolean; key: string };
 
 function signatureForDay(input: SeasonAuthoringInput, day: number): DaySignature {
-  const { season, houseWindows, floatWindows } = input;
+  const { houseWindows, floatWindows } = input;
+  // At most one window per house covers a given day (validate() rejects overlapping
+  // windows per house), so the bands map straight through.
   const openHouses: OpenHouse[] = houseWindows
     .filter((win) => covers(win, day))
     .map((win) => ({
       houseId: win.houseId,
-      ...bandsForWindow(win, season.shiftStartBound, season.shiftEndBound),
+      weekdayBands: win.weekdayBands,
+      weekendBands: win.weekendBands,
     }))
     .sort((a, b) => a.houseId.localeCompare(b.houseId));
 
@@ -246,14 +245,15 @@ const HARNWELL = 'harnwell';
 // as lenders (descending max headcount, ties by house id), so a 3-staff house is
 // tapped before a 2-staff one. The per-worker source-floor guard in the float
 // algorithm still enforces "never leave a desk below one worker" at run time.
-function generateRoutes(sig: DaySignature): CompiledRoute[] {
-  if (!sig.floatEnabled) {
-    return [];
-  }
-  const sources = sig.openHouses
-    .filter((h) => maxHeadcount(h) >= 2)
-    .sort((a, b) => maxHeadcount(b) - maxHeadcount(a) || a.houseId.localeCompare(b.houseId));
-  const destinations = sig.openHouses.filter((h) => h.houseId !== HARNWELL);
+// Exported so the break compiler (packages/core/src/break-authoring) derives float
+// routing by the IDENTICAL rule. Takes each open house's id + max headcount.
+export function generateUniversalFloatRoutes(
+  openHouses: { houseId: string; maxHeadcount: number }[],
+): CompiledRoute[] {
+  const sources = openHouses
+    .filter((h) => h.maxHeadcount >= 2)
+    .sort((a, b) => b.maxHeadcount - a.maxHeadcount || a.houseId.localeCompare(b.houseId));
+  const destinations = openHouses.filter((h) => h.houseId !== HARNWELL);
 
   const routes: CompiledRoute[] = [];
   sources.forEach((source, index) => {
@@ -271,6 +271,15 @@ function generateRoutes(sig: DaySignature): CompiledRoute[] {
     }
   });
   return routes;
+}
+
+function generateRoutes(sig: DaySignature): CompiledRoute[] {
+  if (!sig.floatEnabled) {
+    return [];
+  }
+  return generateUniversalFloatRoutes(
+    sig.openHouses.map((h) => ({ houseId: h.houseId, maxHeadcount: maxHeadcount(h) })),
+  );
 }
 
 export function compileSeason(input: SeasonAuthoringInput): CompiledSeason {

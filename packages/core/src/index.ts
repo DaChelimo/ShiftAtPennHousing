@@ -17,7 +17,31 @@ export * from './hours/index.js';
 export * from './inbox/index.js';
 export * from './notifications/index.js';
 export * from './orchestrator/index.js';
+// Operating Seasons compiler. Targeted re-export: ChainStep (orchestrator) and
+// CapEnforcement (cap-modification) already exist under those names, so we omit
+// them from the star to avoid ambiguous re-exports.
+export {
+  compileSeason,
+  generateUniversalFloatRoutes,
+  SeasonCompileError,
+} from './operating-seasons/index.js';
+export * from './break-authoring/index.js';
+export type {
+  IsoDate,
+  SchedulingMode,
+  StaffingBand,
+  SeasonInput,
+  HouseWindowInput,
+  FloatWindowInput,
+  SeasonAuthoringInput,
+  CompiledHouse,
+  CompiledRoute,
+  CompiledPhase,
+  CompiledPeriod,
+  CompiledSeason,
+} from './operating-seasons/index.js';
 export * from './permanent-ops/index.js';
+export * from './preferences/index.js';
 export * from './scheduling/phase1Grouping.js';
 export * from './scheduling/scheduleBuilderCard.js';
 export * from './time/index.js';

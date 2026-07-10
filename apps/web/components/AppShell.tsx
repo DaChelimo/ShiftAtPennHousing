@@ -71,9 +71,7 @@ function getThemeServerSnapshot(): 'light' | 'dark' {
 // SM/HM/BM; the on-duty HMOD / project admin gets the full house list. The current
 // house is read from `?house=` (defaulting to the home house) — the layout can't see
 // page searchParams, so the client component derives it. Selecting an item merges
-// `?house=<id|all>` into the current pathname's query (preserving `?week=`). The
-// "All houses" aggregate item appears only on /coverage (the calendar is always
-// single-house).
+// `?house=<id>` into the current pathname's query (preserving `?week=`).
 function HouseSwitcher({
   houses,
   homeHouseId,
@@ -90,17 +88,9 @@ function HouseSwitcher({
   const searchParams = useSearchParams();
 
   const requested = searchParams.get('house') ?? homeHouseId;
-  const onCoverage = pathname.startsWith('/coverage');
-  // The active selection: `all` only on coverage; otherwise an unknown id falls back
-  // to the home house for the label.
-  const selectedId =
-    requested === 'all' && onCoverage
-      ? 'all'
-      : (houses.find((h) => h.id === requested)?.id ?? homeHouseId);
-  const cur =
-    selectedId === 'all'
-      ? { id: 'all', name: 'All houses', restricted: false }
-      : (houses.find((h) => h.id === selectedId) ?? houses[0]);
+  // The active selection: an unknown id falls back to the home house for the label.
+  const selectedId = houses.find((h) => h.id === requested)?.id ?? homeHouseId;
+  const cur = houses.find((h) => h.id === selectedId) ?? houses[0];
 
   useEffect(() => {
     if (!open) return;
@@ -150,18 +140,6 @@ function HouseSwitcher({
       {open && !locked && (
         <div className="hswitch-menu" role="listbox">
           <div className="hswitch-menu-head">Switch house context</div>
-          {onCoverage && (
-            <button
-              type="button"
-              role="option"
-              aria-selected={selectedId === 'all'}
-              data-testid="house-option-all"
-              className={`hswitch-opt ${selectedId === 'all' ? 'is-sel' : ''}`.trim()}
-              onClick={() => select('all')}
-            >
-              <span>All houses</span>
-            </button>
-          )}
           {houses.map((h) => (
             <button
               key={h.id}
@@ -187,6 +165,7 @@ export function AppShell({
   nav,
   hmodOnDuty = false,
   canSwitchHouse = false,
+  canSwitchToWorker = false,
   houses,
   unreadCount = 0,
   devClock = null,
@@ -196,6 +175,8 @@ export function AppShell({
   nav: NavItem[];
   hmodOnDuty?: boolean;
   canSwitchHouse?: boolean;
+  /** This admin also holds the sw role — offer a link into the worker portal. */
+  canSwitchToWorker?: boolean;
   houses?: ShellHouse[];
   unreadCount?: number;
   /** Dev-only time-travel control state; null hides the card (e.g. production). */
@@ -204,6 +185,7 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
   const theme = useSyncExternalStore(subscribeTheme, getThemeSnapshot, getThemeServerSnapshot);
@@ -249,6 +231,17 @@ export function AppShell({
   const roles = ROLE_RANK.filter((r) => user.roles.includes(r));
   const primaryRole = roles[0] ?? user.roles[0] ?? 'sw';
   const canBeHmod = roles.includes('hm') || roles.includes('bm');
+
+  // Keep the current house context (§2.5) attached to every nav link so the house
+  // you are looking as persists across navigation, instead of snapping back to your
+  // home house each time. The param is only added once a house has been selected via
+  // the switcher (no ?house => clean URLs + home-house default), and it is carried on
+  // ALL items — even campus-wide pages that ignore it — so the context still survives
+  // when you pass through one of them. Pages that honor it (calendar, schedule
+  // builder, preferences, people, hours) resolve it under their own authorization.
+  const houseParam = searchParams.get('house');
+  const navHref = (href: string) =>
+    houseParam ? `${href}?house=${encodeURIComponent(houseParam)}` : href;
 
   return (
     <div data-testid="app-shell" className={`shell ${navCollapsed ? 'nav-collapsed' : ''}`.trim()}>
@@ -358,6 +351,16 @@ export function AppShell({
                   </span>
                 )}
               </div>
+              {canSwitchToWorker && (
+                <Link
+                  href="/home"
+                  data-testid="switch-to-worker"
+                  className="user-item"
+                  onClick={() => setUserOpen(false)}
+                >
+                  Switch to worker view
+                </Link>
+              )}
               <button type="button" onClick={signOut} data-testid="sign-out" className="user-item">
                 Sign out
               </button>
@@ -373,7 +376,7 @@ export function AppShell({
             {g.items.map((item) => (
               <Link
                 key={item.href}
-                href={item.href}
+                href={navHref(item.href)}
                 data-testid={item.testId}
                 className={`nav-item ${isActive(pathname, item.href) ? 'is-active' : ''}`.trim()}
                 title={item.label}

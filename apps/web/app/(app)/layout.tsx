@@ -2,7 +2,16 @@ import { canViewOtherHouses } from '@shift/core';
 import { redirect } from 'next/navigation';
 
 import { AppShell, type NavItem } from '../../components/AppShell';
-import { canBuildSchedule, getSessionUser, isHouseAdmin, isRsm } from '../../lib/auth';
+import {
+  canBuildSchedule,
+  getSessionUser,
+  hasAdminSurface,
+  isAdmin,
+  isHouseAdmin,
+  isRsm,
+  isScheduleAdmin,
+  isWorker,
+} from '../../lib/auth';
 import { isProjectAdministrator } from '../../lib/data/config';
 import { getOnDutyHmodId, getShellHouses, getUnreadCount } from '../../lib/data/hmod';
 import { getSimOffsetSeconds, isTimeTravelEnabled, simNow } from '../../lib/time/simClock';
@@ -22,6 +31,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = await getSessionUser();
   if (user === null) {
     redirect('/login');
+  }
+  // A pure Student Worker has no admin surface here — send them to the worker
+  // portal. Dual-role users (worker + schedule/house admin) stay on the console
+  // by default and switch into /home via the account menu.
+  if (!hasAdminSurface(user)) {
+    redirect('/home');
   }
 
   const nav: NavItem[] = [
@@ -47,13 +62,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       label: 'Preferences',
       testId: 'nav-admin-preferences',
       icon: 'check',
-      group: 'Operate',
-    });
-    nav.push({
-      href: '/coverage',
-      label: 'Coverage',
-      testId: 'nav-coverage',
-      icon: 'shield',
       group: 'Operate',
     });
     nav.push({
@@ -108,6 +116,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       group: 'System',
     });
   }
+  if (isAdmin(user)) {
+    nav.push({
+      href: '/admin/operations',
+      label: 'Operations',
+      testId: 'nav-admin-operations',
+      icon: 'calendar',
+      group: 'System',
+    });
+    nav.push({
+      href: '/admin/breaks',
+      label: 'Break coverage',
+      testId: 'nav-admin-breaks',
+      icon: 'layers',
+      group: 'System',
+    });
+  }
   if (await isProjectAdministrator(user.userId)) {
     nav.push({
       href: '/admin/config',
@@ -126,14 +150,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       });
     }
   }
-  nav.push({
-    href: '/components',
-    label: 'Components',
-    testId: 'nav-components',
-    icon: 'layers',
-    group: 'System',
-  });
-
   // §2.5 HMOD context: resolve who is on-duty now, whether this user may leave their
   // home house (on-duty HMOD or project admin — D5), the switcher's house list, and
   // the bell's due/unread count. A single `now` so the pill, switcher, and bell agree.
@@ -141,12 +157,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const onDutyId = await getOnDutyHmodId(now);
   const hmodOnDuty = onDutyId === user.userId;
   const isProjectAdmin = await isProjectAdministrator(user.userId);
-  // §2.3a: an RSM may switch into any house to VIEW its schedule/coverage (the
-  // switched house is read-only — every write is scoped to their own house).
+  // §2.3a / 2026-06-27: the elevated tier (hm/bm/rsm) may switch into any house —
+  // and, as of the cross-house decision, EDIT its schedule there (people admin /
+  // leave / cap stay own-house, gated separately). The on-duty HMOD and project
+  // admin keep their campus-wide reach.
   const canSwitchHouse = canViewOtherHouses({
     isOnDutyHmod: hmodOnDuty,
     isProjectAdmin,
     isRsm: isRsm(user),
+    isScheduleAdmin: isScheduleAdmin(user),
   });
   const houses = canSwitchHouse
     ? await getShellHouses()
@@ -172,6 +191,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       nav={nav}
       hmodOnDuty={hmodOnDuty}
       canSwitchHouse={canSwitchHouse}
+      canSwitchToWorker={isWorker(user)}
       houses={houses}
       unreadCount={unreadCount}
       devClock={devClock}

@@ -1,6 +1,6 @@
 import { createClient } from './supabase/server';
 
-export type AppRole = 'sw' | 'sm' | 'hm' | 'rsm' | 'bm';
+export type AppRole = 'sw' | 'sm' | 'hm' | 'rsm' | 'bm' | 'admin';
 
 export type UserRole = { role: AppRole; scopeHouseId: string | null };
 
@@ -44,26 +44,101 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   };
 }
 
-// §4.3 / phase-07 note: who may build/publish a schedule — sm, hm, rsm, or bm.
+// §2.7: the top-level administrator (house-agnostic superuser). Operated by the
+// project owner in v1; authors operating configuration (seasons) and holds every
+// power below it in every house. Mirrors the SQL user_is_admin predicate.
+export function isAdmin(user: SessionUser | null): boolean {
+  return !!user && user.roles.some((r) => r.role === 'admin');
+}
+
+// §4.3 / phase-07 note: who may build/publish a schedule — sm, hm, rsm, bm, admin.
 export function canBuildSchedule(user: SessionUser | null): boolean {
   return (
     !!user &&
     user.roles.some(
-      (r) => r.role === 'sm' || r.role === 'hm' || r.role === 'rsm' || r.role === 'bm',
+      (r) =>
+        r.role === 'sm' ||
+        r.role === 'hm' ||
+        r.role === 'rsm' ||
+        r.role === 'bm' ||
+        r.role === 'admin',
     )
   );
 }
 
-// §2.3 / §2.3a / §2.6: HM/RSM/BM administrative powers (people, leave, rotor —
+// §2.3 / §2.3a / §2.6 / §2.7: HM/RSM/BM administrative powers (people, leave, rotor —
 // the RSM cannot serve as HMOD, but the rotor page is still theirs to view/manage
-// for their house). BM is admin-only; the RSM holds all HM admin powers.
+// for their house). BM is admin-only; the RSM holds all HM admin powers. The admin
+// holds these powers in EVERY house (superuser).
 export function isHouseAdmin(user: SessionUser | null): boolean {
-  return !!user && user.roles.some((r) => r.role === 'hm' || r.role === 'rsm' || r.role === 'bm');
+  return (
+    !!user &&
+    user.roles.some(
+      (r) => r.role === 'hm' || r.role === 'rsm' || r.role === 'bm' || r.role === 'admin',
+    )
+  );
 }
 
 // §2.3a: an RSM has read-only visibility into every house's schedule.
 export function isRsm(user: SessionUser | null): boolean {
   return !!user && user.roles.some((r) => r.role === 'rsm');
+}
+
+// §2.1: does this user hold the Student Worker role? Workers get the /home
+// worker experience (their own shifts, open pickups, break claims, preferences).
+export function isWorker(user: SessionUser | null): boolean {
+  return !!user && user.roles.some((r) => r.role === 'sw');
+}
+
+// Does this user have ANY admin surface (schedule build / house admin / superuser)?
+// Pure Student Workers do not — the admin console layout redirects them to /home,
+// and dual-role users get a "Switch to worker view" affordance. Equivalent to
+// canBuildSchedule today (which already spans sm/hm/rsm/bm/admin) but named for
+// intent so the routing decision reads clearly at call sites.
+export function hasAdminSurface(user: SessionUser | null): boolean {
+  return canBuildSchedule(user) || isHouseAdmin(user);
+}
+
+// 2026-06-27 cross-house decision: the elevated admin tier — HM, BM, RSM — may
+// EDIT any house's SCHEDULE (build/publish/override/force-trigger + builder
+// inputs), not only their own. Mirrors the SQL user_is_schedule_admin predicate.
+// SM is deliberately excluded — it stays own-house. (People admin / leave / cap
+// remain own-house via isHouseAdmin + adminHouseId.)
+export function isScheduleAdmin(user: SessionUser | null): boolean {
+  return (
+    !!user &&
+    user.roles.some(
+      (r) => r.role === 'hm' || r.role === 'rsm' || r.role === 'bm' || r.role === 'admin',
+    )
+  );
+}
+
+// May this user build the schedule for `houseId`? A schedule admin (hm/bm/rsm)
+// may build any house; everyone else (sm) only their own scoped house. The DB
+// re-checks this authoritatively via user_can_build_schedule, so this is the
+// fail-fast / clean-error web gate for the cross-house write actions.
+export function canBuildForHouse(user: SessionUser | null, houseId: string): boolean {
+  if (user === null) return false;
+  return isScheduleAdmin(user) || adminHouseId(user) === houseId;
+}
+
+// The house a SCHEDULE write/read should target: a schedule admin honors the
+// requested (viewed) house when it's real; everyone else is pinned to their own
+// admin house. Write-side analogue of resolveCalendarHouse (@shift/core). Used by
+// the schedule-build pages so an HM viewing another house edits THAT house.
+export function writeHouseId(
+  user: SessionUser,
+  requestedHouseId: string | null | undefined,
+  validHouseIds: string[],
+): string {
+  if (
+    isScheduleAdmin(user) &&
+    requestedHouseId != null &&
+    validHouseIds.includes(requestedHouseId)
+  ) {
+    return requestedHouseId;
+  }
+  return adminHouseId(user);
 }
 
 // §9.3: cap modification is campus-wide HM/RSM/BM authority, not house-scoped.

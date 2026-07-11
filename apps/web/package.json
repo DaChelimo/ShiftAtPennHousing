@@ -12,6 +12,7 @@
     "e2e:report": "playwright show-report"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.111.0",
     "@shift/core": "workspace:^",
     "@shift/shared": "workspace:^",
     "@supabase/ssr": "^0.10.3",

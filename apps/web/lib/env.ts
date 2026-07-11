@@ -19,3 +19,11 @@ export const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? LO
 // Server-only. Never import this into a client component.
 export const SUPABASE_SERVICE_ROLE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY ?? LOCAL_SERVICE_ROLE_KEY;
+
+// Server-only. Powers the AI schedule generator; no local default (the
+// adapter fails loudly when unset so the feature degrades to a clear error).
+export const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY ?? '';
+
+// The Claude model driving the propose/repair loop. Swap via env (e.g. to
+// claude-opus-4-8) without code changes.
+export const AI_SCHEDULE_MODEL = process.env.AI_SCHEDULE_MODEL ?? 'claude-sonnet-5';

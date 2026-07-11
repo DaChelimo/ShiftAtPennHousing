@@ -72,6 +72,7 @@ export type BuilderData = {
   periodId: string | null;
   houseId: string;
   published: boolean;
+  deadlineOpen: boolean; // preference submission still open (AI panel gate)
   weekStartDate: string | null;
   blocks: BuilderBlock[];
   workers: BuilderWorker[]; // full house roster (Phase-2 pool)
@@ -128,6 +129,7 @@ export async function getBuilderData(houseId: string): Promise<BuilderData> {
     periodId: null,
     houseId,
     published: false,
+    deadlineOpen: false,
     weekStartDate: null,
     blocks: [],
     workers,
@@ -221,18 +223,23 @@ export async function getBuilderData(houseId: string): Promise<BuilderData> {
     (drafts[d.block_id] ??= []).push(d.user_id);
   }
 
-  // 7. Published?
+  // 7. Published? And is preference submission still open? (The AI panel
+  // may only generate after the deadline closes; the RPC honors app_now().)
   const { data: pub } = await supabase
     .from('period_house_publications')
     .select('house_id')
     .eq('period_id', periodId)
     .eq('house_id', houseId)
     .maybeSingle();
+  const { data: deadlineOpenData } = await supabase.rpc('preference_deadline_is_open', {
+    check_period_id: periodId,
+  });
 
   return {
     periodId,
     houseId,
     published: pub !== null && pub !== undefined,
+    deadlineOpen: deadlineOpenData === true,
     weekStartDate: wkStart,
     blocks,
     workers,

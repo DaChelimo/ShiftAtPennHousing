@@ -204,13 +204,20 @@ export async function getAiScheduleContext(houseId: string): Promise<AiScheduleC
     };
   }
 
-  // 5. Effective weekly cap for the template week (break-week hard-40 and
-  // manual weekly_cap_overrides included).
+  // 5. Weekly cap for the template week. effective_weekly_cap yields
+  // (20, soft) or (40, hard); the soft 20 is ADVISORY at build time (admin
+  // assignment may exceed it with an override, and summer period targets
+  // legitimately reach the profile ceiling of 40). The binding build
+  // ceiling is therefore the RPC cap raised to the largest target any
+  // roster worker holds; targets are DB-capped at the profile's
+  // default_hours_cap, so this never exceeds the profile ceiling.
   const { data: capRows } = await supabase.rpc('effective_weekly_cap', {
     p_week_start_date: wkStart,
     p_block_start_at: firstBlock.block_start_at,
   });
-  const capHours = capRows?.[0]?.hours_cap ?? 20;
+  const rpcCap = capRows?.[0]?.hours_cap ?? 20;
+  const maxTarget = Math.max(0, ...roster.map((w) => w.targetHours ?? 0));
+  const capHours = Math.max(rpcCap, maxTarget);
 
   // 6. Existing drafts on the template week (the replace-all count).
   const draftRows = await selectByBlockIdChunks(weekBlockIds, (chunk) =>

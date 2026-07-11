@@ -24,6 +24,8 @@ import {
 } from '../../lib/actions/builder';
 import type { BuilderBlock, BuilderData } from '../../lib/data/scheduleBuilder';
 import { Avatar, Button, Icon, IconButton, Modal, Notification, Tag, TextInput } from '../ui';
+
+import { AiSchedulePanel } from './AiSchedulePanel';
 import './builder.css';
 
 const HOURS_PER_BLOCK = 0.5;
@@ -445,6 +447,13 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
             </Notification>
           </div>
         )}
+
+        <AiSchedulePanel
+          houseId={data.houseId}
+          periodId={data.periodId}
+          published={published}
+          deadlineOpen={data.deadlineOpen}
+        />
 
         <div className="bld-body">
           <Grid

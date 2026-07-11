@@ -34,7 +34,13 @@ const HARNWELL_HOUSE_ID = 'harnwell';
 export const AI_SCHEDULE_DEFAULTS = {
   candidates: 3,
   repairRounds: 3,
-  maxLlmCalls: 40,
+  // A real model live-fires repairs far more often than the deterministic
+  // test mocks (which never need one). Worst case is 3 candidates x 7 days
+  // x (1 propose + repairRounds repairs) = 84 calls; a live run against the
+  // old default of 40 hit the budget mid-loop and left whole trailing days
+  // ("Wed", "Fri") completely unassigned even though workers had capacity
+  // headroom. 100 leaves headroom above the 84-call worst case.
+  maxLlmCalls: 100,
   plateauEpsilon: 0.5,
 } as const;
 

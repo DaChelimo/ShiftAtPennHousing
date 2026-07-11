@@ -22,7 +22,11 @@ export const SUPABASE_SERVICE_ROLE_KEY =
 
 // Server-only. Powers the AI schedule generator; no local default (the
 // adapter fails loudly when unset so the feature degrades to a clear error).
-export const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY ?? '';
+// CLAUDE_AI_CREATE_SCHEDULE_KEY is the project's chosen name for this key
+// (set in apps/web/.env.local); ANTHROPIC_API_KEY is accepted as a fallback
+// for deployed environments that use the generic name.
+export const ANTHROPIC_API_KEY =
+  process.env.CLAUDE_AI_CREATE_SCHEDULE_KEY ?? process.env.ANTHROPIC_API_KEY ?? '';
 
 // The Claude model driving the propose/repair loop. Swap via env (e.g. to
 // claude-opus-4-8) without code changes.

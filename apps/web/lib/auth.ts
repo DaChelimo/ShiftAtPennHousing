@@ -1,6 +1,6 @@
 import { createClient } from './supabase/server';
 
-export type AppRole = 'sw' | 'sm' | 'hm' | 'rsm' | 'bm';
+export type AppRole = 'sw' | 'sm' | 'hm' | 'rsm' | 'bm' | 'admin';
 
 export type UserRole = { role: AppRole; scopeHouseId: string | null };
 
@@ -56,14 +56,27 @@ export function canBuildSchedule(user: SessionUser | null): boolean {
 
 // §2.3 / §2.3a / §2.6: HM/RSM/BM administrative powers (people, leave, rotor —
 // the RSM cannot serve as HMOD, but the rotor page is still theirs to view/manage
-// for their house). BM is admin-only; the RSM holds all HM admin powers.
+// for their house). BM is admin-only (Building Administrator); the RSM holds all
+// HM admin powers. The campus-wide Project Admin superuser sees everything an
+// HM/RSM/BM can, so it's included here rather than re-OR'd at every call site.
 export function isHouseAdmin(user: SessionUser | null): boolean {
-  return !!user && user.roles.some((r) => r.role === 'hm' || r.role === 'rsm' || r.role === 'bm');
+  return (
+    !!user &&
+    user.roles.some(
+      (r) => r.role === 'hm' || r.role === 'rsm' || r.role === 'bm' || r.role === 'admin',
+    )
+  );
 }
 
 // §2.3a: an RSM has read-only visibility into every house's schedule.
 export function isRsm(user: SessionUser | null): boolean {
   return !!user && user.roles.some((r) => r.role === 'rsm');
+}
+
+// Project-administrator superuser (user_role_enum 'admin'; operating-seasons + break
+// authoring). Campus-wide, house-agnostic.
+export function isAdmin(user: SessionUser | null): boolean {
+  return !!user && user.roles.some((r) => r.role === 'admin');
 }
 
 // §9.3: cap modification is campus-wide HM/RSM/BM authority, not house-scoped.

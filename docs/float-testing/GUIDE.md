@@ -13,6 +13,12 @@ is buttons and taps.
 
 Each step below is tagged **(phone)** or **(web)** so you always know where you are.
 
+> **Skip the manual gap-building.** To stage a specific edge case in one command
+> (no dropping shifts, no clock fiddling), use the loaders in
+> [`cases/`](cases/CASES.md): `docs/float-testing/cases/run.sh <case> [--tick]`
+> stages the world, parks the clock at the step-fire moment, and (with `--tick`)
+> fires the orchestrator and prints the outcome. Covers all 12 Notion edge cases.
+
 ---
 
 ## 0. Prerequisites (one-time, terminal)

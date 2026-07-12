@@ -13,7 +13,7 @@
 --     all day across the whole period, so a floater's run always spans any gap
 --     (a rotation-per-block schedule has no contiguous run to relocate).
 --   * Marks both houses published; sets the HMOD rotor for the test weeks.
---   * Silences the 11 placeholder houses (house-03..13) so the campus-wide
+--   * Silences the 11 placeholder houses (lower-quad..13) so the campus-wide
 --     orchestrator tick does not flood them / consume the float sources.
 --   * Clears any leftover floats / exclusions / float-notifications / step state
 --     and resets the dev sim-clock to real time.
@@ -63,7 +63,20 @@ SET status = 'scheduled', vacancy_origin = 'none',
     )
 FROM shift_blocks b
 WHERE b.block_id = a.block_id AND b.house_id = 'dubois'
-  AND a.status = 'vacant' AND a.vacancy_origin = 'temporary_drop';
+  AND a.status = 'vacant' AND a.vacancy_origin = 'temporary_drop'
+  -- Only restore when a recurring owner actually resolves; DuBois may be
+  -- claim-based (no scheduled recurring crew), in which case a dropped block
+  -- has no owner to hand back to and must stay vacant (else the scheduled
+  -- status + NULL user_id violates sba_user_id_matches_status).
+  AND EXISTS (
+    SELECT 1 FROM shift_block_assignments a2
+    JOIN shift_blocks b2 ON b2.block_id = a2.block_id
+    WHERE b2.house_id = 'dubois' AND a2.status = 'scheduled' AND a2.user_id IS NOT NULL
+      AND extract(isodow FROM (b2.block_start_at AT TIME ZONE 'America/New_York'))
+          = extract(isodow FROM (b.block_start_at AT TIME ZONE 'America/New_York'))
+      AND (b2.block_start_at AT TIME ZONE 'America/New_York')::time
+          = (b.block_start_at AT TIME ZONE 'America/New_York')::time
+  );
 
 -- 2. silence placeholder houses (they have no real staff)
 DELETE FROM shift_block_assignments a USING shift_blocks b

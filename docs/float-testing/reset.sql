@@ -3,9 +3,12 @@
 --   psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -f docs/float-testing/reset.sql
 --
 -- Fast cleanup between scenarios: clears all floats, exclusions, float-related
--- notifications and orchestrator step-state, and resets the dev sim-clock to real
--- time. It also restores the source crews (Quad/Harnwell) to plain `scheduled`
--- (undoing any pending/voided float-out left on their seats).
+-- notifications, orchestrator step-state and coverage locks, and resets the dev
+-- sim-clock to real time. It also restores the source crews (Quad/Harnwell) to
+-- plain `scheduled` (undoing any pending/voided float-out left on their seats).
+--
+-- For a lighter, single-desk reset that keeps the sim clock and other houses
+-- untouched, use rearm-desk.sh instead.
 --
 -- It does NOT recreate the source crews from scratch (run setup.sql for that) and
 -- does NOT restore DuBois gaps you created — to restore a DuBois shift you dropped,
@@ -27,6 +30,11 @@ DELETE FROM notifications
 WHERE type IN ('hmod_urgent', 'ack_reminder', 'broadcast')
    OR (type = 'personal_shift' AND payload->>'kind' = 'float_assigned');
 DELETE FROM block_step_status;
+
+-- Coverage-lock markers (added by the coverage-conditional pickup lock,
+-- migration 20260627000001) MUST be cleared too, otherwise the one-way lock
+-- keeps the desk locked and escalation never re-fires.
+UPDATE shift_blocks SET coverage_locked_at = NULL WHERE coverage_locked_at IS NOT NULL;
 
 -- Source seats knocked off 'scheduled' by a float-out → restored (keep owner).
 UPDATE shift_block_assignments
@@ -57,6 +65,17 @@ SET status = 'scheduled', vacancy_origin = 'none',
     )
 FROM shift_blocks b
 WHERE b.block_id = a.block_id AND b.house_id = 'dubois'
-  AND a.status = 'vacant' AND a.vacancy_origin = 'temporary_drop';
+  AND a.status = 'vacant' AND a.vacancy_origin = 'temporary_drop'
+  -- Only restore when a recurring owner resolves; DuBois may be claim-based
+  -- (no scheduled crew) in which case a dropped block stays vacant.
+  AND EXISTS (
+    SELECT 1 FROM shift_block_assignments a2
+    JOIN shift_blocks b2 ON b2.block_id = a2.block_id
+    WHERE b2.house_id = 'dubois' AND a2.status = 'scheduled' AND a2.user_id IS NOT NULL
+      AND extract(isodow FROM (b2.block_start_at AT TIME ZONE 'America/New_York'))
+          = extract(isodow FROM (b.block_start_at AT TIME ZONE 'America/New_York'))
+      AND (b2.block_start_at AT TIME ZONE 'America/New_York')::time
+          = (b.block_start_at AT TIME ZONE 'America/New_York')::time
+  );
 
 COMMIT;

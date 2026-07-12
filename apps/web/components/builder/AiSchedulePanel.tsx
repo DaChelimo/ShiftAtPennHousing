@@ -43,6 +43,17 @@ function hoursLabel(hours: number): string {
   return `${String(hours)}h`;
 }
 
+function durationLabel(ms: number): string {
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${String(s)}s`;
+  return `${String(Math.floor(s / 60))}m ${String(s % 60)}s`;
+}
+
+function costLabel(usd: number): string {
+  if (usd < 0.01) return '<$0.01';
+  return `$${usd.toFixed(2)}`;
+}
+
 function dayName(weekday: number): string {
   return AI_WEEKDAY_LABELS[weekday] ?? `Day ${String(weekday + 1)}`;
 }
@@ -299,8 +310,13 @@ export function AiSchedulePanel({
                 {label} {proposal.breakdown[key].toFixed(1)}
               </Tag>
             ))}
-            <span className="t-meta">{proposal.diagnostics.llmCallCount} model calls</span>
           </div>
+
+          <span className="t-meta" data-testid="ai-run-stats">
+            {proposal.run.calls} model call{proposal.run.calls === 1 ? '' : 's'} ·{' '}
+            {durationLabel(proposal.run.durationMs)} · {costLabel(proposal.run.costUsd)} ·{' '}
+            {proposal.run.model}
+          </span>
 
           {proposal.unfilledSeats.length > 0 && (
             <Notification
@@ -340,8 +356,8 @@ export function AiSchedulePanel({
 
           {proposal.oneHourShiftCount > 0 && (
             <span className="t-meta">
-              {proposal.oneHourShiftCount} short shift
-              {proposal.oneHourShiftCount === 1 ? '' : 's'} of an hour or less survived; adjust them
+              {proposal.oneHourShiftCount} shift
+              {proposal.oneHourShiftCount === 1 ? '' : 's'} shorter than 2 hours remain; adjust them
               in the grid if you like.
             </span>
           )}

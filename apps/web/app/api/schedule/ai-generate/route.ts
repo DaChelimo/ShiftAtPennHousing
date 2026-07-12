@@ -10,6 +10,7 @@
 import { runAiSchedule, type AiProgressEvent } from '@shift/core';
 
 import { createAnthropicScheduleLlm } from '@/lib/ai/anthropic';
+import { estimateCostUsd } from '@/lib/ai/pricing';
 import { buildProposalDto } from '@/lib/ai/proposal';
 import type { AiStreamEvent } from '@/lib/ai/streamTypes';
 import { canBuildForHouse, canBuildSchedule, getSessionUser } from '@/lib/auth';
@@ -49,12 +50,14 @@ export async function POST(request: Request): Promise<Response> {
           return fail(ctx.gate.reason ?? 'The generator is not available right now.');
         }
 
-        let llm;
+        let handle;
         try {
-          llm = createAnthropicScheduleLlm();
+          handle = createAnthropicScheduleLlm();
         } catch (e) {
           return fail(e instanceof Error ? e.message : 'The AI service is not configured.');
         }
+        const { llm, usage, model } = handle;
+        const startedAt = Date.now();
 
         const onProgress = (ev: AiProgressEvent): void => {
           switch (ev.type) {
@@ -83,6 +86,7 @@ export async function POST(request: Request): Promise<Response> {
         const result = await runAiSchedule(ctx.input, llm, {
           candidates: 1,
           planningPass: true,
+          finalize: true,
           onProgress,
         });
 
@@ -92,6 +96,12 @@ export async function POST(request: Request): Promise<Response> {
           workerNamesById: ctx.workerNamesById,
           existingDraftCount: ctx.existingDraftCount,
           result,
+          run: {
+            calls: usage.calls,
+            durationMs: Date.now() - startedAt,
+            costUsd: estimateCostUsd(model, usage),
+            model,
+          },
         });
         if (dto === null) {
           return fail('The generator could not produce a schedule. Try again.');

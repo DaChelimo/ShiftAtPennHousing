@@ -40,6 +40,15 @@ export type AiProposalSeat = {
   fillable: boolean;
 };
 
+// What the run actually cost: real model calls, wall-clock time, and dollars
+// derived from the API's token usage. Shown to the SM at the end.
+export type AiRunStats = {
+  calls: number;
+  durationMs: number;
+  costUsd: number;
+  model: string;
+};
+
 // The whole proposal round-trips through the client untouched: preview
 // renders the labeled views; accept sends `assignments` back verbatim (and
 // the server re-validates them against a fresh snapshot).
@@ -54,6 +63,7 @@ export type AiProposalDto = {
   unfilledSeats: AiProposalSeat[];
   oneHourShiftCount: number;
   existingDraftCount: number;
+  run: AiRunStats;
   diagnostics: { llmCallCount: number; candidateScores: number[]; stoppedEarly: string | null };
 };
 
@@ -67,8 +77,9 @@ export function buildProposalDto(params: {
   workerNamesById: Record<string, string>;
   existingDraftCount: number;
   result: AiScheduleResult;
+  run: AiRunStats;
 }): AiProposalDto | null {
-  const { houseId, input, workerNamesById, existingDraftCount, result } = params;
+  const { houseId, input, workerNamesById, existingDraftCount, result, run } = params;
   if (result.best === null) return null;
 
   const grid = buildGrid(input);
@@ -128,6 +139,7 @@ export function buildProposalDto(params: {
     unfilledSeats,
     oneHourShiftCount: result.warnings.filter((w) => w.code === 'ONE_HOUR_SHIFT').length,
     existingDraftCount,
+    run,
     diagnostics: {
       llmCallCount: result.diagnostics.llmCallCount,
       candidateScores: result.diagnostics.candidateScores,

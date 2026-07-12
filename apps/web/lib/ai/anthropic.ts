@@ -21,13 +21,22 @@ import type { ScheduleLlm, ScheduleLlmRequest, ScheduleLlmResponse } from '@shif
 
 import { AI_SCHEDULE_MODEL, ANTHROPIC_API_KEY } from '../env';
 
-export function createAnthropicScheduleLlm(): ScheduleLlm {
+import { emptyUsage, type ScheduleUsage } from './pricing';
+
+export type ScheduleLlmHandle = {
+  llm: ScheduleLlm;
+  usage: ScheduleUsage; // accumulated across the run; read after runAiSchedule
+  model: string;
+};
+
+export function createAnthropicScheduleLlm(): ScheduleLlmHandle {
   if (ANTHROPIC_API_KEY === '') {
     throw new Error('ANTHROPIC_API_KEY is not set. Add it to the web server environment.');
   }
   const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY, maxRetries: 3 });
+  const usage = emptyUsage();
 
-  return {
+  const llm: ScheduleLlm = {
     async complete(req: ScheduleLlmRequest): Promise<ScheduleLlmResponse> {
       const msg = await client.messages.create({
         model: AI_SCHEDULE_MODEL,
@@ -39,6 +48,12 @@ export function createAnthropicScheduleLlm(): ScheduleLlm {
         messages: [{ role: 'user', content: req.user }],
         output_config: { format: { type: 'json_schema', schema: req.responseSchema } },
       });
+
+      usage.calls += 1;
+      usage.inputTokens += msg.usage.input_tokens;
+      usage.outputTokens += msg.usage.output_tokens;
+      usage.cacheReadTokens += msg.usage.cache_read_input_tokens ?? 0;
+      usage.cacheCreationTokens += msg.usage.cache_creation_input_tokens ?? 0;
 
       if (msg.stop_reason === 'refusal') {
         throw new Error('The model declined this request. Try generating again.');
@@ -54,4 +69,6 @@ export function createAnthropicScheduleLlm(): ScheduleLlm {
       return { json: JSON.parse(text) as unknown };
     },
   };
+
+  return { llm, usage, model: AI_SCHEDULE_MODEL };
 }

@@ -28,6 +28,7 @@ export const SUPABASE_SERVICE_ROLE_KEY =
 export const ANTHROPIC_API_KEY =
   process.env.CLAUDE_AI_CREATE_SCHEDULE_KEY ?? process.env.ANTHROPIC_API_KEY ?? '';
 
-// The Claude model driving the propose/repair loop. Swap via env (e.g. to
-// claude-opus-4-8) without code changes.
-export const AI_SCHEDULE_MODEL = process.env.AI_SCHEDULE_MODEL ?? 'claude-sonnet-5';
+// The Claude model driving the plan/propose/repair loop. Opus 4.8 by default
+// for the strongest schedules; override via env (e.g. AI_SCHEDULE_MODEL=
+// claude-sonnet-5 for a cheaper, faster run) without code changes.
+export const AI_SCHEDULE_MODEL = process.env.AI_SCHEDULE_MODEL ?? 'claude-opus-4-8';

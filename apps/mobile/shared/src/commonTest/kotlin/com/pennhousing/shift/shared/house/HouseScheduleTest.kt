@@ -57,7 +57,7 @@ class HouseScheduleTest {
         assertEquals("a-0", block.id)
         assertEquals(14 * 60, block.startMin)
         assertEquals(18 * 60, block.endMin)
-        assertEquals("14:00 – 18:00", block.timeLabel)
+        assertEquals("14:00 - 18:00", block.timeLabel)
         assertEquals("Worker a", block.workerLabel)
         assertEquals("+1a", block.workerPhone) // §11.4 contact (full-directory ruling)
         assertTrue(block.active) // 14:00 ≤ now < 18:00
@@ -76,7 +76,7 @@ class HouseScheduleTest {
         val block = grid.days[3].blocks.single()
         assertEquals(20 * 60, block.startMin)
         assertEquals(24 * 60, block.endMin)
-        assertEquals("20:00 – 24:00", block.timeLabel)
+        assertEquals("20:00 - 24:00", block.timeLabel)
     }
 
     @Test fun concurrent_workers_get_separate_lanes() {
@@ -180,7 +180,7 @@ class HouseScheduleTest {
         assertEquals("+1 215 555 0142", s.deskPhone)
         assertEquals(0, s.weekOffset)
         assertEquals("This week", s.weekRelative)
-        assertEquals("Jan 12 – Jan 18", s.weekRange)
+        assertEquals("Jan 12 - Jan 18", s.weekRange)
         assertFalse(s.loadingWeek) // seeded for week 0
         assertEquals(1, s.grid.days[3].blocks.size)
     }

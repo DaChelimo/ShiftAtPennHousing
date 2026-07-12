@@ -58,7 +58,7 @@ class PartialDropTest {
         assertEquals(at("2026-01-15T16:00:00-05:00"), plan.gapStart)
         assertEquals(at("2026-01-15T17:30:00-05:00"), plan.gapEnd)
         // NY-anchored labels precomputed for both front ends.
-        assertEquals("16:00 – 17:30", plan.rangeLabel)
+        assertEquals("16:00 - 17:30", plan.rangeLabel)
         assertEquals("1h 30m", plan.durationLabel)
         assertEquals("16:00", plan.gapStartLabel)
         assertEquals("17:30", plan.gapEndLabel)

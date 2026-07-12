@@ -43,6 +43,7 @@ fun myShiftCardState(shift: MyShift): MyShiftCardState =
     }
 
 internal val DOW_SHORT = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+internal val DOW_LONG = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 internal val MONTH_SHORT =
     listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
@@ -57,12 +58,12 @@ fun formatBlockTime(
     return pad2(ldt.hour) + ":" + pad2(ldt.minute)
 }
 
-/** "HH:mm – HH:mm" (en dash). */
+/** "HH:mm - HH:mm" (hyphen separator; no em/en dashes in user-facing copy). */
 fun formatTimeRange(
     start: Instant,
     end: Instant,
     zone: TimeZone = NEW_YORK,
-): String = formatBlockTime(start, zone) + " – " + formatBlockTime(end, zone)
+): String = formatBlockTime(start, zone) + " - " + formatBlockTime(end, zone)
 
 /** "Wed · Jun 3" — day-of-week + short month + day, NY-anchored. */
 fun formatDayLabel(

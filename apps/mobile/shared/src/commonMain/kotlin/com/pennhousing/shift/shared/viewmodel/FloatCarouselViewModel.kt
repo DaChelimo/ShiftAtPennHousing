@@ -2,8 +2,11 @@ package com.pennhousing.shift.shared.viewmodel
 
 import androidx.lifecycle.ViewModel
 import com.pennhousing.shift.shared.ack.FloatRequestCard
+import com.pennhousing.shift.shared.ack.RecentFloatRow
 import com.pennhousing.shift.shared.ack.buildFloatRequestCards
+import com.pennhousing.shift.shared.ack.buildRecentFloatRows
 import com.pennhousing.shift.shared.model.PendingFloat
+import com.pennhousing.shift.shared.model.RecentFloat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,6 +24,12 @@ data class FloatCarouselUiState(
      * key in the UI fires the snackbar exactly once (false → true).
      */
     val allHandled: Boolean,
+    /**
+     * The de-emphasized "Recent float requests" rows (resolved within 24h: accepted,
+     * declined, expired), most-recent first. Rendered in a collapsed-by-default section
+     * under the carousel. Fixed for the snapshot's lifetime (rebuilt on the next fetch).
+     */
+    val recentRows: List<RecentFloatRow>,
 )
 
 /**
@@ -36,8 +45,10 @@ data class FloatCarouselUiState(
 class FloatCarouselViewModel(
     floats: List<PendingFloat>,
     now: Instant,
+    recentFloats: List<RecentFloat> = emptyList(),
 ) : ViewModel() {
     private val initialCards = buildFloatRequestCards(floats, now)
+    private val recentRows = buildRecentFloatRows(recentFloats, floats, now)
     private val resolved = mutableSetOf<String>()
 
     private val _uiState = MutableStateFlow(stateNow())
@@ -48,6 +59,7 @@ class FloatCarouselViewModel(
             cards = initialCards.filter { it.floatId !in resolved },
             total = initialCards.size,
             allHandled = initialCards.isNotEmpty() && resolved.size >= initialCards.size,
+            recentRows = recentRows,
         )
 
     /** Drop [floatId] from the stack and advance; idempotent. */

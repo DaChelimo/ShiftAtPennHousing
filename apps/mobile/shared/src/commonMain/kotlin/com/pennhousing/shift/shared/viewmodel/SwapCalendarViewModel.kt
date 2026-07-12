@@ -178,6 +178,11 @@ class SwapCalendarViewModel(
     // touching them can't be offered again, so they're filtered out of the "give" pool —
     // a worker never picks an already-pending shift as the give (the server would reject it).
     private val pendingGiveAssignmentIds: Set<String> = emptySet(),
+    // When the manage-shift sheet opens from the "Swap" intent with the shared scope set to
+    // Permanent, the give starts as a permanent swap (still toggleable in the sheet). Honoured
+    // only when the pinned give slot is permanent-eligible (SCHEDULED, non-break); otherwise
+    // ignored, so a non-eligible give never opens in an impossible permanent state.
+    initialPermanent: Boolean = false,
 ) : ViewModel() {
     private val coalescedMine =
         coalesceMyShifts(myShifts)
@@ -223,6 +228,10 @@ class SwapCalendarViewModel(
             val wk = buildCalendarWeek(myShifts, now, anchor = shiftWeekAnchor(now, 0))
             selectedDay = if (wk.todayIndex >= 0) wk.todayIndex else 0
         }
+        // Carry the shared scope from the manage-shift sheet: a Permanent + Swap entry opens
+        // straight into the permanent deal (toggleable). Guarded by permanentEligible so a
+        // float / pickup / break give can never start permanent.
+        permanent = initialPermanent && give?.permanentEligible == true
     }
 
     private val _uiState = MutableStateFlow(snapshot())

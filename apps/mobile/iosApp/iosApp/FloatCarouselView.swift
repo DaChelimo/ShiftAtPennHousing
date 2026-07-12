@@ -14,6 +14,7 @@ import Shared
 /// the native mirror of the Compose `FloatRequestCarousel`.
 struct FloatCarouselView: View {
     let cards: [FloatRequestCard]
+    let recentRows: [RecentFloatRow]
     let onAccept: (String) -> Void
     let onDecline: (String) -> Void
     let onOpenDetail: (String) -> Void
@@ -22,30 +23,37 @@ struct FloatCarouselView: View {
     @State private var page = 0
 
     var body: some View {
-        if cards.isEmpty {
+        if cards.isEmpty && recentRows.isEmpty {
             EmptyView()
         } else {
             let c = ShiftColors.resolve(scheme)
             VStack(spacing: 8) {
-                TabView(selection: $page) {
-                    ForEach(Array(cards.enumerated()), id: \.element.floatId) { index, card in
-                        FloatRequestCardView(
-                            card: card,
-                            position: index + 1,
-                            total: cards.count,
-                            onAccept: { onAccept(card.floatId) },
-                            onDecline: { onDecline(card.floatId) },
-                            onOpenDetail: { onOpenDetail(card.floatId) },
-                            c: c
-                        )
-                        .padding(.horizontal, 16)
-                        .tag(index)
+                if !cards.isEmpty {
+                    TabView(selection: $page) {
+                        ForEach(Array(cards.enumerated()), id: \.element.floatId) { index, card in
+                            FloatRequestCardView(
+                                card: card,
+                                position: index + 1,
+                                total: cards.count,
+                                onAccept: { onAccept(card.floatId) },
+                                onDecline: { onDecline(card.floatId) },
+                                onOpenDetail: { onOpenDetail(card.floatId) },
+                                c: c
+                            )
+                            .padding(.horizontal, 16)
+                            .tag(index)
+                        }
+                    }
+                    .tabViewStyle(.page(indexDisplayMode: .never))
+                    .background(Color.clear)
+                    .frame(height: cardHeight)
+                    if cards.count > 1 {
+                        PagerDots(count: cards.count, selected: min(page, cards.count - 1), c: c)
                     }
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                .frame(height: cardHeight)
-                if cards.count > 1 {
-                    PagerDots(count: cards.count, selected: min(page, cards.count - 1), c: c)
+                if !recentRows.isEmpty {
+                    RecentFloatsSection(rows: recentRows, c: c)
+                        .padding(.horizontal, 16)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -76,9 +84,6 @@ private struct FloatRequestCardView: View {
     let c: ShiftColors
 
     var body: some View {
-        // Softer treatment: a white card with elevation + a 2px blue outline, rather
-        // than a solid-blue field. Blue is kept as an ACCENT (eyebrow, countdown pill,
-        // Accept) so the request still stands out without flooding the screen.
         let blue = c.blue
         let ink = c.ink
         let sec = c.sec
@@ -117,10 +122,6 @@ private struct FloatRequestCardView: View {
                     .font(ShiftFont.sans(15, .medium))
                     .foregroundColor(ink)
             }
-            Text("\(card.startsInLabel) · \(card.durationLabel) shift")
-                .font(ShiftFont.sans(13, .medium))
-                .foregroundColor(ter)
-
             // The time-to-RESPOND countdown — the load-bearing number. Rendered as a
             // pill so it reads as the primary call to action, not buried alongside the
             // shift-start/duration line above. Tinted normally; solid-blue when urgent.
@@ -176,9 +177,14 @@ private struct FloatRequestCardView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(blue, lineWidth: 2)
+                .strokeBorder(c.isDark ? blue : Color.clear, lineWidth: 2)
         )
-        .shadow(color: Color.black.opacity(0.10), radius: 14, x: 0, y: 5)
+        .shadow(
+            color: c.isDark ? Color.black.opacity(0.10) : Color.black.opacity(0.08),
+            radius: c.isDark ? 14 : 20,
+            x: 0,
+            y: c.isDark ? 5 : 4
+        )
         .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .onTapGesture { onOpenDetail() }
         .accessibilityIdentifier("float_card")
@@ -231,5 +237,92 @@ private struct PagerDots: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 2)
+    }
+}
+
+/// The collapsible "Recent float requests" history (§7.1/§7.2) — resolved floats from the
+/// last 24h (accepted / declined / expired), de-emphasized and collapsed by default so they
+/// never compete with the actionable carousel above. Auto-ages: the shared layer drops
+/// anything older than 24h, so there is no manual dismiss to maintain. Mirrors Compose's
+/// `RecentFloatsSection`.
+private struct RecentFloatsSection: View {
+    let rows: [RecentFloatRow]
+    let c: ShiftColors
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) { expanded.toggle() }
+            } label: {
+                HStack(spacing: 8) {
+                    Text("Recent float requests")
+                        .font(ShiftFont.sans(14, .medium))
+                        .foregroundColor(c.sec)
+                    Text("\(rows.count)")
+                        .font(ShiftFont.sans(12, .medium))
+                        .foregroundColor(c.ter)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 1)
+                        .background(c.surfaceVar)
+                        .clipShape(Capsule())
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(c.ter)
+                        .rotationEffect(.degrees(expanded ? 180 : 0))
+                }
+                .contentShape(Rectangle())
+                .padding(.vertical, 6)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("recent_floats_header")
+
+            if expanded {
+                Text("Past 24 hours")
+                    .font(ShiftFont.sans(12))
+                    .foregroundColor(c.ter)
+                ForEach(rows, id: \.floatId) { row in
+                    RecentFloatRowView(row: row, c: c)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("recent_floats_section")
+    }
+}
+
+private struct RecentFloatRowView: View {
+    let row: RecentFloatRow
+    let c: ShiftColors
+
+    var body: some View {
+        let accepted = row.status == .accepted
+        let chipBg = accepted ? c.success.tint : c.surfaceVar
+        let chipFg = accepted ? c.success.deep : c.sec
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.title).font(ShiftFont.sans(14, .medium)).foregroundColor(c.ink)
+                Text(row.detail).font(ShiftFont.sans(12)).foregroundColor(c.ter)
+            }
+            Spacer(minLength: 8)
+            Text(row.statusChip)
+                .font(ShiftFont.sans(11, .medium))
+                .foregroundColor(chipFg)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 3)
+                .background(chipBg)
+                .clipShape(Capsule())
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(c.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(c.divider, lineWidth: 0.5)
+        )
+        .accessibilityIdentifier("recent_float_row")
     }
 }

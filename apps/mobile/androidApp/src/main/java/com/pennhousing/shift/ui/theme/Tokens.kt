@@ -64,7 +64,7 @@ object Dimens {
     val iconSm = 16.dp
     val icon = 18.dp
     val iconLg = 20.dp
-    val iconNav = 25.dp
+    val iconNav = 29.dp
     val iconEmptyState = 26.dp
 
     // Bottom-sheet grabber.

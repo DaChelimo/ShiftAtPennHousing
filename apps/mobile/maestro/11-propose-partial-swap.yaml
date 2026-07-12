@@ -9,7 +9,8 @@ appId: com.pennhousing.shift
 - launchApp:
     clearState: true
 
-# My Shifts (the calendar). Tapping a card opens the drop sheet, which pivots to a swap.
+# My Shifts (the calendar). Tapping a card opens the manage-shift sheet; the "Swap it"
+# intent carries the selected range + scope into the week-paged swap sheet.
 - tapOn:
     id: "tab_my_shifts"
 - assertVisible:
@@ -17,20 +18,20 @@ appId: com.pennhousing.shift
 - tapOn:
     id: "calendar_shift_card"
 - assertVisible:
-    id: "drop_options_sheet"
+    id: "manage_shift_sheet"
 - tapOn:
-    id: "swap_propose_option"
+    id: "intent_swap"
+- tapOn:
+    id: "swap_continue_button"
 - assertVisible:
-    id: "swap_sheet"
+    id: "swap_calendar_sheet"
 
-# Pick a counterparty → the §8.1 partial pickers appear (give/take), and the multi-leg
-# "add another person" entry is offered (independent legs, decision 2026-06-15).
+# Pick a counterparty → the §8.1 partial pickers appear (give/take, the give pre-filled to
+# the range chosen in the manage-shift sheet), and the multi-leg "add another person" entry.
 - tapOn:
-    id: "swap_candidate_row"
+    id: "swap_take_row"
 - assertVisible:
     id: "swap_give_range"
-- assertVisible:
-    id: "swap_add_leg_button"
 
 # Propose the swap → the housemate is asked; the request shows under the Swaps tab.
 - tapOn:

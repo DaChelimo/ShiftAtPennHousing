@@ -66,12 +66,12 @@ class PreferencesTest {
 
     // ----- week strip -----
 
-    @Test fun week_strip_has_seven_cells_letters_dates_and_painted_days() {
+    @Test fun week_strip_is_weekday_template_with_no_dates() {
         val strip = buildPrefWeekStrip(period(), period().initialGrid(), selectedDayIndex = 2)
         assertEquals(7, strip.cells.size)
-        assertEquals(listOf("M", "T", "W", "T", "F", "S", "S"), strip.cells.map { it.dayLetter })
-        assertEquals(listOf("8", "9", "10", "11", "12", "13", "14"), strip.cells.map { it.dateLabel })
-        assertEquals("Jun 8 – Jun 14", strip.rangeLabel)
+        // Template: weekday names only, no calendar dates.
+        assertEquals(listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"), strip.cells.map { it.dayLabel })
+        assertEquals("Repeats every week this season", strip.rangeLabel)
         assertTrue(strip.cells[2].selected) // Wed selected
         assertFalse(strip.cells[0].selected)
         assertTrue(strip.cells[2].painted) // Wed has Cannot + Preferred
@@ -83,7 +83,7 @@ class PreferencesTest {
 
     @Test fun day_view_has_bare_segments_brushes_and_summary() {
         val day = buildPrefDay(period(), period().initialGrid(), selectedDayIndex = 2)
-        assertEquals("Wed · Jun 10", day.title)
+        assertEquals("Every Wednesday", day.title)
         assertEquals(4, day.cells.size)
         assertEquals(PrefBrush.CANNOT, day.cells[0].brush)
         assertEquals(PrefBrush.AVAILABLE, day.cells[1].brush) // unset → AVAILABLE
@@ -97,8 +97,8 @@ class PreferencesTest {
         // 08:00 + 09:00 are on the hour; 08:30 + 09:30 are not.
         assertEquals(listOf(true, false, true, false), day.cells.map { it.isHourStart })
         // The time is accessibility copy, NOT a rendered per-cell label.
-        assertEquals("8:00 AM – 8:30 AM · cannot", day.cells[0].a11yLabel)
-        assertEquals("8:30 AM – 9:00 AM · available", day.cells[1].a11yLabel)
+        assertEquals("8:00 AM - 8:30 AM · cannot", day.cells[0].a11yLabel)
+        assertEquals("8:30 AM - 9:00 AM · available", day.cells[1].a11yLabel)
     }
 
     @Test fun day_view_exposes_hour_marks_aligned_to_hour_boundaries() {
@@ -116,9 +116,9 @@ class PreferencesTest {
         assertEquals(PrefBrush.CANNOT, day.runs[0].brush)
         assertEquals(0, day.runs[0].startBlockIndex)
         assertEquals(1, day.runs[0].blockCount)
-        assertEquals("8:00 – 8:30 AM", day.runs[0].label)
+        assertEquals("8:00 - 8:30 AM", day.runs[0].label)
         assertEquals(PrefBrush.PREFERRED, day.runs[1].brush)
-        assertEquals("9:00 – 9:30 AM", day.runs[1].label)
+        assertEquals("9:00 - 9:30 AM", day.runs[1].label)
     }
 
     @Test fun all_available_day_has_no_runs() {
@@ -137,9 +137,9 @@ class PreferencesTest {
     // ----- range label -----
 
     @Test fun range_label_drops_leading_meridiem_when_shared() {
-        // Same meridiem (AM) → "8:00 – 10:00 AM"; single block → "8:00 – 8:30 AM".
-        assertEquals("8:00 – 10:00 AM", prefRangeLabel(wed, 0, 3))
-        assertEquals("8:00 – 8:30 AM", prefRangeLabel(wed, 0, 0))
+        // Same meridiem (AM) → "8:00 - 10:00 AM"; single block → "8:00 - 8:30 AM".
+        assertEquals("8:00 - 10:00 AM", prefRangeLabel(wed, 0, 3))
+        assertEquals("8:00 - 8:30 AM", prefRangeLabel(wed, 0, 0))
     }
 
     @Test fun range_label_shows_both_meridiems_across_noon() {
@@ -148,7 +148,7 @@ class PreferencesTest {
                 block("x0", "2026-06-10T11:30:00-04:00"),
                 block("x1", "2026-06-10T12:00:00-04:00"),
             )
-        assertEquals("11:30 AM – 12:30 PM", prefRangeLabel(span, 0, 1))
+        assertEquals("11:30 AM - 12:30 PM", prefRangeLabel(span, 0, 1))
     }
 
     // ----- grid painting -----
@@ -192,30 +192,31 @@ class PreferencesTest {
     @Test fun banner_open_not_submitted_is_submit_by_deadline() {
         val editable = buildPreferenceBanner(period(submitted = false), isDirty = false)
         assertEquals(PrefBannerTone.INFO, editable.tone)
-        assertEquals("Submit by Due Fri 17:00", editable.title)
+        assertEquals("Not submitted yet", editable.title)
     }
 
     @Test fun banner_submitted_but_editable_is_success_not_read_only() {
         val done = buildPreferenceBanner(period(submitted = true), isDirty = false)
         assertEquals(PrefBannerTone.SUCCESS, done.tone)
-        assertEquals("Submitted — you can still edit", done.title)
+        assertEquals("Submitted", done.title)
     }
 
     @Test fun banner_dirty_warns_about_losing_edits() {
         val dirty = buildPreferenceBanner(period(submitted = true), isDirty = true)
         assertEquals("Unsaved changes", dirty.title)
-        assertTrue(dirty.body.contains("Due Fri 17:00"))
+        // The deadline is now carried by the chip, not the body — the body just nudges to save.
+        assertTrue(dirty.body.contains("before the deadline"))
     }
 
     @Test fun banner_deadline_passed_with_submission_is_window_closed() {
         val banner = buildPreferenceBanner(period(submitted = true, deadlinePassed = true))
         assertEquals(PrefBannerTone.SUCCESS, banner.tone)
-        assertEquals("Submitted · window closed", banner.title)
+        assertEquals("Submitted", banner.title)
     }
 
     @Test fun banner_deadline_passed_without_submission_is_locked() {
         val banner = buildPreferenceBanner(period(submitted = false, deadlinePassed = true))
-        assertEquals("Deadline passed — preferences are locked", banner.title)
+        assertEquals("Preferences locked", banner.title)
     }
 
     // ----- submit payload -----
@@ -258,7 +259,7 @@ class PreferencesTest {
         assertTrue(day.cells.all { it.brush == PrefBrush.PREFERRED })
         assertEquals(4, day.summary.preferred)
         assertEquals(1, day.runs.size)
-        assertEquals("8:00 – 10:00 AM", day.runs[0].label)
+        assertEquals("8:00 - 10:00 AM", day.runs[0].label)
     }
 
     @Test fun viewmodel_paint_range_is_order_independent() {
@@ -270,6 +271,67 @@ class PreferencesTest {
         assertEquals(PrefBrush.CANNOT, day.cells[1].brush)
         assertEquals(PrefBrush.CANNOT, day.cells[2].brush)
         assertEquals(PrefBrush.CANNOT, day.cells[3].brush)
+    }
+
+    // ----- toggle-to-erase (tap/drag over the active brush clears it) -----
+
+    @Test fun viewmodel_tap_toggles_the_active_brush_off() {
+        val vm = PreferencesViewModel(period())
+        vm.selectDay(2)
+        vm.setBrush(PrefBrush.CANNOT)
+        vm.paint("d2-b0") // d2-b0 is already CANNOT → tapping it in CANNOT mode clears it
+        val day = vm.uiState.value.day
+        assertEquals(PrefBrush.AVAILABLE, day.cells[0].brush)
+    }
+
+    @Test fun viewmodel_tap_on_other_brush_repaints_not_clears() {
+        val vm = PreferencesViewModel(period())
+        vm.selectDay(2)
+        vm.setBrush(PrefBrush.PREFERRED)
+        vm.paint("d2-b0") // d2-b0 is CANNOT; in PREFERRED mode this repaints (not a same-brush toggle)
+        assertEquals(PrefBrush.PREFERRED, vm.uiState.value.day.cells[0].brush)
+    }
+
+    @Test fun viewmodel_drag_starting_on_active_brush_erases_the_whole_span() {
+        val vm = PreferencesViewModel(period())
+        vm.selectDay(2)
+        vm.setBrush(PrefBrush.PREFERRED)
+        vm.paintRange("d2-b0", "d2-b3") // paint the whole Wed span PREFERRED
+        // A second sweep, in the SAME mode, starting on an already-PREFERRED block erases it all.
+        vm.beginPaintDrag("d2-b0")
+        vm.paintRange("d2-b0", "d2-b3")
+        vm.endPaintDrag()
+        val day = vm.uiState.value.day
+        assertTrue(day.cells.all { it.brush == PrefBrush.AVAILABLE })
+        assertEquals(0, day.summary.preferred)
+    }
+
+    @Test fun viewmodel_drag_operation_is_decided_by_the_start_block_only() {
+        val vm = PreferencesViewModel(period())
+        vm.selectDay(2)
+        vm.setBrush(PrefBrush.CANNOT)
+        // Start on d2-b1 (AVAILABLE, not the active brush) → the sweep PAINTS every block it
+        // covers, even d2-b0 which already held CANNOT. Start decides, not each block.
+        vm.beginPaintDrag("d2-b1")
+        vm.paintRange("d2-b1", "d2-b0")
+        vm.endPaintDrag()
+        val day = vm.uiState.value.day
+        assertEquals(PrefBrush.CANNOT, day.cells[0].brush)
+        assertEquals(PrefBrush.CANNOT, day.cells[1].brush)
+    }
+
+    @Test fun viewmodel_end_paint_drag_lets_the_next_drag_redecide() {
+        val vm = PreferencesViewModel(period())
+        vm.selectDay(2)
+        vm.setBrush(PrefBrush.PREFERRED)
+        // First drag erases d2-b2 (pre-painted PREFERRED).
+        vm.beginPaintDrag("d2-b2")
+        vm.endPaintDrag()
+        assertEquals(PrefBrush.AVAILABLE, vm.uiState.value.day.cells[2].brush)
+        // A fresh drag starting on that now-empty block paints again (op re-decided).
+        vm.beginPaintDrag("d2-b2")
+        vm.endPaintDrag()
+        assertEquals(PrefBrush.PREFERRED, vm.uiState.value.day.cells[2].brush)
     }
 
     @Test fun viewmodel_steps_target_within_cap() {
@@ -343,7 +405,7 @@ class PreferencesTest {
         assertTrue(afterSubmit.hasSubmitted)
         assertFalse(afterSubmit.isDirty) // re-baselined
         assertEquals(PrefBannerTone.SUCCESS, afterSubmit.banner.tone)
-        assertEquals("Submitted — you can still edit", afterSubmit.banner.title)
+        assertEquals("Submitted", afterSubmit.banner.title)
         // Edits still apply after submitting.
         vm.paint("d2-b3")
         val afterEdit = vm.uiState.value
@@ -390,7 +452,7 @@ class PreferencesTest {
         val dirty = vm.uiState.value
         assertTrue(dirty.showSubmit)
         assertTrue(dirty.showDiscard)
-        assertEquals("Submit changes", dirty.submitLabel)
+        assertEquals("Save changes", dirty.submitLabel)
     }
 
     // ----- deadline-expired lock (D9, §4.2) -----
@@ -401,7 +463,7 @@ class PreferencesTest {
         assertTrue(state.readOnly)
         assertFalse(state.showSubmit)
         assertFalse(state.showDiscard)
-        assertEquals("Deadline passed — preferences are locked", state.banner.title)
+        assertEquals("Preferences locked", state.banner.title)
         // Edits + submit are no-ops past the deadline (the RPC would reject anyway).
         vm.selectDay(2)
         vm.paint("d2-b1")

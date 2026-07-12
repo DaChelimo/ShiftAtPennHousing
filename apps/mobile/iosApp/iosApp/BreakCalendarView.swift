@@ -212,7 +212,7 @@ struct BreakCalendarScreen: View {
         let body: String
         switch st.phase {
         case .claimWindow: body = "First-come, first-served · drag to pick your hours · 40h hard cap · \(st.windowLabel)"
-        case .openFeed: body = "Claiming closed — leftover shifts are in Open Shifts · \(st.windowLabel)"
+        case .openFeed: body = "Claiming closed. Leftover shifts are in Open Shifts · \(st.windowLabel)"
         default: body = "Opens 14 days before the break · \(st.windowLabel)"
         }
         return HStack(alignment: .top, spacing: 11) {

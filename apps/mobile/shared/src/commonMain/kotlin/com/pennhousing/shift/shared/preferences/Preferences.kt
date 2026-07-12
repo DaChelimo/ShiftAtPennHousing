@@ -1,12 +1,10 @@
 package com.pennhousing.shift.shared.preferences
 
+import com.pennhousing.shift.shared.shifts.DOW_LONG
 import com.pennhousing.shift.shared.shifts.DOW_SHORT
-import com.pennhousing.shift.shared.shifts.MONTH_SHORT
 import com.pennhousing.shift.shared.shifts.NEW_YORK
-import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
-import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
@@ -100,11 +98,14 @@ fun PreferencePeriod.initialGrid(): PreferenceGrid = PreferenceGrid(initialStatu
 
 // ── Week strip ───────────────────────────────────────────────────────────────
 
-/** One Mon–Sun strip cell. [painted] = the day has any non-AVAILABLE block. */
+/**
+ * One Mon–Sun strip cell. Preferences are a WEEKLY TEMPLATE (what the worker wants every
+ * Monday, every Tuesday, etc. for the whole season), so a cell carries only its weekday
+ * [dayLabel] — never a calendar date. [painted] = the day has any non-AVAILABLE block.
+ */
 data class PrefWeekCell(
     val dayIndex: Int,
-    val dayLetter: String,
-    val dateLabel: String,
+    val dayLabel: String,
     val selected: Boolean,
     val painted: Boolean,
 )
@@ -116,7 +117,11 @@ data class PrefWeekStrip(
 
 private const val DAYS_IN_WEEK = 7
 
-/** The Mon–Sun strip; a day is [PrefWeekCell.painted] when it holds a Preferred/Cannot block. */
+/**
+ * The Mon–Sun strip. Because preferences are a weekly TEMPLATE, cells carry the weekday name
+ * only (no dates) and the strip's label reads as a repeat, not a specific week. A day is
+ * [PrefWeekCell.painted] when it holds a Preferred/Cannot block.
+ */
 fun buildPrefWeekStrip(
     period: PreferencePeriod,
     grid: PreferenceGrid,
@@ -124,22 +129,16 @@ fun buildPrefWeekStrip(
 ): PrefWeekStrip {
     val cells =
         (0 until DAYS_IN_WEEK).map { i ->
-            val date = period.weekStart.plus(i, DateTimeUnit.DAY)
             val dayBlocks = period.days.getOrElse(i) { emptyList() }
             val painted = dayBlocks.any { grid.statusOf(it.blockId) != PrefBrush.AVAILABLE }
             PrefWeekCell(
                 dayIndex = i,
-                dayLetter = DOW_SHORT[i].take(1),
-                dateLabel = date.day.toString(),
+                dayLabel = DOW_SHORT[i],
                 selected = i == selectedDayIndex,
                 painted = painted,
             )
         }
-    val sunday = period.weekStart.plus(DAYS_IN_WEEK - 1, DateTimeUnit.DAY)
-    val range =
-        "${MONTH_SHORT[period.weekStart.month.ordinal]} ${period.weekStart.day} – " +
-            "${MONTH_SHORT[sunday.month.ordinal]} ${sunday.day}"
-    return PrefWeekStrip(rangeLabel = range, cells = cells)
+    return PrefWeekStrip(rangeLabel = "Repeats every week this season", cells = cells)
 }
 
 // ── Selected-day timeline ────────────────────────────────────────────────────────
@@ -237,7 +236,7 @@ fun prefRangeLabel(
     val endMer = if (end.toLocalDateTime(zone).hour < 12) "AM" else "PM"
     val startLabel =
         if (startMer == endMer) formatClock12(start, zone).removeSuffix(" $startMer") else formatClock12(start, zone)
-    return "$startLabel – ${formatClock12(end, zone)}"
+    return "$startLabel - ${formatClock12(end, zone)}"
 }
 
 /** The selected day's timeline: header ("Wed · Jun 10"), bare segments, gutter hours, run labels, tally. */
@@ -248,8 +247,9 @@ fun buildPrefDay(
     zone: TimeZone = NEW_YORK,
 ): PrefDayView {
     val blocks = period.days.getOrElse(selectedDayIndex) { emptyList() }
-    val date = period.weekStart.plus(selectedDayIndex, DateTimeUnit.DAY)
-    val title = "${DOW_SHORT[selectedDayIndex]} · ${MONTH_SHORT[date.month.ordinal]} ${date.day}"
+    // Weekly template: the title is the weekday alone ("Monday"), not a specific date, so the
+    // worker reads it as "every Monday this season looks like this."
+    val title = "Every ${DOW_LONG[selectedDayIndex]}"
     if (blocks.isEmpty()) {
         return PrefDayView(selectedDayIndex, title, emptyList(), emptyList(), emptyList(), PrefDaySummary(0, 0, 0))
     }
@@ -261,17 +261,24 @@ fun buildPrefDay(
                 blockId = b.blockId,
                 brush = brush,
                 isHourStart = onHour,
-                a11yLabel = "${formatClock12(b.start, zone)} – ${formatClock12(b.start + BLOCK_MINUTES.minutes, zone)} · ${brush.dbStatus}",
+                a11yLabel = "${formatClock12(b.start, zone)} - ${formatClock12(b.start + BLOCK_MINUTES.minutes, zone)} · ${brush.dbStatus}",
             )
         }
     // Gutter marks at every on-the-hour boundary, from the first block's start through the
-    // end of the last block; meridiem only on the first mark and at noon/midnight.
+    // end of the last block; meridiem only on the first mark and at noon/midnight. The first
+    // and last boundaries are ALWAYS labelled so the rail is anchored to the shift's real
+    // start and end: an off-the-hour edge (e.g. a 5:30 AM start) gets the exact clock time
+    // "5:30 AM" rather than being left blank until the next whole hour.
     val hourMarks = mutableListOf<PrefHourMark>()
-    for (b in 0..blocks.size) {
+    val lastBoundary = blocks.size
+    for (b in 0..lastBoundary) {
         val time = if (b < blocks.size) blocks[b].start else blocks.last().start + BLOCK_MINUTES.minutes
         val ldt = time.toLocalDateTime(zone)
-        if (ldt.minute == 0) {
-            hourMarks += PrefHourMark(b, formatHourMark(time, withMeridiem = b == 0 || ldt.hour == 0 || ldt.hour == 12, zone))
+        when {
+            ldt.minute == 0 ->
+                hourMarks += PrefHourMark(b, formatHourMark(time, withMeridiem = b == 0 || ldt.hour == 0 || ldt.hour == 12, zone))
+            b == 0 || b == lastBoundary ->
+                hourMarks += PrefHourMark(b, formatClock12(time, zone))
         }
     }
     // Group consecutive same-brush non-AVAILABLE cells into labelled runs.
@@ -348,13 +355,16 @@ fun buildPreferenceBanner(
     period: PreferencePeriod,
     isDirty: Boolean = false,
 ): PreferenceBanner =
+    // Copy is kept SHORT and the deadline is intentionally omitted from every body — the UI
+    // renders the deadline as a separate chip (PreferencesUiState.deadlineChip), so repeating
+    // it here would just be the verbose duplication the compact card is meant to remove.
     when {
         // Deadline passed → the window is closed for everyone (the only read-only state).
         period.deadlinePassed && period.submitted ->
             PreferenceBanner(
                 tone = PrefBannerTone.SUCCESS,
-                title = "Submitted · window closed",
-                body = "Deadline passed. Your manager builds next week from these.",
+                title = "Submitted",
+                body = "The window has closed. Your manager builds from these.",
             )
         // D9 (§4.2): never submitted AND the window closed — the RPC would reject a
         // late write (preference_deadline_is_open), so the UI locks instead of
@@ -362,8 +372,8 @@ fun buildPreferenceBanner(
         period.deadlinePassed ->
             PreferenceBanner(
                 tone = PrefBannerTone.INFO,
-                title = "Deadline passed — preferences are locked",
-                body = "The submission window closed. Your manager builds the week without them.",
+                title = "Preferences locked",
+                body = "The submission window has closed.",
             )
         // Submitted but still editable: dirty → nudge to re-submit (or lose the edits);
         // clean → reassure they can keep editing until the deadline.
@@ -371,32 +381,26 @@ fun buildPreferenceBanner(
             PreferenceBanner(
                 tone = PrefBannerTone.INFO,
                 title = "Unsaved changes",
-                body =
-                    period.deadlineLabel?.let { "Submit your edits before $it or they'll be lost." }
-                        ?: "Submit your edits before the deadline or they'll be lost.",
+                body = "Save again before the deadline.",
             )
         period.submitted ->
             PreferenceBanner(
                 tone = PrefBannerTone.SUCCESS,
-                title = "Submitted — you can still edit",
-                body =
-                    period.deadlineLabel?.let { "Change anything and re-submit before $it." }
-                        ?: "Change anything and re-submit before the deadline.",
+                title = "Submitted",
+                body = "You can still edit until the deadline.",
             )
         // Open + dirty (never submitted) → same lose-your-edits nudge.
         isDirty ->
             PreferenceBanner(
                 tone = PrefBannerTone.INFO,
                 title = "Unsaved changes",
-                body =
-                    period.deadlineLabel?.let { "Submit before $it or your edits won't be saved." }
-                        ?: "Submit before the deadline or your edits won't be saved.",
+                body = "Submit before the deadline.",
             )
         else ->
             PreferenceBanner(
                 tone = PrefBannerTone.INFO,
-                title = period.deadlineLabel?.let { "Submit by $it" } ?: "Submit before the deadline",
-                body = "Reminders go out as the deadline nears. You can edit until then.",
+                title = "Not submitted yet",
+                body = "Submit before the deadline.",
             )
     }
 

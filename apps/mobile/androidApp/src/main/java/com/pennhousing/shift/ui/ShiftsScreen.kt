@@ -2,11 +2,15 @@ package com.pennhousing.shift.ui
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -103,6 +107,7 @@ import com.pennhousing.shift.shared.samples.DemoData
 import com.pennhousing.shift.shared.samples.DemoFactory
 import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.model.PendingFloat
+import com.pennhousing.shift.shared.model.RecentFloat
 import com.pennhousing.shift.shared.model.OpenFeed
 import com.pennhousing.shift.shared.model.OpenShift
 import com.pennhousing.shift.shared.notifications.NotificationCategory
@@ -121,6 +126,7 @@ import com.pennhousing.shift.shared.shifts.OpenShiftSort
 import com.pennhousing.shift.shared.shifts.OtherHousesTab
 import com.pennhousing.shift.shared.shifts.PartialClaimPlan
 import com.pennhousing.shift.shared.shifts.PartialDropPlan
+import com.pennhousing.shift.shared.network.TOAST_DURATION_MS
 import com.pennhousing.shift.shared.shifts.CLAIM_SUCCESS_TOAST
 import com.pennhousing.shift.shared.shifts.PICKUP_SUCCESS_TOAST_GENERIC
 import com.pennhousing.shift.shared.shifts.claimMeter
@@ -237,6 +243,8 @@ fun ShiftsApp(
     // Outstanding float requests for the My-Shifts carousel (§7.1), closest-start first.
     // Live host reads `worker_pending_floats`; demo seeds a couple. Empty → no carousel.
     pendingFloats: List<PendingFloat> = emptyList(),
+    // Floats RESOLVED in the last 24h for the collapsible recent section under the carousel.
+    recentFloats: List<RecentFloat> = emptyList(),
     breakProfile: Boolean = false,
     toast: ToastNotification? = null,
     // Non-null when a best-effort live write (drop/claim/reclaim/pickup/…) failed to
@@ -255,6 +263,12 @@ fun ShiftsApp(
     // does the optimistic local pickup; demo defaults to no live write. Used for WEEKLY
     // openings only — permanent openings route through [onPickUpPermanent].
     onClaimShift: (OpenShift) -> Unit = {},
+    // The open-shift claim / permanent-pickup confirmation toast, OWNED BY THE HOST so it can
+    // reflect the real network outcome (full success, an informative partial-pickup note, or
+    // cleared on a full failure). The sheet sets it optimistically via [onClaimSuccessMessage];
+    // the host's claim handler then overrides it once the per-block result is known.
+    claimSuccessMessage: String? = null,
+    onClaimSuccessMessage: (String?) -> Unit = {},
     // Live host POSTs to the `permanent-pickup` EF on confirm of a PERMANENT opening
     // (best-effort) — the real permanent-pickup path (the prior `claim-shift` permanent
     // returned 501). The ViewModel still does the optimistic local pickup; demo = no write.
@@ -317,10 +331,6 @@ fun ShiftsApp(
         val breakState by breakCalendarVm.uiState.collectAsStateWithLifecycle()
         var selectedIndex by remember { mutableIntStateOf(TAB_MY) }
         var showAckModal by remember { mutableStateOf(false) }
-        // The success toast after an open-shift claim / permanent pickup. A claim shows the
-        // fixed CLAIM_SUCCESS_TOAST; a permanent pickup carries its "Picked up X of Y weeks"
-        // scope message (computed at confirm time). Null = no toast.
-        var claimSuccessMessage by remember { mutableStateOf<String?>(null) }
         var swapProposed by remember { mutableStateOf(false) }
         // T2-13 — full-screen ack on push/deep-link launch (once per launch id).
         var showFullScreenAck by remember(launchFloatAckId) { mutableStateOf(launchFloatAckId != null) }
@@ -330,18 +340,12 @@ fun ShiftsApp(
         // Overflow ("More") bottom sheet — the episodic destinations.
         var showMore by remember { mutableStateOf(false) }
 
-        // Auto-dismiss the transient confirmation toasts (~3.5s) so they don't linger
-        // forever; the effect restarts whenever the state changes (matches iOS's
-        // .task(id:) auto-dismiss). writeError carries its own timer where it's owned.
-        LaunchedEffect(claimSuccessMessage) {
-            if (claimSuccessMessage != null) {
-                delay(3500)
-                claimSuccessMessage = null
-            }
-        }
+        // Auto-dismiss the transient confirmation toasts so they don't linger forever; the
+        // effect restarts whenever the state changes (matches iOS's .task(id:) auto-dismiss).
+        // writeError and claimSuccessMessage carry their own timers where the host owns them.
         LaunchedEffect(swapProposed) {
             if (swapProposed) {
-                delay(3500)
+                delay(TOAST_DURATION_MS)
                 swapProposed = false
             }
         }
@@ -350,7 +354,7 @@ fun ShiftsApp(
         // My Shifts. Accept/Decline POST the EF (host) AND advance the local stack; tapping
         // a card opens the full ack hero for THAT float. Rebuilt whenever the live
         // `worker_pending_floats` read changes.
-        val carouselVm = remember(pendingFloats, now) { FloatCarouselViewModel(pendingFloats, now) }
+        val carouselVm = remember(pendingFloats, recentFloats, now) { FloatCarouselViewModel(pendingFloats, now, recentFloats) }
         val carouselState by carouselVm.uiState.collectAsStateWithLifecycle()
         // Which float (if any) the worker tapped to see in the full ack hero.
         var floatDetail by remember { mutableStateOf<PendingFloat?>(null) }
@@ -358,8 +362,9 @@ fun ShiftsApp(
         // the worker knows they've cleared the whole stack (accept OR decline).
         LaunchedEffect(carouselState.allHandled) {
             if (carouselState.allHandled) {
-                claimSuccessMessage =
-                    if (carouselState.total > 1) "All float requests handled" else "Float request handled"
+                onClaimSuccessMessage(
+                    if (carouselState.total > 1) "All float requests handled" else "Float request handled",
+                )
             }
         }
 
@@ -455,7 +460,7 @@ fun ShiftsApp(
                             calendarVm = calendarVm,
                             currentWeeklyHours = currentWeeklyHours,
                             breakProfile = breakProfile,
-                            onClaimed = { msg -> claimSuccessMessage = msg },
+                            onClaimed = { msg -> onClaimSuccessMessage(msg) },
                             onClaimShift = onClaimShift,
                             onPickUpPermanent = onPickUpPermanent,
                             loadPermanentScope = loadPermanentScope,
@@ -549,7 +554,7 @@ fun ShiftsApp(
                     }
                     if (swapProposed) {
                         ShiftToast(
-                            message = "Swap proposed — your housemate has been asked",
+                            message = "Swap proposed. Your housemate has been asked",
                             modifier =
                                 Modifier
                                     .fillMaxWidth()
@@ -1179,7 +1184,7 @@ private fun ClaimSheet(
             }
             if (overHard) {
                 ShiftBanner(
-                    title = "Over the 40h limit — can't claim",
+                    title = "Over the 40h limit, can't claim",
                     body = "Break-period hard cap. Drop another shift first.",
                     tone = BannerTone.Error,
                 )
@@ -1353,7 +1358,7 @@ private fun PermanentRecurringNote(
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         Text("Recurring · ${row.dayLabel} · ${row.timeLabel}", color = c.permanent.deep, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-        row.meta?.let { Text("Repeats weekly — $it.", color = c.sec, fontSize = 12.5.sp) }
+        row.meta?.let { Text("Repeats weekly: $it.", color = c.sec, fontSize = 12.5.sp) }
         scope?.let {
             val skipped = if (it.weeksSkipped > 0) " · ${it.weeksSkipped} skipped" else ""
             Text(
@@ -1852,7 +1857,7 @@ private fun OutgoingSwapsList(
             EmptyState(
                 title = "No outgoing swaps",
                 icon = ShiftIcons.Refresh,
-                body = "Swaps you propose — from a shift on My Shifts — wait here until your housemate responds.",
+                body = "Swaps you propose (from a shift on My Shifts) wait here until your housemate responds.",
             )
         }
         return
@@ -1961,13 +1966,59 @@ private fun SwapCardHeader(row: SwapRow) {
 /** The give ⇄ get block — the decision-critical hours, side by side. */
 @Composable
 private fun SwapExchangeRow(row: SwapRow) {
+    // A one-directional transfer isn't a swap — drop the give/get split and lead with a single
+    // full-width panel that reads "someone wants to give you these hours" / "you're offering …".
+    if (row.isOneWayTransfer) {
+        SwapTransferPanel(row)
+        return
+    }
     val c = ShiftTheme.colors
     val primary = MaterialTheme.colorScheme.primary
-    val connector = if (row.give == null || row.get == null) "→" else "⇄"
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         SwapSideBox("You give", row.give, c.surfaceVar, c.sec, Modifier.weight(1f))
-        Text(connector, color = c.sec, fontSize = 16.sp)
+        Text("⇄", color = c.sec, fontSize = 16.sp)
         SwapSideBox("You get", row.get, primary.copy(alpha = 0.08f), primary, Modifier.weight(1f))
+    }
+}
+
+/**
+ * The one-directional transfer panel — a single full-width blue block. Leads with the
+ * receive/offer headline (never "give nothing / get this"), then the shift's hero time +
+ * day + house. Replaces the two-box exchange when nothing is given in return.
+ */
+@Composable
+private fun SwapTransferPanel(row: SwapRow) {
+    val c = ShiftTheme.colors
+    val primary = MaterialTheme.colorScheme.primary
+    val side = row.transferSide
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(primary.copy(alpha = 0.08f))
+            .padding(horizontal = 13.dp, vertical = 11.dp)
+            .testTag("swap_transfer_panel"),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                row.transferHeadline,
+                color = primary,
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            if (side != null) {
+                Text(side.hours, color = primary, fontSize = 12.5.sp, fontWeight = FontWeight.Medium)
+            }
+        }
+        // The time slot is the hero; fall back to the hours when the time isn't resolved yet.
+        Text(side?.timeRange ?: side?.hours ?: "-", color = c.ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        val day = side?.dayLabel
+        if (day != null) {
+            Text(day, color = c.ink, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        }
+        SwapHouseLine(side?.houseName, primary)
     }
 }
 
@@ -1992,7 +2043,7 @@ private fun SwapSideBox(
             }
         }
         // The time slot is the hero; fall back to hours when the time isn't known yet.
-        Text(side?.timeRange ?: side?.hours ?: "—", color = c.ink, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+        Text(side?.timeRange ?: side?.hours ?: "-", color = c.ink, fontSize = 17.sp, fontWeight = FontWeight.Medium)
         // The date is decision-critical too — render it as prominently as the house, not squint-small.
         Text(side?.dayLabel ?: if (side == null) "Nothing back" else "", color = c.ink, fontSize = 13.sp, fontWeight = FontWeight.Medium)
         // The house this side is actually worked at (the float destination, if floated) — the
@@ -2082,7 +2133,7 @@ private fun CalendarTabContent(
     breakProfile: Boolean = false,
     // §7.1 float-request carousel state + actions (the blue card stack under the hours
     // chip). Empty state → no carousel renders.
-    floatCarousel: FloatCarouselUiState = FloatCarouselUiState(emptyList(), 0, false),
+    floatCarousel: FloatCarouselUiState = FloatCarouselUiState(emptyList(), 0, false, emptyList()),
     onFloatAccept: (String) -> Unit = {},
     onFloatDecline: (String) -> Unit = {},
     onFloatDetail: (String) -> Unit = {},
@@ -2102,10 +2153,10 @@ private fun CalendarTabContent(
     val c = ShiftTheme.colors
     val swapScope = rememberCoroutineScope()
     var showWeekPicker by remember { mutableStateOf(false) }
-    // Tapping an agenda card opens the drop sheet (§5.2), which can pivot to a swap (§8).
+    // Tapping an agenda card opens the manage-shift sheet (§5.2), which pages in-place to the
+    // swap give/take picker (§8) — one sheet, no dismiss-and-re-present.
     var dropTarget by remember { mutableStateOf<MyShift?>(null) }
-    var swapTarget by remember { mutableStateOf<MyShift?>(null) }
-    // An incoming-swap card opens the accept/decline popup instead of the drop sheet.
+    // An incoming-swap card opens the accept/decline popup instead of the manage sheet.
     var decisionTarget by remember { mutableStateOf<SwapDecision?>(null) }
     // An OUTGOING-swap card opens the "swap pending" notice (cancel / keep waiting) — it can't
     // be dropped or swapped while the swap is live, so the drop sheet would just fail.
@@ -2137,7 +2188,7 @@ private fun CalendarTabContent(
             PageTitle("My Shifts")
             ShiftBanner(
                 title = "Viewing the recurring template",
-                body = "Derived from your scheduled weeks — permanent drops and swaps change every future week.",
+                body = "Derived from your scheduled weeks. Permanent drops and swaps change every future week.",
                 tone = BannerTone.Info,
                 modifier = Modifier.padding(horizontal = 16.dp).testTag("template_banner"),
             )
@@ -2217,13 +2268,13 @@ private fun CalendarTabContent(
                             EmptyState(
                                 title = "House closed",
                                 icon = ShiftIcons.Building,
-                                body = "Your house is closed this day — no desk shifts are scheduled.",
+                                body = "Your house is closed this day, so no desk shifts are scheduled.",
                             )
                         } else {
                             EmptyState(
                                 title = "No shifts this day",
                                 icon = ShiftIcons.Calendar,
-                                body = "Enjoy the day off — or browse Open Shifts to pick one up.",
+                                body = "Enjoy the day off, or browse Open Shifts to pick one up.",
                             )
                         }
                     } else {
@@ -2254,10 +2305,13 @@ private fun CalendarTabContent(
     }
 
     dropTarget?.let { shift ->
-        DropSheet(
+        // ONE sheet, two in-place pages (manage ⇄ swap) — "Choose who to swap with" pushes the
+        // swap page inside the SAME sheet instead of dismissing + presenting a new one.
+        ManageShiftSheet(
             shift = shift,
             vm = shiftsVm,
             breakProfile = breakProfile,
+            onDismiss = { dropTarget = null },
             onDrop = { effective, permanent ->
                 // Live host POSTs `drop-shift` / `permanent-drop`; the dropped (sub)shift
                 // leaves the agenda (calendar VM) and becomes a vacant opening (shifts VM)
@@ -2266,29 +2320,13 @@ private fun CalendarTabContent(
                 vm.drop(effective.blockIds)
                 shiftsVm.dropToOpen(effective)
             },
-            onDismiss = { dropTarget = null },
-            // §8 — pivot from dropping to proposing a swap for the same card.
-            onProposeSwap =
-                if (swapKindsFor(shift, breakProfile).isNotEmpty()) {
-                    {
-                        dropTarget = null
-                        swapTarget = shift
-                    }
-                } else {
-                    null
-                },
-        )
-    }
-
-    swapTarget?.let { shift ->
-        SwapCalendarSheet(
-            giveShift = shift,
-            meUserId = swapMeUserId,
-            demoSeats = swapDemoSeats,
+            swapKinds = swapKindsFor(shift, breakProfile),
+            swapMeUserId = swapMeUserId,
+            swapDemoSeats = swapDemoSeats,
             // Drop the worker's already-pending shifts from the give pool (defensive — the
-            // pinned give is never pending, but a standalone give-picker must not offer one).
-            pendingGiveAssignmentIds = vm.pendingGiveAssignmentIds(),
-            onSubmit = { proposals ->
+            // pinned give is never pending, but a give-picker must not offer one).
+            swapPendingGiveIds = vm.pendingGiveAssignmentIds(),
+            onSubmitSwap = { proposals ->
                 // Fire one create-swap per leg (independent legs). The "Swap proposed" toast
                 // fires ONLY when every leg's write actually lands — a failed write surfaces
                 // the host's red writeError toast instead of a false success.
@@ -2297,7 +2335,6 @@ private fun CalendarTabContent(
                     if (allOk) onSwapProposed()
                 }
             },
-            onDismiss = { swapTarget = null },
         )
     }
 
@@ -2636,7 +2673,7 @@ private fun WeekNavBar(
     Column(Modifier.fillMaxWidth().background(c.surface)) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(c.divider))
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (onPreviousWeek != null) {
@@ -2646,14 +2683,14 @@ private fun WeekNavBar(
                     tint = c.sec,
                     modifier =
                         Modifier
-                            .size(34.dp)
-                            .clip(RoundedCornerShape(8.dp))
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(9.dp))
                             .clickable(onClick = onPreviousWeek)
                             .testTag(prevTag)
-                            .padding(7.dp),
+                            .padding(8.dp),
                 )
             } else {
-                Spacer(Modifier.size(34.dp))
+                Spacer(Modifier.size(40.dp))
             }
             Row(
                 Modifier
@@ -2661,14 +2698,14 @@ private fun WeekNavBar(
                     .clip(RoundedCornerShape(10.dp))
                     .clickable(onClick = onOpenPicker)
                     .testTag(pickerTag)
-                    .padding(vertical = 6.dp),
+                    .padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(ShiftIcons.Calendar, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                Icon(ShiftIcons.Calendar, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(7.dp))
-                Text(title, color = c.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                Text("  ·  $rangeLabel", color = c.sec, fontSize = 13.sp)
+                Text(title, color = c.ink, fontSize = 15.5.sp, fontWeight = FontWeight.SemiBold)
+                Text("  ·  $rangeLabel", color = c.sec, fontSize = 14.sp)
             }
             if (onNextWeek != null) {
                 Icon(
@@ -2677,14 +2714,14 @@ private fun WeekNavBar(
                     tint = c.sec,
                     modifier =
                         Modifier
-                            .size(34.dp)
-                            .clip(RoundedCornerShape(8.dp))
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(9.dp))
                             .clickable(onClick = onNextWeek)
                             .testTag(nextTag)
-                            .padding(7.dp),
+                            .padding(8.dp),
                 )
             } else {
-                Spacer(Modifier.size(34.dp))
+                Spacer(Modifier.size(40.dp))
             }
         }
     }
@@ -2714,12 +2751,19 @@ private fun WeekPickerSheet(
         ) {
             options.forEach { option ->
                 val selected = option.offset == currentOffset
+                // "This week" (offset 0) always wears a brand-blue ring — the anchor —
+                // while the selected week takes the soft `today` fill. Both can coexist.
+                val isThisWeek = option.offset == 0
                 Row(
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else c.surface)
-                        .border(1.dp, if (selected) MaterialTheme.colorScheme.primary else c.divider, RoundedCornerShape(12.dp))
+                        .background(if (selected) c.today else c.surface)
+                        .border(
+                            if (isThisWeek) 1.5.dp else 1.dp,
+                            if (isThisWeek) MaterialTheme.colorScheme.primary else c.divider,
+                            RoundedCornerShape(12.dp),
+                        )
                         .clickable { onPick(option.offset) }
                         .padding(horizontal = 13.dp, vertical = 11.dp)
                         .testTag(optionTag),
@@ -2731,19 +2775,22 @@ private fun WeekPickerSheet(
                 }
             }
             if (onTemplate != null) {
+                // Derived, secondary entry — a calm gray that recedes into the sheet
+                // background (no longer the pink permanent-state tint).
                 Row(
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .background(c.permanent.tint)
+                        .background(c.surfaceVar)
+                        .border(1.dp, c.divider, RoundedCornerShape(12.dp))
                         .clickable(onClick = onTemplate)
                         .padding(horizontal = 13.dp, vertical = 11.dp)
                         .testTag("week_picker_template"),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Recurring template", color = c.permanent.deep, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                    Text("derived", color = c.sec, fontSize = 12.5.sp)
+                    Text("Recurring template", color = c.sec, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text("derived", color = c.ter, fontSize = 12.5.sp)
                 }
             }
         }
@@ -3288,27 +3335,38 @@ private fun HouseDayColumn(
             )
             h += 2
         }
-        day.blocks.forEach { b -> HouseGridBlockCell(b, startHour, onBlockTap) }
+        day.blocks.forEach { b -> HouseGridBlockCell(b, startHour, day.isToday, onBlockTap) }
     }
 }
 
-/** One positioned desk block, coloured by its state (design `HouseBlock`). */
+/**
+ * One positioned desk block, coloured by its state (design `HouseBlock`).
+ *
+ * Three-tier "mine" emphasis so the grid is scannable (BEH §11.4): someone else's shift is
+ * gray; my shift on another day is a mild pale blue; my shift TODAY gets the full `today`
+ * blue + a solid blue ring so it's the one block that pops.
+ */
 @Composable
 private fun HouseGridBlockCell(
     b: HouseGridBlock,
     startHour: Int,
+    isToday: Boolean,
     onTap: (HouseGridBlock) -> Unit,
 ) {
     val c = ShiftTheme.colors
     val primary = MaterialTheme.colorScheme.primary
+    val onContainer = MaterialTheme.colorScheme.onPrimaryContainer
     val top = HOUSE_PX_PER_HOUR * ((b.startMin - startHour * 60) / 60f)
     val height = (HOUSE_PX_PER_HOUR * ((b.endMin - b.startMin) / 60f) - 3.dp).coerceAtLeast(18.dp)
     val x = HOUSE_COL_PAD + (HOUSE_LANE_W + HOUSE_LANE_GAP) * b.lane
+    // mine + today → solid blue ring (the one block that should pop).
+    val emphatic = b.mine && isToday && !b.floatIn
     val (bg, accent, fg) =
         when {
             b.vacant -> Triple(c.surface, c.outline, c.ter)
             b.mine && b.floatIn -> Triple(c.floatIn.tint, c.floatIn.accent, c.floatIn.deep)
-            b.mine -> Triple(MaterialTheme.colorScheme.primaryContainer, primary, MaterialTheme.colorScheme.onPrimaryContainer)
+            b.mine && isToday -> Triple(c.today, primary, onContainer)
+            b.mine -> Triple(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f), primary.copy(alpha = 0.5f), onContainer)
             b.pending -> Triple(c.surfaceVar, c.pending, c.ink)
             b.floatIn -> Triple(c.floatIn.tint, c.floatIn.accent, c.floatIn.deep)
             else -> Triple(c.surfaceVar, c.outline, c.ink)
@@ -3321,7 +3379,13 @@ private fun HouseGridBlockCell(
             .height(height)
             .clip(shape)
             .background(bg)
-            .then(if (b.vacant) Modifier.dashedBorder(accent, 8.dp) else Modifier.border(1.dp, accent.copy(alpha = 0.45f), shape))
+            .then(
+                when {
+                    b.vacant -> Modifier.dashedBorder(accent, 8.dp)
+                    emphatic -> Modifier.border(1.5.dp, primary, shape)
+                    else -> Modifier.border(1.dp, accent.copy(alpha = 0.45f), shape)
+                },
+            )
             .drawBehind { drawRect(color = accent, size = Size(3.dp.toPx(), size.height)) }
             .clickable(enabled = !b.vacant) { onTap(b) }
             .padding(start = 7.dp, end = 5.dp, top = 4.dp, bottom = 3.dp)
@@ -3535,6 +3599,85 @@ private fun ContactSheet(
 // Drop flow (§5.2) — occurrence vs permanent, short-notice warning.
 // ===================================================================
 
+private enum class ManagePage { Manage, Swap }
+
+/**
+ * The manage-shift sheet (§5.2 / §8) — ONE bottom sheet with two in-place pages: the
+ * Drop/Swap chooser (Option C) and, when the worker proceeds to swap, the week-paged
+ * give/take picker. "Choose who to swap with" PUSHES the swap page within the SAME sheet
+ * (a back chevron returns) rather than dismissing and presenting a new sheet; the selected
+ * range + scope carry into the give.
+ */
+@Composable
+private fun ManageShiftSheet(
+    shift: MyShift,
+    vm: ShiftsScreenViewModel,
+    breakProfile: Boolean,
+    onDismiss: () -> Unit,
+    onDrop: (MyShift, Boolean) -> Unit,
+    swapKinds: List<SwapKind>,
+    swapMeUserId: String?,
+    swapDemoSeats: List<HouseSeat>,
+    swapPendingGiveIds: Set<String>,
+    onSubmitSwap: (List<SwapProposal>) -> Unit,
+) {
+    var page by remember(shift) { mutableStateOf(ManagePage.Manage) }
+    var swapGive by remember(shift) { mutableStateOf<MyShift?>(null) }
+    var swapPermanent by remember(shift) { mutableStateOf(false) }
+
+    ShiftBottomSheet(
+        onDismiss = onDismiss,
+        title = if (page == ManagePage.Swap) "Propose a swap" else "Manage shift",
+        onBack = if (page == ManagePage.Swap) ({ page = ManagePage.Manage }) else null,
+    ) {
+        AnimatedContent(
+            targetState = page,
+            transitionSpec = {
+                // Forward (→ Swap) slides in from the right; Back slides in from the left.
+                if (targetState == ManagePage.Swap) {
+                    (slideInHorizontally { it / 3 } + fadeIn()) togetherWith (slideOutHorizontally { -it / 3 } + fadeOut())
+                } else {
+                    (slideInHorizontally { -it / 3 } + fadeIn()) togetherWith (slideOutHorizontally { it / 3 } + fadeOut())
+                }
+            },
+            label = "manage_page",
+        ) { p ->
+            when (p) {
+                ManagePage.Manage ->
+                    ManagePageContent(
+                        shift = shift,
+                        vm = vm,
+                        breakProfile = breakProfile,
+                        swapKinds = swapKinds,
+                        onDrop = { sub, permanent ->
+                            onDrop(sub, permanent)
+                            onDismiss()
+                        },
+                        onProposeSwap = { sub, permanent ->
+                            swapGive = sub
+                            swapPermanent = permanent
+                            page = ManagePage.Swap
+                        },
+                    )
+                ManagePage.Swap ->
+                    swapGive?.let { give ->
+                        SwapCalendarBody(
+                            giveShift = give,
+                            meUserId = swapMeUserId,
+                            demoSeats = swapDemoSeats,
+                            pendingGiveAssignmentIds = swapPendingGiveIds,
+                            initialPermanent = swapPermanent,
+                            onSubmit = { proposals ->
+                                onSubmitSwap(proposals)
+                                onDismiss()
+                            },
+                        )
+                    }
+            }
+        }
+    }
+}
+
 /**
  * Drop sheet (§5.2): the design's bottom sheet — scope radios (occurrence /
  * permanent), a short-notice warning, and a destructive confirm. The exact
@@ -3553,36 +3696,48 @@ private fun ContactSheet(
  * anchors to the SELECTED gap start.
  */
 @Composable
-private fun DropSheet(
+private fun ManagePageContent(
     shift: MyShift,
     vm: ShiftsScreenViewModel,
     breakProfile: Boolean,
-    onDismiss: () -> Unit,
-    onDrop: (MyShift, Boolean) -> Unit = { _, _ -> },
-    // D2 — non-null when this card can propose a swap (§8); pivots to the SwapSheet.
-    onProposeSwap: (() -> Unit)? = null,
+    swapKinds: List<SwapKind>,
+    // Confirm a drop of the SELECTED sub-shift (the parent owns the dismiss + optimistic move).
+    onDrop: (MyShift, Boolean) -> Unit,
+    // §8 pivot — navigate to the swap PAGE in the same sheet, carrying the SELECTED sub-shift
+    // (range pre-fills the give) + whether the shared scope is Permanent (drives a permanent swap).
+    onProposeSwap: (MyShift, Boolean) -> Unit,
 ) {
     val c = ShiftTheme.colors
     val row = remember(shift) { shift.toRow() }
     val options = vm.dropOptions(shift, breakProfile)
-    var permanentScope by remember { mutableStateOf(false) }
-    var acknowledged by remember { mutableStateOf(false) }
+    val canSwap = swapKinds.isNotEmpty()
+    val canSwapPermanently = SwapKind.PERMANENT in swapKinds
 
-    // §5.2 partial range — block indexes on the shift's own grid, [from, to).
+    // Drop ⇄ Swap are equal-weight intents (Option C). The scope + range below are SHARED by
+    // both — picking a range then switching to Swap carries that range into the give.
+    var swapIntent by remember(shift) { mutableStateOf(false) }
+    var permanentScope by remember(shift) { mutableStateOf(false) }
+
+    // Permanent validity is per-intent: drop → recurring slot; swap → a permanent swap exists.
+    val permanentAllowed = if (swapIntent) canSwapPermanently else options.canDropPermanently
+    // The shared scope row only shows when SOME intent supports permanent; otherwise the card
+    // is always this-week and the control would be a lone disabled segment.
+    val scopeRowVisible = options.canDropPermanently || canSwapPermanently
+
+    // §5.2 partial range — block indexes on the shift's own grid, [from, to). SHARED across
+    // both intents (the swap pivot pins subShiftFor(shift, plan) as the give).
     val blockCount = shift.blockIds.size
     var rangeFrom by remember(shift) { mutableIntStateOf(0) }
     var rangeTo by remember(shift) { mutableIntStateOf(blockCount) }
     val partialPlan = vm.planDropRange(shift, rangeFrom, rangeTo)
     val fromNowIndex = remember(shift) { vm.dropFromNowIndex(shift) }
-    // Short-notice anchors to the SELECTED range's gap start (the whole-shift default ==
-    // the shift start) — for both occurrence and permanent drops.
-    val shortNotice = partialPlan.shortNotice
+    // Short-notice gates the DROP confirm only — a swap proposal isn't a short-notice drop.
+    val shortNotice = !swapIntent && partialPlan.shortNotice
 
-    ShiftBottomSheet(onDismiss = onDismiss, title = "Drop shift") {
-        Column(
-            Modifier.fillMaxWidth().testTag("drop_options_sheet"),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
+    Column(
+        Modifier.fillMaxWidth().testTag("manage_shift_sheet"),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 HouseBadge(row.houseInitial, c.surfaceVar, c.ink)
                 Column {
@@ -3591,29 +3746,51 @@ private fun DropSheet(
                 }
             }
 
-            ScopeOption(
-                selected = !permanentScope,
-                title = "Drop this occurrence",
-                body = "Drops just this occurrence. The slot opens for others to claim.",
-                icon = ShiftIcons.Calendar,
-                accent = MaterialTheme.colorScheme.primary,
-                tag = "drop_occurrence_option",
-                onClick = { permanentScope = false },
-            )
-            ScopeOption(
-                selected = permanentScope,
-                title = "Drop permanently",
-                body = "Releases this recurring slot. It becomes a permanent opening.",
-                icon = ShiftIcons.Refresh,
-                accent = c.permanent.accent,
-                enabled = options.canDropPermanently,
-                tag = "drop_permanent_option",
-                onClick = { if (options.canDropPermanently) permanentScope = true },
-            )
+            // Equal-weight intent choice — Drop vs Swap (§5.2 / §8).
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                IntentCard(
+                    modifier = Modifier.weight(1f),
+                    selected = !swapIntent,
+                    title = "Drop the shift",
+                    body = "Opens for others to claim.",
+                    icon = ShiftIcons.Calendar,
+                    enabled = true,
+                    tag = "intent_drop",
+                    onClick = {
+                        swapIntent = false
+                        if (!options.canDropPermanently) permanentScope = false
+                    },
+                )
+                IntentCard(
+                    modifier = Modifier.weight(1f),
+                    selected = swapIntent,
+                    title = "Swap it",
+                    body = "Trade with a housemate.",
+                    icon = ShiftIcons.Refresh,
+                    enabled = canSwap,
+                    tag = "intent_swap",
+                    onClick = {
+                        if (canSwap) {
+                            swapIntent = true
+                            if (!canSwapPermanently) permanentScope = false
+                        }
+                    },
+                )
+            }
 
-            // §5.2 partial drop — shown for BOTH scopes when the card spans >1 block, so a
-            // permanent drop can release just a sub-range of the recurring slot. The
-            // mid-shift "From now" shortcut stays occurrence-only (a this-week convenience).
+            // Shared scope — drives BOTH the drop (this-week vs permanent release) and the
+            // swap (this-week vs permanent swap).
+            if (scopeRowVisible) {
+                ScopeSegmentedControl(
+                    permanent = permanentScope,
+                    permanentEnabled = permanentAllowed,
+                    onThisWeek = { permanentScope = false },
+                    onPermanent = { if (permanentAllowed) permanentScope = true },
+                )
+            }
+
+            // §5.2 partial range — shown when the card spans >1 block. SHARED: it sizes the
+            // drop AND pre-fills the swap give. The mid-shift "From now" stays this-week-only.
             if (blockCount > 1) {
                 DropRangeSelector(
                     plan = partialPlan,
@@ -3628,55 +3805,151 @@ private fun DropSheet(
                 )
             }
 
-            onProposeSwap?.let { propose ->
-                // D2 — keep the shift, trade it with a housemate instead (§8).
-                ShiftButton(
-                    "Propose a swap instead",
-                    onClick = propose,
-                    modifier = Modifier.fillMaxWidth().testTag("swap_propose_option"),
-                    variant = ButtonVariant.Tonal,
-                    fullWidth = true,
-                )
-            }
-
-            if (shortNotice && !acknowledged) {
-                Column(Modifier.fillMaxWidth().testTag("drop_short_notice_warning"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ShiftBanner(
-                        title = "Starts within 20 minutes",
-                        body = "Short-notice drop — your manager is notified immediately to arrange cover.",
-                        tone = BannerTone.Warning,
+            // Short-notice is a non-blocking heads-up, NOT a gate: a red-outlined caution
+            // that sits directly above the (red) Drop button so the consequence reads as
+            // part of that action. The drop stays one tap away.
+            if (shortNotice) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(c.danger.tint)
+                        .border(1.dp, c.danger.accent, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 13.dp, vertical = 11.dp)
+                        .testTag("drop_short_notice_warning"),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Icon(
+                        ShiftIcons.Warning,
+                        contentDescription = null,
+                        tint = c.danger.accent,
+                        modifier = Modifier.size(18.dp).padding(top = 1.dp),
                     )
-                    ShiftButton(
-                        "Continue anyway",
-                        onClick = { acknowledged = true },
-                        modifier = Modifier.testTag("drop_short_notice_continue"),
-                        variant = ButtonVariant.Outlined,
-                        size = ButtonSize.Sm,
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Starts within 20 minutes", color = c.ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Short-notice drop. Your manager is notified immediately to arrange cover.",
+                            color = c.sec,
+                            fontSize = 13.sp,
+                        )
+                    }
                 }
             }
 
-            ShiftButton(
-                when {
-                    permanentScope -> "Drop permanently"
-                    !partialPlan.wholeShift -> "Drop ${partialPlan.rangeLabel}"
-                    else -> "Drop this week"
-                },
-                onClick = {
-                    // [onDrop] owns the whole move (live POST + the optimistic two-VM
-                    // shuffle: leave the agenda, appear in the open feed). BOTH scopes drop
-                    // the SELECTED sub-shift — its blockIds are the contiguous run the EF
-                    // receives; the rest re-coalesce. A whole-shift selection (the default)
-                    // drops the whole slot, exactly as before.
-                    onDrop(subShiftFor(shift, partialPlan), permanentScope)
-                    onDismiss()
-                },
-                modifier = Modifier.fillMaxWidth().testTag("drop_confirm_button"),
-                variant = ButtonVariant.DestructiveFilled,
-                fullWidth = true,
-                enabled = !shortNotice || acknowledged,
-            )
+            if (swapIntent) {
+                // §8 pivot — navigate to the swap page carrying the SELECTED sub-shift + scope.
+                ShiftButton(
+                    "Choose who to swap with",
+                    onClick = { onProposeSwap(subShiftFor(shift, partialPlan), permanentScope) },
+                    modifier = Modifier.fillMaxWidth().testTag("swap_continue_button"),
+                    fullWidth = true,
+                )
+            } else {
+                ShiftButton(
+                    when {
+                        permanentScope -> "Drop permanently"
+                        !partialPlan.wholeShift -> "Drop ${partialPlan.rangeLabel}"
+                        else -> "Drop this week"
+                    },
+                    // [onDrop] owns the whole move (live POST + the optimistic two-VM shuffle:
+                    // leave the agenda, appear in the open feed) AND the dismiss. BOTH scopes drop
+                    // the SELECTED sub-shift — its blockIds are the contiguous run the EF receives;
+                    // the rest re-coalesce. A whole-shift selection (the default) drops the whole slot.
+                    onClick = { onDrop(subShiftFor(shift, partialPlan), permanentScope) },
+                    modifier = Modifier.fillMaxWidth().testTag("drop_confirm_button"),
+                    variant = ButtonVariant.DestructiveFilled,
+                    fullWidth = true,
+                )
+            }
         }
+}
+
+/**
+ * One equal-weight intent card in the manage-shift sheet (Option C) — "Drop the shift" /
+ * "Swap it". A disabled card (no swap available) dims and ignores taps.
+ */
+@Composable
+private fun IntentCard(
+    modifier: Modifier,
+    selected: Boolean,
+    title: String,
+    body: String,
+    icon: ImageVector,
+    enabled: Boolean,
+    tag: String,
+    onClick: () -> Unit,
+) {
+    val c = ShiftTheme.colors
+    val primary = MaterialTheme.colorScheme.primary
+    Column(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (selected) primary.copy(alpha = 0.08f) else Color.Transparent)
+            .border(BorderStroke(if (selected) 1.5.dp else 1.dp, if (selected) primary else c.divider), RoundedCornerShape(12.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .alpha(if (enabled) 1f else 0.4f)
+            .padding(horizontal = 12.dp, vertical = 11.dp)
+            .testTag(tag),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = if (selected) primary else c.sec, modifier = Modifier.size(20.dp))
+        Text(title, color = c.ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+        Text(body, color = c.sec, fontSize = 11.5.sp, lineHeight = 14.sp)
+    }
+}
+
+/**
+ * The shared this-week / permanent scope selector (manage-shift sheet). "Permanent" dims and
+ * ignores taps when the current intent can't go permanent (e.g. a pickup or float card).
+ */
+@Composable
+private fun ScopeSegmentedControl(
+    permanent: Boolean,
+    permanentEnabled: Boolean,
+    onThisWeek: () -> Unit,
+    onPermanent: () -> Unit,
+) {
+    val c = ShiftTheme.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(c.surfaceVar)
+            .padding(3.dp)
+            .testTag("scope_segmented"),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        ScopeSegment("This week only", selected = !permanent, enabled = true, tag = "scope_this_week", modifier = Modifier.weight(1f), onClick = onThisWeek)
+        ScopeSegment("Permanent", selected = permanent, enabled = permanentEnabled, tag = "scope_permanent", modifier = Modifier.weight(1f), onClick = onPermanent)
+    }
+}
+
+@Composable
+private fun ScopeSegment(
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    tag: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val c = ShiftTheme.colors
+    Box(
+        modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (selected) c.surface else Color.Transparent)
+            .clickable(enabled = enabled, onClick = onClick)
+            .alpha(if (enabled) 1f else 0.4f)
+            .padding(vertical = 8.dp)
+            .testTag(tag),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            color = if (selected) c.ink else c.sec,
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+        )
     }
 }
 
@@ -3707,7 +3980,7 @@ private fun DropRangeSelector(
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("How much to drop", color = c.sec, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Text("How much", color = c.sec, fontSize = 13.sp, fontWeight = FontWeight.Medium)
             if (fromNowIndex != null) {
                 Text(
                     "From now",
@@ -3841,7 +4114,7 @@ private fun SwapSheet(
                 ScopeOption(
                     selected = kind == SwapKind.SHIFT,
                     title = "Swap this week's occurrence",
-                    body = "You take theirs, they take yours — this week only.",
+                    body = "You take theirs, they take yours, this week only.",
                     icon = ShiftIcons.Refresh,
                     accent = MaterialTheme.colorScheme.primary,
                     tag = "swap_kind_shift",
@@ -3858,7 +4131,7 @@ private fun SwapSheet(
                 )
             } else if (kind == SwapKind.FLOAT) {
                 Text(
-                    "Float swap — a housemate takes your float assignment.",
+                    "Float swap: a housemate takes your float assignment.",
                     color = c.sec,
                     fontSize = 13.sp,
                 )
@@ -3933,7 +4206,7 @@ private fun SwapSheet(
                 }
                 if (giveOverlaps) {
                     Text(
-                        "Those hours overlap another swap — pick different hours.",
+                        "Those hours overlap another swap, so pick different hours.",
                         color = c.floatOut.deep,
                         fontSize = 12.5.sp,
                         modifier = Modifier.testTag("swap_overlap_warning"),
@@ -3983,18 +4256,20 @@ private fun SwapSheet(
  * current week. Whole-run swaps in v1.
  */
 @Composable
-private fun SwapCalendarSheet(
+private fun SwapCalendarBody(
     giveShift: MyShift,
     meUserId: String?,
     demoSeats: List<HouseSeat>,
     onSubmit: (List<SwapProposal>) -> Unit,
-    onDismiss: () -> Unit,
     pendingGiveAssignmentIds: Set<String> = emptySet(),
+    // Carries the shared manage-shift scope: opens straight into a permanent swap (when the
+    // give is permanent-eligible) instead of a this-week swap.
+    initialPermanent: Boolean = false,
 ) {
     val c = ShiftTheme.colors
     val vm =
-        remember(giveShift, meUserId, pendingGiveAssignmentIds) {
-            DemoFactory.swapCalendarViewModel(giveShift, meUserId ?: "demo", false, pendingGiveAssignmentIds)
+        remember(giveShift, meUserId, pendingGiveAssignmentIds, initialPermanent) {
+            DemoFactory.swapCalendarViewModel(giveShift, meUserId ?: "demo", false, pendingGiveAssignmentIds, initialPermanent)
         }
     val state by vm.uiState.collectAsStateWithLifecycle()
     // Fetch the shown week's housemate grid on every week change (live), or feed the demo
@@ -4020,11 +4295,10 @@ private fun SwapCalendarSheet(
             }
         vm.setWorkerDirectory(directory)
     }
-    ShiftBottomSheet(onDismiss = onDismiss, title = "Propose a swap") {
-        Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).testTag("swap_calendar_sheet"),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
+    Column(
+        Modifier.fillMaxWidth().testTag("swap_calendar_sheet"),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
             if (state.legs.isNotEmpty()) {
                 Column(Modifier.testTag("swap_legs"), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     state.legs.forEachIndexed { i, leg ->
@@ -4179,12 +4453,11 @@ private fun SwapCalendarSheet(
                     legCount > 1 -> "Propose $legCount swaps"
                     else -> "Propose swap"
                 },
-                onClick = { onSubmit(vm.proposals()); onDismiss() },
+                onClick = { onSubmit(vm.proposals()) },
                 modifier = Modifier.fillMaxWidth().testTag("swap_submit_button"),
                 fullWidth = true,
                 enabled = state.canPropose,
             )
-        }
     }
 }
 

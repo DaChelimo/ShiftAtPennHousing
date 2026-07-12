@@ -17,10 +17,18 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.draw.clip
@@ -44,6 +52,9 @@ fun ShiftBottomSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     title: String? = null,
+    // When non-null, the header shows a leading back chevron (a multi-page sheet pushing a
+    // "page" in place rather than presenting a new sheet); the close ✕ still dismisses.
+    onBack: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -56,29 +67,45 @@ fun ShiftBottomSheet(
         scrimColor = ShiftTheme.colors.scrim,
         dragHandle = { Grabber() },
     ) {
-        if (title != null) SheetHeader(title, onDismiss)
+        // A slight fade+rise settles the content in as the sheet slides up. The M3 modal
+        // sheet already animates the container's slide/scrim; this adds a light entrance on
+        // top so the drawer feels lively without fighting the native motion.
+        var appeared by remember { mutableStateOf(false) }
+        val enterAlpha by animateFloatAsState(if (appeared) 1f else 0f, tween(300), label = "sheetContentAlpha")
+        val enterRise by animateFloatAsState(if (appeared) 0f else 10f, tween(300), label = "sheetContentRise")
+        LaunchedEffect(Unit) { appeared = true }
         Column(
-            Modifier
-                .fillMaxWidth()
-                // Scroll the body so tall sheets (e.g. the multi-leg swap composer) can always
-                // reach their bottom actions — without this the content overflowed the sheet and
-                // the submit/add buttons were unreachable. (ShiftBanner already pins itself with
-                // IntrinsicSize.Min for exactly this scrollable context.)
-                .verticalScroll(rememberScrollState())
-                // The modal sheet is its own window — re-enable resource-id testTags
-                // so Maestro's `id:` selectors see the sheet's controls.
-                .semantics { testTagsAsResourceId = true }
-                .padding(horizontal = 18.dp)
-                .padding(top = 8.dp, bottom = 28.dp),
+            Modifier.graphicsLayer {
+                alpha = enterAlpha
+                translationY = enterRise.dp.toPx()
+            },
         ) {
-            content()
+            if (title != null) SheetHeader(title, onDismiss, onBack)
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    // Scroll the body so tall sheets (e.g. the multi-leg swap composer) can always
+                    // reach their bottom actions — without this the content overflowed the sheet and
+                    // the submit/add buttons were unreachable. (ShiftBanner already pins itself with
+                    // IntrinsicSize.Min for exactly this scrollable context.)
+                    .verticalScroll(rememberScrollState())
+                    // The modal sheet is its own window — re-enable resource-id testTags
+                    // so Maestro's `id:` selectors see the sheet's controls.
+                    .semantics { testTagsAsResourceId = true }
+                    .padding(horizontal = 18.dp)
+                    .padding(top = 8.dp, bottom = 28.dp),
+            ) {
+                content()
+            }
         }
     }
 }
 
 @Composable
 private fun Grabber() {
-    Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
+    // top: handle offset from the sheet's top edge; bottom: breathing room between the
+    // handle and the first content (title or body) so nothing crowds the grabber.
+    Box(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 12.dp), contentAlignment = Alignment.Center) {
         Box(
             Modifier
                 .size(width = Dimens.grabberWidth, height = Dimens.grabberHeight)
@@ -91,6 +118,7 @@ private fun Grabber() {
 private fun SheetHeader(
     title: String,
     onClose: () -> Unit,
+    onBack: (() -> Unit)? = null,
 ) {
     val c = ShiftTheme.colors
     Row(
@@ -98,7 +126,21 @@ private fun SheetHeader(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(title, color = c.ink, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (onBack != null) {
+                Box(
+                    Modifier
+                        .size(30.dp)
+                        .clip(ShiftShapes.pill)
+                        .background(c.surfaceVar)
+                        .clickable(onClick = onBack),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(ShiftIcons.ChevronLeft, contentDescription = "Back", tint = c.sec, modifier = Modifier.size(16.dp))
+                }
+            }
+            Text(title, color = c.ink, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+        }
         Box(
             Modifier
                 .size(30.dp)

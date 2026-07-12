@@ -33,6 +33,8 @@ private object L {
     val bluePressed = Color(0xFF0A4ECB)
     val blueContainer = Color(0xFFE4EDFF)
     val onBlueContainer = Color(0xFF00307E)
+    // Current-date / current-week emphasis (one consistent soft brand blue = "now")
+    val today = Color(0xFFDCE8FF)
 
     // Neutrals
     val ink = Color(0xFF121622)
@@ -100,6 +102,7 @@ private object D {
     val bluePressed = Color(0xFF409CFF)
     val blueContainer = Color(0xFF0C2C4F)
     val onBlueContainer = Color(0xFFBBD6FF)
+    val today = Color(0xFF14375F)
 
     val ink = Color(0xFFECF0F6)
     val sec = Color(0xFFA7AFBE)
@@ -259,6 +262,13 @@ data class ShiftColors(
     // brand extras
     val bluePressed: Color,
     val onBlueContainer: Color,
+    /**
+     * Current-date / current-week emphasis. ONE consistent soft brand-blue meaning
+     * "now" everywhere — the week picker's selected-week fill, the house calendar's
+     * today cell. Pair with the brand primary as a ring to mark the *anchor* week
+     * without overriding the user's selection.
+     */
+    val today: Color,
     // neutrals (for direct, non-M3 use)
     val ink: Color,
     val sec: Color,
@@ -298,6 +308,7 @@ val LightShiftColors =
         isDark = false,
         bluePressed = L.bluePressed,
         onBlueContainer = L.onBlueContainer,
+        today = L.today,
         ink = L.ink,
         sec = L.sec,
         ter = L.ter,
@@ -333,6 +344,7 @@ val DarkShiftColors =
         isDark = true,
         bluePressed = D.bluePressed,
         onBlueContainer = D.onBlueContainer,
+        today = D.today,
         ink = D.ink,
         sec = D.sec,
         ter = D.ter,

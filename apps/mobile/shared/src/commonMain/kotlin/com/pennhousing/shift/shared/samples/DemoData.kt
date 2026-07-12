@@ -14,6 +14,8 @@ import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.model.OpenFeed
 import com.pennhousing.shift.shared.model.OpenShift
 import com.pennhousing.shift.shared.model.PendingFloat
+import com.pennhousing.shift.shared.model.RecentFloat
+import com.pennhousing.shift.shared.model.RecentFloatStatus
 import com.pennhousing.shift.shared.notifications.IncomingSwap
 import com.pennhousing.shift.shared.notifications.NotificationCategory
 import com.pennhousing.shift.shared.notifications.NotificationItem
@@ -95,6 +97,32 @@ object DemoData {
                 perBlock(MyShift("nw-sc-1", harnwell, dayAt(10, 12), dayAt(10, 14), AssignmentKind.SCHEDULED))
         val openShifts =
             perBlock(OpenShift("hw-1", harnwell, base + 4.hours, base + 6.hours, OpenFeed.WEEKLY, homeHouse = true)) +
+                // A dropped seat on a STILL-STAFFED Harnwell desk (a co-worker remains on):
+                // within T-2h yet `deskCovered`, so it stays claimable until block start —
+                // the coverage-conditional lock (§5.4/§5.5). Contrast `hw-locked` below.
+                perBlock(
+                    OpenShift(
+                        "hw-covered",
+                        harnwell,
+                        base + 1.hours,
+                        base + 3.hours,
+                        OpenFeed.WEEKLY,
+                        homeHouse = true,
+                        deskCovered = true,
+                    ),
+                ) +
+                // An empty Harnwell desk past its T-2h coverage step: one-way locked → unpickable.
+                perBlock(
+                    OpenShift(
+                        "hw-locked",
+                        harnwell,
+                        base + 1.hours,
+                        base + 2.hours,
+                        OpenFeed.WEEKLY,
+                        homeHouse = true,
+                        coverageLocked = true,
+                    ),
+                ) +
                 perBlock(
                     OpenShift(
                         "hp-1",
@@ -171,6 +199,41 @@ object DemoData {
     fun pendingFloat(now: Instant): FloatAck = pendingFloats(now).first().toFloatAck()
 
     /**
+     * The worker's RESOLVED floats from the last 24h for the collapsible "Recent float
+     * requests" section: one of each terminal state so the chips + de-emphasized rows are
+     * demonstrable. Most-recent first is handled by the presentation layer.
+     */
+    fun recentFloats(now: Instant): List<RecentFloat> {
+        val base = roundDownToBlock(now)
+        return listOf(
+            RecentFloat(
+                floatId = "recent-expired-1",
+                destinationHouse = dubois,
+                start = base - 1.hours,
+                end = base,
+                status = RecentFloatStatus.EXPIRED,
+                resolvedAt = now - 8.minutes,
+            ),
+            RecentFloat(
+                floatId = "recent-declined-1",
+                destinationHouse = harnwell,
+                start = base - 4.hours,
+                end = base - 2.hours,
+                status = RecentFloatStatus.DECLINED,
+                resolvedAt = now - 3.hours,
+            ),
+            RecentFloat(
+                floatId = "recent-accepted-1",
+                destinationHouse = dubois,
+                start = base - 6.hours,
+                end = base - 4.hours,
+                status = RecentFloatStatus.ACCEPTED,
+                resolvedAt = now - 5.hours,
+            ),
+        )
+    }
+
+    /**
      * A deterministic Updates feed: the urgent pending-float entry (its `floatId`
      * matches [pendingFloat], so the row opens the same ack hero) + a reminder +
      * a manager removal (Today), then a permanent release + a preferences confirmation
@@ -181,7 +244,7 @@ object DemoData {
             NotificationItem(
                 id = "n-float",
                 category = NotificationCategory.FLOAT,
-                title = "Float assignment — Quad",
+                title = "Float assignment: Quad",
                 body = "Cover Quad today. Acknowledge before the T-10m deadline.",
                 createdAt = now - 2.minutes,
                 unread = true,
@@ -202,7 +265,7 @@ object DemoData {
             NotificationItem(
                 id = "n-swap",
                 category = NotificationCategory.SWAP,
-                title = "Swap request — Shift swap",
+                title = "Swap request: Shift swap",
                 body = "A housemate proposed a swap with you. Review it in Swaps.",
                 createdAt = now - 30.minutes,
                 unread = true,
@@ -213,7 +276,7 @@ object DemoData {
                 id = "n-removed",
                 category = NotificationCategory.SHIFT_REMOVED,
                 title = "Shift removed by manager",
-                body = "Your Fri 12:30–14:00 was removed.",
+                body = "Your Fri 12:30-14:00 was removed.",
                 createdAt = now - 3.hours,
                 unread = false,
             ),
@@ -221,7 +284,7 @@ object DemoData {
                 id = "n-permanent",
                 category = NotificationCategory.PERMANENT,
                 title = "Permanent slot released",
-                body = "Your Wed 16:00–18:00 is now a permanent opening.",
+                body = "Your Wed 16:00-18:00 is now a permanent opening.",
                 createdAt = now - 3.days,
                 unread = false,
             ),

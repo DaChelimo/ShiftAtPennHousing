@@ -182,11 +182,22 @@ fun buildOtherHousesTab(openShifts: List<OpenShift>): OtherHousesTab = OtherHous
 // Claim (§5.3 / §5.4).
 // ===================================================================
 
-/** §5.4 / decision #7: claimable strictly before T-2h; at exactly T-2h, NOT claimable. */
+/**
+ * §5.4 / §5.5 / decision #7: coverage-conditional T-2h lock (server-authoritative
+ * inputs). A vacant seat is claimable iff it has not started, its block's one-way
+ * coverage lock is unset, AND either it is still strictly before T-2h OR a real
+ * worker is still on the desk ([OpenShift.deskCovered]) — a still-staffed multi-staff
+ * desk (e.g. double-Harnwell) stays pickable until block start. A locked block is
+ * never claimable, even if later filled. The client consumes the flags; it does NOT
+ * re-derive coverage itself.
+ */
 fun isClaimable(
     shift: OpenShift,
     now: Instant,
-): Boolean = now < shift.start - CLAIM_CUTOFF_BEFORE_START
+): Boolean =
+    now < shift.start &&
+        !shift.coverageLocked &&
+        (now < shift.start - CLAIM_CUTOFF_BEFORE_START || shift.deskCovered)
 
 enum class ClaimCapVerdict {
     OK,

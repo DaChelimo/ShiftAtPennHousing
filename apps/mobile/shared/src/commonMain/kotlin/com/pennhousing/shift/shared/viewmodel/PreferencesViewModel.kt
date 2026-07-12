@@ -24,6 +24,10 @@ import kotlinx.coroutines.flow.asStateFlow
 data class PreferencesUiState(
     val title: String,
     val contextLabel: String,
+    /** Just the period name (e.g. "SUMMER 2026") — the eyebrow, with the deadline split out. */
+    val periodLabel: String,
+    /** The deadline rendered as a compact chip (e.g. "Due May 29 23:59"); null if unknown. */
+    val deadlineChip: String?,
     val banner: PreferenceBanner,
     /** The screen is read-only ONLY once the deadline has passed (submitting no longer locks). */
     val readOnly: Boolean,
@@ -35,7 +39,7 @@ data class PreferencesUiState(
     val showSubmit: Boolean,
     /** Show the discard button: only when there are unsaved edits to revert. */
     val showDiscard: Boolean,
-    /** "Submit changes" when re-submitting edits, else "Submit preferences". */
+    /** "Save changes" when re-submitting edits, else "Submit preferences". */
     val submitLabel: String,
     val optedOut: Boolean,
     val brush: PrefBrush,
@@ -77,6 +81,12 @@ class PreferencesViewModel(
     private var optedOut: Boolean = savedOptedOut
     private var hasSubmitted: Boolean = period.submitted
 
+    // The operation the ACTIVE paint-drag applies to every block it sweeps, decided once
+    // at [beginPaintDrag] from the first block and held for the whole gesture (null between
+    // drags). "Decide by drag start": if the drag begins on a block already holding the
+    // active brush the whole sweep ERASES (→ AVAILABLE), otherwise it paints the brush.
+    private var dragBrush: PrefBrush? = null
+
     // The ONLY read-only state: the deadline has passed (a late write would be rejected
     // by the RPC anyway). Submitting no longer locks — the worker edits until then.
     private val readOnly: Boolean = period.deadlinePassed
@@ -98,13 +108,16 @@ class PreferencesViewModel(
         return PreferencesUiState(
             title = "Preferences",
             contextLabel = context,
+            periodLabel = period.periodLabel.uppercase(),
+            deadlineChip = period.deadlineLabel,
             banner = buildPreferenceBanner(period.copy(submitted = hasSubmitted), dirty),
             readOnly = readOnly,
             hasSubmitted = hasSubmitted,
             isDirty = dirty,
             showSubmit = !readOnly && (dirty || !hasSubmitted),
             showDiscard = !readOnly && dirty,
-            submitLabel = if (hasSubmitted && dirty) "Submit changes" else "Submit preferences",
+            // Softer "Save changes" for re-edits (less final than "Submit"), first-time stays "Submit".
+            submitLabel = if (hasSubmitted && dirty) "Save changes" else "Submit preferences",
             optedOut = optedOut,
             brush = brush,
             targetHours = target,
@@ -125,18 +138,44 @@ class PreferencesViewModel(
         _uiState.value = snapshot()
     }
 
-    /** Paint one block with the current brush (no-op when read-only or opted out). */
+    /**
+     * The brush a gesture STARTING on [blockId] applies: erase (→ AVAILABLE) if the block
+     * already holds the active brush, otherwise paint the active brush. This is what makes a
+     * second sweep over blocks you already painted (in the same mode) clear them, instead of
+     * forcing a trip to the Available brush.
+     */
+    private fun toggledBrushFor(blockId: String): PrefBrush =
+        if (grid.statusOf(blockId) == brush) PrefBrush.AVAILABLE else brush
+
+    /**
+     * Tap one block: toggle it between the active brush and AVAILABLE (no-op when read-only
+     * or opted out). Tapping a block that already holds the active brush clears it.
+     */
     fun paint(blockId: String) {
         if (readOnly || optedOut) return
-        grid = grid.paint(blockId, brush)
+        grid = grid.paint(blockId, toggledBrushFor(blockId))
         _uiState.value = snapshot()
     }
 
     /**
-     * Paint every block of the selected day between [fromBlockId] and [toBlockId]
-     * (inclusive, either order) with the current brush — the live drag-paint. Idempotent
-     * for the active brush, so growing/extending a drag just keeps painting (matching the
-     * design's non-unpainting sweep). No-op when read-only, opted out, or ids are unknown.
+     * Begin a paint-drag on [blockId]: decide the whole gesture's operation from this first
+     * block (paint vs erase, see [toggledBrushFor]), apply it to the block, and hold it for
+     * every [paintRange] until [endPaintDrag]. No-op when read-only or opted out.
+     */
+    fun beginPaintDrag(blockId: String) {
+        if (readOnly || optedOut) return
+        val op = toggledBrushFor(blockId)
+        dragBrush = op
+        grid = grid.paint(blockId, op)
+        _uiState.value = snapshot()
+    }
+
+    /**
+     * Apply the active drag's operation to every block of the selected day between
+     * [fromBlockId] and [toBlockId] (inclusive, either order) — the live drag sweep. The
+     * operation is the one decided at [beginPaintDrag] (paint or erase); if no drag is in
+     * flight it falls back to deciding from [fromBlockId] (direct/programmatic calls). No-op
+     * when read-only, opted out, or ids are unknown.
      */
     fun paintRange(
         fromBlockId: String,
@@ -147,10 +186,16 @@ class PreferencesViewModel(
         val fromIdx = dayBlocks.indexOfFirst { it.blockId == fromBlockId }
         val toIdx = dayBlocks.indexOfFirst { it.blockId == toBlockId }
         if (fromIdx < 0 || toIdx < 0) return
+        val op = dragBrush ?: toggledBrushFor(fromBlockId)
         var g = grid
-        for (i in minOf(fromIdx, toIdx)..maxOf(fromIdx, toIdx)) g = g.paint(dayBlocks[i].blockId, brush)
+        for (i in minOf(fromIdx, toIdx)..maxOf(fromIdx, toIdx)) g = g.paint(dayBlocks[i].blockId, op)
         grid = g
         _uiState.value = snapshot()
+    }
+
+    /** End the active paint-drag: forget its decided operation so the next drag re-decides. */
+    fun endPaintDrag() {
+        dragBrush = null
     }
 
     fun incrementTarget() {

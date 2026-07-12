@@ -98,13 +98,17 @@ The screens MUST expose these stable ids. On Android attach them with
 | `soft_cap_confirm_button`   | Confirm-through-warning button.                          |
 | `claim_confirm_button`      | Final claim confirmation.                                |
 | `claim_success`             | Claim success state.                                     |
-| `drop_options_sheet`        | Drop-type popup ("this occurrence" / "permanently"), opened by tapping a `calendar_shift_card`. |
-| `drop_occurrence_option`    | "Drop this occurrence".                                  |
-| `drop_permanent_option`     | "Drop permanently".                                      |
-| `drop_short_notice_warning` | <20m short-notice warning (§5.2).                        |
+| `manage_shift_sheet`        | The manage-shift sheet, opened by tapping a `calendar_shift_card`. Holds the Drop/Swap intent cards, the shared scope, and the shared "How much" range. |
+| `intent_drop` / `intent_swap` | Equal-weight intent cards — "Drop the shift" vs "Swap it" (`intent_swap` is disabled when the card can't swap). |
+| `scope_segmented`           | The shared this-week / permanent scope control (drives BOTH drop and swap). |
+| `scope_this_week` / `scope_permanent` | The two scope segments; `scope_permanent` dims when the current intent can't go permanent. |
+| `drop_range_selector` / `drop_range_label` / `drop_from_now` | The shared "How much" range — sizes the drop AND pre-fills the swap give. |
+| `drop_short_notice_warning` | <20m short-notice warning (§5.2, drop intent only).      |
 | `drop_short_notice_continue`| Continue-through short-notice warning.                   |
-| `drop_confirm_button`       | Final drop confirmation. A dropped shift leaves the agenda and shows in the Open-Shifts feed (no "reclaim"). |
-| `swap_propose_option`       | "Propose a swap instead" pivot in the drop sheet (§8).   |
+| `drop_confirm_button`       | Final drop confirmation (Drop intent). A dropped shift leaves the agenda and shows in the Open-Shifts feed (no "reclaim"). |
+| `swap_continue_button`      | "Choose who to swap with" — the Swap-intent pivot; opens `swap_calendar_sheet` pre-filled with the selected range + scope (§8). |
+| `swap_calendar_sheet`       | The week-paged give/take swap sheet (the live Swap-intent target). |
+| `swap_take_list` / `swap_take_row` | The counterparty day list + one pickable housemate run. |
 | `swap_sheet`                | The swap-proposal sheet (kind + counterparty + pickers). |
 | `swap_candidate_list`       | The counterparty picker list.                            |
 | `swap_candidate_row`        | One pickable counterparty (run, or person for permanent).|

@@ -180,7 +180,7 @@ fun buildCalendarWeek(
             )
         }
     val sunday = monday.plus(6, DateTimeUnit.DAY)
-    val range = "${MONTH_SHORT[monday.month.ordinal]} ${monday.day} – ${MONTH_SHORT[sunday.month.ordinal]} ${sunday.day}"
+    val range = "${MONTH_SHORT[monday.month.ordinal]} ${monday.day} - ${MONTH_SHORT[sunday.month.ordinal]} ${sunday.day}"
     return CalendarWeek(rangeLabel = range, todayIndex = days.indexOfFirst { it.isToday }, days = days)
 }
 
@@ -430,7 +430,7 @@ fun buildTypicalWeek(
 private fun formatTimeRangeLabel(
     shift: MyShift,
     zone: TimeZone,
-): String = "${formatBlockTime(shift.start, zone)} – ${formatBlockTime(shift.end, zone)}"
+): String = "${formatBlockTime(shift.start, zone)} - ${formatBlockTime(shift.end, zone)}"
 
 /** "6h" / "6h 30m" / "30m" — a whole-day total from minutes. */
 internal fun formatHoursMinutes(minutes: Long): String {

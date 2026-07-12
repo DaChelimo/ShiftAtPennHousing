@@ -260,7 +260,7 @@ fun withIncomingSwapEntries(
                 NotificationItem(
                     id = "incoming-swap-${swap.swapId}",
                     category = NotificationCategory.SWAP,
-                    title = "Swap request — ${swapTypeLabel(swap.swapType)}",
+                    title = "Swap request: ${swapTypeLabel(swap.swapType)}",
                     body = "A housemate proposed a swap with you. Review it in Swaps. Expires $expires.",
                     createdAt = swap.createdAt,
                     unread = true,

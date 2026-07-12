@@ -90,14 +90,14 @@ fun buildNotificationRows(broadcastSubscribed: Boolean): List<NotificationRowMod
         NotificationRowModel(
             NotificationChannel.FLOAT,
             "Float assignments",
-            "Always on — time-critical",
+            "Always on (time-critical)",
             on = true,
             interactive = false,
         ),
         NotificationRowModel(
             NotificationChannel.SHIFT_REMINDERS,
             "Shift reminders",
-            "Always on — before each shift",
+            "Always on (before each shift)",
             on = true,
             interactive = false,
         ),

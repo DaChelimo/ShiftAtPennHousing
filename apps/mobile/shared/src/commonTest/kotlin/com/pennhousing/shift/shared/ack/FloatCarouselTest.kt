@@ -60,17 +60,11 @@ class FloatCarouselTest {
     }
 
     @Test
-    fun past_deadline_float_is_not_respondable_but_still_shown() {
-        // start at now+5m → deadline (T-10m) already passed.
+    fun past_deadline_float_is_excluded_from_the_carousel() {
+        // start at now+5m → deadline (T-10m) already passed. A lapsed float no longer
+        // belongs in the prominent zone; it moves to the recent section instead.
         val now = at("2026-01-15T17:55:00-05:00")
-        val cards = buildFloatRequestCards(listOf(later), now)
-        val c = cards.single()
-        assertFalse(c.respondable)
-        assertTrue(c.deadlinePassed)
-        assertEquals("Starts in 5m", c.startsInLabel)
-        // Past the deadline → no accept-by countdown (the reassignment note shows instead).
-        assertEquals(null, c.acceptByLabel)
-        assertFalse(c.acceptUrgent)
+        assertTrue(buildFloatRequestCards(listOf(later), now).isEmpty())
     }
 
     @Test
@@ -84,12 +78,11 @@ class FloatCarouselTest {
     }
 
     @Test
-    fun in_progress_float_reads_starting_now() {
-        // now is inside the Harnwell window (15:30–18:00).
+    fun in_progress_float_is_excluded_from_the_carousel() {
+        // now is inside the Harnwell window (15:30-18:00) → well past its T-10m deadline,
+        // so it is not actionable and never renders as a carousel card.
         val now = at("2026-01-15T16:00:00-05:00")
-        val c = buildFloatRequestCards(listOf(sooner), now).single()
-        assertEquals("Starting now", c.startsInLabel)
-        assertFalse(c.respondable) // past the T-10m deadline
+        assertTrue(buildFloatRequestCards(listOf(sooner), now).isEmpty())
     }
 
     @Test

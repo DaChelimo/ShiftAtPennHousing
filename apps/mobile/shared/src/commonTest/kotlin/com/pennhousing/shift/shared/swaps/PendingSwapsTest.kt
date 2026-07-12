@@ -122,10 +122,34 @@ class PendingSwapsTest {
                     iniStart = "2026-01-20T09:00:00-05:00", iniEnd = "2026-01-20T13:00:00-05:00", iniBlocks = 8,
                 ),
             )
-        assertEquals("Hand-off request", d.title)
+        // One-directional receive — framed as an offer, never a "swap"/"hand-off request".
+        assertEquals("Hours offered", d.title)
+        assertEquals("Hours offered", d.typeLabel)
+        assertEquals("Ben wants to give you these hours.", d.intro)
         assertNull(d.giveLabel) // I give nothing
         assertNotNull(d.getLabel) // I receive their shift
         assertEquals("They give nothing in return.", d.note)
+    }
+
+    @Test
+    fun one_way_permanent_transfer_to_me_reads_give_you_these_hours_permanently() {
+        // A permanent_swap with nothing back: decide on the one-directional NATURE, but keep
+        // the permanence in the wording + pill (the worker is taking on recurring hours).
+        val d =
+            buildSwapDecision(
+                swap(
+                    "permanent_swap", SwapDirection.INCOMING,
+                    iniIds = listOf("i1"), cpIds = emptyList(),
+                    iniStart = "2026-01-20T09:00:00-05:00", iniEnd = "2026-01-20T13:00:00-05:00", iniBlocks = 8,
+                ),
+            )
+        assertEquals("Hours offered", d.title)
+        assertEquals("Permanent hours", d.typeLabel) // permanence preserved in the chip
+        assertEquals("Ben wants to give you these hours permanently.", d.intro)
+        assertTrue(d.permanent)
+        assertNull(d.giveLabel)
+        assertNotNull(d.getLabel)
+        assertTrue(d.note!!.contains("rest of the term"))
     }
 
     @Test
@@ -176,7 +200,7 @@ class PendingSwapsTest {
         assertEquals("Shift swap", n.typeLabel)
         // The shift itself — day + date, start–end time, duration — shown clearly.
         assertEquals("Sat · Jan 17", n.dayLabel)
-        assertEquals("14:00 – 18:00", n.timeLabel)
+        assertEquals("14:00 - 18:00", n.timeLabel)
         assertEquals("4h", n.durationLabel)
         // The explanation says why it can't be dropped/swapped, and names the other party.
         assertTrue(n.body.contains("Ben"))

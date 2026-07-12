@@ -127,7 +127,7 @@ fun ShiftColors.visual(state: ShiftState): StateVisual =
         ShiftState.UNPICKABLE ->
             StateVisual(surfaceVar, null, unpickBadge, ter, "Unpickable", ShiftIcons.Lock, ter, muted = true)
         ShiftState.DROPPED ->
-            StateVisual(surface, null, scheduledBadge, ter, "Dropped — still open", ShiftIcons.ArrowDown, sec, strike = true)
+            StateVisual(surface, null, scheduledBadge, ter, "Dropped (still open)", ShiftIcons.ArrowDown, sec, strike = true)
         ShiftState.ALLIED ->
             StateVisual(allied.tint, allied.accent, allied.badge, allied.deep, "Allied", ShiftIcons.Person, allied.deep)
         ShiftState.ACK ->
@@ -213,7 +213,7 @@ val WorkerStateLegend: List<LegendEntry> =
         LegendEntry(ShiftState.BREAK, "A break-period shift (short or winter break)."),
         LegendEntry(ShiftState.OPEN, "An open one-time gap you can claim."),
         LegendEntry(ShiftState.PERMANENT, "A recurring slot whose owner permanently dropped it."),
-        LegendEntry(ShiftState.UNPICKABLE, "Past the T-2h cutoff — visible but no longer claimable."),
+        LegendEntry(ShiftState.UNPICKABLE, "Past the T-2h cutoff: visible but no longer claimable."),
         LegendEntry(ShiftState.DROPPED, "You dropped this; still open until someone claims it."),
         LegendEntry(ShiftState.ALLIED, "Covered by external Allied Security."),
         LegendEntry(ShiftState.ACK, "A float you've acknowledged."),

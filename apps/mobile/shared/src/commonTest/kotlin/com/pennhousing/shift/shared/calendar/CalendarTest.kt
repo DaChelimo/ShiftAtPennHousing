@@ -48,7 +48,7 @@ class CalendarTest {
         assertTrue(w.days[5].hasShifts) // Sat (pickup)
         assertFalse(w.days[0].hasShifts) // Mon empty
         assertTrue(w.days[3].isToday)
-        assertEquals("Jan 12 – Jan 18", w.rangeLabel)
+        assertEquals("Jan 12 - Jan 18", w.rangeLabel)
     }
 
     @Test fun shift_in_another_week_is_not_placed() {
@@ -67,10 +67,10 @@ class CalendarTest {
         assertEquals("2 shifts · 6h", a.header.summary)
         // morning (09–13, past), NOW (14:00), evening (16–18, upcoming).
         assertEquals(3, a.items.size)
-        assertEquals("09:00 – 13:00", a.items[0].shift?.timeLabel)
+        assertEquals("09:00 - 13:00", a.items[0].shift?.timeLabel)
         assertEquals("NOW · 14:00", a.items[1].nowLabel)
         assertNull(a.items[1].shift)
-        assertEquals("16:00 – 18:00", a.items[2].shift?.timeLabel)
+        assertEquals("16:00 - 18:00", a.items[2].shift?.timeLabel)
         assertFalse(a.isEmpty)
     }
 
@@ -83,7 +83,7 @@ class CalendarTest {
 
     @Test fun now_line_appended_when_all_shifts_are_past() {
         val a = buildCalendarAgenda(listOf(morning), selectedDayIndex = 3, now = now)
-        assertEquals("09:00 – 13:00", a.items[0].shift?.timeLabel)
+        assertEquals("09:00 - 13:00", a.items[0].shift?.timeLabel)
         assertEquals("NOW · 14:00", a.items[1].nowLabel) // appended at the end
     }
 
@@ -124,7 +124,7 @@ class CalendarTest {
         val a = buildCalendarAgenda(blocks, selectedDayIndex = 5, now = now) // Sat
         assertEquals("1 shift · 4h", a.header.summary)
         assertEquals(1, a.items.size)
-        assertEquals("10:00 – 14:00", a.items[0].shift?.timeLabel)
+        assertEquals("10:00 - 14:00", a.items[0].shift?.timeLabel)
     }
 
     // ----- closed-house days (§3.4/§11.3, T2-12c) -----
@@ -164,7 +164,7 @@ class CalendarTest {
     @Test fun next_week_anchor_renders_that_week_with_no_today_cell() {
         val anchor = shiftWeekAnchor(now, 1)
         val w = buildCalendarWeek(all, now, anchor = anchor)
-        assertEquals("Jan 19 – Jan 25", w.rangeLabel)
+        assertEquals("Jan 19 - Jan 25", w.rangeLabel)
         assertEquals(listOf("19", "20", "21", "22", "23", "24", "25"), w.days.map { it.dateLabel })
         assertFalse(w.days.any { it.isToday }) // today is not in next week
         assertEquals(-1, w.todayIndex)
@@ -186,10 +186,10 @@ class CalendarTest {
         // Thu Mar 12 (EDT), not skewed by the missing hour.
         val beforeDst = at("2026-03-05T14:00:00-05:00")
         val w = buildCalendarWeek(emptyList(), beforeDst, anchor = shiftWeekAnchor(beforeDst, 1))
-        assertEquals("Mar 9 – Mar 15", w.rangeLabel)
+        assertEquals("Mar 9 - Mar 15", w.rangeLabel)
         // And a round trip returns to the original week.
         val back = shiftWeekAnchor(shiftWeekAnchor(now, 1), -1)
-        assertEquals("Jan 12 – Jan 18", buildCalendarWeek(emptyList(), now, anchor = back).rangeLabel)
+        assertEquals("Jan 12 - Jan 18", buildCalendarWeek(emptyList(), now, anchor = back).rangeLabel)
     }
 
     @Test fun view_model_week_navigation_moves_the_strip_and_resets_selection() {
@@ -199,12 +199,12 @@ class CalendarTest {
         vm.nextWeek()
         val next = vm.uiState.value
         assertEquals(1, next.weekOffset)
-        assertEquals("Jan 19 – Jan 25", next.week.rangeLabel)
+        assertEquals("Jan 19 - Jan 25", next.week.rangeLabel)
         assertEquals(0, next.selectedDayIndex) // Monday on a navigated week
         vm.previousWeek()
         val home = vm.uiState.value
         assertEquals(0, home.weekOffset)
-        assertEquals("Jan 12 – Jan 18", home.week.rangeLabel)
+        assertEquals("Jan 12 - Jan 18", home.week.rangeLabel)
         assertEquals(3, home.selectedDayIndex) // back to today
     }
 
@@ -221,9 +221,9 @@ class CalendarTest {
         val options = weekPickerOptions(now)
         assertEquals(listOf(-1, 0, 1, 2, 3), options.map { it.offset })
         assertEquals(listOf("Last week", "This week", "Next week", "In 2 weeks", "In 3 weeks"), options.map { it.label })
-        assertEquals("Jan 12 – Jan 18", options.first { it.offset == 0 }.rangeLabel)
-        assertEquals("Jan 5 – Jan 11", options.first { it.offset == -1 }.rangeLabel)
-        assertEquals("Jan 19 – Jan 25", options.first { it.offset == 1 }.rangeLabel)
+        assertEquals("Jan 12 - Jan 18", options.first { it.offset == 0 }.rangeLabel)
+        assertEquals("Jan 5 - Jan 11", options.first { it.offset == -1 }.rangeLabel)
+        assertEquals("Jan 19 - Jan 25", options.first { it.offset == 1 }.rangeLabel)
     }
 
     @Test fun typical_week_derives_recurring_scheduled_slots_across_weeks() {
@@ -234,7 +234,7 @@ class CalendarTest {
         assertEquals(1, slots.size)
         val slot = slots.single()
         assertEquals("Thu", slot.dayLabel)
-        assertEquals("09:00 – 13:00", slot.timeLabel)
+        assertEquals("09:00 - 13:00", slot.timeLabel)
         assertEquals("Harnwell", slot.houseName)
         assertEquals(2, slot.weeksSeen)
     }
@@ -254,7 +254,7 @@ class CalendarTest {
         val dropped = shift("2026-01-16T20:00:00-05:00", "2026-01-16T22:00:00-05:00").copy(id = "dr", droppedStillOpen = true)
         val slots = buildTypicalWeek(blocks + breakShift + dropped)
         assertEquals(1, slots.size) // 4 blocks coalesce to one Fri 10:00–12:00 slot
-        assertEquals("10:00 – 12:00", slots.single().timeLabel)
+        assertEquals("10:00 - 12:00", slots.single().timeLabel)
         assertEquals("Fri", slots.single().dayLabel)
     }
 

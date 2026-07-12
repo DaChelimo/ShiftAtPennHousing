@@ -260,7 +260,7 @@ private fun BreakCalInfoCard(
     val body =
         when (phase) {
             BreakPhase.CLAIM_WINDOW -> "First-come, first-served · drag to pick your hours · 40h hard cap · $windowLabel"
-            BreakPhase.OPEN_FEED -> "Claiming closed — leftover shifts are in Open Shifts · $windowLabel"
+            BreakPhase.OPEN_FEED -> "Claiming closed. Leftover shifts are in Open Shifts · $windowLabel"
             BreakPhase.PRE_OPEN -> "Opens 14 days before the break · $windowLabel"
         }
     Row(

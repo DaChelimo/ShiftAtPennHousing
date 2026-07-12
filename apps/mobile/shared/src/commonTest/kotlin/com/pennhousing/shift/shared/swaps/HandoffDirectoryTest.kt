@@ -27,7 +27,7 @@ class HandoffDirectoryTest {
             w("amy", "Amy", "quad", "Quad"),
             w("cara", "Cara", "harnwell", "Harnwell"),
             w("dee", "Dee", "house-03", "Gregory"),
-            w("eli", "Eli", "house-04", "Stouffer"),
+            w("eli", "Eli", "house-04", "Du Bois"),
         )
 
     @Test
@@ -35,7 +35,7 @@ class HandoffDirectoryTest {
         // A plain (non-Harnwell, non-float) Quad shift — no eligibility constraint.
         val d = buildHandoffDirectory(dir, meUserId = "me", giveHouseId = "quad", giveIsFloat = false)
         assertEquals(listOf("amy", "ben"), d.myHouse.map { it.userId }) // sorted by name, me excluded
-        assertEquals(listOf("Gregory", "Harnwell", "Stouffer"), d.others.map { it.houseName }) // grouped + sorted
+        assertEquals(listOf("Du Bois", "Gregory", "Harnwell"), d.others.map { it.houseName }) // grouped + sorted
         assertEquals(3, d.othersCount)
         assertFalse(d.isEmpty)
     }
@@ -59,7 +59,7 @@ class HandoffDirectoryTest {
     fun nonharnwell_float_give_keeps_only_multistaff_float_source_recipients() {
         // A float span at a regular house: only Quad/Harnwell-home workers may receive it.
         val d = buildHandoffDirectory(dir, meUserId = "me", giveHouseId = "house-09", giveIsFloat = true)
-        // My House (Quad) eligible; Others = only Harnwell (Gregory + Stouffer are single-staff).
+        // My House (Quad) eligible; Others = only Harnwell (Gregory + Du Bois are single-staff).
         assertEquals(listOf("amy", "ben"), d.myHouse.map { it.userId })
         assertEquals(listOf("Harnwell"), d.others.map { it.houseName })
         assertEquals(listOf("cara"), d.others.single().workers.map { it.userId })

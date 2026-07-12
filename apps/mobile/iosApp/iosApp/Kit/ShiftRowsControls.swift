@@ -148,6 +148,9 @@ struct ShiftToggle: View {
 /// brand header (title + close) and applies detents + the grabber (HIG).
 struct ShiftSheet<Content: View>: View {
     var title: String? = nil
+    // When non-nil, a leading back chevron (a multi-page sheet pushing a "page" in place
+    // rather than presenting a new sheet); the close ✕ still dismisses the whole sheet.
+    var onBack: (() -> Void)? = nil
     let onClose: () -> Void
     @ViewBuilder let content: () -> Content
     @Environment(\.colorScheme) private var scheme
@@ -156,7 +159,13 @@ struct ShiftSheet<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let title {
-                HStack {
+                HStack(spacing: 8) {
+                    if let onBack {
+                        Button(action: onBack) {
+                            Image(systemName: ShiftIcons.chevronLeft).font(.system(size: 14, weight: .semibold)).foregroundColor(c.sec)
+                                .frame(width: 30, height: 30).background(c.surfaceVar).clipShape(Circle())
+                        }
+                    }
                     Text(title).font(ShiftFont.sans(19, .bold)).foregroundColor(c.ink)
                     Spacer()
                     Button(action: onClose) {
@@ -164,7 +173,7 @@ struct ShiftSheet<Content: View>: View {
                             .frame(width: 30, height: 30).background(c.surfaceVar).clipShape(Circle())
                     }
                 }
-                .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 4)
+                .padding(.horizontal, 18).padding(.bottom, 4)
             }
             // Scroll the body so tall sheets (e.g. the multi-leg swap composer) can always
             // reach their bottom actions — without this the content overflowed the detent
@@ -175,10 +184,40 @@ struct ShiftSheet<Content: View>: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        // A slight fade+rise settles the content in as the drawer opens (applied to the
+        // content, before the surface background, so the background stays put and no gap
+        // shows under the sliding content).
+        .sheetContentEntrance()
+        // The native grabber (`.presentationDragIndicator`) floats as an overlay and takes
+        // no layout space, so without this inset the title/content sits behind it. Clear it
+        // with comfortable breathing room (matches the Android grabber's bottom gap).
+        .padding(.top, 18)
         .background(c.surface)
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }
+}
+
+/// A slight fade + rise applied to sheet content as a drawer opens. The native `.sheet`
+/// slides the container up; this settles the content in on top of that. Honors the
+/// Reduce Motion accessibility setting (no-op when on).
+private struct SheetContentEntrance: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var appeared = false
+    func body(content: Content) -> some View {
+        content
+            .opacity(reduceMotion || appeared ? 1 : 0)
+            .offset(y: reduceMotion || appeared ? 0 : 10)
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeOut(duration: 0.3)) { appeared = true }
+            }
+    }
+}
+
+extension View {
+    /// See `SheetContentEntrance`. Apply to a drawer's content before its background.
+    func sheetContentEntrance() -> some View { modifier(SheetContentEntrance()) }
 }
 
 /// A confirm-in-a-sheet (drop / decline). Use `.destructiveFilled` for destructive.

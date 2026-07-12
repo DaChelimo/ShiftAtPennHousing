@@ -82,7 +82,7 @@ class MyShiftPresentationTest {
 
     @Test fun time_range_uses_en_dash() =
         assertEquals(
-            "09:00 – 13:00",
+            "09:00 - 13:00",
             formatTimeRange(at("2026-01-15T09:00:00-05:00"), at("2026-01-15T13:00:00-05:00")),
         )
 
@@ -119,7 +119,7 @@ class MyShiftPresentationTest {
         assertEquals("Harnwell", r.houseName)
         assertNull(r.destination)
         assertEquals("H", r.houseInitial)
-        assertEquals("09:00 – 13:00", r.timeLabel)
+        assertEquals("09:00 - 13:00", r.timeLabel)
         assertEquals("4h", r.durationLabel)
     }
 

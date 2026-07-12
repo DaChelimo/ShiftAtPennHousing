@@ -57,6 +57,12 @@ struct ShiftColors {
     let blueContainer: Color
     let onBlueContainer: Color
 
+    /// Current-date / current-week emphasis. ONE consistent soft brand-blue that
+    /// means "now" everywhere — the week picker's selected-week fill, the house
+    /// calendar's today cell. Pair with `blue` (the brand line) as a ring to mark
+    /// the *anchor* week without overriding the user's selection.
+    let today: Color
+
     // Neutrals
     let ink: Color
     let sec: Color
@@ -101,6 +107,7 @@ struct ShiftColors {
         bluePressed: Color(hex: 0x0A4ECB),
         blueContainer: Color(hex: 0xE4EDFF),
         onBlueContainer: Color(hex: 0x00307E),
+        today: Color(hex: 0xDCE8FF),
         ink: Color(hex: 0x121622),
         sec: Color(hex: 0x545B6B),
         ter: Color(hex: 0x828A9A),
@@ -137,6 +144,7 @@ struct ShiftColors {
         bluePressed: Color(hex: 0x409CFF),
         blueContainer: Color(hex: 0x0C2C4F),
         onBlueContainer: Color(hex: 0xBBD6FF),
+        today: Color(hex: 0x14375F),
         ink: Color(hex: 0xECF0F6),
         sec: Color(hex: 0xA7AFBE),
         ter: Color(hex: 0x6E7686),
@@ -222,14 +230,21 @@ extension ThemeChoice {
 /// SF Pro is the graceful fallback if the bundled Plex weights aren't registered
 /// yet (see `iosApp/README.md` — add the `Fonts/*.ttf` to the target + `UIAppFonts`).
 enum ShiftFont {
+    // App-wide font bump (2026-07): the whole app read as shrunk on a large phone (iPhone 17
+    // Pro Max feedback). Matches the ratio of the nav-bar label bump the user confirmed they
+    // liked (10.5 -> 11.5 = 1.095x). Every screen calls `ShiftFont.sans`/`.mono` (verified: zero
+    // raw `Text().font(.system(size:))` call sites bypass it), so scaling here once reaches the
+    // whole app without editing each call site.
+    private static let appScale: CGFloat = 1.1
+
     static func sans(_ size: CGFloat, _ weight: Font.Weight = .regular, relativeTo style: Font.TextStyle = .body) -> Font {
-        .custom(plexSans(weight), size: size, relativeTo: style)
+        .custom(plexSans(weight), size: size * appScale, relativeTo: style)
     }
 
     /// Monospaced (times / durations / IDs). Plex Mono is inherently tabular; pair
     /// with `.monospacedDigit()` on the `Text` for SF Pro fallback parity.
     static func mono(_ size: CGFloat, _ weight: Font.Weight = .medium, relativeTo style: Font.TextStyle = .body) -> Font {
-        .custom(plexMono(weight), size: size, relativeTo: style)
+        .custom(plexMono(weight), size: size * appScale, relativeTo: style)
     }
 
     private static func plexSans(_ weight: Font.Weight) -> String {

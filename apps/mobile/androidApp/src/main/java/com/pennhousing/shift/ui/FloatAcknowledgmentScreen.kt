@@ -274,7 +274,7 @@ private fun HoursReassuranceBanner() {
         Text(
             buildAnnotatedString {
                 withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("Your weekly hours don't change.") }
-                append(" A float moves an already-scheduled shift — it never adds hours.")
+                append(" A float moves an already-scheduled shift; it never adds hours.")
             },
             color = c.floatOut.deep,
             fontSize = 13.sp,

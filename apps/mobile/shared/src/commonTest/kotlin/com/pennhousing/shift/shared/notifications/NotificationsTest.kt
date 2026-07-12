@@ -223,7 +223,7 @@ class NotificationsTest {
         assertEquals("s-1", entry.swapId)
         assertTrue(entry.urgent)
         assertTrue(entry.unread)
-        assertEquals("Swap request — Shift swap", entry.title)
+        assertEquals("Swap request: Shift swap", entry.title)
     }
 
     @Test fun incoming_permanent_swap_is_also_a_mirror() {
@@ -231,7 +231,7 @@ class NotificationsTest {
         // Updates just mirrors every leg the same way.
         val entry = withIncomingSwapEntries(emptyList(), listOf(swap("s-3", "permanent_swap"))).single()
         assertEquals("s-3", entry.swapId)
-        assertEquals("Swap request — Permanent swap", entry.title)
+        assertEquals("Swap request: Permanent swap", entry.title)
         assertTrue(entry.urgent)
     }
 

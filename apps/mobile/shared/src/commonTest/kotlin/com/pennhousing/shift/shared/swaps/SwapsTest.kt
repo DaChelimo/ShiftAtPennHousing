@@ -89,7 +89,7 @@ class SwapsTest {
         val candidate = out.single()
         assertEquals("u-a", candidate.userId)
         assertEquals(listOf("a-0", "a-1", "a-2", "a-3"), candidate.seatIds)
-        assertEquals("14:00 – 16:00", candidate.timeLabel)
+        assertEquals("14:00 - 16:00", candidate.timeLabel)
         assertEquals("2h", candidate.durationLabel)
     }
 
@@ -143,7 +143,7 @@ class SwapsTest {
         val plan = planSwapSpan(listOf("m-0", "m-1", "m-2", "m-3"), at("2026-01-15T14:00:00-05:00"), at("2026-01-15T16:00:00-05:00"), 0, 2)
         assertEquals(listOf("m-0", "m-1"), plan.blockIds)
         assertEquals("Thu · Jan 15", plan.dayLabel) // day + date shown on each picker
-        assertEquals("14:00 – 15:00", plan.rangeLabel)
+        assertEquals("14:00 - 15:00", plan.rangeLabel)
         assertEquals("1h", plan.durationLabel)
         assertFalse(plan.wholeSpan)
     }

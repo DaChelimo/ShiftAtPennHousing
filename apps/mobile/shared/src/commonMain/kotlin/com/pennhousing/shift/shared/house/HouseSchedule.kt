@@ -221,12 +221,12 @@ private fun coalesce(
                     startMin = startMin,
                     endMin = endMin,
                     lane = 0,
-                    timeLabel = "${fmtMinOfDay(startMin)} – ${fmtMinOfDay(endMin)}",
+                    timeLabel = "${fmtMinOfDay(startMin)} - ${fmtMinOfDay(endMin)}",
                     workerLabel =
                         when {
                             first.vacant -> "Open"
                             mine -> "You"
-                            else -> first.workerName ?: "—"
+                            else -> first.workerName ?: "-"
                         },
                     workerName = first.workerName,
                     workerPhone = first.workerPhone,

@@ -8,8 +8,8 @@ appId: com.pennhousing.shift
 - launchApp:
     clearState: true
 
-# My Shifts is the calendar now. Tapping an agenda card opens the drop-type popup:
-# occurrence vs permanent (§5.2).
+# My Shifts is the calendar now. Tapping an agenda card opens the manage-shift sheet:
+# equal-weight Drop / Swap intents over a shared scope + "How much" range (§5.2 / §8).
 - tapOn:
     id: "tab_my_shifts"
 - assertVisible:
@@ -19,11 +19,11 @@ appId: com.pennhousing.shift
 - tapOn:
     id: "calendar_shift_card"
 - assertVisible:
-    id: "drop_options_sheet"
-- assertVisible: "Drop this occurrence"
-- assertVisible: "Drop permanently"
+    id: "manage_shift_sheet"
+- assertVisible: "Drop the shift"
+- assertVisible: "Swap it"
 - tapOn:
-    id: "drop_occurrence_option"
+    id: "intent_drop"
 
 # Dropping a shift starting within 20 minutes warns before confirming (§5.2).
 # Acknowledge the short-notice warning if it appears.

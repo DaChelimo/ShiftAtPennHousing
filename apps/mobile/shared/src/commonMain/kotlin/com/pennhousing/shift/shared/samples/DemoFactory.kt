@@ -156,8 +156,11 @@ object DemoFactory {
         // Own assignment ids already in a pending swap — filtered out of the give pool so an
         // already-pending shift can't be re-offered (the server would reject it).
         pendingGiveAssignmentIds: Set<String> = emptySet(),
+        // Carries the shared manage-shift scope: true opens a permanent swap (when the give is
+        // permanent-eligible). See SwapCalendarViewModel.initialPermanent.
+        initialPermanent: Boolean = false,
     ): SwapCalendarViewModel =
-        SwapCalendarViewModel(listOf(giveShift), meUserId, now(), breakProfile, giveShift.id, pendingGiveAssignmentIds)
+        SwapCalendarViewModel(listOf(giveShift), meUserId, now(), breakProfile, giveShift.id, pendingGiveAssignmentIds, initialPermanent)
 
     /**
      * The demo cross-house staff-worker directory for the §8.5 hand-off recipient picker

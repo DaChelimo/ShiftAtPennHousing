@@ -1,5 +1,6 @@
 import SwiftUI
 import Shared
+import UIKit
 
 /// Preference submission (the tri-state paint grid + target weekly hours) in SwiftUI,
 /// over the shared `PreferencesViewModel` (observed — its brush/grid/target mutate).
@@ -68,44 +69,64 @@ struct PreferencesScreen: View {
         let st = model.state
         return VStack(alignment: .leading, spacing: 0) {
             PageTitle(title: "Preferences")
-            Text(st.contextLabel)
+
+            // Eyebrow is just the period now — the deadline rides in the status card as a chip.
+            Text(st.periodLabel)
                 .font(ShiftFont.sans(11, .semibold)).tracking(0.5).foregroundColor(c.blue)
-                .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 6)
+                .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 8)
 
-            ShiftBanner(
-                title: st.banner.title,
-                bodyText: st.banner.body,
-                tone: st.banner.tone == .success ? .success : .info
-            )
-            .padding(.horizontal, 16).padding(.bottom, 8)
+            statusCard(st, c)
+                .padding(.horizontal, 16).padding(.bottom, 14)
 
+            // Days + brush are grouped right above the timeline they drive, and stay pinned
+            // while the timeline scrolls beneath them.
             weekStrip(st.weekStrip, c)
-
-            VStack(alignment: .leading, spacing: 12) {
-                targetCard(st, c)
-                if st.optedOut {
-                    EmptyState(
-                        title: "No hours marked",
-                        systemIcon: ShiftIcons.ban,
-                        bodyText: "You won't be scheduled next week. Untick \"no hours\" to set availability."
-                    )
-                } else {
-                    brushSelector(st, c)
-                    if !st.readOnly {
-                        Text("Long-press and drag to paint a range · tap a block for 30 min")
-                            .font(ShiftFont.sans(12)).foregroundColor(c.ter)
-                    }
-                    Text(st.day.title).font(ShiftFont.sans(14, .semibold)).foregroundColor(c.ink)
-                    PrefTimelineView(
-                        day: st.day,
-                        enabled: !st.readOnly,
-                        onPaint: { model.vm.paint(blockId: $0) },
-                        onPaintRange: { model.vm.paintRange(fromBlockId: $0, toBlockId: $1) },
-                        c: c
-                    )
+            if !st.optedOut {
+                if !st.readOnly {
+                    Text("Pick a mode")
+                        .font(ShiftFont.sans(12, .semibold)).foregroundColor(c.ter)
+                        .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 5)
                 }
+                brushSelector(st, c)
+                    .padding(.horizontal, 16)
+                if !st.readOnly {
+                    paintHelpCard(c)
+                        .padding(.horizontal, 16).padding(.top, 10)
+                }
+                HStack(spacing: 8) {
+                    Text(st.day.title).font(ShiftFont.sans(16, .semibold)).foregroundColor(c.ink)
+                    Spacer()
+                }
+                .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 2)
             }
-            .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 16)
+
+            // Only the timeline (and the demoted target card) scroll. Inside the timeline a
+            // plain swipe scrolls; a ~0.25s hold hands off to paint (see PrefTimelineView).
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if st.optedOut {
+                        EmptyState(
+                            title: "No hours marked",
+                            systemIcon: ShiftIcons.ban,
+                            bodyText: "You won't be scheduled next week. Untick \"no hours\" to set availability."
+                        )
+                    } else {
+                        PrefTimelineView(
+                            day: st.day,
+                            enabled: !st.readOnly,
+                            activeBrush: st.brush,
+                            onBeginPaint: { model.vm.beginPaintDrag(blockId: $0) },
+                            onPaintRange: { model.vm.paintRange(fromBlockId: $0, toBlockId: $1) },
+                            onEndPaint: { model.vm.endPaintDrag() },
+                            c: c
+                        )
+                    }
+                    // Target is demoted below the timeline (not part of the day-painting group).
+                    targetCard(st, c)
+                }
+                .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 16)
+            }
+            .frame(maxHeight: .infinity)
 
             if st.showSubmit || st.showDiscard {
                 HStack(spacing: 10) {
@@ -127,29 +148,60 @@ struct PreferencesScreen: View {
         .accessibilityIdentifier("preferences_screen")
     }
 
+    // MARK: status card
+
+    /// Compact one-line status: an icon + short state, with the deadline as a trailing chip
+    /// (never a full sentence). Success (submitted) reads green; everything else reads blue.
+    private func statusCard(_ st: PreferencesUiState, _ c: ShiftColors) -> some View {
+        let success = st.banner.tone == .success
+        let accent = success ? c.success.accent : c.blue
+        let tint = success ? c.success.tint : c.blueContainer
+        let icon = success ? ShiftIcons.checkCircle : ShiftIcons.info
+        return HStack(spacing: 9) {
+            Image(systemName: icon).font(.system(size: 15, weight: .semibold)).foregroundColor(accent)
+            Text(st.banner.title).font(ShiftFont.sans(13.5, .semibold)).foregroundColor(c.ink).lineLimit(1)
+            Spacer(minLength: 8)
+            if let chip = st.deadlineChip {
+                HStack(spacing: 4) {
+                    Image(systemName: ShiftIcons.clock).font(.system(size: 10, weight: .semibold))
+                    Text(chip).font(ShiftFont.sans(11, .semibold))
+                }
+                .foregroundColor(c.sec)
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(c.surface)
+                .clipShape(Capsule())
+                .overlay(Capsule().strokeBorder(c.divider, lineWidth: 1))
+                .fixedSize()
+                .accessibilityIdentifier("pref_deadline_chip")
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 10)
+        .background(tint)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityIdentifier("pref_status_card")
+    }
+
     // MARK: week strip
 
     private func weekStrip(_ strip: PrefWeekStrip, _ c: ShiftColors) -> some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 5) {
             ForEach(strip.cells, id: \.dayIndex) { cell in
+                // Selected = solid blue; a day that has any marked hours = a soft blue fill
+                // (distinct from the plain days, quieter than the selected pill); else clear.
+                let fill: Color = cell.selected ? c.blue : (cell.painted ? c.blueContainer : Color.clear)
                 Button(action: { model.vm.selectDay(index: cell.dayIndex) }) {
-                    VStack(spacing: 4) {
-                        Text(cell.dayLetter).font(ShiftFont.sans(11, .semibold)).foregroundColor(c.ter)
-                        ZStack {
-                            Circle().fill(cell.selected ? c.blue : Color.clear).frame(width: 34, height: 34)
-                            Text(cell.dateLabel)
-                                .font(ShiftFont.sans(14, .medium))
-                                .foregroundColor(cell.selected ? .white : c.ink)
-                        }
-                        Circle().fill(cell.painted ? c.blue : Color.clear).frame(width: 5, height: 5)
-                    }
-                    .frame(maxWidth: .infinity)
+                    Text(cell.dayLabel)
+                        .font(ShiftFont.sans(14.5, .semibold))
+                        .foregroundColor(cell.selected ? .white : (cell.painted ? c.onBlueContainer : c.sec))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(fill))
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("pref_day_cell")
             }
         }
-        .padding(.horizontal, 12).padding(.vertical, 2)
+        .padding(.horizontal, 16)
         .accessibilityIdentifier("pref_week_strip")
     }
 
@@ -220,6 +272,25 @@ struct PreferencesScreen: View {
         .accessibilityIdentifier(icon == ShiftIcons.plus ? "pref_target_increment" : "pref_target_decrement")
     }
 
+    // MARK: paint help
+
+    /// A compact rounded hint that teaches the split-gesture model: the left time column
+    /// scrolls the page, and pressing then dragging across the shifts picks or drops hours.
+    private func paintHelpCard(_ c: ShiftColors) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: ShiftIcons.info)
+                .font(.system(size: 13, weight: .semibold)).foregroundColor(c.blue)
+            Text("Scroll the page using the time column on the left. On the shifts, press and drag to pick or drop hours.")
+                .font(ShiftFont.sans(12.5)).foregroundColor(c.sec)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 10)
+        .background(c.blueContainer)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .accessibilityIdentifier("pref_paint_help")
+    }
+
     // MARK: brush selector
 
     private func brushSelector(_ st: PreferencesUiState, _ c: ShiftColors) -> some View {
@@ -229,8 +300,8 @@ struct PreferencesScreen: View {
                 let on = st.brush == brush
                 Button(action: { model.vm.setBrush(value: brush) }) {
                     VStack(spacing: 4) {
-                        Image(systemName: style.icon).font(.system(size: 17, weight: .semibold)).foregroundColor(on ? style.fg : c.ter)
-                        Text(brushLabel(brush)).font(ShiftFont.sans(12.5, .semibold)).foregroundColor(on ? style.fg : c.sec)
+                        Image(systemName: style.icon).font(.system(size: 19, weight: .semibold)).foregroundColor(on ? style.fg : c.ter)
+                        Text(brushLabel(brush)).font(ShiftFont.sans(13.5, .semibold)).foregroundColor(on ? style.fg : c.sec)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 9).padding(.horizontal, 4)
@@ -249,29 +320,34 @@ struct PreferencesScreen: View {
 
 // MARK: - Day timeline (the drag-paint picker)
 
-private let prefBlockHeight: CGFloat = 26
-private let prefGutterWidth: CGFloat = 46
+// 1.5x the original 26 — real thumbs on real phones need a bigger target than the emulator
+// suggested; 26pt was too tight to reliably land single 30-min blocks by touch.
+private let prefBlockHeight: CGFloat = 44
+// Wide enough for an off-hour anchor label like "5:30 AM" (not just a bare hour number).
+// This column is ALSO the scroll handle: the shift grid is a pure paint canvas that never
+// scrolls, so the page is scrolled by dragging here on the time column.
+private let prefGutterWidth: CGFloat = 62
 
 /// The selected day's vertical timeline: hours in a left gutter (on the dividing lines),
 /// bare colored 30-min segments (no per-cell text), and ONE label pill per painted run.
-/// Long-press then drag to paint a contiguous range with the current brush; a single tap
-/// paints one block. The long-press handoff keeps a plain swipe scrolling the page rather
-/// than painting. `enabled` is false once the deadline has passed.
+/// The gesture model is SPLIT to remove the scroll-vs-paint conflict: the shift grid is a
+/// pure paint canvas (press then drag to paint a contiguous range, a single tap toggles one
+/// block, and it NEVER scrolls the page), while the enclosing page is scrolled by dragging
+/// the left time column instead. `enabled` is false once the deadline has passed.
 struct PrefTimelineView: View {
     let day: PrefDayView
     let enabled: Bool
-    let onPaint: (String) -> Void
+    let activeBrush: PrefBrush
+    let onBeginPaint: (String) -> Void
     let onPaintRange: (String, String) -> Void
+    let onEndPaint: () -> Void
     let c: ShiftColors
-    @State private var dragStart: String?
+    // The live drag preview: the affected block span + whether this sweep erases (red) or adds (blue).
+    @State private var dragSpan: ClosedRange<Int>?
+    @State private var dragErase = false
 
     private var cells: [PrefBlockCell] { day.cells }
     private var total: CGFloat { prefBlockHeight * CGFloat(cells.count) }
-
-    private func idxAt(_ y: CGFloat) -> Int {
-        let i = Int((y / prefBlockHeight).rounded(.down))
-        return min(max(i, 0), cells.count - 1)
-    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -285,14 +361,27 @@ struct PrefTimelineView: View {
         ZStack(alignment: .topTrailing) {
             Color.clear
             ForEach(day.hourMarks, id: \.boundaryIndex) { mark in
+                // Sits centred on its boundary line; clamped so the first/last labels stay
+                // fully on-screen (well padded from the top and bottom edges).
                 Text(mark.label)
-                    .font(ShiftFont.sans(11, .medium))
-                    .foregroundColor(c.ter)
-                    .padding(.trailing, 8)
-                    .offset(y: max(prefBlockHeight * CGFloat(mark.boundaryIndex) - 7, 0))
+                    .font(ShiftFont.mono(12, .semibold))
+                    .monospacedDigit()
+                    .foregroundColor(c.sec)
+                    .fixedSize()
+                    .padding(.trailing, 10)
+                    .offset(y: labelOffset(Int(mark.boundaryIndex)))
             }
         }
         .frame(width: prefGutterWidth, height: total, alignment: .topTrailing)
+    }
+
+    /// Vertical position of a gutter label: centred on its boundary line, but the first line
+    /// (top) is nudged down and the last (bottom) nudged up so neither is clipped.
+    private func labelOffset(_ boundaryIndex: Int) -> CGFloat {
+        let onLine = prefBlockHeight * CGFloat(boundaryIndex) - 8
+        if boundaryIndex == 0 { return 0 }
+        if boundaryIndex == cells.count { return total - 16 }
+        return onLine
     }
 
     private var timeline: some View {
@@ -301,35 +390,44 @@ struct PrefTimelineView: View {
                 ForEach(cells, id: \.blockId) { segment($0) }
             }
             ForEach(day.runs, id: \.startBlockIndex) { runPill($0) }
+            // Live drag preview: outline + tint the affected span (blue add / red erase).
+            if let span = dragSpan {
+                let hl = dragErase ? c.danger.accent : c.blue
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(hl.opacity(0.16))
+                    .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(hl, lineWidth: 2))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: prefBlockHeight * CGFloat(span.count))
+                    .offset(y: prefBlockHeight * CGFloat(span.lowerBound))
+            }
         }
         .frame(maxWidth: .infinity, minHeight: total, maxHeight: total, alignment: .topLeading)
         .contentShape(Rectangle())
         .accessibilityIdentifier("pref_block_grid")
-        .gesture(paintDrag, including: enabled ? .all : .none)
-        .simultaneousGesture(paintTap, including: enabled ? .all : .none)
-    }
-
-    private var paintTap: some Gesture {
-        SpatialTapGesture().onEnded { value in
-            onPaint(cells[idxAt(value.location.y)].blockId)
-        }
-    }
-
-    private var paintDrag: some Gesture {
-        LongPressGesture(minimumDuration: 0.2)
-            .sequenced(before: DragGesture(minimumDistance: 0))
-            .onChanged { value in
-                if case .second(true, let drag?) = value {
-                    let id = cells[idxAt(drag.location.y)].blockId
-                    if let start = dragStart {
-                        onPaintRange(start, id)
-                    } else {
-                        dragStart = id
-                        onPaint(id)
-                    }
+        // A raw-touch UIKit canvas (not SwiftUI gestures, not a long-press): the moment a finger
+        // lands on the grid it disables the enclosing ScrollView's pan, so the grid NEVER scrolls
+        // and every drag paints immediately. Scrolling the page is done from the time column on the
+        // left instead. This removes the scroll-vs-paint arbitration entirely.
+        .overlay(
+            PaintSurface(
+                blockCount: cells.count,
+                blockHeight: prefBlockHeight,
+                enabled: enabled,
+                onBegin: { i in
+                    dragErase = cells[i].brush == activeBrush
+                    dragSpan = i...i
+                    onBeginPaint(cells[i].blockId)
+                },
+                onChange: { start, cur in
+                    dragSpan = min(start, cur)...max(start, cur)
+                    onPaintRange(cells[start].blockId, cells[cur].blockId)
+                },
+                onEnd: {
+                    dragSpan = nil
+                    onEndPaint()
                 }
-            }
-            .onEnded { _ in dragStart = nil }
+            )
+        )
     }
 
     private func segment(_ cell: PrefBlockCell) -> some View {
@@ -352,8 +450,8 @@ struct PrefTimelineView: View {
         let style = brushStyle(run.brush, c)
         return ZStack {
             HStack(spacing: 5) {
-                Image(systemName: style.icon).font(.system(size: 11, weight: .semibold)).foregroundColor(style.accent)
-                Text(run.label).font(ShiftFont.sans(11.5, .medium)).foregroundColor(style.fg)
+                Image(systemName: style.icon).font(.system(size: 13, weight: .semibold)).foregroundColor(style.accent)
+                Text(run.label).font(ShiftFont.sans(13, .medium)).foregroundColor(style.fg)
             }
             .padding(.horizontal, 9).padding(.vertical, 3)
             .background(c.surface)
@@ -363,6 +461,102 @@ struct PrefTimelineView: View {
         .frame(maxWidth: .infinity)
         .frame(height: prefBlockHeight * CGFloat(run.blockCount))
         .offset(y: prefBlockHeight * CGFloat(run.startBlockIndex))
+    }
+}
+
+// MARK: - Paint canvas (raw UIKit touches, so the grid never scrolls)
+
+/// A transparent overlay that turns the shift grid into a pure paint canvas. The moment a finger
+/// touches down it disables the enclosing ScrollView's pan, so the grid NEVER scrolls under the
+/// finger; every drag paints immediately and a plain touch toggles one block. The page is scrolled
+/// from the time column on the left (which has no such overlay) instead. This sidesteps the whole
+/// scroll-vs-paint gesture arbitration that made an in-grid drag behave erratically.
+private struct PaintSurface: UIViewRepresentable {
+    let blockCount: Int
+    let blockHeight: CGFloat
+    let enabled: Bool
+    let onBegin: (Int) -> Void
+    let onChange: (Int, Int) -> Void
+    let onEnd: () -> Void
+
+    func makeUIView(context: Context) -> PaintView {
+        let v = PaintView()
+        v.backgroundColor = .clear
+        v.apply(self)
+        return v
+    }
+
+    func updateUIView(_ uiView: PaintView, context: Context) {
+        uiView.apply(self)
+        uiView.isUserInteractionEnabled = enabled
+    }
+
+    /// The raw-touch canvas. Painting is driven by touchesBegan/Moved/Ended rather than gesture
+    /// recognizers so it can't be pre-empted by (or have to cooperate with) the scroll view's pan.
+    final class PaintView: UIView {
+        private var blockCount = 0
+        private var blockHeight: CGFloat = 1
+        private var onBegin: ((Int) -> Void)?
+        private var onChange: ((Int, Int) -> Void)?
+        private var onEnd: (() -> Void)?
+        private var startIdx = 0
+        // The enclosing scroll view's pan, disabled for the lifetime of a touch on the grid so the
+        // page can't scroll while painting; re-enabled on lift. Dragging the time column (no overlay)
+        // still scrolls normally.
+        private weak var lockedPan: UIPanGestureRecognizer?
+
+        func apply(_ surface: PaintSurface) {
+            blockCount = surface.blockCount
+            blockHeight = surface.blockHeight
+            onBegin = surface.onBegin
+            onChange = surface.onChange
+            onEnd = surface.onEnd
+        }
+
+        private func enclosingScroll() -> UIScrollView? {
+            var v = superview
+            while let cur = v {
+                if let scroll = cur as? UIScrollView { return scroll }
+                v = cur.superview
+            }
+            return nil
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            // Deliver touches to this canvas without the scroll view's ~150ms "is it a scroll?" delay,
+            // so painting starts on contact.
+            enclosingScroll()?.delaysContentTouches = false
+        }
+
+        private func index(_ p: CGPoint) -> Int {
+            let i = Int((p.y / blockHeight).rounded(.down))
+            return min(max(i, 0), max(blockCount - 1, 0))
+        }
+
+        override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+            guard blockCount > 0, let t = touches.first else { return }
+            let scroll = enclosingScroll()
+            scroll?.panGestureRecognizer.isEnabled = false // the grid never scrolls
+            lockedPan = scroll?.panGestureRecognizer
+            startIdx = index(t.location(in: self))
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            onBegin?(startIdx)
+        }
+
+        override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+            guard blockCount > 0, let t = touches.first else { return }
+            onChange?(startIdx, index(t.location(in: self)))
+        }
+
+        override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) { finish() }
+        override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) { finish() }
+
+        private func finish() {
+            onEnd?()
+            lockedPan?.isEnabled = true
+            lockedPan = nil
+        }
     }
 }
 

@@ -9,10 +9,19 @@ import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.rpc
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.toStdlibInstant
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
+
+/**
+ * Upper bound on any single best-effort launch-time network call (the `app_now` sim-clock
+ * probe, the persisted-session restore). Local/LAN Supabase resolves these in well under a
+ * second; the timeout only matters when the backend is slow or unreachable, where we must
+ * fall through to the wall clock + login rather than strand the launch spinner forever.
+ */
+internal val BOOT_NETWORK_TIMEOUT = 8.seconds
 
 /**
  * Worker auth — the single shared Supabase client + token wiring (DESIGN §5, item 2).
@@ -100,7 +109,12 @@ object WorkerBackend {
      */
     suspend fun fetchAppNow(): Instant? =
         runCatching {
-            Instant.parse(client.postgrest.rpc("app_now").decodeAs<String>())
+            // Bounded: a slow/unreachable backend must not block launch. On timeout
+            // withTimeoutOrNull returns null (and cancels the in-flight request), so the
+            // caller keeps the device wall clock — exactly the documented no-op fallback.
+            withTimeoutOrNull(BOOT_NETWORK_TIMEOUT) {
+                Instant.parse(client.postgrest.rpc("app_now").decodeAs<String>())
+            }
         }.getOrNull()
 
     /**

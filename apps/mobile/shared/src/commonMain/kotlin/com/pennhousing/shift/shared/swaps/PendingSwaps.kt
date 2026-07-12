@@ -167,29 +167,45 @@ fun buildSwapDecision(
     swap: PendingSwap,
     zone: TimeZone = NEW_YORK,
 ): SwapDecision {
-    val handoff = swap.swapType.lowercase() == "handoff"
     val permanent = swap.swapType.lowercase() == "permanent_swap"
     val giveLabel = spanLabel(swap.counterpartyStart, swap.counterpartyEnd, zone).takeIf { swap.counterpartyBlocks > 0 }
     val getLabel = spanLabel(swap.initiatorStart, swap.initiatorEnd, zone).takeIf { swap.initiatorBlocks > 0 }
+    // Frame on the NATURE OF THE EXCHANGE, not the swap_type: a one-directional transfer
+    // (exactly one side empty) is never a "swap", whether it's a hand-off or a one-way
+    // permanent transfer. receiveOnly = hours come to you; giveOnly = they take yours.
+    val receiveOnly = giveLabel == null && getLabel != null
+    val giveOnly = getLabel == null && giveLabel != null
+    val oneWay = receiveOnly || giveOnly
     val intro =
         when {
-            handoff && giveLabel == null -> "${swap.otherUserName} wants to hand a shift to you."
-            handoff -> "${swap.otherUserName} wants to take your shift."
+            // Permanence rides INSIDE the sentence so it reads naturally ("…these hours permanently").
+            receiveOnly && permanent -> "${swap.otherUserName} wants to give you these hours permanently."
+            receiveOnly -> "${swap.otherUserName} wants to give you these hours."
+            giveOnly && permanent -> "${swap.otherUserName} wants to take this shift from you permanently."
+            giveOnly -> "${swap.otherUserName} wants to take your shift."
             permanent -> "${swap.otherUserName} wants to swap permanently."
             else -> "${swap.otherUserName} wants to swap shifts with you."
         }
     val note =
         when {
-            handoff && giveLabel == null -> "They give nothing in return."
-            handoff -> "You'd hand this over with nothing back."
+            receiveOnly && permanent -> "These hours become yours every week for the rest of the term, with nothing given in return."
+            receiveOnly -> "They give nothing in return."
+            giveOnly && permanent -> "You'd hand this over every week for the rest of the term, with nothing back."
+            giveOnly -> "You'd hand this over with nothing back."
             permanent -> "Applies to this shift every week for the rest of the term."
             else -> null
         }
     return SwapDecision(
         swapId = swap.swapId,
         swapType = swap.swapType,
-        typeLabel = swapTypeLabelFor(swap.swapType),
-        title = if (handoff) "Hand-off request" else "Swap request",
+        // Reuse the card's pill so the chip reads identically on both surfaces.
+        typeLabel = pillLabel(swap.swapType, oneWay),
+        title =
+            when {
+                receiveOnly -> "Hours offered"
+                giveOnly -> "Hand-off request"
+                else -> "Swap request"
+            },
         intro = intro,
         respondBy = "Respond by ${formatDayLabel(swap.expiresAt, zone)}, ${formatBlockTime(swap.expiresAt, zone)}",
         giveLabel = giveLabel,

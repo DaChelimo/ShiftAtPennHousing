@@ -65,6 +65,14 @@ data class OpenShift(
     // claim/partial-claim consumes exactly one desk and the next snapshot re-coalesces to
     // count − 1. Always ≥ 1 (a single opening).
     val count: Int = 1,
+    // Server-authoritative claimability inputs (BEHAVIORAL_SPECIFICATION §5.4/§5.5).
+    // The client consumes these instead of re-deriving the T-2h cutoff itself.
+    //   deskCovered   — a sibling REAL worker {scheduled,claimed,floated_in,pending_float_in}
+    //                   is still on this block, so the seat stays claimable within T-2h.
+    //   coverageLocked — the block's one-way coverage lock is set: unpickable from here on,
+    //                   even if a floater/Allied later fills the desk.
+    val deskCovered: Boolean = false,
+    val coverageLocked: Boolean = false,
 )
 
 data class FloatAck(
@@ -90,3 +98,35 @@ data class PendingFloat(
     /** The narrower ack model the existing hero/modal renders. */
     fun toFloatAck(): FloatAck = FloatAck(floatId, destinationHouse, start)
 }
+
+/** How a [RecentFloat] resolved — drives the recent-section status chip + copy. */
+enum class RecentFloatStatus {
+    /** Worker acknowledged it (status `acknowledged`) — they are covering the desk. */
+    ACCEPTED,
+
+    /** Worker explicitly declined it (status `declined`). */
+    DECLINED,
+
+    /** The response window passed unanswered and the system voided it (status `voided`, no-ack). */
+    EXPIRED,
+}
+
+/**
+ * A float that has RESOLVED for this worker within the last 24h (§7.1/§7.2) — the source
+ * for the collapsible "Recent float requests" section under the carousel. Active floats
+ * (still respondable) live in [PendingFloat] / the carousel; this is purely a de-emphasized
+ * record so a resolved card does not linger in the prominent zone with no way to dismiss it.
+ *
+ * Resolved from the bounded `worker_recent_floats` view. The destination blocks of a
+ * declined/expired float are vacated (no longer the worker's), so the view reads as the
+ * view owner and self-scopes to `fa.user_id = auth.uid()`.
+ */
+data class RecentFloat(
+    val floatId: String,
+    val destinationHouse: House,
+    val start: Instant,
+    val end: Instant,
+    val status: RecentFloatStatus,
+    /** When it resolved (acknowledged_at / declined_at / no_ack_at) — orders the list. */
+    val resolvedAt: Instant,
+)

@@ -135,7 +135,7 @@ struct FloatAcknowledgmentView: View {
             Image(systemName: ShiftIcons.info).font(.system(size: 18)).foregroundColor(c.floatOut.accent)
             (
                 Text("Your weekly hours don't change.").font(ShiftFont.sans(13, .bold))
-                    + Text(" A float moves an already-scheduled shift — it never adds hours.").font(ShiftFont.sans(13))
+                    + Text(" A float moves an already-scheduled shift; it never adds hours.").font(ShiftFont.sans(13))
             )
             .foregroundColor(c.floatOut.deep).lineSpacing(3)
         }

@@ -58,7 +58,24 @@ data class SwapRow(
     val groupId: String? = null,
     /** Number of legs in this row's group (1 = standalone). */
     val groupSize: Int = 1,
-)
+) {
+    /**
+     * A ONE-DIRECTIONAL transfer — exactly one side is empty, so nothing is exchanged: you
+     * either only RECEIVE hours (incoming hand-off / one-way permanent transfer) or only
+     * OFFER them (outgoing). The UI drops the give↔get split for these and leads with a
+     * single panel + [transferHeadline], so a transfer never reads as a two-sided swap.
+     */
+    val isOneWayTransfer: Boolean get() = (give == null) != (get == null)
+
+    /** The single shift in a one-way transfer — what you receive (incoming) or offer (outgoing). */
+    val transferSide: SwapSide? get() = give ?: get
+
+    /** The full-width panel headline for a one-way transfer — receive vs offer, by direction. */
+    val transferHeadline: String
+        get() =
+            if (incoming) "$counterpartyName wants to give you these hours"
+            else "You're offering these hours to $counterpartyName"
+}
 
 /** The Swaps tab's three lists — All (both, merged), Incoming, Outgoing. */
 data class SwapsFeed(
@@ -79,6 +96,24 @@ private fun swapTypeLabel(swapType: String): String =
         "permanent_swap" -> "Permanent swap"
         "handoff" -> "Hand-off"
         else -> "Swap"
+    }
+
+/**
+ * The chip label. A ONE-DIRECTIONAL transfer (nothing exchanged) must never read as a
+ * "swap" — relabel by permanence: a recurring transfer keeps its "Permanent" signal, a
+ * one-time hand-off becomes "Hours offered". Two-sided swaps keep their type label.
+ * Shared so the Swaps-tab card and the accept/decline modal ([buildSwapDecision]) agree.
+ */
+internal fun pillLabel(
+    swapType: String,
+    oneWay: Boolean,
+): String =
+    if (!oneWay) {
+        swapTypeLabel(swapType)
+    } else if (swapType.lowercase() == "permanent_swap") {
+        "Permanent hours"
+    } else {
+        "Hours offered"
     }
 
 /** 30-min [blocks] → "4h" / "2h 30m" — when only the block count is known (optimistic add). */
@@ -154,16 +189,19 @@ private fun rowOf(
     // incoming; the shift they'd RECEIVE is the opposite side. So "give"/"get" flip by direction.
     val mySide = sideOf(swap.initiatorStart, swap.initiatorEnd, swap.initiatorBlocks, swap.initiatorHouseName, zone)
     val theirSide = sideOf(swap.counterpartyStart, swap.counterpartyEnd, swap.counterpartyBlocks, swap.counterpartyHouseName, zone)
+    val give = if (outgoing) mySide else theirSide
+    val get = if (outgoing) theirSide else mySide
+    val oneWay = (give == null) != (get == null)
     return SwapRow(
         swapId = swap.swapId,
-        typeLabel = swapTypeLabel(swap.swapType),
+        typeLabel = pillLabel(swap.swapType, oneWay),
         counterpartyName = swap.otherUserName,
         incoming = !outgoing,
         // Frame by who has the next move — clearer than "incoming/outgoing" in the merged list.
         directionLabel = if (outgoing) "Waiting on ${swap.otherUserName}" else "Needs your response",
         acceptable = !outgoing,
-        give = if (outgoing) mySide else theirSide,
-        get = if (outgoing) theirSide else mySide,
+        give = give,
+        get = get,
         deadline = deadlineLabel(now, swap.expiresAt),
         deadlineUrgent = (swap.expiresAt - now).inWholeMinutes in 1..(6 * 60),
         expiresAt = swap.expiresAt,

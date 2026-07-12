@@ -15,6 +15,9 @@ import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.model.OpenFeed
 import com.pennhousing.shift.shared.model.OpenShift
 import com.pennhousing.shift.shared.model.PendingFloat
+import com.pennhousing.shift.shared.model.RecentFloat
+import com.pennhousing.shift.shared.model.RecentFloatStatus
+import com.pennhousing.shift.shared.network.ClaimOutcome
 import com.pennhousing.shift.shared.network.EdgeFunctionClient
 import com.pennhousing.shift.shared.network.EdgeResult
 import com.pennhousing.shift.shared.notifications.IncomingSwap
@@ -212,7 +215,7 @@ class WorkerShiftsRepository(
      * `permanent-pickup` EF), NOT this temporary path (`claim-shift` with
      * `claim_type:'permanent'` returns 501).
      */
-    suspend fun claimShift(shift: OpenShift): EdgeResult = claimBlocks(shift.blockIds)
+    suspend fun claimShift(shift: OpenShift): ClaimOutcome = claimBlocks(shift.blockIds)
 
     /**
      * Reclaim a shift the worker dropped that is still open → the SAME `claim-shift`
@@ -223,27 +226,36 @@ class WorkerShiftsRepository(
      * server re-applies the same cap / T-2h / FCFS checks; if someone else already took
      * a slot the EF returns `shift_unavailable` and the next snapshot reconciles.
      */
-    suspend fun reclaimShift(shift: MyShift): EdgeResult = claimBlocks(shift.blockIds)
+    suspend fun reclaimShift(shift: MyShift): ClaimOutcome = claimBlocks(shift.blockIds)
 
     /**
      * Claim each block `assignment_id` through the `claim-shift` EF (`claim_type:
      * 'temporary'`), one POST per block — FCFS atomicity is server-side and per-block.
      * A mid-run failure does NOT stop the rest (a partial claim beats none; the next
-     * Realtime snapshot reconciles the UI); the result is the first failure if any
-     * block failed, else the last success.
+     * Realtime snapshot reconciles the UI). Returns a [ClaimOutcome] tallying how many
+     * blocks landed vs. were rejected (plus the first rejection, for classifying the
+     * reason) — so the host can tell full success / partial pickup / total failure apart
+     * instead of treating a per-block conflict (e.g. a sub-range overlapping an existing
+     * shift) as an outright failure.
      */
-    suspend fun claimBlocks(assignmentIds: List<String>): EdgeResult {
-        var last = EdgeResult(false, 0, "")
+    suspend fun claimBlocks(assignmentIds: List<String>): ClaimOutcome {
+        var claimed = 0
+        var failed = 0
         var firstFailure: EdgeResult? = null
         for (id in assignmentIds) {
-            last =
+            val result =
                 edge.invoke(
                     "claim-shift",
                     Json.encodeToString(ClaimShiftRequest(assignmentId = id, claimType = "temporary")),
                 )
-            if (!last.ok && firstFailure == null) firstFailure = last
+            if (result.ok) {
+                claimed++
+            } else {
+                failed++
+                if (firstFailure == null) firstFailure = result
+            }
         }
-        return firstFailure ?: last
+        return ClaimOutcome(claimed = claimed, failed = failed, firstFailure = firstFailure)
     }
 
     /**
@@ -331,6 +343,25 @@ class WorkerShiftsRepository(
      * [fetchPendingFloats] so it shares the robust bounded read.
      */
     suspend fun fetchPendingFloat(userId: String): FloatAck? = fetchPendingFloats(userId).firstOrNull()?.toFloatAck()
+
+    /**
+     * The worker's floats RESOLVED within the last 24h (acknowledged / declined / voided)
+     * for the collapsible "Recent float requests" section. Reads the bounded
+     * `worker_recent_floats` view. Unlike [fetchPendingFloats], that view is NOT
+     * security_invoker: a declined/voided float's destination blocks are vacated (no longer
+     * the worker's), so an invoker view could not aggregate the window. The view runs as its
+     * owner and self-scopes to `fa.user_id = auth.uid()`; the eq filter here is parity belt
+     * and suspenders. Unknown statuses are dropped ([toModel] returns null).
+     */
+    suspend fun fetchRecentFloats(userId: String): List<RecentFloat> =
+        supabase
+            .from(VIEW_RECENT_FLOATS)
+            .select {
+                filter { eq("user_id", userId) }
+                order("resolved_at", Order.DESCENDING)
+            }
+            .decodeList<RecentFloatWireRow>()
+            .mapNotNull { it.toModel() }
 
     /**
      * Acknowledge the worker's pending float → the `acknowledge-float` Edge Function,
@@ -461,13 +492,50 @@ class WorkerShiftsRepository(
      */
     suspend fun fetchHouses(): List<HouseOption> =
         runCatching {
+            // worker_visible_houses filters to LIVE houses (staggered-launch gate); a
+            // dark house never appears in the cross-house switcher during a pilot.
             supabase
-                .from(TABLE_HOUSES)
+                .from(TABLE_WORKER_VISIBLE_HOUSES)
                 .select(Columns.list("id", "name", "desk_phone"))
                 .decodeList<HouseOptionRow>()
         }.getOrDefault(emptyList())
             .map { HouseOption(id = it.id, name = it.name, deskPhone = it.deskPhone) }
             .sortedBy { it.name }
+
+    /**
+     * Staggered-launch gate (rollout): has the signed-in worker's home house gone live yet?
+     * Resolves the worker's `home_house_id` (own-row RLS) + its display name (authenticated
+     * `houses` read), then delegates to the `house_is_live` RPC (SECURITY DEFINER, folds in
+     * the master switch), so a worker at a not-yet-launched house sees the "coming soon"
+     * placeholder (named after their house) instead of an empty app.
+     * FAIL-OPEN: any unreadable step defaults to live, so a transient error never locks a
+     * worker out of an already-launched house (the gate is a soft UX guard, not security).
+     */
+    suspend fun fetchHomeHouseGate(userId: String): HomeHouseGate {
+        val homeHouseId =
+            runCatching {
+                supabase
+                    .from(TABLE_USERS)
+                    .select(Columns.list("home_house_id")) { filter { eq("user_id", userId) } }
+                    .decodeSingleOrNull<HomeHouseRow>()
+                    ?.homeHouseId
+            }.getOrNull() ?: return HomeHouseGate(isLive = true, houseName = "your house")
+        val houseName =
+            runCatching {
+                supabase
+                    .from(TABLE_HOUSES)
+                    .select(Columns.list("name")) { filter { eq("id", homeHouseId) } }
+                    .decodeSingleOrNull<LaunchHouseNameRow>()
+                    ?.name
+            }.getOrNull() ?: homeHouseId
+        val isLive =
+            runCatching {
+                supabase.postgrest
+                    .rpc("house_is_live", buildJsonObject { put("p_house_id", homeHouseId) })
+                    .decodeAs<Boolean>()
+            }.getOrDefault(true)
+        return HomeHouseGate(isLive = isLive, houseName = houseName)
+    }
 
     /**
      * Any house's schedule grid for the NY week containing [anchor] (2026-06-23 cross-house
@@ -939,6 +1007,7 @@ class WorkerShiftsRepository(
         const val VIEW_MY_SHIFTS = "worker_my_shifts"
         const val VIEW_OPEN_SHIFTS = "worker_open_shifts"
         const val VIEW_PENDING_FLOATS = "worker_pending_floats"
+        const val VIEW_RECENT_FLOATS = "worker_recent_floats"
         const val TABLE_NOTIFICATIONS = "notifications"
         const val TABLE_FLOAT_ASSIGNMENTS = "float_assignments"
         const val TABLE_USERS = "users"
@@ -947,6 +1016,7 @@ class WorkerShiftsRepository(
         const val VIEW_HOUSE_GRID_ANY = "house_schedule_grid_any"
         const val VIEW_WORKER_DIRECTORY = "worker_directory"
         const val TABLE_HOUSES = "houses"
+        const val TABLE_WORKER_VISIBLE_HOUSES = "worker_visible_houses"
     }
 }
 
@@ -1086,6 +1156,21 @@ internal data class HomeHouseRow(
     @SerialName("home_house_id") val homeHouseId: String,
 )
 
+/** A house display name by id (authenticated `houses` read) — for the launch gate. */
+@Serializable
+internal data class LaunchHouseNameRow(
+    val name: String,
+)
+
+/**
+ * Result of the staggered-launch home-house gate: whether the worker's home house is live
+ * yet, plus its display name for the "coming soon" placeholder.
+ */
+data class HomeHouseGate(
+    val isLive: Boolean,
+    val houseName: String,
+)
+
 // ----- Wire rows (the client read-model views) → pure domain models. -----
 
 @Serializable
@@ -1112,6 +1197,9 @@ internal data class OpenShiftRow(
     val feed: String,
     @SerialName("home_house") val homeHouse: Boolean,
     @SerialName("weeks_remaining") val weeksRemaining: Int? = null,
+    // Server-authoritative coverage flags (§5.4/§5.5) — see OpenShift.
+    @SerialName("desk_covered") val deskCovered: Boolean = false,
+    @SerialName("coverage_locked") val coverageLocked: Boolean = false,
 )
 
 private fun MyShiftRow.toModel(): MyShift =
@@ -1136,6 +1224,8 @@ private fun OpenShiftRow.toModel(): OpenShift =
         feed = if (feed.equals("permanent_opening", ignoreCase = true)) OpenFeed.PERMANENT_OPENING else OpenFeed.WEEKLY,
         homeHouse = homeHouse,
         weeksRemaining = weeksRemaining,
+        deskCovered = deskCovered,
+        coverageLocked = coverageLocked,
     )
 
 private fun parseAssignmentKind(raw: String): AssignmentKind =
@@ -1169,6 +1259,40 @@ private fun PendingFloatDetailRow.toModel(): PendingFloat =
         end = Instant.parse(floatEnd),
         blockCount = blockCount,
     )
+
+/**
+ * A `worker_recent_floats` row — one float RESOLVED for the worker in the last 24h, with
+ * the destination house, window, terminal status, and resolution time. Drives the recent
+ * section. Unknown / non-terminal statuses map to null and are dropped.
+ */
+@Serializable
+internal data class RecentFloatWireRow(
+    @SerialName("float_id") val floatId: String,
+    @SerialName("destination_house_id") val houseId: String,
+    @SerialName("destination_house_name") val houseName: String,
+    @SerialName("float_start") val floatStart: String,
+    @SerialName("float_end") val floatEnd: String,
+    val status: String,
+    @SerialName("resolved_at") val resolvedAt: String,
+)
+
+private fun RecentFloatWireRow.toModel(): RecentFloat? {
+    val mapped =
+        when (status) {
+            "acknowledged" -> RecentFloatStatus.ACCEPTED
+            "declined" -> RecentFloatStatus.DECLINED
+            "voided" -> RecentFloatStatus.EXPIRED
+            else -> return null
+        }
+    return RecentFloat(
+        floatId = floatId,
+        destinationHouse = House(houseId, houseName),
+        start = Instant.parse(floatStart),
+        end = Instant.parse(floatEnd),
+        status = mapped,
+        resolvedAt = Instant.parse(resolvedAt),
+    )
+}
 
 @Serializable
 internal data class NotificationWireRow(

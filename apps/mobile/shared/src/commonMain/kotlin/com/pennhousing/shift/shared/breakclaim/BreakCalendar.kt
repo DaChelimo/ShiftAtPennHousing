@@ -258,11 +258,11 @@ fun breakWeeks(
 fun breakWindowLabel(
     windowStart: LocalDate,
     windowEnd: LocalDate,
-): String = "${monthDayOf(windowStart)} – ${monthDayOf(windowEnd)}"
+): String = "${monthDayOf(windowStart)} - ${monthDayOf(windowEnd)}"
 
 /** "Nov 19 – Nov 25" — the Mon–Sun range of the week anchored at [weekMonday]. */
 fun breakWeekRangeLabel(weekMonday: LocalDate): String =
-    "${monthDayOf(weekMonday)} – ${monthDayOf(weekMonday.plus(6, DateTimeUnit.DAY))}"
+    "${monthDayOf(weekMonday)} - ${monthDayOf(weekMonday.plus(6, DateTimeUnit.DAY))}"
 
 private fun monthDayOf(date: LocalDate): String = "${MONTH_SHORT[date.month.ordinal]} ${date.day}"
 

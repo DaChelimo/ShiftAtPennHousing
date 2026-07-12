@@ -63,8 +63,10 @@ internal fun floatDayLabel(
 
 /**
  * Map the worker's pending floats to carousel cards, SORTED by start ascending
- * (closest first). A float past its T-10m deadline still shows (so the worker knows
- * it was reassigned) but is not respondable.
+ * (closest first). ONLY floats the worker can still act on (respondable, before the
+ * T-10m deadline) become cards: a lapsed float must not sit in the prominent zone in
+ * front of one the worker can still accept. Past-deadline floats move to the recent
+ * section ([buildRecentFloatRows]) instead.
  */
 fun buildFloatRequestCards(
     floats: List<PendingFloat>,
@@ -72,6 +74,7 @@ fun buildFloatRequestCards(
     zone: TimeZone = NEW_YORK,
 ): List<FloatRequestCard> =
     floats
+        .filter { canRespondToFloat(it.start, now) }
         .sortedBy { it.start }
         .map { f ->
             val passed = isPastAckDeadline(f.start, now)

@@ -252,6 +252,24 @@ class ShiftsScreenViewModelTest {
     }
 
     @Test
+    fun deskCoveredShiftStaysClaimableWithinTMinus2h() {
+        // §5.4/§5.5: a still-staffed desk (a co-worker on) keeps the dropped seat
+        // claimable right up to block start — never locked by the clock alone.
+        val shift = quadWeekly.copy(start = at("2026-01-15T18:00:00-05:00"), deskCovered = true)
+        assertTrue(isClaimable(shift, at("2026-01-15T17:00:00-05:00"))) // 1h out, covered
+        assertTrue(isClaimable(shift, at("2026-01-15T17:59:00-05:00"))) // 1m out, still covered
+        assertFalse(isClaimable(shift, at("2026-01-15T18:00:00-05:00"))) // at start → no longer
+    }
+
+    @Test
+    fun coverageLockedShiftIsNeverClaimable() {
+        // The one-way lock wins even outside T-2h and even when still covered.
+        val shift = quadWeekly.copy(start = at("2026-01-15T18:00:00-05:00"), deskCovered = true, coverageLocked = true)
+        assertFalse(isClaimable(shift, at("2026-01-15T10:00:00-05:00"))) // 8h out but locked
+        assertFalse(isClaimable(shift, at("2026-01-15T17:00:00-05:00"))) // 1h out, covered but locked
+    }
+
+    @Test
     fun viewModelClaimableWiresTheLoadTimeNow() {
         val shift = quadWeekly.copy(start = at("2026-01-15T18:00:00-05:00"))
         assertTrue(vm(now = at("2026-01-15T15:00:00-05:00")).claimable(shift))
@@ -576,10 +594,10 @@ class ShiftsScreenViewModelTest {
     @Test
     fun weekRangeLabelAndOptionsAreExposedForTheHeader() {
         val m = vmWithNextWeek()
-        // Jan 15 2026 is a Thursday → its week is Mon Jan 12 – Sun Jan 18.
-        assertEquals("Jan 12 – Jan 18", m.uiState.value.weekRangeLabel)
+        // Jan 15 2026 is a Thursday → its week is Mon Jan 12 - Sun Jan 18.
+        assertEquals("Jan 12 - Jan 18", m.uiState.value.weekRangeLabel)
         m.nextWeek()
-        assertEquals("Jan 19 – Jan 25", m.uiState.value.weekRangeLabel)
+        assertEquals("Jan 19 - Jan 25", m.uiState.value.weekRangeLabel)
         // the picker offers the quick weeks (last / this / next / +2 / +3).
         assertEquals(listOf(-1, 0, 1, 2, 3), m.weekOptions().map { it.offset })
     }
@@ -653,9 +671,9 @@ class ShiftsScreenViewModelTest {
     @Test
     fun openWeekRangeLabelTracksTheShownOpenWeek() {
         val m = vmWithNextWeekOpen()
-        assertEquals("Jan 12 – Jan 18", m.uiState.value.openWeekRangeLabel)
+        assertEquals("Jan 12 - Jan 18", m.uiState.value.openWeekRangeLabel)
         m.nextOpenWeek()
-        assertEquals("Jan 19 – Jan 25", m.uiState.value.openWeekRangeLabel)
+        assertEquals("Jan 19 - Jan 25", m.uiState.value.openWeekRangeLabel)
     }
 
     @Test

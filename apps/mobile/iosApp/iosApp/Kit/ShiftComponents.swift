@@ -138,7 +138,7 @@ extension ShiftColors {
         case .unpickable:
             return StateVisual(tint: surfaceVar, accent: nil, badgeBg: unpickBadge, badgeFg: ter, tagLabel: "Unpickable", tagIcon: ShiftIcons.lock, tagColor: ter, muted: true)
         case .dropped:
-            return StateVisual(tint: surface, accent: nil, badgeBg: scheduledBadge, badgeFg: ter, tagLabel: "Dropped — still open", tagIcon: ShiftIcons.dropped, tagColor: sec, strike: true)
+            return StateVisual(tint: surface, accent: nil, badgeBg: scheduledBadge, badgeFg: ter, tagLabel: "Dropped (still open)", tagIcon: ShiftIcons.dropped, tagColor: sec, strike: true)
         case .allied:
             return StateVisual(tint: allied.tint, accent: allied.accent, badgeBg: allied.badge, badgeFg: allied.deep, tagLabel: "Allied", tagIcon: ShiftIcons.person, tagColor: allied.deep)
         case .ack:
@@ -202,7 +202,7 @@ let workerStateLegend: [LegendEntry] = [
     .init(state: .breakShift, description: "A break-period shift (short or winter break)."),
     .init(state: .open, description: "An open one-time gap you can claim."),
     .init(state: .permanent, description: "A recurring slot whose owner permanently dropped it."),
-    .init(state: .unpickable, description: "Past the T-2h cutoff — visible but no longer claimable."),
+    .init(state: .unpickable, description: "Past the T-2h cutoff: visible but no longer claimable."),
     .init(state: .dropped, description: "You dropped this; still open until someone claims it."),
     .init(state: .allied, description: "Covered by external Allied Security."),
     .init(state: .ack, description: "A float you've acknowledged."),

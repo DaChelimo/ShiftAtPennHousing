@@ -5,6 +5,7 @@ import com.pennhousing.shift.shared.preferences.PrefBrush
 import com.pennhousing.shift.shared.preferences.PreferencePeriod
 import com.pennhousing.shift.shared.preferences.SubmitPreferencesPayload
 import com.pennhousing.shift.shared.network.EdgeFunctionClient
+import com.pennhousing.shift.shared.platform.SimClock
 import com.pennhousing.shift.shared.shifts.MONTH_SHORT
 import com.pennhousing.shift.shared.shifts.NEW_YORK
 import io.github.jan.supabase.SupabaseClient
@@ -160,7 +161,7 @@ class PreferencesRepository(
             // D9 (§4.2): a passed deadline locks the never-submitted grid client-side
             // (the submit_preferences RPC rejects late writes server-side regardless).
             deadlinePassed =
-                period.preferenceDeadline?.let { Instant.parse(it) < kotlin.time.Clock.System.now() } ?: false,
+                period.preferenceDeadline?.let { Instant.parse(it) < SimClock.now() } ?: false,
             weekStart = monday,
             days = days,
             initialStatuses = initialStatuses,

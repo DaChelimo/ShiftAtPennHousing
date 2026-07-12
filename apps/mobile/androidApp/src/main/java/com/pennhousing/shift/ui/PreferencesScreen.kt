@@ -3,8 +3,8 @@ package com.pennhousing.shift.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -26,6 +26,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -34,8 +38,10 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -123,21 +129,28 @@ fun PreferencesTabContent(
                     body = "You won't be scheduled next week. Untick \"no hours\" to set availability.",
                 )
             } else {
-                BrushSelector(state.brush, enabled = !state.readOnly, onSelect = vm::setBrush)
                 if (!state.readOnly) {
                     Text(
-                        "Long-press and drag to paint a range · tap a block for 30 min",
+                        "Pick a mode",
                         color = c.ter,
                         fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                Text(state.day.title, color = c.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                BrushSelector(state.brush, enabled = !state.readOnly, onSelect = vm::setBrush)
+                if (!state.readOnly) {
+                    PaintHelpCard()
+                }
+                Text(state.day.title, color = c.ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                 PrefTimeline(
                     day = state.day,
                     enabled = !state.readOnly,
+                    activeBrush = state.brush,
                     onPaint = vm::paint,
+                    onBeginPaint = vm::beginPaintDrag,
                     onPaintRange = vm::paintRange,
+                    onEndPaint = vm::endPaintDrag,
                 )
                 Box(Modifier.height(8.dp))
             }
@@ -194,13 +207,13 @@ fun PrefUnsavedChangesSheet(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
-                "You've changed your preferences but haven't submitted. Submit them before leaving, or discard them.",
+                "You've changed your preferences but haven't saved them. Save them before leaving, or discard them.",
                 color = c.sec,
                 fontSize = 15.sp,
                 lineHeight = 21.sp,
             )
             ShiftButton(
-                text = "Submit & leave",
+                text = "Save & leave",
                 onClick = onSubmitAndLeave,
                 modifier = Modifier.fillMaxWidth().testTag("pref_unsaved_submit"),
                 size = ButtonSize.Lg,
@@ -259,6 +272,7 @@ private fun PrefWeekCellView(
 ) {
     val c = ShiftTheme.colors
     val blue = MaterialTheme.colorScheme.primary
+    // Weekday-only pill (preferences are a weekly template, so no calendar date is shown).
     Column(
         modifier
             .clip(RoundedCornerShape(12.dp))
@@ -266,24 +280,24 @@ private fun PrefWeekCellView(
             .testTag("pref_day_cell")
             .padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
-        Text(cell.dayLetter, color = c.ter, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
         Box(
             Modifier
-                .size(34.dp)
-                .clip(RoundedCornerShape(50))
-                .background(if (cell.selected) blue else Color.Transparent),
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(if (cell.selected) blue else Color.Transparent)
+                .padding(vertical = 11.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                cell.dateLabel,
+                cell.dayLabel,
                 color = if (cell.selected) Color.White else c.ink,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
             )
         }
-        Box(Modifier.size(5.dp).clip(RoundedCornerShape(50)).background(if (cell.painted) blue else Color.Transparent))
+        Box(Modifier.size(6.dp).clip(RoundedCornerShape(50)).background(if (cell.painted) blue else Color.Transparent))
     }
 }
 
@@ -424,35 +438,88 @@ private fun BrushChip(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Icon(style.icon, contentDescription = null, tint = if (on) style.fg else c.ter, modifier = Modifier.size(17.dp))
-        Text(style.label, color = if (on) style.fg else c.sec, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+        Icon(style.icon, contentDescription = null, tint = if (on) style.fg else c.ter, modifier = Modifier.size(19.dp))
+        Text(style.label, color = if (on) style.fg else c.sec, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+/**
+ * A compact rounded hint that teaches the split-gesture model: the left time column scrolls the
+ * page, and pressing then dragging across the shifts picks or drops hours.
+ */
+@Composable
+private fun PaintHelpCard() {
+    val c = ShiftTheme.colors
+    val blue = MaterialTheme.colorScheme.primary
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.primaryContainer)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .testTag("pref_paint_help"),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(ShiftIcons.Info, contentDescription = null, tint = blue, modifier = Modifier.size(16.dp))
+        Text(
+            "Scroll the page using the time column on the left. On the shifts, press and drag to pick or drop hours.",
+            color = c.sec,
+            fontSize = 12.5.sp,
+            lineHeight = 17.sp,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
 // ── Day timeline (the drag-paint picker) ─────────────────────────────────────────
 
-private val PREF_BLOCK_HEIGHT = 26.dp
+// 1.5x the original 26.dp — real thumbs on real phones need a bigger target than the
+// emulator suggested; the emulator's finer pointer made 26.dp feel fine but it is too tight
+// to reliably land single 30-min blocks by touch.
+private val PREF_BLOCK_HEIGHT = 39.dp
+// The time gutter doubles as the page scroll handle: the shift grid is a pure paint canvas that
+// consumes its drags (so it never scrolls), so the page is scrolled by dragging the gutter (or any
+// other non-grid area) instead.
 private val PREF_GUTTER_WIDTH = 46.dp
 
 /**
  * The selected day's vertical timeline: hours in a left gutter (on the dividing lines),
  * bare colored 30-min segments (no per-cell text), and ONE label pill per painted run.
- * Long-press then drag to paint a contiguous range with the current brush; a single tap
- * paints one block. The whole screen scrolls; the long-press handoff keeps a plain swipe
- * scrolling rather than painting. [enabled] is false once the deadline has passed.
+ * A plain swipe SCROLLS the page; holding a block still for [PAINT_LONG_PRESS_MS] hands off
+ * to paint mode (a haptic tick fires at the handoff), after which dragging paints a contiguous
+ * range. While dragging, the affected span is outlined and tinted LIVE: accent blue when the
+ * drag is adding the active brush, red when it is erasing (dragging back over blocks already
+ * painted in that same mode). A single tap toggles one block. The add-vs-erase operation is
+ * decided by the block the drag starts on (see [PreferencesViewModel.beginPaintDrag]).
+ * [enabled] is false once the deadline has passed.
  */
 @Composable
 private fun PrefTimeline(
     day: PrefDayView,
     enabled: Boolean,
+    activeBrush: PrefBrush,
     onPaint: (String) -> Unit,
+    onBeginPaint: (String) -> Unit,
     onPaintRange: (String, String) -> Unit,
+    onEndPaint: () -> Unit,
 ) {
     val cells = day.cells
     if (cells.isEmpty()) return
     val total = PREF_BLOCK_HEIGHT * cells.size
     val blockPx = with(LocalDensity.current) { PREF_BLOCK_HEIGHT.toPx() }
     fun idxAt(y: Float): Int = (y / blockPx).toInt().coerceIn(0, cells.size - 1)
+
+    val c = ShiftTheme.colors
+    val haptics = LocalHapticFeedback.current
+    val addColor = MaterialTheme.colorScheme.primary
+    val eraseColor = c.danger.accent
+    // Always-fresh cells + brush so a NEW drag reads the CURRENT paint state (the pointerInput
+    // is keyed on the day only, so it never restarts mid-drag and abort the sweep).
+    val cellsNow by rememberUpdatedState(cells)
+    val brushNow by rememberUpdatedState(activeBrush)
+    // The live drag preview: the affected block span + whether this sweep erases (red) or adds (blue).
+    var dragSpan by remember { mutableStateOf<IntRange?>(null) }
+    var dragErase by remember { mutableStateOf(false) }
 
     Row(Modifier.fillMaxWidth().height(total)) {
         PrefGutter(day.hourMarks, total)
@@ -463,23 +530,48 @@ private fun PrefTimeline(
                 .testTag("pref_block_grid")
                 .then(
                     if (enabled) {
-                        Modifier
-                            .pointerInput(cells) {
-                                detectTapGestures { offset -> onPaint(cells[idxAt(offset.y)].blockId) }
+                        // The grid is a pure paint canvas: every drag paints (and is CONSUMED, so the
+                        // parent verticalScroll never scrolls from a touch on the grid) and a tap toggles
+                        // one block. The page is scrolled by dragging the time gutter (or any non-grid
+                        // area) instead, which is left unconsumed. This removes the scroll-vs-paint
+                        // conflict entirely rather than trying to arbitrate it.
+                        Modifier.pointerInput(day.dayIndex) {
+                            val slop = viewConfiguration.touchSlop
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                val startIdx = idxAt(down.position.y)
+                                val startId = cellsNow[startIdx].blockId
+                                var dragging = false
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if (!change.pressed) {
+                                        if (!dragging) {
+                                            onPaint(startId) // tap toggles a single block
+                                        } else {
+                                            onEndPaint()
+                                        }
+                                        dragSpan = null
+                                        break
+                                    }
+                                    if (!dragging && (change.position - down.position).getDistance() > slop) {
+                                        // A drag has started: engage paint mode with a haptic tick and the
+                                        // live span highlight (blue add / red erase).
+                                        dragging = true
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        dragErase = cellsNow[startIdx].brush == brushNow
+                                        dragSpan = startIdx..startIdx
+                                        onBeginPaint(startId)
+                                    }
+                                    if (dragging) {
+                                        change.consume() // keep the parent scroll from grabbing the grid
+                                        val cur = idxAt(change.position.y)
+                                        dragSpan = minOf(startIdx, cur)..maxOf(startIdx, cur)
+                                        onPaintRange(startId, cellsNow[cur].blockId)
+                                    }
+                                }
                             }
-                            .pointerInput(cells) {
-                                var startId = cells.first().blockId
-                                detectDragGesturesAfterLongPress(
-                                    onDragStart = { offset ->
-                                        startId = cells[idxAt(offset.y)].blockId
-                                        onPaint(startId)
-                                    },
-                                    onDrag = { change, _ ->
-                                        change.consume()
-                                        onPaintRange(startId, cells[idxAt(change.position.y)].blockId)
-                                    },
-                                )
-                            }
+                        }
                     } else {
                         Modifier
                     },
@@ -487,6 +579,17 @@ private fun PrefTimeline(
         ) {
             Column(Modifier.fillMaxSize()) { cells.forEach { PrefSegment(it) } }
             day.runs.forEach { PrefRunPill(it) }
+            dragSpan?.let { span ->
+                val hl = if (dragErase) eraseColor else addColor
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(PREF_BLOCK_HEIGHT * (span.last - span.first + 1))
+                        .offset(y = PREF_BLOCK_HEIGHT * span.first)
+                        .background(hl.copy(alpha = 0.16f), RoundedCornerShape(5.dp))
+                        .border(2.dp, hl, RoundedCornerShape(5.dp)),
+                )
+            }
         }
     }
 }
@@ -505,10 +608,10 @@ private fun PrefGutter(
                 modifier =
                     Modifier
                         .align(Alignment.TopEnd)
-                        .offset(y = (PREF_BLOCK_HEIGHT * mark.boundaryIndex - 7.dp).coerceAtLeast(0.dp))
+                        .offset(y = (PREF_BLOCK_HEIGHT * mark.boundaryIndex - 8.dp).coerceAtLeast(0.dp))
                         .padding(end = 8.dp),
                 color = c.ter,
-                fontSize = 11.sp,
+                fontSize = 12.5.sp,
                 fontWeight = FontWeight.Medium,
             )
         }
@@ -561,8 +664,8 @@ private fun BoxScope.PrefRunPill(run: PrefBlockRun) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-            Icon(style.icon, contentDescription = null, tint = style.accent, modifier = Modifier.size(11.dp))
-            Text(run.label, color = style.fg, fontSize = 11.5.sp, fontWeight = FontWeight.Medium)
+            Icon(style.icon, contentDescription = null, tint = style.accent, modifier = Modifier.size(13.dp))
+            Text(run.label, color = style.fg, fontSize = 13.sp, fontWeight = FontWeight.Medium)
         }
     }
 }

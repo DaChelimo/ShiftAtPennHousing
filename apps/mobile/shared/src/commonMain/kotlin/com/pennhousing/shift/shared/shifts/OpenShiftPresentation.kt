@@ -92,7 +92,7 @@ fun OpenShift.toRow(
     val meta =
         when (state) {
             OpenShiftCardState.PERMANENT -> weeksRemaining?.let { "$it weeks remaining" }
-            OpenShiftCardState.UNPICKABLE -> "Locked — within 2h of start"
+            OpenShiftCardState.UNPICKABLE -> "Locked (within 2h of start)"
             OpenShiftCardState.OPEN -> null
         }
     val actionLabel =
@@ -117,13 +117,13 @@ fun OpenShift.toRow(
 }
 
 /** The success toast shown after a WEEKLY open-shift claim commits. */
-const val CLAIM_SUCCESS_TOAST: String = "Claimed — it's now in My Shifts"
+const val CLAIM_SUCCESS_TOAST: String = "Claimed. It's now in My Shifts"
 
 /**
  * The success toast after a PERMANENT pickup when the scope is unknown (the dry-run GET
  * failed, a sub-range pickup, or the demo path) — no X-of-Y breakdown to show.
  */
-const val PICKUP_SUCCESS_TOAST_GENERIC: String = "Picked up — it's now in My Shifts"
+const val PICKUP_SUCCESS_TOAST_GENERIC: String = "Picked up. It's now in My Shifts"
 
 /**
  * The success toast shown after a PERMANENT pickup commits: "Picked up X of Y weeks"

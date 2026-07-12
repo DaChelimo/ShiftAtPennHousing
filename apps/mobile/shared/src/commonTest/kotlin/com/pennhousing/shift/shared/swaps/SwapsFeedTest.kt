@@ -79,8 +79,8 @@ class SwapsFeedTest {
         assertEquals("4h", t.give?.hours)
         assertEquals("4h", t.get?.hours)
         // Time slot is the hero — present + computed for both sides.
-        assertEquals("14:00 – 18:00", t.give?.timeRange) // counterparty span (mine)
-        assertEquals("09:00 – 13:00", t.get?.timeRange) // initiator span (theirs)
+        assertEquals("14:00 - 18:00", t.give?.timeRange) // counterparty span (mine)
+        assertEquals("09:00 - 13:00", t.get?.timeRange) // initiator span (theirs)
         assertNotNull(t.give?.dayLabel)
         assertEquals("Needs your response", t.directionLabel)
         assertEquals("Permanent swap", feed.incoming.single { it.swapId == "p" }.typeLabel)
@@ -119,7 +119,46 @@ class SwapsFeedTest {
         val row = feed.incoming.single()
         assertNull(row.give) // nothing back
         assertEquals("4h", row.get?.hours) // I receive their shift
-        assertEquals("Hand-off", row.typeLabel)
+        // A one-directional transfer never reads as a "swap" — it's a receive-only offer.
+        assertEquals("Hours offered", row.typeLabel)
+        assertTrue(row.isOneWayTransfer)
+        assertEquals("4h", row.transferSide?.hours) // the single panel shows the received shift
+        assertEquals("Ben wants to give you these hours", row.transferHeadline)
+    }
+
+    @Test fun one_way_permanent_transfer_keeps_its_permanence_in_the_pill() {
+        // INCOMING permanent transfer with nothing back — relabel away from "swap", but the
+        // recurring nature is decision-critical, so the pill stays "Permanent hours".
+        val feed =
+            buildSwapsFeed(
+                listOf(swap("p", SwapDirection.INCOMING, type = "permanent_swap", cpStart = null, cpEnd = null, cpBlocks = 0)),
+                now,
+            )
+        val row = feed.incoming.single()
+        assertTrue(row.isOneWayTransfer)
+        assertEquals("Permanent hours", row.typeLabel)
+    }
+
+    @Test fun outgoing_one_way_offer_is_reframed_as_offering() {
+        // OUTGOING hand-off: I give my shift, get nothing → I'm OFFERING hours, not swapping.
+        val feed =
+            buildSwapsFeed(
+                listOf(swap("o", SwapDirection.OUTGOING, type = "handoff", cpStart = null, cpEnd = null, cpBlocks = 0)),
+                now,
+            )
+        val row = feed.outgoing.single()
+        assertNull(row.get) // nothing back to me
+        assertTrue(row.isOneWayTransfer)
+        assertEquals("Hours offered", row.typeLabel)
+        assertEquals("4h", row.transferSide?.hours) // the panel shows the shift I'm offering
+        assertEquals("You're offering these hours to Ben", row.transferHeadline)
+    }
+
+    @Test fun two_sided_swap_is_not_a_one_way_transfer() {
+        val feed = buildSwapsFeed(listOf(swap("t", SwapDirection.INCOMING, type = "shift_swap")), now)
+        val row = feed.incoming.single()
+        assertFalse(row.isOneWayTransfer)
+        assertEquals("Shift swap", row.typeLabel)
     }
 
     @Test fun deadline_is_a_humanized_countdown() {

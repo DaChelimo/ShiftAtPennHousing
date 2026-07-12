@@ -172,7 +172,7 @@ fun ShiftBottomNav(
                         Icon(item.icon, contentDescription = item.label, modifier = Modifier.size(Dimens.iconNav))
                     }
                 },
-                label = { Text(item.label, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1) },
+                label = { Text(item.label, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1) },
                 colors =
                     NavigationBarItemDefaults.colors(
                         selectedIconColor = MaterialTheme.colorScheme.primary,

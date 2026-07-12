@@ -56,6 +56,12 @@ private data class OpenShiftMergeKey(
     val feed: OpenFeed,
     val homeHouse: Boolean,
     val weeksRemaining: Int?,
+    // Coverage flags are per-block (§5.4/§5.5), so two adjacent blocks can differ —
+    // one still covered/claimable, the next empty or one-way locked. Keying on them
+    // keeps blocks with different claimability in separate cards rather than merging
+    // them into one card whose action would misrepresent half its blocks.
+    val deskCovered: Boolean,
+    val coverageLocked: Boolean,
 )
 
 private fun mergeKey(shift: OpenShift) =
@@ -64,6 +70,8 @@ private fun mergeKey(shift: OpenShift) =
         feed = shift.feed,
         homeHouse = shift.homeHouse,
         weeksRemaining = shift.weeksRemaining,
+        deskCovered = shift.deskCovered,
+        coverageLocked = shift.coverageLocked,
     )
 
 /**

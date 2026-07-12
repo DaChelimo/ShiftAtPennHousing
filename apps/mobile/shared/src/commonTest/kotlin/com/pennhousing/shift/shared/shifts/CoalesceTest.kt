@@ -154,6 +154,8 @@ class CoalesceTest {
         feed: OpenFeed = OpenFeed.WEEKLY,
         homeHouse: Boolean = true,
         weeksRemaining: Int? = null,
+        deskCovered: Boolean = false,
+        coverageLocked: Boolean = false,
     ): List<OpenShift> {
         val start = at(startIso)
         return (0 until n).map { i ->
@@ -165,8 +167,22 @@ class CoalesceTest {
                 feed = feed,
                 homeHouse = homeHouse,
                 weeksRemaining = weeksRemaining,
+                deskCovered = deskCovered,
+                coverageLocked = coverageLocked,
             )
         }
+    }
+
+    @Test fun adjacent_blocks_with_different_coverage_do_not_merge() {
+        // A covered block 10:00–10:30 immediately followed by a one-way-locked block
+        // 10:30–11:00 must stay TWO cards — merging them would give one card whose
+        // single action (Claim or Locked) misrepresents the other block (§5.4/§5.5).
+        val covered = openBlocks("2026-01-15T10:00:00-05:00", 1, "c", deskCovered = true)
+        val locked = openBlocks("2026-01-15T10:30:00-05:00", 1, "l", coverageLocked = true)
+        val merged = coalesceOpenShifts(covered + locked)
+        assertEquals(2, merged.size)
+        assertTrue(merged.any { it.deskCovered && !it.coverageLocked })
+        assertTrue(merged.any { it.coverageLocked && !it.deskCovered })
     }
 
     @Test fun contiguous_open_blocks_merge_carrying_all_block_ids() {

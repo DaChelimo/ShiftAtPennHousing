@@ -220,7 +220,7 @@ app routes to the shifts screen built from `WorkerShiftsRepository.observeWorker
    correctness *and* quality (catches "passes tests but poorly written / overfit").
 4. **Build:** `./gradlew :androidApp:assembleDebug -PSUPABASE_URL=http://10.0.2.2:54321 -PSUPABASE_ANON_KEY=<local anon JWT>`.
 5. **Integration (the real proof):** boot `Medium_Phone_API_35`, install, launch, sign in as a
-   seeded SW (e.g. `e.quad.1@pennhousing.test` / `test-Password-123`) → the worker's **real**
+   seeded SW (e.g. `e.quad.1@pennhousing.test` / `abc123`) → the worker's **real**
    seeded shifts render (cross-checked against the DB for that `user_id`).
 
 ---

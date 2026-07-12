@@ -21,9 +21,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -33,6 +38,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pennhousing.shift.shared.ack.FloatRequestCard
+import com.pennhousing.shift.shared.ack.RecentFloatRow
+import com.pennhousing.shift.shared.model.RecentFloatStatus
 import com.pennhousing.shift.shared.viewmodel.FloatCarouselUiState
 import com.pennhousing.shift.ui.kit.ShiftIcons
 import com.pennhousing.shift.ui.theme.ShiftTheme
@@ -62,7 +69,8 @@ fun FloatRequestCarousel(
     modifier: Modifier = Modifier,
 ) {
     val cards = state.cards
-    if (cards.isEmpty()) return
+    // Nothing to surface at all → the whole section collapses away.
+    if (cards.isEmpty() && state.recentRows.isEmpty()) return
 
     val pagerState = rememberPagerState(pageCount = { cards.size })
 
@@ -70,24 +78,105 @@ fun FloatRequestCarousel(
         modifier = modifier.fillMaxWidth().testTag("float_carousel"),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        HorizontalPager(
-            state = pagerState,
-            pageSpacing = 10.dp,
-            contentPadding = PaddingValues(horizontal = 16.dp),
-        ) { page ->
-            // Guard: the page count shrinks as cards resolve; clamp defensively.
-            val card = cards.getOrNull(page) ?: cards.last()
-            FloatRequestCardView(
-                card = card,
-                position = page + 1,
-                total = cards.size,
-                onAccept = { onAccept(card.floatId) },
-                onDecline = { onDecline(card.floatId) },
-                onOpenDetail = { onOpenDetail(card.floatId) },
+        if (cards.isNotEmpty()) {
+            HorizontalPager(
+                state = pagerState,
+                pageSpacing = 10.dp,
+                contentPadding = PaddingValues(horizontal = 16.dp),
+            ) { page ->
+                // Guard: the page count shrinks as cards resolve; clamp defensively.
+                val card = cards.getOrNull(page) ?: cards.last()
+                FloatRequestCardView(
+                    card = card,
+                    position = page + 1,
+                    total = cards.size,
+                    onAccept = { onAccept(card.floatId) },
+                    onDecline = { onDecline(card.floatId) },
+                    onOpenDetail = { onOpenDetail(card.floatId) },
+                )
+            }
+            if (cards.size > 1) {
+                PagerDots(count = cards.size, selected = pagerState.currentPage)
+            }
+        }
+        if (state.recentRows.isNotEmpty()) {
+            RecentFloatsSection(rows = state.recentRows)
+        }
+    }
+}
+
+/**
+ * The collapsible "Recent float requests" history (§7.1/§7.2) — resolved floats from the
+ * last 24h (accepted / declined / expired), de-emphasized and collapsed by default so they
+ * never compete with the actionable carousel above. Auto-ages: the shared layer drops
+ * anything older than 24h, so there is no manual dismiss to maintain.
+ */
+@Composable
+private fun RecentFloatsSection(rows: List<RecentFloatRow>) {
+    var expanded by remember { mutableStateOf(false) }
+    val c = ShiftTheme.colors
+
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("recent_floats_section"),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .clickable { expanded = !expanded }
+                .padding(vertical = 6.dp)
+                .testTag("recent_floats_header"),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Recent float requests", color = c.sec, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Box(
+                    Modifier.clip(CircleShape).background(c.surfaceVar).padding(horizontal = 8.dp, vertical = 1.dp),
+                ) {
+                    Text("${rows.size}", color = c.ter, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                }
+            }
+            Icon(
+                ShiftIcons.ArrowDown,
+                contentDescription = if (expanded) "Collapse" else "Expand",
+                tint = c.ter,
+                modifier = Modifier.size(18.dp).rotate(if (expanded) 180f else 0f),
             )
         }
-        if (cards.size > 1) {
-            PagerDots(count = cards.size, selected = pagerState.currentPage)
+        if (expanded) {
+            Text("Past 24 hours", color = c.ter, fontSize = 12.sp)
+            rows.forEach { RecentFloatRowView(it) }
+        }
+    }
+}
+
+@Composable
+private fun RecentFloatRowView(row: RecentFloatRow) {
+    val c = ShiftTheme.colors
+    val accepted = row.status == RecentFloatStatus.ACCEPTED
+    val chipBg = if (accepted) c.success.tint else c.surfaceVar
+    val chipFg = if (accepted) c.success.deep else c.sec
+
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(c.surface)
+            .border(0.5.dp, c.divider, RoundedCornerShape(10.dp))
+            .padding(horizontal = 12.dp, vertical = 11.dp)
+            .testTag("recent_float_row"),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(row.title, color = c.ink, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Text(row.detail, color = c.ter, fontSize = 12.sp)
+        }
+        Spacer(Modifier.width(10.dp))
+        Box(Modifier.clip(CircleShape).background(chipBg).padding(horizontal = 9.dp, vertical = 3.dp)) {
+            Text(row.statusChip, color = chipFg, fontSize = 11.sp, fontWeight = FontWeight.Medium)
         }
     }
 }
@@ -101,22 +190,27 @@ private fun FloatRequestCardView(
     onDecline: () -> Unit,
     onOpenDetail: () -> Unit,
 ) {
-    // Softer treatment: a white card with elevation + a 2dp blue outline, rather than a
-    // solid-blue field. Blue is kept as an ACCENT (eyebrow, countdown pill, Accept) so
-    // the request still stands out without flooding the screen.
     val blue = FloatCardBlue
+    val isDark = ShiftTheme.colors.isDark
     val ink = ShiftTheme.colors.ink
     val sec = ShiftTheme.colors.sec
     val ter = ShiftTheme.colors.ter
+    val cardShape = RoundedCornerShape(20.dp)
 
     Column(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .shadow(elevation = 8.dp, shape = RoundedCornerShape(20.dp), clip = false)
-                .clip(RoundedCornerShape(20.dp))
+                .shadow(
+                    elevation = if (isDark) 8.dp else 6.dp,
+                    shape = cardShape,
+                    clip = false,
+                    ambientColor = if (isDark) Color.Transparent else Color.Black.copy(alpha = 0.07f),
+                    spotColor = if (isDark) Color.Transparent else Color.Black.copy(alpha = 0.12f),
+                )
+                .clip(cardShape)
                 .background(ShiftTheme.colors.surface)
-                .border(2.dp, blue, RoundedCornerShape(20.dp))
+                .then(if (isDark) Modifier.border(2.dp, blue, cardShape) else Modifier)
                 .clickable(onClick = onOpenDetail)
                 .padding(18.dp)
                 .testTag("float_card"),
@@ -160,13 +254,6 @@ private fun FloatRequestCardView(
                 fontWeight = FontWeight.Medium,
             )
         }
-        Text(
-            "${card.startsInLabel} · ${card.durationLabel} shift",
-            color = ter,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
-        )
-
         // The time-to-RESPOND countdown — the load-bearing number, rendered as a pill
         // so it reads as the primary call to action rather than blending into the
         // shift-start/duration line above. Tinted normally; solid-blue when urgent.

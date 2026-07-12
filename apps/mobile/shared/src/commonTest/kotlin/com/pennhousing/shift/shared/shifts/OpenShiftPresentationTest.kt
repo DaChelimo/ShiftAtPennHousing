@@ -31,6 +31,8 @@ class OpenShiftPresentationTest {
         end: String = "2026-01-15T16:00:00-05:00",
         homeHouse: Boolean = true,
         weeksRemaining: Int? = null,
+        deskCovered: Boolean = false,
+        coverageLocked: Boolean = false,
     ) = OpenShift(
         id = "o",
         house = house,
@@ -39,6 +41,8 @@ class OpenShiftPresentationTest {
         feed = feed,
         homeHouse = homeHouse,
         weeksRemaining = weeksRemaining,
+        deskCovered = deskCovered,
+        coverageLocked = coverageLocked,
     )
 
     // ----- card state mapping -----
@@ -57,6 +61,32 @@ class OpenShiftPresentationTest {
             OpenShiftCardState.UNPICKABLE,
             // starts 10:00 → exactly T-2h → NOT claimable (§5.4 / decision #7).
             openShiftCardState(open(start = "2026-01-15T10:00:00-05:00", end = "2026-01-15T12:00:00-05:00"), now),
+        )
+
+    @Test fun within_two_hours_but_desk_covered_stays_open() =
+        assertEquals(
+            // §5.4/§5.5: a co-worker is still on the desk → the dropped seat stays
+            // claimable within T-2h (the user's double-Harnwell repro).
+            OpenShiftCardState.OPEN,
+            openShiftCardState(
+                open(start = "2026-01-15T09:00:00-05:00", end = "2026-01-15T11:00:00-05:00", deskCovered = true),
+                now,
+            ),
+        )
+
+    @Test fun coverage_locked_is_unpickable_even_when_covered() =
+        assertEquals(
+            // The one-way lock wins: a later float-in/Allied fill never re-opens the seat.
+            OpenShiftCardState.UNPICKABLE,
+            openShiftCardState(
+                open(
+                    start = "2026-01-15T09:00:00-05:00",
+                    end = "2026-01-15T11:00:00-05:00",
+                    deskCovered = true,
+                    coverageLocked = true,
+                ),
+                now,
+            ),
         )
 
     @Test fun permanent_is_permanent_even_when_imminent() =
@@ -79,7 +109,7 @@ class OpenShiftPresentationTest {
         assertEquals(OpenShiftCardState.OPEN, r.state)
         assertEquals("Harnwell", r.houseName)
         assertEquals("H", r.houseInitial)
-        assertEquals("14:00 – 16:00", r.timeLabel)
+        assertEquals("14:00 - 16:00", r.timeLabel)
         assertEquals("Thu · Jan 15", r.dayLabel)
         assertEquals("2h", r.durationLabel)
         assertNull(r.meta)
@@ -89,7 +119,7 @@ class OpenShiftPresentationTest {
     @Test fun row_for_unpickable_has_no_action_and_locked_meta() {
         val r = open().toRow(claimable = false)
         assertEquals(OpenShiftCardState.UNPICKABLE, r.state)
-        assertEquals("Locked — within 2h of start", r.meta)
+        assertEquals("Locked (within 2h of start)", r.meta)
         assertNull(r.actionLabel)
     }
 
@@ -171,6 +201,6 @@ class OpenShiftPresentationTest {
     }
 
     @Test fun pickup_toast_generic_when_scope_unknown() {
-        assertEquals("Picked up — it's now in My Shifts", PICKUP_SUCCESS_TOAST_GENERIC)
+        assertEquals("Picked up. It's now in My Shifts", PICKUP_SUCCESS_TOAST_GENERIC)
     }
 }

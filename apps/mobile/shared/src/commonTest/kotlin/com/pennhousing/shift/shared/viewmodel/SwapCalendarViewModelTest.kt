@@ -155,6 +155,22 @@ class SwapCalendarViewModelTest {
     }
 
     @Test
+    fun take_slider_is_enabled_on_a_full_untouched_give() {
+        // Giving your WHOLE shift must not hide the counterparty hours slider: picking a
+        // multi-block counterparty enables `takeSplittable` immediately, with NO prior
+        // setGiveRange call. (You give all of your 2h and still pick any sub-window of
+        // their longer shift.)
+        val vm = SwapCalendarViewModel(listOf(schedThu), meUserId = "me", now = now, initialGiveShiftId = "sch")
+        vm.setWeekSeats(0, thuSeats)
+        assertFalse(vm.uiState.value.takeSplittable) // no counterparty picked yet
+        vm.pickTake(vm.uiState.value.day.others[0])
+        // give is still the full, untouched shift (no setGiveRange call above)
+        assertEquals(0, vm.uiState.value.giveFrom)
+        assertEquals(4, vm.uiState.value.giveTo)
+        assertTrue(vm.uiState.value.takeSplittable) // counterparty hours slider is live
+    }
+
+    @Test
     fun partial_permanent_swap_trims_the_recurring_slot() {
         val vm = SwapCalendarViewModel(listOf(schedThu), meUserId = "me", now = now, initialGiveShiftId = "sch")
         vm.setWeekSeats(0, thuSeats)
@@ -169,6 +185,50 @@ class SwapCalendarViewModelTest {
         assertNull(p[0].counterpartyAssignmentIds) // person-level — no counterparty span
         assertEquals(schedThu.start + 60.minutes, p[0].recurringSlotStart) // 15:00
         assertEquals(schedThu.end, p[0].recurringSlotEnd) // 16:00 — drives the partial recurring_pattern
+    }
+
+    @Test
+    fun initial_permanent_opens_a_scheduled_give_straight_into_a_permanent_swap() {
+        // The manage-shift sheet pivots to swap with the shared scope on "Permanent": the
+        // calendar opens already in the permanent deal, no extra toggle tap.
+        val vm = SwapCalendarViewModel(listOf(schedThu), meUserId = "me", now = now, initialGiveShiftId = "sch", initialPermanent = true)
+        vm.setWeekSeats(0, thuSeats)
+        assertTrue(vm.uiState.value.permanent)
+        vm.pickTake(vm.uiState.value.day.others[0])
+        assertEquals("permanent_swap", vm.proposals()[0].swapType)
+    }
+
+    @Test
+    fun initial_permanent_stays_editable_and_can_be_toggled_back_to_this_week() {
+        // "Pre-fill, still editable": the worker can still flip it back to a this-week swap.
+        val vm = SwapCalendarViewModel(listOf(schedThu), meUserId = "me", now = now, initialGiveShiftId = "sch", initialPermanent = true)
+        vm.setWeekSeats(0, thuSeats)
+        assertTrue(vm.uiState.value.permanent)
+        vm.togglePermanent()
+        assertFalse(vm.uiState.value.permanent)
+        vm.pickTake(vm.uiState.value.day.others[0])
+        assertEquals("shift_swap", vm.proposals()[0].swapType)
+    }
+
+    @Test
+    fun initial_permanent_is_ignored_for_a_non_permanent_eligible_give() {
+        // A float give can't go permanent — the scope carry is dropped, not honoured blindly.
+        val vm = SwapCalendarViewModel(listOf(floatThu), meUserId = "me", now = now, initialGiveShiftId = "flo", initialPermanent = true)
+        vm.setWeekSeats(0, thuSeats)
+        assertFalse(vm.uiState.value.permanent)
+        assertFalse(vm.uiState.value.permanentToggleVisible)
+    }
+
+    @Test
+    fun a_give_pinned_to_a_sub_range_carries_only_those_blocks_into_the_swap() {
+        // The manage-shift range selector carries into swap by pinning the sub-shift (its
+        // blockIds are the selected run) as the give — so the proposal spans only that range.
+        val subRange = myShift("sub", AssignmentKind.SCHEDULED, "2026-01-15T15:00:00-05:00", "2026-01-15T16:00:00-05:00", 2)
+        val vm = SwapCalendarViewModel(listOf(subRange), meUserId = "me", now = now, initialGiveShiftId = "sub")
+        vm.setWeekSeats(0, thuSeats)
+        assertEquals(2, vm.uiState.value.giveBlockCount) // only the carried sub-range, not a full shift
+        vm.pickTake(vm.uiState.value.day.others[0])
+        assertEquals(listOf("sub-0", "sub-1"), vm.proposals()[0].initiatorAssignmentIds)
     }
 
     @Test

@@ -101,9 +101,9 @@ class BreakCalendarTest {
         val plan = planBreakDrag(s, day(s), 0, 2)
         assertEquals(listOf("b0", "b1", "b2"), plan.claimableBlockIds)
         assertEquals(1, plan.claimedSegments.size)
-        assertEquals("08:00 – 09:30", plan.claimedSegments.single().rangeLabel)
+        assertEquals("08:00 - 09:30", plan.claimedSegments.single().rangeLabel)
         assertTrue(plan.trimmedSegments.isEmpty())
-        assertEquals("Claimed 08:00 – 09:30", plan.message)
+        assertEquals("Claimed 08:00 - 09:30", plan.message)
     }
 
     @Test fun drag_over_others_full_blocks_claims_nothing() {
@@ -140,7 +140,7 @@ class BreakCalendarTest {
         assertEquals(1, plan.trimmedSegments.size)
         assertEquals(BreakDragSkip.FULL, plan.trimmedSegments.single().reason)
         assertEquals(
-            "Claimed 08:00 – 08:30, 09:00 – 09:30 · 08:30 – 09:00 was already full",
+            "Claimed 08:00 - 08:30, 09:00 - 09:30 · 08:30 - 09:00 was already full",
             plan.message,
         )
     }
@@ -169,8 +169,8 @@ class BreakCalendarTest {
         assertEquals(BreakDragMode.DROP, plan.mode)
         assertTrue(plan.droppable)
         assertEquals(listOf("b0-s0", "b1-s0"), plan.dropSeatIds)
-        assertEquals("08:00 – 09:00", plan.dropLabel)
-        assertEquals("Drop your 08:00 – 09:00 shift?", plan.message)
+        assertEquals("08:00 - 09:00", plan.dropLabel)
+        assertEquals("Drop your 08:00 - 09:00 shift?", plan.message)
     }
 
     // ── mixed: own shift then a run of open shifts → claim the open run ─────────
@@ -262,7 +262,7 @@ class BreakCalendarTest {
         val roster = day(snap(ann + you)).roster
         assertEquals(2, roster.size)
         val annRun = roster.single { it.workerName == "Ann" }
-        assertEquals("08:00 – 09:00", annRun.timeLabel)
+        assertEquals("08:00 - 09:00", annRun.timeLabel)
         assertFalse(annRun.mine)
         assertTrue(roster.single { it.workerName == "You" }.mine)
     }

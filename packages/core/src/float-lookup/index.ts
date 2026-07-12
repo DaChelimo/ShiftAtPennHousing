@@ -16,7 +16,11 @@ import type {
 } from './types.js';
 
 const HARNWELL_HOUSE_ID = 'harnwell';
-const MIN_FLOAT_CHUNK_BLOCKS = 2;
+// Minimum float chunk size (BSpec §6.2 #4). A floater's assigned span must be at
+// least this many consecutive 30-minute blocks. Lowered from 2 (1 hour) to 1
+// (30 minutes) so single-block gaps are absorbed by floats instead of routed to
+// Allied — the goal is to minimize how often paid Allied coverage is procured.
+const MIN_FLOAT_CHUNK_BLOCKS = 1;
 const BLOCK_DURATION_MS = 30 * 60 * 1000;
 
 type CandidateSpan = {
@@ -127,10 +131,10 @@ function chooseLargestNonLeadingSpan(
 //
 //   Tier 1: FULL coverage — workers covering the entire targetRun.
 //   Tier 2: LEADING coverage — workers covering the run's start with
-//           a ≥2-block leading portion (pinned #13).
-//   Tier 3: LARGEST CONSECUTIVE anywhere within the run, ≥2 blocks,
-//           with a non-trailing filter on the first iteration at each
-//           source (allowTrailingPartial=false).
+//           a leading portion >= MIN_FLOAT_CHUNK_BLOCKS (pinned #13).
+//   Tier 3: LARGEST CONSECUTIVE anywhere within the run,
+//           >= MIN_FLOAT_CHUNK_BLOCKS, with a non-trailing filter on the
+//           first iteration at each source (allowTrailingPartial=false).
 //
 // If all three tiers yield no candidate, return null; the caller
 // breaks out of this source's loop and moves on.
@@ -232,7 +236,7 @@ export function findFloaters(input: FloatLookupInput): FloatLookupResult {
       // F-06-001: try each uncovered run (largest first) before abandoning
       // this source. A worker who cannot cover the largest run may still
       // cover a smaller uncovered run; only give up on the source when no
-      // run >= 2 has any eligible worker.
+      // run >= MIN_FLOAT_CHUNK_BLOCKS has any eligible worker.
       let selected: CandidateSpan | null = null;
       for (const targetRun of candidateRuns) {
         const candidate = chooseCandidateForCurrentRun(

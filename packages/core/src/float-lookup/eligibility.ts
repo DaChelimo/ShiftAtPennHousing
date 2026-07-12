@@ -1,28 +1,35 @@
 import type { NormalizedGap, NormalizedSource, NormalizedWorker } from './normalize.js';
 import type { FloatExclusion, HouseId } from './types.js';
 
-const HARNWELL_HOUSE_ID = 'harnwell';
-const QUAD_HOUSE_ID = 'quad';
 const BLOCK_DURATION_MS = 30 * 60 * 1000;
 
-// AGENTS hard invariant #2 (BSpec §1.2 absolute): enforced
-// algorithmically, never trusted from float_routing config. The
-// allowlist is closed; any source house id not in it is rejected.
-function isPermittedSourceHouse(sourceHouseId: HouseId, destinationHouseId: HouseId): boolean {
-  if (sourceHouseId === HARNWELL_HOUSE_ID) {
-    return true;
-  }
-
-  if (sourceHouseId === QUAD_HOUSE_ID) {
-    return destinationHouseId !== HARNWELL_HOUSE_ID;
-  }
-
-  return false;
-}
+// Float direction is now CONFIG-DRIVEN WITH HARD GUARDS (stakeholder decision
+// 2026-07-02; amends AGENTS hard invariant #2 from the old class-based allowlist).
+// Which houses may source floats, and to which destinations, is the admin-authored
+// float_routing matrix the orchestrator snapshots into `sources`. The two ABSOLUTE
+// guards remain enforced in code, independent of that config:
+//   1. Harnwell is never a destination — handled by the caller's short-circuit in
+//      index.ts (the whole gap routes to Allied before any source is examined), and
+//      backstopped by the float_routing legality trigger (20260702000005).
+//   2. A source desk never drops below one present worker — sourceHasFloor /
+//      workerBlocksRespectSourceFloor below, using per-block effective headcount.
+//      This is what makes a single-staffed source (headcount 1) unable to lend, and
+//      is why the old class allowlist is redundant: a house can only source while it
+//      is genuinely multi-staffed for the covered blocks.
+// The Harnwell TRAINING invariant (no non-Harnwell worker staffs Harnwell) is
+// independent of float direction and is enforced at every assignment write point by
+// the DB trigger (enforce_harnwell_assignment_training); Harnwell never being a
+// float destination means no float ever targets it anyway.
 
 function hasAdminWorkerExclusion(worker: NormalizedWorker): boolean {
-  // RSM, like HM and BM, is never an automatic float candidate.
-  return worker.roles.includes('hm') || worker.roles.includes('rsm') || worker.roles.includes('bm');
+  // RSM, like HM and BM, is never an automatic float candidate. The top-level
+  // admin (house-agnostic superuser) is likewise never floated.
+  return (
+    worker.roles.includes('hm') ||
+    worker.roles.includes('rsm') ||
+    worker.roles.includes('bm') ||
+    worker.roles.includes('admin')
+  );
 }
 
 // Source-level early exit (pinned-decision #1): the source can admit
@@ -114,10 +121,10 @@ export function getEligibleWorkersForSource(
   exclusions: FloatExclusion[],
   tentativeFloatingOut: Map<HouseId, number>,
 ): NormalizedWorker[] {
-  if (!isPermittedSourceHouse(source.houseId, gap.destinationHouseId)) {
-    return [];
-  }
-
+  // Source eligibility is the floor guard alone (guard #2 above): the source must
+  // retain >= 1 worker after lending. Which houses reach this function at all is
+  // decided upstream by the float_routing snapshot + the Harnwell-destination
+  // short-circuit; there is no longer a hardcoded class allowlist.
   if (!sourceHasFloor(source, tentativeFloatingOut)) {
     return [];
   }

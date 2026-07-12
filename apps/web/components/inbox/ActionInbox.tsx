@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
@@ -11,12 +10,9 @@ import { Button, EmptyState, Icon, PageHead, Tabs, Tag, type IconName } from '..
 import './inbox.css';
 
 // Realtime: open a postgres_changes channel on `notifications` so new/changed
-// alerts surface without a manual reload (the page copy promises "in real time").
-// The browser client carries the signed-in admin's cookie session, so RLS scopes
-// the stream to this recipient's rows exactly as the server-side initial load does.
-// On any change we just `router.refresh()` — that re-runs the inbox server
-// component, which re-fetches and re-partitions through the same @shift/core
-// predicates, so we never re-implement the enrich/partition logic client-side.
+// alerts surface without a manual reload. On any change we just `router.refresh()` —
+// that re-runs the inbox server component, which re-fetches and re-partitions through
+// the same @shift/core lifecycle predicates, so we never re-implement that logic here.
 function useInboxRealtime() {
   const router = useRouter();
   useEffect(() => {
@@ -44,17 +40,36 @@ const ICON_FOR: Record<string, IconName> = {
   personal_shift: 'calendar',
 };
 
-// One inbox row. The container keeps `.inbox-item`; an unread row keeps the
-// `.unread-dot` element (DOM contract). hmod_urgent rows carry a native Resolved
-// checkbox (set/clear the Allied resolved marker); every other row carries a
-// mark-read button. After a successful action we refresh so the server re-partitions
-// the view (the resolved alert leaves / re-enters the default inbox).
-function InboxItem({ item }: { item: InboxItemT }) {
+// The status pill on a coverage card. Action-required (red) only while the window is
+// still open; resolved (green) once handled; "Window passed" (neutral) for an archived
+// alert that was never resolved.
+function StatusBadge({ item }: { item: InboxItemT }) {
+  if (item.urgent) {
+    return (
+      <Tag kind="red" icon="warnFill">
+        Action required
+      </Tag>
+    );
+  }
+  if (item.resolved) {
+    return (
+      <Tag kind="green" icon="check">
+        Resolved
+      </Tag>
+    );
+  }
+  // Archived + unresolved: the window elapsed without a logged resolution.
+  return <Tag kind="gray">Window passed</Tag>;
+}
+
+// One Allied-coverage card (Coverage + Archive grids). Leads with HOUSE · DATE · WINDOW
+// — the three things a HM / RSM scans first. Active cards carry the native Resolved
+// checkbox; archived cards are read-only history (the window has already elapsed).
+function CoverageCard({ item }: { item: InboxItemT }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const isUrgentType = item.type === 'hmod_urgent';
+  const archived = item.lifecycle === 'archived';
 
   async function toggleResolved(next: boolean) {
     setBusy(true);
@@ -67,6 +82,67 @@ function InboxItem({ item }: { item: InboxItemT }) {
     }
     router.refresh();
   }
+
+  return (
+    <div
+      className={`cov-card ${item.urgent ? 'is-urgent' : ''} ${archived ? 'is-archived' : ''}`.trim()}
+      data-testid="inbox-coverage-card"
+    >
+      <div className="cov-card-top">
+        <span className="cov-house">
+          <span className="cov-house-icon">
+            <Icon name="shield" size={15} />
+          </span>
+          <b className="cov-house-name">{item.houseName ?? 'House'}</b>
+        </span>
+        <StatusBadge item={item} />
+      </div>
+
+      <div className="cov-when">
+        <span className="cov-date">{item.dateLabel ?? '-'}</span>
+        {item.windowLabel && <span className="cov-window t-mono">{item.windowLabel}</span>}
+      </div>
+
+      {item.reason && <div className="cov-reason">{item.reason}</div>}
+
+      <div className="cov-foot">
+        {archived ? (
+          <span className="cov-ago">{item.agoLabel}</span>
+        ) : (
+          <label className="inbox-resolve">
+            <input
+              type="checkbox"
+              data-testid="inbox-resolve-checkbox"
+              aria-label="Resolved"
+              checked={item.resolved}
+              disabled={busy}
+              onChange={(e) => toggleResolved(e.target.checked)}
+            />
+            <span>Resolved</span>
+          </label>
+        )}
+      </div>
+
+      {error !== null && <div className="cov-error">{error}</div>}
+    </div>
+  );
+}
+
+function CoverageGrid({ items, testId }: { items: InboxItemT[]; testId: string }) {
+  return (
+    <div className="cov-grid" data-testid={testId}>
+      {items.map((n) => (
+        <CoverageCard key={n.id} item={n} />
+      ))}
+    </div>
+  );
+}
+
+// A non-Allied notification (swap / leave / reminder). Plain row + mark-read.
+function NotificationRow({ item }: { item: InboxItemT }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function onMarkRead() {
     setBusy(true);
@@ -81,8 +157,8 @@ function InboxItem({ item }: { item: InboxItemT }) {
   }
 
   return (
-    <div className={`inbox-item ${item.urgent ? 'is-urgent' : ''}`.trim()}>
-      <div className={`inbox-icon ${item.urgent ? 'urgent' : ''}`.trim()}>
+    <div className="inbox-item">
+      <div className="inbox-icon">
         <Icon name={ICON_FOR[item.type] ?? 'inbox'} size={18} />
       </div>
       <div className="inbox-main">
@@ -90,65 +166,21 @@ function InboxItem({ item }: { item: InboxItemT }) {
           <div className="row gap-2">
             {item.unread && <span className="unread-dot" />}
             <span className="inbox-title">{item.title}</span>
-            {item.urgent && (
-              <Tag kind="red" icon="warnFill">
-                Action required
-              </Tag>
-            )}
-            {item.resolved && (
-              <Tag kind="green" icon="check">
-                Resolved
-              </Tag>
-            )}
           </div>
           <span className="t-meta">{item.timeLabel}</span>
         </div>
-
-        {(item.houseName || item.windowLabel) && (
-          <div className="inbox-fields">
-            {item.houseName && (
-              <span className="inbox-field">
-                <span className="t-meta">House</span>
-                <b>{item.houseName}</b>
-              </span>
-            )}
-            {item.windowLabel && (
-              <span className="inbox-field">
-                <span className="t-meta">Window</span>
-                <b className="t-mono">{item.windowLabel}</b>
-              </span>
-            )}
-          </div>
-        )}
-
         {item.reason && <div className="inbox-reason">{item.reason}</div>}
-
         <div className="row gap-2" style={{ marginTop: 10 }}>
-          {isUrgentType ? (
-            <label className="inbox-resolve">
-              <input
-                type="checkbox"
-                data-testid="inbox-resolve-checkbox"
-                aria-label="Resolved"
-                checked={item.resolved}
-                disabled={busy}
-                onChange={(e) => toggleResolved(e.target.checked)}
-              />
-              <span>Resolved</span>
-            </label>
-          ) : (
-            <Button
-              kind="tertiary"
-              size="sm"
-              data-testid="inbox-mark-read"
-              disabled={busy}
-              onClick={onMarkRead}
-            >
-              Mark read
-            </Button>
-          )}
+          <Button
+            kind="tertiary"
+            size="sm"
+            data-testid="inbox-mark-read"
+            disabled={busy}
+            onClick={onMarkRead}
+          >
+            Mark read
+          </Button>
         </div>
-
         {error !== null && (
           <div className="inbox-reason" style={{ color: 'var(--st-danger)', marginTop: 8 }}>
             {error}
@@ -159,120 +191,72 @@ function InboxItem({ item }: { item: InboxItemT }) {
   );
 }
 
+type Tab = 'coverage' | 'archive' | 'other';
+
 export function ActionInbox({ data }: { data: InboxData }) {
-  const [tab, setTab] = useState<'all' | 'urgent' | 'unread'>('all');
+  const [tab, setTab] = useState<Tab>('coverage');
   useInboxRealtime();
 
-  // ---- Resolved view: a plain list of the resolved Allied alerts + hide link. ----
-  if (data.view === 'resolved') {
-    return (
-      <div className="page" style={{ maxWidth: 880 }}>
-        <PageHead
-          eyebrow="Action inbox"
-          title="Resolved Allied requests"
-          sub="Allied-coverage alerts that have been marked resolved. Untick one to send it back to the active inbox."
-        />
-
-        <div style={{ marginTop: 16 }}>
-          <Link href="/inbox" className="btn btn-ghost btn-sm" data-testid="inbox-hide-resolved">
-            <Icon name="chevLeft" size={16} />
-            <span>Back to action inbox</span>
-          </Link>
-        </div>
-
-        {data.items.length === 0 ? (
-          <div className="card" style={{ marginTop: 16 }}>
-            <EmptyState
-              title="Nothing resolved yet"
-              desc="Resolved Allied requests will appear here."
-              tone="neutral"
-            />
-          </div>
-        ) : (
-          <div className="inbox-list" style={{ marginTop: 16 }}>
-            {data.items.map((n) => (
-              <InboxItem key={n.id} item={n} />
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // ---- Default view: only unresolved Allied requests + non-urgent notifications. ----
-  const urgent = data.items.filter((i) => i.urgent);
-  const earlier = data.items.filter((i) => !i.urgent);
-  const shown =
-    tab === 'urgent' ? urgent : tab === 'unread' ? data.items.filter((i) => i.unread) : data.items;
+  const sub =
+    data.actionRequiredCount > 0
+      ? `${String(data.actionRequiredCount)} Allied request${data.actionRequiredCount === 1 ? '' : 's'} need attention.`
+      : 'No open Allied requests. New alerts appear here in real time.';
 
   return (
-    <div className="page" style={{ maxWidth: 880 }}>
-      <PageHead
-        eyebrow="Working hours · Mon–Fri 08:00–17:00"
-        title="Action inbox"
-        sub="The human-in-the-loop queue. Real-time, action-required alerts. Most healthy weeks, this is empty."
-      />
+    <div className="page" style={{ maxWidth: 980 }}>
+      <PageHead eyebrow="Coverage escalation · real-time" title="Action inbox" sub={sub} />
 
-      <div className="row gap-2 between" style={{ marginTop: 16 }}>
+      <div style={{ marginTop: 16 }}>
         <Tabs
           active={tab}
-          onChange={(k) => setTab(k as 'all' | 'urgent' | 'unread')}
+          onChange={(k) => setTab(k as Tab)}
           tabs={[
-            { key: 'all', label: 'All', count: data.items.length },
-            { key: 'urgent', label: 'Action required', count: urgent.length },
-            { key: 'unread', label: 'Unread', count: data.unreadCount },
+            { key: 'coverage', label: 'Coverage', count: data.activeCount },
+            { key: 'archive', label: 'Archive', count: data.archivedCount },
+            { key: 'other', label: 'Notifications', count: data.otherUnreadCount },
           ]}
         />
-        {data.resolvedCount > 0 && (
-          <Link
-            href="/inbox?show=resolved"
-            className="btn btn-ghost btn-sm"
-            data-testid="inbox-show-resolved"
-          >
-            <Icon name="check" size={16} />
-            <span>Show resolved ({data.resolvedCount})</span>
-          </Link>
-        )}
       </div>
 
-      {data.items.length === 0 ? (
-        <div className="card" style={{ marginTop: 16 }}>
-          <EmptyState
-            title="All clear — no action needed"
-            desc="Coverage is healthy. New alerts will appear here in real time."
-          />
-        </div>
-      ) : (
-        <div className="inbox-list" style={{ marginTop: 16 }}>
-          {tab === 'all' ? (
-            <>
-              {urgent.length > 0 && (
-                <div className="inbox-group-label">
-                  <Icon name="warnFill" size={14} />
-                  Action required
-                </div>
-              )}
-              {urgent.map((n) => (
-                <InboxItem key={n.id} item={n} />
-              ))}
-              {earlier.length > 0 && (
-                <div className="inbox-group-label muted" style={{ marginTop: 20 }}>
-                  Earlier
-                </div>
-              )}
-              {earlier.map((n) => (
-                <InboxItem key={n.id} item={n} />
-              ))}
-            </>
-          ) : shown.length > 0 ? (
-            shown.map((n) => <InboxItem key={n.id} item={n} />)
-          ) : (
+      <div style={{ marginTop: 16 }}>
+        {tab === 'coverage' &&
+          (data.alliedActive.length === 0 ? (
             <div className="card">
-              <EmptyState title="Nothing here" desc="No items match this filter." tone="neutral" />
+              <EmptyState
+                title="All clear — no coverage needed"
+                desc="Allied-coverage requests appear here, soonest first, in real time."
+              />
             </div>
-          )}
-        </div>
-      )}
+          ) : (
+            <CoverageGrid items={data.alliedActive} testId="inbox-active-grid" />
+          ))}
+
+        {tab === 'archive' &&
+          (data.alliedArchived.length === 0 ? (
+            <div className="card">
+              <EmptyState
+                title="Nothing archived"
+                desc="Requests whose coverage window has passed stay here for a day, then clear."
+                tone="neutral"
+              />
+            </div>
+          ) : (
+            <CoverageGrid items={data.alliedArchived} testId="inbox-archive-grid" />
+          ))}
+
+        {tab === 'other' &&
+          (data.other.length === 0 ? (
+            <div className="card">
+              <EmptyState title="No notifications" desc="Swaps, leave and reminders show up here." tone="neutral" />
+            </div>
+          ) : (
+            <div className="inbox-list">
+              {data.other.map((n) => (
+                <NotificationRow key={n.id} item={n} />
+              ))}
+            </div>
+          ))}
+      </div>
     </div>
   );
 }

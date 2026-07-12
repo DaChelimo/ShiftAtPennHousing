@@ -156,6 +156,9 @@ export function makeValidationInput(
   const initiator: ForceTriggerInitiator = {
     rolesAtDestinationHouse: opts.initiator?.rolesAtDestinationHouse ?? ['sm'],
     isCurrentHmod: opts.initiator?.isCurrentHmod ?? false,
+    ...(opts.initiator?.isScheduleAdmin !== undefined
+      ? { isScheduleAdmin: opts.initiator.isScheduleAdmin }
+      : {}),
   };
 
   return {

@@ -43,9 +43,12 @@ export function validateForceTrigger(
     return { ok: false, reason: 'empty_block_set' };
   }
 
-  // 2. Initiator authorized — admin role scoped to the destination OR the
-  //    currently-on-duty HMOD (pinned #1: OR, not AND).
+  // 2. Initiator authorized — any elevated schedule admin (hm/bm/rsm, anywhere;
+  //    2026-06-27 cross-house decision) OR an admin role scoped to the
+  //    destination (covers sm own-house) OR the currently-on-duty HMOD
+  //    (pinned #1: OR, not AND).
   const isAuthorized =
+    initiator.isScheduleAdmin === true ||
     initiator.isCurrentHmod ||
     initiator.rolesAtDestinationHouse.some((role) => ADMIN_ROLES.has(role));
   if (!isAuthorized) {

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { adminHouseId, canBuildSchedule, getSessionUser } from '../auth';
+import { adminHouseId, canBuildSchedule, getSessionUser, isScheduleAdmin } from '../auth';
 import { createServiceClient } from '../supabase/server';
 import { simNow } from '../time/simClock';
 
@@ -63,8 +63,10 @@ function friendlyMessage(raw: string): string {
   return msg;
 }
 
-// Guard: the operator may build this house's schedule AND the blocks belong to that
-// same house. (The RPC re-checks authoritatively; this fails fast + scopes the UI.)
+// Guard: the operator may build the blocks' house. A schedule admin (hm/bm/rsm,
+// 2026-06-27 cross-house) may override any house; an sm only their own. The blocks
+// must still belong to a single house the operator is authorized for. (The RPC
+// re-checks user_can_build_schedule authoritatively; this fails fast + scopes UI.)
 async function authorizeForBlocks(
   blockIds: string[],
 ): Promise<{ ok: true; operatorUserId: string } | { ok: false; error: string }> {
@@ -75,7 +77,6 @@ async function authorizeForBlocks(
   if (blockIds.length === 0) {
     return { ok: false, error: 'No shift blocks were selected.' };
   }
-  const houseId = adminHouseId(me!);
   const service = createServiceClient();
   const { data: blocks, error } = await service
     .from('shift_blocks')
@@ -85,8 +86,12 @@ async function authorizeForBlocks(
   if ((blocks ?? []).length === 0) {
     return { ok: false, error: 'That shift block could not be found.' };
   }
-  if ((blocks ?? []).some((b) => b.house_id !== houseId)) {
-    return { ok: false, error: 'You can only override your own house’s schedule.' };
+  // sm stays own-house; schedule admins may act on any (single) house.
+  if (!isScheduleAdmin(me)) {
+    const houseId = adminHouseId(me!);
+    if ((blocks ?? []).some((b) => b.house_id !== houseId)) {
+      return { ok: false, error: 'You can only override your own house’s schedule.' };
+    }
   }
   return { ok: true, operatorUserId: me!.userId };
 }

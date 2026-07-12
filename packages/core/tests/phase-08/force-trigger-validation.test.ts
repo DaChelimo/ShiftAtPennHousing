@@ -139,6 +139,32 @@ describe('check 1 — initiator authorization (pinned #1)', () => {
 
     expect(validateForceTrigger(input)).toEqual({ ok: true });
   });
+
+  // 2026-06-27 cross-house decision: an elevated schedule admin (hm/bm/rsm,
+  // anywhere) may force-trigger ANY house's gap — no role scoped to THIS
+  // destination and not the on-duty HMOD, yet authorized via isScheduleAdmin.
+  it('a schedule admin (hm/bm/rsm elsewhere) with NO role at the destination → authorized', () => {
+    const input = makeValidationInput({
+      initiator: {
+        rolesAtDestinationHouse: ROLE_NONE,
+        isCurrentHmod: false,
+        isScheduleAdmin: true,
+      },
+    });
+
+    expect(validateForceTrigger(input)).toEqual({ ok: true });
+  });
+
+  it('isScheduleAdmin omitted/false keeps the scoped behavior (an off-house non-HMOD → unauthorized)', () => {
+    const input = makeValidationInput({
+      initiator: { rolesAtDestinationHouse: ROLE_NONE, isCurrentHmod: false },
+    });
+
+    expect(validateForceTrigger(input)).toEqual({
+      ok: false,
+      reason: 'unauthorized_initiator',
+    });
+  });
 });
 
 // ---------------------------------------------------------------------

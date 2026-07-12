@@ -134,14 +134,21 @@ function computeExpiresAt(
     return addHours(createdAt, 24 * 7);
   }
 
+  if (swapType === 'shift_swap' || swapType === 'handoff') {
+    // Fixed 2-day window from creation. A swap is a private agreement between
+    // two workers; its validity is governed by the proposal timeout, NOT by the
+    // shift clock. Anchoring to the shift start (the old T-3h rule) wrongly
+    // killed last-minute swaps for an in-progress or imminent shift (e.g. a
+    // worker asking at 11:05 to hand off an 11:00 shift). Coverage is never put
+    // at risk by a swap timing out: the initiator stays assigned until accept,
+    // and if no one accepts they DROP the shift, which is what triggers
+    // escalation. See docs/swap-edge-cases.md.
+    return addHours(createdAt, 24 * 2);
+  }
+
   const starts = assignments.map((assignment) =>
     new Date(nestedOne(assignment.shift_blocks).block_start_at).getTime(),
   );
-
-  if (swapType === 'shift_swap') {
-    // T-3h of the earlier span (earliest block start across both spans).
-    return addHours(new Date(Math.min(...starts)), -3);
-  }
 
   // float_swap: 24h after the LATEST span end-time. A block's end is its start
   // plus the configured block duration (system_config.shift_block_minutes),

@@ -169,10 +169,23 @@ describe('canViewOtherHouses — the cross-house gate (D5)', () => {
     expect(canViewOtherHouses({ isOnDutyHmod: false, isProjectAdmin: true })).toBe(true);
   });
 
-  it('should be false for an off-duty HM/BM and for a non-admin', () => {
-    // D2c: a regular off-duty HM/BM (and any non-admin) is house-scoped — neither
-    // flag set → false.
+  it('should be false for a non-admin with no cross-house flag set', () => {
+    // D2c: a plain worker (sw / own-house sm) is house-scoped — no flag set → false.
     expect(canViewOtherHouses({ isOnDutyHmod: false, isProjectAdmin: false })).toBe(false);
+  });
+
+  it('should be true for the RSM (read-only cross-house, §2.3a)', () => {
+    expect(canViewOtherHouses({ isOnDutyHmod: false, isProjectAdmin: false, isRsm: true })).toBe(
+      true,
+    );
+  });
+
+  it('should be true for any schedule admin — hm/bm/rsm (2026-06-27 cross-house edit)', () => {
+    // The elevated tier may now EDIT any house's schedule, so the switcher unlocks
+    // for them even off-duty. `isScheduleAdmin` supersedes the narrower `isRsm`.
+    expect(
+      canViewOtherHouses({ isOnDutyHmod: false, isProjectAdmin: false, isScheduleAdmin: true }),
+    ).toBe(true);
   });
 });
 

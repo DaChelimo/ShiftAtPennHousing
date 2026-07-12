@@ -65,7 +65,7 @@ type ForceTriggerBlockSnapshot = {
 };
 
 type ForceTriggerValidationInput = {
-  initiator: { rolesAtDestinationHouse: Role[]; isCurrentHmod: boolean };
+  initiator: { rolesAtDestinationHouse: Role[]; isCurrentHmod: boolean; isScheduleAdmin: boolean };
   destinationHouseId: string;
   blocks: ForceTriggerBlockSnapshot[];
   now: Date;
@@ -195,6 +195,23 @@ async function loadRolesAtHouse(
     throw error;
   }
   return (data ?? []).map((row) => row.role as Role);
+}
+
+// Does the initiator hold an hm/bm/rsm role at ANY house? As of the 2026-06-27
+// cross-house decision the elevated tier may force-trigger any house's gap,
+// independent of scope (mirrors the SQL user_is_schedule_admin predicate).
+async function loadIsScheduleAdmin(supabase: Supabase, userId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', userId)
+    .in('role', ['hm', 'bm', 'rsm'])
+    .limit(1);
+
+  if (error !== null) {
+    throw error;
+  }
+  return (data ?? []).length > 0;
 }
 
 // The currently-on-duty HMOD (hmod_rotor + hm_leave) — resolved in SQL.
@@ -586,11 +603,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   try {
     // ----- snapshot + validation gate (ARCH §6.2) -----
-    const [rolesAtDestinationHouse, isCurrentHmod, { snapshots, gapRows }] = await Promise.all([
-      loadRolesAtHouse(supabase, initiator, destinationHouseId),
-      resolveIsCurrentHmod(supabase, initiator, now),
-      loadBlockSnapshots(supabase, blockIds as string[]),
-    ]);
+    const [rolesAtDestinationHouse, isCurrentHmod, isScheduleAdmin, { snapshots, gapRows }] =
+      await Promise.all([
+        loadRolesAtHouse(supabase, initiator, destinationHouseId),
+        resolveIsCurrentHmod(supabase, initiator, now),
+        loadIsScheduleAdmin(supabase, initiator),
+        loadBlockSnapshots(supabase, blockIds as string[]),
+      ]);
 
     const earliestStart = snapshots.reduce<Date | null>(
       (earliest, snapshot) =>
@@ -604,7 +623,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const floatEnabled = profile?.floatEnabled ?? false;
 
     const validation = await validateForceTrigger({
-      initiator: { rolesAtDestinationHouse, isCurrentHmod },
+      initiator: { rolesAtDestinationHouse, isCurrentHmod, isScheduleAdmin },
       destinationHouseId,
       blocks: snapshots,
       now,

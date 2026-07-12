@@ -33,11 +33,16 @@ export type ForceTriggerBlockSnapshot = {
 export type ForceTriggerInitiator = {
   // The initiator's sm/hm/bm roles SCOPED to the destination house (the
   // caller filters the role list to this destination before building the
-  // snapshot).
+  // snapshot). An sm is only authorized through this scoped list.
   rolesAtDestinationHouse: ForceTriggerRole[];
   // The initiator is the currently-on-duty HMOD (resolved via hmod_rotor
   // + hm_leave at request time). Authority spans all 13 houses.
   isCurrentHmod: boolean;
+  // The initiator holds an hm/bm/rsm role at ANY house. As of the 2026-06-27
+  // cross-house decision the elevated tier may force-trigger any house's gap,
+  // independent of scope or the duty rotor (mirrors user_is_schedule_admin).
+  // Defaults to false when omitted so older callers keep the scoped behavior.
+  isScheduleAdmin?: boolean;
 };
 
 export type ForceTriggerValidationInput = {

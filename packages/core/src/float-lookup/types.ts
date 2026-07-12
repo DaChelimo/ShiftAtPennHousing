@@ -10,7 +10,7 @@ export type WorkerId = string;
 export type UserId = WorkerId;
 export type HouseId = string;
 
-export type WorkerRole = 'sw' | 'sm' | 'hm' | 'rsm' | 'bm';
+export type WorkerRole = 'sw' | 'sm' | 'hm' | 'rsm' | 'bm' | 'admin';
 
 export type GapBlock = {
   blockId: BlockId;

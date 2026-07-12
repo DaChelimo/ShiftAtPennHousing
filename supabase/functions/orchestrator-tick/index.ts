@@ -5,6 +5,15 @@ const LOOKAHEAD_MINUTES = 3 * 60 + 5;
 const DEFAULT_NO_ACK_LOOKAHEAD_MINUTES = 15;
 const DEFAULT_BLOCK_MINUTES = 30;
 const DEFAULT_FLOAT_RETENTION_DAYS = 14;
+// Maximum coverage secured in a single pass (BEHAVIORAL_SPECIFICATION §5.4).
+// A single contiguous vacant gap is only ever handled 8 blocks (4 hours) at a
+// time — both for the float lookup and, transitively, for the Allied-coverage
+// notification a no-ack void emits. Beyond this, the remainder stays vacant and
+// claimable; it re-escalates through the normal chain (broadcast → float →
+// Allied) as its own blocks approach their escalation offsets. This keeps a long
+// empty window (e.g. 8am–midnight) from being secured to paid Allied all at
+// once, which would needlessly lock students out of picking up the later hours.
+const MAX_ALLIED_COVERAGE_BLOCKS = 8;
 
 // Desk-presence statuses. A block whose desk is already (or will be) staffed by at
 // least one assignment in one of these statuses is NOT empty, so the coverage chain
@@ -470,14 +479,20 @@ async function loadVacantGap(
   block: VacantAssignment,
   blockMinutes: number,
 ): Promise<Array<VacantAssignment>> {
-  const windowEnd = addMinutes(block.blockStartAt, 4 * 60).toISOString();
+  // Cap the window at MAX_ALLIED_COVERAGE_BLOCKS (4 hours). Exclusive upper
+  // bound so the window holds exactly the 8 blocks [start, start + 4h).
+  const windowEnd = addMinutes(
+    block.blockStartAt,
+    MAX_ALLIED_COVERAGE_BLOCKS * blockMinutes,
+  ).toISOString();
   const { data, error } = await supabase
     .from('shift_block_assignments')
     .select('assignment_id, block_id, shift_blocks!inner(block_start_at, house_id)')
     .eq('status', 'vacant')
+    .is('shift_blocks.voided_at', null)
     .eq('shift_blocks.house_id', block.houseId)
     .gte('shift_blocks.block_start_at', block.blockStartAt.toISOString())
-    .lte('shift_blocks.block_start_at', windowEnd)
+    .lt('shift_blocks.block_start_at', windowEnd)
     .order('block_start_at', { referencedTable: 'shift_blocks', ascending: true });
 
   if (error !== null) {
@@ -521,6 +536,12 @@ async function loadVacantGap(
     }
     gap.push(row);
     expectedStart += blockMinutes * 60 * 1000;
+    // Hard cap: never secure more than 4 hours in one pass (§5.4). The query
+    // window already bounds this, but truncate defensively so the invariant
+    // holds regardless of blockMinutes.
+    if (gap.length >= MAX_ALLIED_COVERAGE_BLOCKS) {
+      break;
+    }
   }
 
   return gap;
@@ -597,10 +618,10 @@ async function buildFloatLookupSnapshot(
     if (rolesError !== null) {
       throw rolesError;
     }
-    const rolesByUser = new Map<string, Array<'sw' | 'sm' | 'hm' | 'bm'>>();
+    const rolesByUser = new Map<string, Array<'sw' | 'sm' | 'hm' | 'rsm' | 'bm' | 'admin'>>();
     for (const role of roles ?? []) {
       const existing = rolesByUser.get(role.user_id) ?? [];
-      existing.push(role.role as 'sw' | 'sm' | 'hm' | 'bm');
+      existing.push(role.role as 'sw' | 'sm' | 'hm' | 'rsm' | 'bm' | 'admin');
       rolesByUser.set(role.user_id, existing);
     }
 
@@ -686,6 +707,21 @@ async function buildFloatLookupSnapshot(
         },
       ];
     });
+
+    // Source-floor guard (belt-and-braces; the pure algorithm's sourceHasFloor
+    // enforces the same rule). Float direction is now config-driven: any house the
+    // admin routes here reaches this loop. But a source may only lend while it is
+    // genuinely MULTI-STAFFED — at least one gap block must have >= 2 workers
+    // present so the desk keeps >= 1 after a floater leaves. A source with < 2
+    // present on every block (e.g. a single-staffed house in the first half of
+    // summer) contributes no roster. This is the second enforcement point for the
+    // "never empty a source desk" guard, per the enforce-at-every-write-point rule.
+    const sourceCanSpare = Object.values(effectiveHeadcountByBlockId).some(
+      (present) => present >= 2,
+    );
+    if (!sourceCanSpare) {
+      continue;
+    }
 
     sources.push({
       sourceHouseId: route.source_house_id,
@@ -893,6 +929,10 @@ async function processVacantBlocks(
     .from('shift_block_assignments')
     .select('assignment_id, block_id, shift_blocks!inner(block_start_at, house_id)')
     .eq('status', 'vacant')
+    // Blocks retired by an admin config change (house closed / desk hours shrank)
+    // are inert: never escalate them. (Voiding also deletes their vacant seats, so
+    // this is defense-in-depth.)
+    .is('shift_blocks.voided_at', null)
     .gt('shift_blocks.block_start_at', now.toISOString())
     .lte('shift_blocks.block_start_at', addMinutes(now, LOOKAHEAD_MINUTES).toISOString())
     .order('block_start_at', { referencedTable: 'shift_blocks', ascending: true });

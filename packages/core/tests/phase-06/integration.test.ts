@@ -96,11 +96,12 @@ describe('Scenario 1 — 3-hour gap at House-05; Quad covers it (Quad precedence
 
 // ---------------------------------------------------------------------
 // Scenario 2: 1-hour gap (2 blocks), the only available worker covers
-// only 1 block (30 min). 2-block minimum rejects; entire gap → Allied.
+// only 1 block (30 min). The 1-block minimum absorbs it: the worker is
+// floated for that block, and only the uncovered block → Allied.
 // ---------------------------------------------------------------------
 
-describe('Scenario 2 — sub-minimum coverage; whole gap goes to Allied', () => {
-  it('returns empty when the only candidate covers a single block', () => {
+describe('Scenario 2 — single-block coverage is absorbed by a float', () => {
+  it('assigns the one coverable block and leaves only the uncovered block to Allied', () => {
     const gap = makeGap(HOUSE_05, ANCHOR_19_00_EDT, 2);
     const a = makeCandidate({
       userId: 'quad-half-hour',
@@ -121,8 +122,10 @@ describe('Scenario 2 — sub-minimum coverage; whole gap goes to Allied', () => 
       ]),
     );
 
-    expect(result).toHaveLength(0);
-    expect(uncoveredBlockIds(gap, result)).toEqual(gap.blocks.map((b) => b.blockId));
+    expect(result).toHaveLength(1);
+    expect(result[0]!.workerId).toBe('quad-half-hour');
+    expect(result[0]!.blocks).toEqual([gap.blocks[0]!.blockId]);
+    expect(uncoveredBlockIds(gap, result)).toEqual([gap.blocks[1]!.blockId]);
   });
 });
 

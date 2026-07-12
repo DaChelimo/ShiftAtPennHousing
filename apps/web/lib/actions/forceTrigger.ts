@@ -1,5 +1,12 @@
 'use server';
 
+// DORMANT (2026-06-24): the manual force-trigger override was surfaced ONLY by the
+// Coverage Monitor, which was removed in favour of the redesigned Action inbox. The
+// Edge Function (`force-trigger`), the @shift/core summary helper, and this glue are
+// intentionally KEPT but no UI calls them right now. If a future surface wants the
+// manual override back, re-wire a control to `forceTriggerFloat` — the backend is
+// untouched. See AGENTS / memory `project_action_inbox_redesign`.
+
 import {
   summarizeForceTrigger,
   type ForceTriggerResponse,
@@ -7,7 +14,7 @@ import {
 } from '@shift/core';
 import { revalidatePath } from 'next/cache';
 
-import { adminHouseId, canBuildSchedule, getSessionUser } from '../auth';
+import { canBuildForHouse, canBuildSchedule, getSessionUser } from '../auth';
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from '../env';
 import { createClient } from '../supabase/server';
 
@@ -46,7 +53,9 @@ export async function forceTriggerFloat(input: {
   if (!canBuildSchedule(me)) {
     return { ok: false, error: 'Not authorized to force-trigger a float.' };
   }
-  if (input.houseId !== adminHouseId(me!)) {
+  // 2026-06-27 cross-house: a schedule admin (hm/bm/rsm) may force-trigger any
+  // house; an sm only their own. The EF re-validates authoritatively.
+  if (!canBuildForHouse(me, input.houseId)) {
     return { ok: false, error: 'You can only force-trigger a float for your own house.' };
   }
   if (input.blockIds.length === 0) {

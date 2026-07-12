@@ -1,4 +1,4 @@
-export type UserRole = 'sw' | 'sm' | 'hm' | 'rsm' | 'bm';
+export type UserRole = 'sw' | 'sm' | 'hm' | 'rsm' | 'bm' | 'admin';
 
 export type UserEligibilityProfile = {
   userId: string;
@@ -92,6 +92,11 @@ export function isEligibleForFloatLookup(user: UserEligibilityProfile): Eligibil
     return ineligible('bm_excluded_from_worker_pipelines');
   }
 
+  // Admin is a house-agnostic superuser, never a desk worker (like BM).
+  if (hasRole(user, 'admin')) {
+    return ineligible('admin_excluded_from_worker_pipelines');
+  }
+
   return hasAnyWorkerRole(user) ? eligible() : ineligible('missing_worker_role');
 }
 
@@ -114,6 +119,10 @@ export function isEligibleForBroadcast(user: UserEligibilityProfile): Eligibilit
     return ineligible('bm_excluded_from_broadcast');
   }
 
+  if (hasRole(user, 'admin')) {
+    return ineligible('admin_excluded_from_broadcast');
+  }
+
   return hasAnyWorkerRole(user) ? eligible() : ineligible('missing_worker_role');
 }
 
@@ -125,6 +134,10 @@ export function isEligibleForClaimPool(user: UserEligibilityProfile): Eligibilit
 
   if (hasRole(user, 'bm')) {
     return ineligible('bm_excluded_from_claim_pool');
+  }
+
+  if (hasRole(user, 'admin')) {
+    return ineligible('admin_excluded_from_claim_pool');
   }
 
   return hasAnyWorkerRole(user) ? eligible() : ineligible('missing_worker_role');
@@ -149,6 +162,10 @@ export function isEligibleForSwapCounterparty(user: UserEligibilityProfile): Eli
     return ineligible('bm_excluded_from_worker_pipelines');
   }
 
+  if (hasRole(user, 'admin')) {
+    return ineligible('admin_excluded_from_worker_pipelines');
+  }
+
   return hasAnyWorkerRole(user) ? eligible() : ineligible('missing_worker_role');
 }
 
@@ -160,6 +177,10 @@ export function isEligibleForScheduleRoster(user: UserEligibilityProfile): Eligi
 
   if (hasRole(user, 'bm')) {
     return ineligible('bm_excluded_from_schedule_roster');
+  }
+
+  if (hasRole(user, 'admin')) {
+    return ineligible('admin_excluded_from_schedule_roster');
   }
 
   return hasAnyWorkerRole(user) ? eligible() : ineligible('missing_worker_role');

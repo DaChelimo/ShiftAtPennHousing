@@ -1,35 +1,32 @@
-// Phase 06 — Float Lookup Algorithm: 2-block minimum chunk rule
-// (§6.2 point 4 — "NON-NEGOTIABLE").
+// Phase 06 — Float Lookup Algorithm: 1-block minimum chunk rule
+// (§6.2 point 4).
+//
+// The minimum float chunk size was lowered from 2 blocks (1 hour) to 1
+// block (30 minutes) so single-block gaps are absorbed by floats
+// instead of routed to Allied. The goal is to minimize how often paid
+// Allied coverage is procured (BSpec §6.2 #4).
 //
 // Spec sources:
 //   BEHAVIORAL_SPECIFICATION.md §6.2 #4:
-//     "Any individual floater's assigned span MUST be at least 2
-//      consecutive 30-minute blocks (a full hour). If the largest
-//      consecutive coverage a worker can provide is only one
-//      30-minute block, that block is not assigned to them and is
-//      left for Allied. This minimum applies to every selection,
-//      including those resulting from the tiebreaker rules in
-//      Section 6.3 and the partial-coverage fallback below."
+//     "Any individual floater's assigned span MUST be at least 1
+//      30-minute block. A worker whose largest consecutive coverage is
+//      a single 30-minute block IS assigned that block rather than
+//      leaving it for Allied."
+//   ARCHITECTURE.md §5.2 step 3c / §5.3:
+//     the minimum-chunk precondition is now 1 block, so a 1-block
+//     coverer is a valid candidate at every selection step.
 //
-//   ARCHITECTURE.md §5.2 step 3c:
-//     "Always enforce the 2-block minimum at this step — a worker
-//      whose largest span is 1 block is not selected at all."
-//   ARCHITECTURE.md §5.3:
-//     "The 2-block minimum from §5.2 step 4 is a precondition for
-//      being in the candidate set — a worker who cannot meet it is
-//      excluded before the tiebreaker chain runs."
-//
-// The minimum applies at EVERY SELECTION STEP:
+// The rule still applies at EVERY selection step — it is just that the
+// floor is now 1, so nothing coverable is dropped for being "too small":
 //   (a) The initial largest-consecutive selection.
 //   (b) Subsequent iterations within the same source.
 //   (c) Cross-source iterations.
-//   (d) Tiebreaker-resolved selections (the candidate set never
-//       contains a sub-minimum worker).
-//   (e) The partial-coverage fallback (the "longest leading portion"
-//       must still be ≥ 2 blocks; otherwise the worker is skipped).
+//   (d) Tier ordering (full coverage still outranks partial coverage).
+//   (e) The partial-coverage fallback (a 1-block leading portion is now
+//       taken).
 //
-// A 1-block uncovered block is NEVER assigned to a floater, EVEN IF
-// no other worker can cover it. It goes to Allied.
+// A block is left to Allied ONLY when no eligible worker can cover it at
+// all — never merely because a worker's coverable span is a single block.
 
 import { describe, expect, it } from 'vitest';
 
@@ -51,11 +48,11 @@ import {
 const GAP_HOUSE = HOUSE_05;
 
 // ---------------------------------------------------------------------
-// (a) Initial-selection rejection.
+// (a) Initial-selection: 1-block coverage is now ACCEPTED.
 // ---------------------------------------------------------------------
 
-describe('initial selection — 1-block coverage is rejected', () => {
-  it('a sole candidate whose largest consecutive coverage is 1 block is NOT assigned (gap → Allied)', () => {
+describe('initial selection — 1-block coverage is assigned', () => {
+  it('a sole candidate whose largest consecutive coverage is 1 block IS assigned that block', () => {
     const gap = makeGap(GAP_HOUSE, ANCHOR_19_00_EDT, 4);
     const candidate = makeCandidate({
       userId: 'quad-one-block',
@@ -76,11 +73,18 @@ describe('initial selection — 1-block coverage is rejected', () => {
       ]),
     );
 
-    expect(result).toHaveLength(0);
-    expect(uncoveredBlockIds(gap, result)).toEqual(gap.blocks.map((b) => b.blockId));
+    expect(result).toHaveLength(1);
+    expect(result[0]!.workerId).toBe('quad-one-block');
+    expect(result[0]!.blocks).toEqual([gap.blocks[1]!.blockId]);
+    // Blocks 0, 2, 3 have no coverage → Allied.
+    expect(uncoveredBlockIds(gap, result)).toEqual([
+      gap.blocks[0]!.blockId,
+      gap.blocks[2]!.blockId,
+      gap.blocks[3]!.blockId,
+    ]);
   });
 
-  it('two single-block-coverage candidates are BOTH rejected (Allied takes everything)', () => {
+  it('two single-block-coverage candidates are BOTH assigned their blocks', () => {
     const gap = makeGap(GAP_HOUSE, ANCHOR_19_00_EDT, 4);
     const a = makeCandidate({
       userId: 'quad-a-one',
@@ -107,12 +111,19 @@ describe('initial selection — 1-block coverage is rejected', () => {
       ]),
     );
 
-    expect(result).toHaveLength(0);
+    expect(result).toHaveLength(2);
+    expect(assignedBlockIds(result)).toEqual([gap.blocks[0]!.blockId, gap.blocks[3]!.blockId]);
+    // The interior blocks 1, 2 have no coverage → Allied.
+    expect(uncoveredBlockIds(gap, result)).toEqual([
+      gap.blocks[1]!.blockId,
+      gap.blocks[2]!.blockId,
+    ]);
   });
 
-  it('a candidate with non-contiguous 1-block coverage at multiple gap positions is rejected (none of the runs is ≥ 2)', () => {
+  it('a candidate with non-contiguous 1-block coverage covers its leading block (largest consecutive run is 1)', () => {
     // The candidate is scheduled at source for blocks 0 and 2 (not 1).
-    // Their largest CONSECUTIVE run within the gap is 1 block.
+    // Their largest CONSECUTIVE run within the gap is a single block.
+    // Under the 1-block floor the leading block is taken.
     const gap = makeGap(GAP_HOUSE, ANCHOR_19_00_EDT, 4);
     const candidate = makeCandidate({
       userId: 'quad-scattered',
@@ -133,10 +144,18 @@ describe('initial selection — 1-block coverage is rejected', () => {
       ]),
     );
 
-    expect(result).toHaveLength(0);
+    // One worker can be selected once, so only their leading block is
+    // covered; block 2 is stranded (same worker cannot be reselected).
+    expect(result).toHaveLength(1);
+    expect(result[0]!.blocks).toEqual([gap.blocks[0]!.blockId]);
+    expect(uncoveredBlockIds(gap, result)).toEqual([
+      gap.blocks[1]!.blockId,
+      gap.blocks[2]!.blockId,
+      gap.blocks[3]!.blockId,
+    ]);
   });
 
-  it('a candidate with EXACTLY 2 consecutive blocks of coverage IS assigned (2-block minimum is inclusive)', () => {
+  it('a candidate with EXACTLY 2 consecutive blocks of coverage IS assigned both blocks', () => {
     const gap = makeGap(GAP_HOUSE, ANCHOR_19_00_EDT, 4);
     const candidate = makeCandidate({
       userId: 'quad-just-two',
@@ -159,7 +178,7 @@ describe('initial selection — 1-block coverage is rejected', () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]!.blocks).toHaveLength(2);
-    // Blocks 0 and 3 are uncovered → Allied.
+    // Blocks 0 and 3 have no coverage → Allied.
     expect(uncoveredBlockIds(gap, result)).toEqual([
       gap.blocks[0]!.blockId,
       gap.blocks[3]!.blockId,
@@ -168,17 +187,16 @@ describe('initial selection — 1-block coverage is rejected', () => {
 });
 
 // ---------------------------------------------------------------------
-// (b) Subsequent-iteration rejection: after the first floater is
-// assigned, the remaining UNCOVERED slice may shrink below 2 blocks
-// for some workers. Those workers must NOT be selected on the next
-// iteration.
+// (b) Subsequent iterations: after the first floater is assigned, a
+// worker whose remaining coverable slice is a single block IS now
+// selected for it (previously rejected).
 // ---------------------------------------------------------------------
 
-describe('iterative selection — sub-minimum coverage is rejected at each step', () => {
-  it('after worker A takes the long run, worker B with only 1 remaining uncovered block is rejected (Allied takes it)', () => {
+describe('iterative selection — a trailing single block is absorbed', () => {
+  it('after worker A takes the long run, worker B covering the last block IS assigned it', () => {
     // Gap = 5 blocks. A covers [0,1,2,3] (4-block run). B covers [3,4]
-    // — but after A grabs [0..3], B's remaining coverage is only [4],
-    // a single block. B is REJECTED in the second iteration.
+    // — after A grabs [0..3], B's remaining coverage is only [4], a
+    // single block, which is now assigned to B.
     const gap = makeGap(GAP_HOUSE, ANCHOR_19_00_EDT, 5);
     const a = makeCandidate({
       userId: 'harn-A',
@@ -205,19 +223,19 @@ describe('iterative selection — sub-minimum coverage is rejected at each step'
       ]),
     );
 
-    expect(result).toHaveLength(1);
+    expect(result).toHaveLength(2);
     expect(result[0]!.workerId).toBe('harn-A');
     expect(result[0]!.blocks).toHaveLength(4);
-    // The trailing single block is uncovered.
-    expect(uncoveredBlockIds(gap, result)).toEqual([gap.blocks[4]!.blockId]);
+    const bAssignment = result.find((assignment) => assignment.workerId === 'harn-B');
+    expect(bAssignment!.blocks).toEqual([gap.blocks[4]!.blockId]);
+    // Every block is now covered.
+    expect(uncoveredBlockIds(gap, result)).toEqual([]);
   });
 
-  it('iteration halts when the remaining uncovered runs are all sub-minimum, even if some workers still cover them', () => {
-    // Gap = 4 blocks. Worker A covers [0,1,2,3]. Worker B covers [0]
-    // (single block). After A is assigned, no uncovered blocks remain.
-    // B is correctly never selected (their span was always sub-minimum
-    // anyway, but the algorithm's halt condition is what we're
-    // exercising here).
+  it('iteration halts when no uncovered blocks remain', () => {
+    // Gap = 4 blocks. Worker A covers [0,1,2,3]. Worker B covers [0].
+    // After A fully covers the gap, no uncovered blocks remain, so B is
+    // never reached.
     const gap = makeGap(GAP_HOUSE, ANCHOR_19_00_EDT, 4);
     const a = makeCandidate({
       userId: 'harn-full',
@@ -250,13 +268,12 @@ describe('iterative selection — sub-minimum coverage is rejected at each step'
 });
 
 // ---------------------------------------------------------------------
-// (c) Cross-source rejection: a Harnwell candidate whose coverage of
-// the remaining uncovered set is 1 block is rejected even when no
-// other coverage exists for that block.
+// (c) Cross-source iterations: a Harnwell candidate covering a single
+// leftover block for a Quad gap IS now selected.
 // ---------------------------------------------------------------------
 
-describe('cross-source selection — 1-block-only Harnwell candidate is rejected for a Quad leftover', () => {
-  it('Quad covers [0..3] of a 5-block gap; Harnwell candidate covers only [4]; that block is left to Allied', () => {
+describe('cross-source selection — a 1-block Harnwell candidate covers a Quad leftover', () => {
+  it('Quad covers [0..3] of a 5-block gap; a Harnwell candidate covers [4] and IS assigned it', () => {
     const gap = makeGap(GAP_HOUSE, ANCHOR_19_00_EDT, 5);
     const quad = makeCandidate({
       userId: 'quad-quad',
@@ -290,24 +307,24 @@ describe('cross-source selection — 1-block-only Harnwell candidate is rejected
       ]),
     );
 
-    expect(result).toHaveLength(1);
+    expect(result).toHaveLength(2);
     expect(result[0]!.workerId).toBe('quad-quad');
-    expect(uncoveredBlockIds(gap, result)).toEqual([gap.blocks[4]!.blockId]);
+    const harnAssignment = result.find((assignment) => assignment.workerId === 'harn-tail-one');
+    expect(harnAssignment!.blocks).toEqual([gap.blocks[4]!.blockId]);
+    expect(uncoveredBlockIds(gap, result)).toEqual([]);
   });
 });
 
 // ---------------------------------------------------------------------
-// (d) Tiebreaker-set integrity: candidates whose span on the selected
-// run is below the minimum never enter the candidate set; the
-// tiebreaker chain operates only on ≥2-block coverers.
+// (d) Tier ordering: full coverage still outranks partial coverage, so
+// a full-gap coverer is preferred over a 1-block partial coverer.
 // ---------------------------------------------------------------------
 
-describe('tiebreaker candidate set excludes sub-minimum coverers (ARCH §5.3)', () => {
-  it('a 1-block-covering worker is NOT in the candidate set for tiebreaker against 2-block-covering workers', () => {
-    // Gap = 2 blocks. Worker A covers both [0,1] (= 2-block span).
-    // Worker B covers only [0] (1-block; sub-minimum). The candidate
-    // set for the 2-block span is {A} alone — B is excluded.
-    // Outcome: A is selected without tiebreaker invocation.
+describe('tier ordering — full coverage is preferred over a 1-block partial (ARCH §5.3)', () => {
+  it('a full-gap coverer is selected over a 1-block-only worker', () => {
+    // Gap = 2 blocks. Worker A covers both [0,1] (full coverage).
+    // Worker B covers only [0]. Tier 1 (full coverage) selects A, and
+    // no uncovered blocks remain for B.
     const gap = makeGap(GAP_HOUSE, ANCHOR_19_00_EDT, 2);
     const a = makeCandidate({
       userId: 'harn-A-two',
@@ -340,16 +357,14 @@ describe('tiebreaker candidate set excludes sub-minimum coverers (ARCH §5.3)', 
 });
 
 // ---------------------------------------------------------------------
-// (e) Partial-coverage fallback respects the minimum: a 1-block
-// longest leading portion is NOT selected even in the fallback path.
+// (e) Partial-coverage fallback: a 1-block longest leading portion is
+// now taken (previously it was below the floor and skipped).
 // ---------------------------------------------------------------------
 
-describe('partial-coverage fallback still respects the 2-block minimum', () => {
-  it('when no worker covers a full run AND the longest leading portion is only 1 block, no floater is selected', () => {
-    // Gap = 3 blocks. Worker A covers only block 0. No other worker.
-    // The partial-coverage fallback would normally take the longest
-    // leading portion — but 1 block is below the 2-block floor.
-    // Result: empty assignment; whole gap → Allied.
+describe('partial-coverage fallback takes a 1-block leading portion', () => {
+  it('when no worker covers a full run, a worker covering the leading block IS selected', () => {
+    // Gap = 3 blocks. Worker A covers only block 0. The partial-coverage
+    // fallback takes the longest leading portion — now 1 block is enough.
     const gap = makeGap(GAP_HOUSE, ANCHOR_19_00_EDT, 3);
     const a = makeCandidate({
       userId: 'quad-leading-one',
@@ -370,8 +385,13 @@ describe('partial-coverage fallback still respects the 2-block minimum', () => {
       ]),
     );
 
-    expect(result).toHaveLength(0);
-    expect(uncoveredBlockIds(gap, result)).toEqual(gap.blocks.map((b) => b.blockId));
+    expect(result).toHaveLength(1);
+    expect(result[0]!.blocks).toEqual([gap.blocks[0]!.blockId]);
+    // Blocks 1 and 2 have no coverage → Allied.
+    expect(uncoveredBlockIds(gap, result)).toEqual([
+      gap.blocks[1]!.blockId,
+      gap.blocks[2]!.blockId,
+    ]);
   });
 
   it('a 2-block longest leading portion IS taken in the partial-coverage fallback', () => {
@@ -407,12 +427,12 @@ describe('partial-coverage fallback still respects the 2-block minimum', () => {
 });
 
 // ---------------------------------------------------------------------
-// Composite: a chunking iteration that produces leftover 1-block holes
-// because no contiguous ≥2-block run is coverable.
+// Composite: a block that NO worker can cover still goes to Allied. The
+// floor is not the reason a block is stranded — lack of any coverer is.
 // ---------------------------------------------------------------------
 
-describe('composite — chunking leaves 1-block holes for Allied', () => {
-  it('worker A covers blocks [0,1,2], worker B covers [4,5,6]; block [3] is alone in the middle and goes to Allied', () => {
+describe('composite — a block no worker can cover goes to Allied', () => {
+  it('worker A covers blocks [0,1,2], worker B covers [4,5,6]; block [3] has no coverer and goes to Allied', () => {
     const gap = makeGap(GAP_HOUSE, ANCHOR_19_00_EDT, 7);
     const a = makeCandidate({
       userId: 'harn-A',

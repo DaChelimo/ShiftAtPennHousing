@@ -312,15 +312,14 @@ describe('fallback — §6.3 tiebreaker on leading-portion ties', () => {
 });
 
 // ---------------------------------------------------------------------
-// (4) Fallback respects the 2-block minimum
+// (4) Fallback with the 1-block minimum (cross-reference minimum-chunk.test.ts)
 // ---------------------------------------------------------------------
 
-describe('fallback — 2-block minimum (cross-reference minimum-chunk.test.ts)', () => {
-  it('a worker whose leading-portion length is only 1 block is NOT selected by fallback', () => {
-    // Gap = 3 blocks; A covers [b0] only. Fallback would consider
-    // "longest leading portion" — but the only candidate has a 1-block
-    // leading portion (sub-minimum). Algorithm halts with no
-    // selection; whole gap → Allied.
+describe('fallback — 1-block minimum (cross-reference minimum-chunk.test.ts)', () => {
+  it('a worker whose leading-portion length is only 1 block IS selected by fallback', () => {
+    // Gap = 3 blocks; A covers [b0] only. Fallback takes the "longest
+    // leading portion" — now a 1-block leading portion is enough, so A
+    // is selected for [b0] and [b1,b2] → Allied.
     const gap = makeGap(GAP_HOUSE, ANCHOR_19_00_EDT, 3);
     const a = makeCandidate({
       userId: 'A-lead-1',
@@ -341,7 +340,13 @@ describe('fallback — 2-block minimum (cross-reference minimum-chunk.test.ts)',
       ]),
     );
 
-    expect(result).toHaveLength(0);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.workerId).toBe('A-lead-1');
+    expect(result[0]!.blocks).toEqual([gap.blocks[0]!.blockId]);
+    expect(uncoveredBlockIds(gap, result)).toEqual([
+      gap.blocks[1]!.blockId,
+      gap.blocks[2]!.blockId,
+    ]);
   });
 });
 
@@ -433,7 +438,7 @@ describe('fallback on subsequent iterations — "current uncovered run" shifts',
     // C=0. B selected for [b4..b6].
     //
     // Iteration 3: uncovered = [b7]. C's coverage of uncovered = [b7]
-    // (1 block — sub-minimum). C NOT selected. b7 → Allied.
+    // (1 block). Under the 1-block floor, C IS selected for b7.
     const gap = makeGap(GAP_HOUSE, ANCHOR_19_00_EDT, 8);
     const a = makeCandidate({
       userId: 'A-lead-4',
@@ -466,7 +471,7 @@ describe('fallback on subsequent iterations — "current uncovered run" shifts',
       ]),
     );
 
-    expect(result).toHaveLength(2);
+    expect(result).toHaveLength(3);
     expect(assignmentByWorker(result, 'A-lead-4')!.blocks).toEqual([
       gap.blocks[0]!.blockId,
       gap.blocks[1]!.blockId,
@@ -478,7 +483,8 @@ describe('fallback on subsequent iterations — "current uncovered run" shifts',
       gap.blocks[5]!.blockId,
       gap.blocks[6]!.blockId,
     ]);
-    expect(uncoveredBlockIds(gap, result)).toEqual([gap.blocks[7]!.blockId]);
+    expect(assignmentByWorker(result, 'C-tail-2')!.blocks).toEqual([gap.blocks[7]!.blockId]);
+    expect(uncoveredBlockIds(gap, result)).toEqual([]);
   });
 });
 

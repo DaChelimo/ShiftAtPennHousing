@@ -76,17 +76,25 @@ function addDaysUtc(date: string, days: number): string {
   return at.toISOString().slice(0, 10);
 }
 
-// D5 — cross-house authority is the on-duty HMOD's duty-week power (campus-wide)
-// plus the system-wide project administrator, plus the RSM (§2.3a: read-only
-// visibility into every house's schedule). An off-duty HM/BM is house-scoped.
-// The RSM's cross-house reach is VIEW-only — every write stays scope-matched to
-// their own house at the action/RPC layer, so this only unlocks the switcher.
+// D5 — cross-house authority unlocks the house switcher. As of the 2026-06-27
+// decision the elevated schedule-admin tier (hm/bm/rsm, anywhere) may EDIT any
+// house's schedule, so the switcher unlocks for them too — not just the on-duty
+// HMOD (campus-wide duty power), the project administrator, or the RSM. The
+// `isScheduleAdmin` flag supersedes the narrower `isRsm` for the elevated tier;
+// `isRsm` is retained for callers that only know the RSM bit. People admin /
+// leave / cap remain scope-matched at the action/RPC layer regardless.
 export function canViewOtherHouses(opts: {
   isOnDutyHmod: boolean;
   isProjectAdmin: boolean;
   isRsm?: boolean;
+  isScheduleAdmin?: boolean;
 }): boolean {
-  return opts.isOnDutyHmod || opts.isProjectAdmin || opts.isRsm === true;
+  return (
+    opts.isOnDutyHmod ||
+    opts.isProjectAdmin ||
+    opts.isRsm === true ||
+    opts.isScheduleAdmin === true
+  );
 }
 
 // D6 — calendar is always single-house. Honor `requested` only when authorized and

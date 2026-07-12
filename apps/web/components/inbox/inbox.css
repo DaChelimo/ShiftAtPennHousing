@@ -22,6 +22,105 @@
   flex-direction: column;
   gap: 10px;
 }
+
+/* ---- Allied coverage card grid (Coverage + Archive tabs) ----
+   Two compact cards across so a HM / RSM can scan many requests at once.
+   Each card leads with HOUSE · DATE · WINDOW. */
+.cov-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 720px) {
+  .cov-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.cov-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--border-subtle);
+  transition: box-shadow var(--motion);
+}
+.cov-card:hover {
+  box-shadow: var(--shadow-1);
+}
+.cov-card.is-urgent {
+  border-left-color: var(--st-danger);
+}
+.cov-card.is-archived {
+  background: var(--surface-2);
+  opacity: 0.92;
+}
+.cov-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cov-house {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.cov-house-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 99px;
+  background: var(--surface-3);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.cov-house-name {
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cov-when {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.cov-date {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.cov-window {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.cov-reason {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+.cov-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+}
+.cov-ago {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.cov-error {
+  font-size: 12.5px;
+  color: var(--st-danger);
+}
 .inbox-item {
   display: flex;
   gap: 14px;

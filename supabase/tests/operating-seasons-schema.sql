@@ -32,18 +32,21 @@ SELECT throws_ok(
 );
 
 -- 2. Overlapping open windows for the SAME house rejected.
-INSERT INTO public.season_house_windows (season_id, house_id, start_date, end_date, headcount)
-VALUES ('ae100000-0000-0000-0000-000000000001', 'quad', '2099-06-01', '2099-06-30', 3);
+INSERT INTO public.season_house_windows (season_id, house_id, start_date, end_date, weekday_bands, weekend_bands)
+VALUES ('ae100000-0000-0000-0000-000000000001', 'quad', '2099-06-01', '2099-06-30',
+        '[{"block_start":"08:00","block_end":"00:00","headcount":3}]'::jsonb, '[{"block_start":"08:00","block_end":"00:00","headcount":3}]'::jsonb);
 SELECT throws_ok(
-  $$ INSERT INTO public.season_house_windows (season_id, house_id, start_date, end_date, headcount)
-     VALUES ('ae100000-0000-0000-0000-000000000001', 'quad', '2099-06-15', '2099-07-15', 2) $$,
+  $$ INSERT INTO public.season_house_windows (season_id, house_id, start_date, end_date, weekday_bands, weekend_bands)
+     VALUES ('ae100000-0000-0000-0000-000000000001', 'quad', '2099-06-15', '2099-07-15',
+             '[{"block_start":"08:00","block_end":"00:00","headcount":2}]'::jsonb, '[]'::jsonb) $$,
   '23P01', NULL, 'overlapping open windows for one house are rejected'
 );
 
 -- 3. Non-overlapping window for a DIFFERENT house is fine.
 SELECT lives_ok(
-  $$ INSERT INTO public.season_house_windows (season_id, house_id, start_date, end_date, headcount)
-     VALUES ('ae100000-0000-0000-0000-000000000001', 'harrison', '2099-06-15', '2099-07-15', 1) $$,
+  $$ INSERT INTO public.season_house_windows (season_id, house_id, start_date, end_date, weekday_bands, weekend_bands)
+     VALUES ('ae100000-0000-0000-0000-000000000001', 'harrison', '2099-06-15', '2099-07-15',
+             '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'::jsonb, '[]'::jsonb) $$,
   'a window for a different house does not conflict'
 );
 

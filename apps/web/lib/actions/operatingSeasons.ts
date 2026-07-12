@@ -127,30 +127,43 @@ export async function setSeasonPreferenceDeadline(input: {
   return { ok: true, data: { deadlineIso } };
 }
 
+export type WindowBand = { block_start: string; block_end: string; headcount: number };
+
+// Insert a new house window, or update an existing one when `windowId` is given. A
+// window carries per-day-type staffing bands (empty list = closed that day type). The
+// pure compiler + DB constraints validate the bands; a bad range surfaces as an error.
 export async function saveHouseWindow(input: {
   seasonId: string;
+  windowId?: string;
   houseId: string;
   startDate: string;
   endDate: string;
-  headcount: number;
-  shiftStart?: string | null;
-  shiftEnd?: string | null;
-  days?: 'all' | 'weekdays' | 'weekends';
+  weekdayBands: WindowBand[];
+  weekendBands: WindowBand[];
 }): Promise<ActionResult<null>> {
   const gate = await requireAdmin();
   if ('error' in gate) return { ok: false, error: gate.error };
 
+  if (input.weekdayBands.length === 0 && input.weekendBands.length === 0) {
+    return { ok: false, error: 'A window must open the house on weekdays, weekends, or both.' };
+  }
+
   const service = createServiceClient();
-  const { error } = await service.from('season_house_windows').insert({
+  const row = {
     season_id: input.seasonId,
     house_id: input.houseId,
     start_date: input.startDate,
     end_date: input.endDate,
-    headcount: input.headcount,
-    shift_start: input.shiftStart ?? null,
-    shift_end: input.shiftEnd ?? null,
-    days: input.days ?? 'all',
-  });
+    weekday_bands: input.weekdayBands as unknown as Json,
+    weekend_bands: input.weekendBands as unknown as Json,
+  };
+  const { error } =
+    input.windowId === undefined
+      ? await service.from('season_house_windows').insert(row)
+      : await service
+          .from('season_house_windows')
+          .update(row)
+          .eq('window_id', input.windowId);
   if (error !== null) return { ok: false, error: error.message };
   revalidatePath(`/admin/operations/${input.seasonId}`);
   return { ok: true, data: null };
@@ -204,7 +217,6 @@ export type SeasonImpact = {
   seats_removed: number;
   assignments_cancelled: number;
   floats_voided: number;
-  blocks_grandfathered: number;
   affected_workers: AffectedWorker[];
 };
 

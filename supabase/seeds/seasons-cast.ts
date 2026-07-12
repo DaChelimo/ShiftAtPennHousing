@@ -38,25 +38,32 @@ const PREF_DEADLINE = '2026-05-28 23:59:00-04';
 // A representative early-summer weekday to hang preferences on (Tue 2026-06-02).
 const PREF_DATE = '2026-06-02';
 
-// The open summer houses (mirrors seasons-test.sql's season_house_windows).
+// The open summer houses (mirrors seasons-test.sql's season_house_windows). Upper
+// Quad, Lower Quad, and Radian are CLOSED for the summer and are not in this list.
 const OPEN_HOUSES = [
   'harnwell',
-  'quad',
-  'lower-quad',
-  'gregory',
   'rodin',
+  'harrison',
+  'gutmann',
+  'mayer',
+  'gregory',
   'lauder',
+  'du-bois',
+  'hill',
   'kings-court',
 ] as const;
 
 const SW_FIRST_NAMES = ['Alice', 'Ben', 'Cara', 'Dan', 'Erin', 'Fred', 'Gina', 'Hugo'] as const;
 const HOUSE_LABEL: Record<string, string> = {
   harnwell: 'Harnwell',
-  quad: 'Quad',
-  'lower-quad': 'Lower Quad',
-  gregory: 'Gregory',
   rodin: 'Rodin',
+  harrison: 'Harrison',
+  gutmann: 'Gutmann',
+  mayer: 'Mayer',
+  gregory: 'Gregory',
   lauder: 'Lauder',
+  'du-bois': 'Du Bois',
+  hill: 'Hill',
   'kings-court': 'Kings Court',
 };
 // How many of the 8 SWs per house submit preferences (the rest stay unspecified).
@@ -143,7 +150,7 @@ async function loadSeasonInput(
   const hhmm = (t: string | Date) => String(t).slice(0, 5);
 
   const { rows: hw } = await client.query(
-    `SELECT house_id, start_date, end_date, headcount, shift_start, shift_end, days
+    `SELECT house_id, start_date, end_date, weekday_bands, weekend_bands
        FROM season_house_windows WHERE season_id = $1 ORDER BY house_id, start_date`,
     [s.season_id],
   );
@@ -169,10 +176,9 @@ async function loadSeasonInput(
       houseId: w.house_id,
       startDate: iso(w.start_date),
       endDate: iso(w.end_date),
-      headcount: w.headcount,
-      shiftStart: w.shift_start === null ? null : hhmm(w.shift_start),
-      shiftEnd: w.shift_end === null ? null : hhmm(w.shift_end),
-      days: w.days,
+      // jsonb columns arrive parsed by node-pg.
+      weekdayBands: w.weekday_bands ?? [],
+      weekendBands: w.weekend_bands ?? [],
     })),
     floatWindows: fw.map((w) => ({ startDate: iso(w.start_date), endDate: iso(w.end_date) })),
   };

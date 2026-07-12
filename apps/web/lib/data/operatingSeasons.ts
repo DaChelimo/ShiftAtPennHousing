@@ -3,6 +3,7 @@ import type {
   HouseWindowInput,
   SeasonAuthoringInput,
   SeasonInput,
+  StaffingBand,
 } from '@shift/core';
 
 import { createServiceClient } from '../supabase/server';
@@ -66,7 +67,7 @@ export async function getSeasonDetail(seasonId: string): Promise<SeasonDetail | 
   const [{ data: houseWindows }, { data: floatWindows }] = await Promise.all([
     service
       .from('season_house_windows')
-      .select('window_id, house_id, start_date, end_date, headcount, shift_start, shift_end, days')
+      .select('window_id, house_id, start_date, end_date, weekday_bands, weekend_bands')
       .eq('season_id', seasonId)
       .order('house_id')
       .order('start_date'),
@@ -96,10 +97,8 @@ export async function getSeasonDetail(seasonId: string): Promise<SeasonDetail | 
       houseId: w.house_id,
       startDate: w.start_date,
       endDate: w.end_date,
-      headcount: w.headcount,
-      shiftStart: w.shift_start === null ? null : (w.shift_start as string).slice(0, 5),
-      shiftEnd: w.shift_end === null ? null : (w.shift_end as string).slice(0, 5),
-      days: w.days as HouseWindowInput['days'],
+      weekdayBands: (w.weekday_bands ?? []) as unknown as StaffingBand[],
+      weekendBands: (w.weekend_bands ?? []) as unknown as StaffingBand[],
     })),
     floatWindows: (floatWindows ?? []).map((w) => ({
       windowId: w.window_id,

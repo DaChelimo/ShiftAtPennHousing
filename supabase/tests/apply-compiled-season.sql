@@ -1,8 +1,9 @@
--- pgTAP tests for apply_compiled_season (P6; migration 20260702000006).
--- Exercises: dry-run writes nothing, apply materializes config + generates blocks,
--- headcount decrease trims vacant seats, headcount decrease with occupants
--- grandfathers, and a house close voids future blocks + cancels occupants.
--- Far-future (2099) dates avoid colliding with seeded calendar. Self-contained.
+-- pgTAP tests for apply_compiled_season (P6; migration 20260702000006, downsize
+-- policy revised 20260709000003). Exercises: dry-run writes nothing, apply
+-- materializes config + generates blocks, headcount decrease trims vacant seats,
+-- headcount decrease with occupants CANCELS the excess (no grandfathering), and a
+-- house close voids future blocks + cancels occupants. Far-future (2099) dates avoid
+-- colliding with seeded calendar. Self-contained.
 
 BEGIN;
 
@@ -16,7 +17,7 @@ INSERT INTO public.users (user_id, name, email, home_house_id, is_active)
 VALUES ('af000000-0000-0000-0000-000000000001', 'Ada Admin', 'apply-ada@test.local', 'quad', true);
 INSERT INTO public.user_roles (user_id, role, scope_house_id) VALUES
   ('af000000-0000-0000-0000-000000000001', 'admin', NULL);
--- A worker for the grandfather/void occupancy tests.
+-- Two workers for the decrease-cancel / void occupancy tests.
 INSERT INTO auth.users (id, instance_id, aud, role, email)
 VALUES
   ('af000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'apply-w1@test.local'),
@@ -101,7 +102,7 @@ SELECT is(
   8, '4 blocks x 2 seats = 8 vacant assignments'
 );
 
--- 5. Occupy both seats of the earliest block (for grandfather test).
+-- 5. Occupy both seats of the earliest block (for the decrease-cancel test).
 WITH first_block AS (
   SELECT block_id FROM shift_blocks WHERE house_id = 'quad' AND block_start_at::date = '2099-07-01'
   ORDER BY block_start_at LIMIT 1
@@ -116,20 +117,21 @@ SET status = 'scheduled',
     vacancy_origin = 'none'
 FROM seats s WHERE a.assignment_id = s.assignment_id;
 
--- 6. Re-apply with headcount reduced to 1.
+-- 6. Re-apply with headcount reduced to 1. The block has two scheduled occupants and
+-- no floater; the excess is CANCELLED (no grandfathering) — one is cut, one survives.
 SELECT set_config('test.payload1', replace(current_setting('test.payload'), '"headcount":2', '"headcount":1'), false);
 SELECT ok(
-  (apply_compiled_season('af000000-0000-0000-0000-000000000001', 'af100000-0000-0000-0000-000000000001', current_setting('test.payload1')::jsonb, false) ->> 'blocks_grandfathered')::int >= 1,
-  'headcount decrease reports at least one grandfathered block'
+  (apply_compiled_season('af000000-0000-0000-0000-000000000001', 'af100000-0000-0000-0000-000000000001', current_setting('test.payload1')::jsonb, false) ->> 'assignments_cancelled')::int >= 1,
+  'headcount decrease cancels at least one excess worker'
 );
--- The occupied block keeps BOTH occupants (grandfathered); required_headcount is 1.
+-- The shrunk block keeps exactly ONE occupant; the excess seat is cancelled_config.
 SELECT is(
   (SELECT count(*)::int FROM shift_block_assignments a
    JOIN shift_blocks b ON a.block_id = b.block_id
    WHERE b.house_id = 'quad' AND b.block_start_at::date = '2099-07-01'
      AND b.block_start_at = (SELECT min(block_start_at) FROM shift_blocks WHERE house_id='quad' AND block_start_at::date='2099-07-01')
      AND a.status = 'scheduled'),
-  2, 'the occupied block keeps both grandfathered occupants after the decrease'
+  1, 'the shrunk block keeps exactly one occupant; the excess was cancelled'
 );
 
 -- 7. Re-apply with the house CLOSED (no houses) → future blocks voided, occupants cancelled.
@@ -160,7 +162,7 @@ SELECT is(
 SELECT is(
   (SELECT count(*)::int FROM shift_block_assignments a JOIN shift_blocks b ON a.block_id = b.block_id
    WHERE b.house_id = 'quad' AND b.block_start_at::date = '2099-07-01' AND a.status = 'cancelled_config'),
-  2, 'the two grandfathered occupants were cancelled (cancelled_config)'
+  2, 'both occupants end cancelled_config (one on the decrease, one on the close)'
 );
 -- 15. The impact lists WHO was affected (skimmable detail), with worker + house.
 SELECT ok(

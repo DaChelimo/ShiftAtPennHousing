@@ -55,7 +55,10 @@ const PERSPECTIVE_LINES: Record<AiPerspective, string> = {
 
 export function buildSystemPrompt(input: AiScheduleInput, perspective: AiPerspective): string {
   const lines = [
-    'You draft one day of a weekly desk schedule for a student house.',
+    'You are the scheduling lead building a student residence front-desk schedule,',
+    'one day at a time. You have set a strategy for the whole week; staff each day',
+    'decisively to carry it out. Own the decisions. Do not leave a seat empty when a',
+    'worker can legally take it.',
     '',
     'HARD RULES (a separate validator rejects any violation):',
     "1. Never exceed a slot's seat count.",
@@ -82,6 +85,83 @@ export function buildSystemPrompt(input: AiScheduleInput, perspective: AiPerspec
     PERSPECTIVE_LINES[perspective],
   );
   return lines.join('\n');
+}
+
+// The whole-week planning call: one authoritative pass that sets a strategy
+// (who anchors which days, how each worker reaches their target hours, where
+// coverage is hardest) before the day-by-day build. Its plain-language output
+// is threaded into every propose prompt so the single draft stays coherent.
+export const AI_PLAN_JSON_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: { strategy: { type: 'string' } },
+  required: ['strategy'],
+  additionalProperties: false,
+};
+
+export function buildPlanSystemPrompt(input: AiScheduleInput): string {
+  const lines = [
+    'You are the scheduling lead for a student residence front desk, planning one',
+    "week's coverage. Before placing any shift you decide the strategy for the whole",
+    'week: which workers anchor which days, how each person reaches their target hours',
+    'across the seven days without exceeding the weekly cap, and where coverage will be',
+    'hardest so you plan for it up front.',
+  ];
+  if (input.isHarnwell) {
+    lines.push('This is Harnwell: only HOME workers may ever staff it. Plan around that.');
+  }
+  lines.push(
+    '',
+    'Return a short, decisive plain-language strategy (a few sentences). Do not produce',
+    'a schedule or any slot assignments yet. Just the plan.',
+  );
+  return lines.join('\n');
+}
+
+export function buildPlanPrompt(input: AiScheduleInput, grid: AiGrid): string {
+  const totalSeats = grid.days.reduce(
+    (sum, day) => sum + day.blocks.reduce((s, b) => s + b.requiredHeadcount, 0),
+    0,
+  );
+  const dayLines = grid.days.map((day) => {
+    const seats = day.blocks.reduce((s, b) => s + b.requiredHeadcount, 0);
+    return `${dayLabel(day.weekday)}: ${String(day.blocks.length)} slots, ${String(seats)} seats to staff`;
+  });
+  const workerLines = grid.workers.map((worker) => {
+    const key = grid.keyByWorkerId.get(worker.workerId) ?? '?';
+    const home = worker.homeHouseId === input.houseId ? 'HOME' : 'away';
+    const target =
+      worker.targetHours === null ? 'no target' : `${String(worker.targetHours)}h target`;
+    let preferred = 0;
+    let blocked = 0;
+    for (const value of Object.values(worker.prefs)) {
+      if (value === 'preferred') preferred++;
+      else if (value === 'cannot') blocked++;
+    }
+    return `${key} | ${home} | ${target} | ${String(preferred)} preferred slots | ${String(blocked)} blocked slots`;
+  });
+  return [
+    `House: ${input.houseId}. Weekly cap: ${String(input.capHours)}h per worker. Each slot is 30 minutes.`,
+    `${String(grid.days.length)} scheduled days, ${String(totalSeats)} seats to staff in total.`,
+    '',
+    'DAYS',
+    ...dayLines,
+    '',
+    'WORKERS',
+    'key | home | target | preferred | blocked',
+    ...workerLines,
+    '',
+    'Set the strategy for the week.',
+  ].join('\n');
+}
+
+// Extract the strategy string from a plan response. Never throws; an
+// unusable response yields an empty plan (the build proceeds without it).
+export function parsePlan(json: unknown): string {
+  if (typeof json === 'object' && json !== null) {
+    const value = (json as { strategy?: unknown }).strategy;
+    if (typeof value === 'string') return value.trim();
+  }
+  return '';
 }
 
 function dayLabel(weekday: number): string {
@@ -149,18 +229,22 @@ export function buildProposePrompt(
   grid: AiGrid,
   day: AiGridDay,
   acc: AiAssignment[],
+  plan?: string,
 ): string {
-  return [
-    dayHeader(input, grid, day),
-    '',
+  const parts = [dayHeader(input, grid, day), ''];
+  if (plan !== undefined && plan.length > 0) {
+    parts.push('YOUR WEEK STRATEGY (follow it):', plan, '');
+  }
+  parts.push(
     'SLOTS',
     slotTable(day),
     '',
     'WORKERS',
     workerTable(input, grid, day, acc),
     '',
-    'Fill as many seats as legally possible for this day. Emit JSON only.',
-  ].join('\n');
+    'Staff every seat you legally can for this day, in line with your strategy. Emit JSON only.',
+  );
+  return parts.join('\n');
 }
 
 // Render a day's assignments back as worker-key slot ranges.

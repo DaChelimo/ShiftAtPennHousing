@@ -9,9 +9,12 @@ import { describe, expect, it } from 'vitest';
 import {
   AI_PROPOSAL_JSON_SCHEMA,
   buildGrid,
+  buildPlanPrompt,
+  buildPlanSystemPrompt,
   buildProposePrompt,
   buildRepairPrompt,
   buildSystemPrompt,
+  parsePlan,
   parseProposal,
   type AiViolation,
 } from '../../src/ai-schedule/index.js';
@@ -169,6 +172,43 @@ describe('repair prompt', () => {
     expect(prompt).toContain('CANNOT_CONFLICT');
     expect(prompt).toContain('(non-blocking)');
     expect(prompt).toContain('Re-emit the FULL corrected run list');
+  });
+});
+
+describe('planning pass', () => {
+  const input = smallHouseSnapshot();
+  const grid = buildGrid(input);
+
+  it('plan prompt lists days, seats, and per-worker targets, with no slot table', () => {
+    const p = buildPlanPrompt(input, grid);
+    expect(p).toContain('DAYS');
+    expect(p).toContain('WORKERS');
+    expect(p).toContain('target');
+    expect(p).toContain('Set the strategy');
+    expect(p).not.toContain('SLOTS');
+  });
+
+  it('plan system prompt is strategy-only and forbids emitting a schedule', () => {
+    const s = buildPlanSystemPrompt(input);
+    expect(s.toLowerCase()).toContain('strategy');
+    expect(s).toContain('Do not produce');
+  });
+
+  it('parsePlan extracts and trims the strategy, else empty', () => {
+    expect(parsePlan({ strategy: '  anchor Alice on Monday  ' })).toBe('anchor Alice on Monday');
+    expect(parsePlan({})).toBe('');
+    expect(parsePlan('nope')).toBe('');
+    expect(parsePlan(null)).toBe('');
+  });
+
+  it('propose prompt injects the strategy only when one is provided', () => {
+    const day = grid.days[0];
+    if (day === undefined) throw new Error('no day');
+    const withPlan = buildProposePrompt(input, grid, day, [], 'ANCHOR STRATEGY');
+    expect(withPlan).toContain('YOUR WEEK STRATEGY');
+    expect(withPlan).toContain('ANCHOR STRATEGY');
+    expect(buildProposePrompt(input, grid, day, [])).not.toContain('YOUR WEEK STRATEGY');
+    expect(buildProposePrompt(input, grid, day, [], '')).not.toContain('YOUR WEEK STRATEGY');
   });
 });
 

@@ -112,11 +112,30 @@ export interface ScheduleLlm {
 
 // -------------------------------------------------------------------------
 
+// Granular progress events emitted as the loop runs, so a caller can stream
+// live status and fill a schedule grid day by day. Purely observational:
+// emitting an event never changes control flow, so the result stays
+// deterministic whether or not an onProgress handler is supplied.
+export type AiProgressEvent =
+  | { type: 'planning' } // week-level strategy call started
+  | { type: 'planned' } // strategy ready
+  | { type: 'day-start'; weekday: number; dayIndex: number; dayCount: number }
+  | { type: 'day-repair'; weekday: number; round: number }
+  | { type: 'day-done'; weekday: number; assignments: AiAssignment[] } // that day's kept shifts
+  | { type: 'finalizing' }; // scoring + final validation
+
 export type AiScheduleOptions = {
-  candidates?: number; // N independent candidates, default 3
+  candidates?: number; // N independent candidates, default 1 (single strategic draft)
   repairRounds?: number; // R repair rounds per day unit, default 3
-  maxLlmCalls?: number; // global budget, default 40
+  maxLlmCalls?: number; // global budget, default 100
   plateauEpsilon?: number; // absolute score units, default 0.5
+  // Run one week-level planning call before the day-by-day build so the
+  // single draft commits to a coherent strategy (who anchors which days,
+  // how each worker reaches their target hours). Off by default so the pure
+  // test harness stays lean; the web layer turns it on.
+  planningPass?: boolean;
+  // Observational progress callback (see AiProgressEvent). Optional.
+  onProgress?: (event: AiProgressEvent) => void;
 };
 
 export type AiCandidate = {

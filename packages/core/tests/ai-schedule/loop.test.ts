@@ -7,7 +7,11 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { runAiSchedule, validateCandidate } from '../../src/ai-schedule/index.js';
+import {
+  runAiSchedule,
+  validateCandidate,
+  type AiProgressEvent,
+} from '../../src/ai-schedule/index.js';
 
 import { fixtureBlockId, makeBand, makeInput, makeWorker, smallHouseSnapshot } from './fixtures.js';
 import { ScriptedLlm } from './mockLlm.js';
@@ -186,6 +190,80 @@ describe('unfillable seats', () => {
     expect(monSeats).toHaveLength(4);
     expect(monSeats.every((s) => !s.fillable)).toBe(true);
     expect(result.unfilledSeats.filter((s) => s.weekday === 1)).toHaveLength(0);
+  });
+});
+
+describe('planning pass', () => {
+  it('runs one planning call first and threads the strategy into propose prompts', async () => {
+    const llm = new ScriptedLlm([
+      { strategy: 'Anchor Alice on Monday; spread Bob and Cara across Tue and Wed.' },
+      fullDay('W1'),
+      fullDay('W2'),
+      fullDay('W3'),
+    ]);
+    const result = await runAiSchedule(smallHouseSnapshot(), llm, {
+      candidates: 1,
+      planningPass: true,
+    });
+    expect(result.diagnostics.llmCallCount).toBe(4); // 1 plan + 3 days
+    expect(llm.requests[0]?.user).toContain('Set the strategy');
+    expect(llm.requests[0]?.user).not.toContain('SLOTS');
+    expect(llm.requests[1]?.user).toContain('YOUR WEEK STRATEGY');
+    expect(llm.requests[1]?.user).toContain('Anchor Alice on Monday');
+    expect(result.best?.assignments).toHaveLength(24);
+  });
+
+  it('skips planning by default (no extra call, no strategy section)', async () => {
+    const llm = new ScriptedLlm([fullDay('W1'), fullDay('W2'), fullDay('W3')]);
+    const result = await runAiSchedule(smallHouseSnapshot(), llm, { candidates: 1 });
+    expect(result.diagnostics.llmCallCount).toBe(3);
+    expect(llm.requests[0]?.user).not.toContain('YOUR WEEK STRATEGY');
+  });
+});
+
+describe('progress events', () => {
+  it('emits a granular, ordered event stream with per-day assignments', async () => {
+    const events: AiProgressEvent[] = [];
+    const llm = new ScriptedLlm([
+      { strategy: 'plan' },
+      fullDay('W1'),
+      fullDay('W2'),
+      fullDay('W3'),
+    ]);
+    await runAiSchedule(smallHouseSnapshot(), llm, {
+      candidates: 1,
+      planningPass: true,
+      onProgress: (e) => events.push(e),
+    });
+    const types = events.map((e) => e.type);
+    expect(types[0]).toBe('planning');
+    expect(types[1]).toBe('planned');
+    expect(types.filter((t) => t === 'day-start')).toHaveLength(3);
+    expect(types.filter((t) => t === 'day-done')).toHaveLength(3);
+    expect(types[types.length - 1]).toBe('finalizing');
+    const done = events.find((e) => e.type === 'day-done');
+    expect(done?.type === 'day-done' ? done.assignments.length : 0).toBe(8);
+  });
+
+  it('emits a day-repair event when a day needs fixing', async () => {
+    const events: AiProgressEvent[] = [];
+    const llm = new ScriptedLlm([
+      fullDay('W1'), // Mon
+      fullDay('W3'), // Tue propose (cara cannot Tue) -> repair
+      fullDay('W2'), // Tue repair
+      fullDay('W1'), // Wed
+    ]);
+    await runAiSchedule(smallHouseSnapshot(), llm, {
+      candidates: 1,
+      onProgress: (e) => events.push(e),
+    });
+    expect(events.some((e) => e.type === 'day-repair')).toBe(true);
+  });
+
+  it('runs cleanly with no onProgress handler', async () => {
+    const llm = new ScriptedLlm([fullDay('W1'), fullDay('W2'), fullDay('W3')]);
+    const result = await runAiSchedule(smallHouseSnapshot(), llm, { candidates: 1 });
+    expect(result.best).not.toBeNull();
   });
 });
 

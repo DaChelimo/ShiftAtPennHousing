@@ -11,16 +11,21 @@ import { buildGrid, type AiGrid, type AiGridDay } from './grid.js';
 import {
   AI_MAX_OUTPUT_TOKENS,
   AI_PERSPECTIVES,
+  AI_PLAN_JSON_SCHEMA,
   AI_PROPOSAL_JSON_SCHEMA,
+  buildPlanPrompt,
+  buildPlanSystemPrompt,
   buildProposePrompt,
   buildRepairPrompt,
   buildSystemPrompt,
+  parsePlan,
   parseProposal,
 } from './prompt.js';
 import { scoreWithGrid } from './scorer.js';
 import type {
   AiAssignment,
   AiCandidate,
+  AiProgressEvent,
   AiScheduleInput,
   AiScheduleOptions,
   AiScheduleResult,
@@ -32,17 +37,23 @@ import { validateWithGrid } from './validator.js';
 const HARNWELL_HOUSE_ID = 'harnwell';
 
 export const AI_SCHEDULE_DEFAULTS = {
-  candidates: 3,
+  // ONE strategic draft by default (stakeholder decision 2026-07-11): the SM
+  // reviews and edits the result, so an extra best-of-N exploration triples
+  // cost and latency for little gain. A single confident pass, primed by a
+  // planning call, is the product behavior. Callers can still pass
+  // candidates > 1 for evaluation.
+  candidates: 1,
   repairRounds: 3,
-  // A real model live-fires repairs far more often than the deterministic
-  // test mocks (which never need one). Worst case is 3 candidates x 7 days
-  // x (1 propose + repairRounds repairs) = 84 calls; a live run against the
-  // old default of 40 hit the budget mid-loop and left whole trailing days
-  // ("Wed", "Fri") completely unassigned even though workers had capacity
-  // headroom. 100 leaves headroom above the 84-call worst case.
+  // Worst case with one candidate + planning: 1 + 7 days x (1 + repairRounds)
+  // = 29 calls. 100 leaves ample headroom (and covers candidates > 1 runs).
   maxLlmCalls: 100,
   plateauEpsilon: 0.5,
+  planningPass: false,
 } as const;
+
+const NO_PROGRESS = (): void => {
+  /* no-op */
+};
 
 export async function runAiSchedule(
   input: AiScheduleInput,
@@ -50,12 +61,30 @@ export async function runAiSchedule(
   options?: AiScheduleOptions,
 ): Promise<AiScheduleResult> {
   const opts = { ...AI_SCHEDULE_DEFAULTS, ...options };
+  const emit: (event: AiProgressEvent) => void = options?.onProgress ?? NO_PROGRESS;
   const grid = buildGrid(input);
   const notes: string[] = [];
   const candidates: AiCandidate[] = [];
   let calls = 0;
   let pruned = 0;
   let stoppedEarly: 'plateau' | 'budget' | null = null;
+
+  // Week-level planning pass (once, candidate-independent): sets the strategy
+  // the day-by-day build follows. Its plain-language output is threaded into
+  // every propose prompt.
+  let plan = '';
+  if (opts.planningPass && calls < opts.maxLlmCalls) {
+    emit({ type: 'planning' });
+    const planResp = await llm.complete({
+      system: buildPlanSystemPrompt(input),
+      user: buildPlanPrompt(input, grid),
+      responseSchema: AI_PLAN_JSON_SCHEMA,
+      maxOutputTokens: AI_MAX_OUTPUT_TOKENS,
+    });
+    calls++;
+    plan = parsePlan(planResp.json);
+    emit({ type: 'planned' });
+  }
 
   for (let c = 0; c < opts.candidates; c++) {
     if (calls >= opts.maxLlmCalls) {
@@ -67,14 +96,17 @@ export async function runAiSchedule(
     const dayOrder = rotate(grid.days, c);
     let acc: AiAssignment[] = [];
 
-    for (const day of dayOrder) {
+    for (let d = 0; d < dayOrder.length; d++) {
+      const day = dayOrder[d];
+      if (day === undefined) continue;
       if (calls >= opts.maxLlmCalls) {
         stoppedEarly = 'budget';
         break;
       }
+      emit({ type: 'day-start', weekday: day.weekday, dayIndex: d, dayCount: dayOrder.length });
       const proposeReq = {
         system,
-        user: buildProposePrompt(input, grid, day, acc),
+        user: buildProposePrompt(input, grid, day, acc, plan),
         responseSchema: AI_PROPOSAL_JSON_SCHEMA,
         maxOutputTokens: AI_MAX_OUTPUT_TOKENS,
       };
@@ -93,6 +125,7 @@ export async function runAiSchedule(
           stoppedEarly = 'budget';
           break;
         }
+        emit({ type: 'day-repair', weekday: day.weekday, round: r + 1 });
         const repairResp = await llm.complete({
           system,
           user: buildRepairPrompt(input, grid, day, parsed.assignments, feedback),
@@ -107,8 +140,16 @@ export async function runAiSchedule(
       const kept = pruneToFeasible(input, grid, acc, parsed.assignments);
       pruned += before - kept.length;
       acc = [...acc, ...kept];
+      // The kept shifts for this day only, so a caller can paint the day into
+      // a grid as it finalizes.
+      emit({
+        type: 'day-done',
+        weekday: day.weekday,
+        assignments: kept.map((a) => ({ blockId: a.blockId, workerId: a.workerId })),
+      });
     }
 
+    emit({ type: 'finalizing' });
     const breakdown = scoreWithGrid(input, grid, acc);
     const finished: AiCandidate = { assignments: acc, score: breakdown.total, breakdown };
     candidates.push(finished);

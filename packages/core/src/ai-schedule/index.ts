@@ -6,6 +6,7 @@ export type {
   AiAssignment,
   AiCandidate,
   AiPrefStatus,
+  AiProgressEvent,
   AiRosterWorker,
   AiScheduleBlock,
   AiScheduleInput,
@@ -29,11 +30,15 @@ export { scoreCandidate, scoreWithGrid } from './scorer.js';
 export {
   AI_MAX_OUTPUT_TOKENS,
   AI_PERSPECTIVES,
+  AI_PLAN_JSON_SCHEMA,
   AI_PROPOSAL_JSON_SCHEMA,
   AI_WEEKDAY_LABELS,
+  buildPlanPrompt,
+  buildPlanSystemPrompt,
   buildProposePrompt,
   buildRepairPrompt,
   buildSystemPrompt,
+  parsePlan,
   parseProposal,
 } from './prompt.js';
 export type { AiPerspective } from './prompt.js';

@@ -68,8 +68,9 @@ export function canBuildSchedule(user: SessionUser | null): boolean {
 
 // §2.3 / §2.3a / §2.6 / §2.7: HM/RSM/BM administrative powers (people, leave, rotor —
 // the RSM cannot serve as HMOD, but the rotor page is still theirs to view/manage
-// for their house). BM is admin-only; the RSM holds all HM admin powers. The admin
-// holds these powers in EVERY house (superuser).
+// for their house). BM is admin-only (Building Administrator); the RSM holds all
+// HM admin powers. The campus-wide Project Admin superuser sees everything an
+// HM/RSM/BM can, so it's included here rather than re-OR'd at every call site.
 export function isHouseAdmin(user: SessionUser | null): boolean {
   return (
     !!user &&

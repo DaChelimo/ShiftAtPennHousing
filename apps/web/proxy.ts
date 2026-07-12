@@ -8,7 +8,7 @@ import { SUPABASE_ANON_KEY, SUPABASE_URL } from './lib/env';
 // admin route are redirected to /login. Fine-grained role checks (SM-vs-HM/BM for
 // leave/rotor) are enforced in-page so the §2.6 "leave-unauthorized" notice renders
 // rather than redirects.
-const PROTECTED_PREFIXES = ['/schedule-builder', '/admin', '/home'];
+const PROTECTED_PREFIXES = ['/schedule-builder', '/admin', '/home', '/assistant'];
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });

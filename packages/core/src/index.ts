@@ -18,16 +18,6 @@ export * from './hmod-context/index.js';
 export * from './hours/index.js';
 export * from './inbox/index.js';
 export * from './notifications/index.js';
-// operating-seasons: named re-export only. A bare `export *` collides with
-// cap-modification's `CapEnforcement` and orchestrator's `ChainStep` (each module
-// defines its own). The web consumes just this public slice.
-export { compileSeason } from './operating-seasons/index.js';
-export type {
-  FloatWindowInput,
-  HouseWindowInput,
-  SeasonAuthoringInput,
-  SeasonInput,
-} from './operating-seasons/index.js';
 export * from './orchestrator/index.js';
 // Operating Seasons compiler. Targeted re-export: ChainStep (orchestrator) and
 // CapEnforcement (cap-modification) already exist under those names, so we omit

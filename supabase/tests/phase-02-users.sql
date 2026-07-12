@@ -392,7 +392,7 @@ SELECT is(
 
 -- Default = true (already covered by col_default_is above, re-checked behaviorally).
 INSERT INTO public.users (user_id, name, email, home_house_id)
-VALUES ('66666666-6666-6666-6666-666666666666', 'Frank SW', 'frank@test.local', 'house-03');
+VALUES ('66666666-6666-6666-6666-666666666666', 'Frank SW', 'frank@test.local', 'lower-quad');
 SELECT is(
   (SELECT is_active FROM public.users WHERE user_id = '66666666-6666-6666-6666-666666666666'),
   true,

@@ -26,7 +26,7 @@ function LegendItem({ color, label }: { color: string; label: string }) {
 }
 
 function hoursCell(value: number, color?: string) {
-  if (value <= 0) return <span className="t-meta">—</span>;
+  if (value <= 0) return <span className="t-meta">-</span>;
   return (
     <span className="t-mono" style={{ color }}>
       {value}h

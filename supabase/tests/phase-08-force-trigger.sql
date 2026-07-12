@@ -45,7 +45,7 @@
 -- suite tests the constraints and reconciliation machinery that execution
 -- relies on, all GREEN against the current schema.
 --
--- Float direction: harnwell home -> house-03 destination, the only direction
+-- Float direction: harnwell home -> lower-quad destination, the only direction
 -- the harnwell-training trigger permits for a harnwell worker.
 
 BEGIN;
@@ -78,12 +78,12 @@ VALUES
   ('e0000508-0000-0000-0000-000000000002', 'FT Floater 2', 'p08-floater2@test.local', 'harnwell', true),
   ('e0000508-0000-0000-0000-000000000003', 'FT Floater 3', 'p08-floater3@test.local', 'harnwell', true),
   ('e0000508-0000-0000-0000-000000000004', 'FT Floater 4', 'p08-floater4@test.local', 'harnwell', true),
-  ('e0000508-0000-0000-0000-000000000006', 'SM Initiator', 'p08-sm-initiator@test.local', 'house-03', true),
+  ('e0000508-0000-0000-0000-000000000006', 'SM Initiator', 'p08-sm-initiator@test.local', 'lower-quad', true),
   ('e0000508-0000-0000-0000-000000000008', 'Gap Claimer', 'p08-gap-claimer@test.local', 'harnwell', true);
 
 -- The initiator is SM of the destination house (force_triggered_by).
 INSERT INTO public.user_roles (user_id, role, scope_house_id)
-VALUES ('e0000508-0000-0000-0000-000000000006', 'sm', 'house-03')
+VALUES ('e0000508-0000-0000-0000-000000000006', 'sm', 'lower-quad')
 ON CONFLICT DO NOTHING;
 
 -- Anchor 30 days out, hour-truncated NY-local (already on a 30-min boundary),
@@ -96,20 +96,20 @@ SELECT set_config(
 );
 
 -- Blocks (offsets from anchor):
---   +0   : float #1 destination (house-03) + source (harnwell)
+--   +0   : float #1 destination (lower-quad) + source (harnwell)
 --   +30  : float #2 destination + source
 --   +60  : float #3 destination + source (no-ack / no-takeback)
 --   +90  : float #4 destination + source (acknowledge)
 --   +120 : float #4 floater's SEPARATE home shift (the one they drop)
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
 VALUES
-  ('f0000508-0000-0000-0000-0000000000d1', 'house-03', current_setting('test.p08.anchor')::timestamptz, 1),
+  ('f0000508-0000-0000-0000-0000000000d1', 'lower-quad', current_setting('test.p08.anchor')::timestamptz, 1),
   ('f0000508-0000-0000-0000-000000000051', 'harnwell', current_setting('test.p08.anchor')::timestamptz, 3),
-  ('f0000508-0000-0000-0000-0000000000d2', 'house-03', current_setting('test.p08.anchor')::timestamptz + interval '30 minutes', 1),
+  ('f0000508-0000-0000-0000-0000000000d2', 'lower-quad', current_setting('test.p08.anchor')::timestamptz + interval '30 minutes', 1),
   ('f0000508-0000-0000-0000-000000000052', 'harnwell', current_setting('test.p08.anchor')::timestamptz + interval '30 minutes', 3),
-  ('f0000508-0000-0000-0000-0000000000d3', 'house-03', current_setting('test.p08.anchor')::timestamptz + interval '60 minutes', 1),
+  ('f0000508-0000-0000-0000-0000000000d3', 'lower-quad', current_setting('test.p08.anchor')::timestamptz + interval '60 minutes', 1),
   ('f0000508-0000-0000-0000-000000000053', 'harnwell', current_setting('test.p08.anchor')::timestamptz + interval '60 minutes', 3),
-  ('f0000508-0000-0000-0000-0000000000d4', 'house-03', current_setting('test.p08.anchor')::timestamptz + interval '90 minutes', 1),
+  ('f0000508-0000-0000-0000-0000000000d4', 'lower-quad', current_setting('test.p08.anchor')::timestamptz + interval '90 minutes', 1),
   ('f0000508-0000-0000-0000-000000000054', 'harnwell', current_setting('test.p08.anchor')::timestamptz + interval '90 minutes', 3),
   ('f0000508-0000-0000-0000-000000000055', 'harnwell', current_setting('test.p08.anchor')::timestamptz + interval '120 minutes', 3);
 
@@ -422,7 +422,7 @@ SELECT is(
 SELECT is(
   (SELECT count(*)::integer FROM public.float_exclusions
    WHERE user_id = 'e0000508-0000-0000-0000-000000000001'
-     AND reason = 'declined' AND destination_house_id = 'house-03'),
+     AND reason = 'declined' AND destination_house_id = 'lower-quad'),
   1,
   'decline (still-vacant): a declined exclusion is recorded for the gap window'
 );

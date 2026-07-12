@@ -4,12 +4,16 @@ export function Toggle({
   checked,
   onChange,
   label,
+  ariaLabel,
   size = 'md',
   disabled = false,
 }: {
   checked: boolean;
   onChange: (next: boolean) => void;
   label?: string;
+  // Accessible name when the switch shows no visible `label` text (e.g. a switch in
+  // a table column whose meaning comes from the column header).
+  ariaLabel?: string;
   size?: 'md' | 'sm';
   disabled?: boolean;
 }) {
@@ -18,7 +22,7 @@ export function Toggle({
       type="button"
       role="switch"
       aria-checked={checked}
-      aria-label={label}
+      aria-label={ariaLabel ?? label}
       disabled={disabled}
       className={`toggle toggle-${size} ${checked ? 'is-on' : ''}`.trim()}
       onClick={() => !disabled && onChange(!checked)}

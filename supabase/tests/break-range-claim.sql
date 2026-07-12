@@ -47,7 +47,7 @@ VALUES
   ('2029-11-24', 'short_break'), ('2029-11-25', 'short_break')
 ON CONFLICT (date) DO UPDATE SET profile_name = EXCLUDED.profile_name;
 
--- Workers: B house-05 (single-staff), A/C quad (multi-staff), D house-05, F quad (cap).
+-- Workers: B harrison (single-staff), A/C quad (multi-staff), D harrison, F quad (cap).
 INSERT INTO auth.users (id, instance_id, aud, role, email)
 VALUES
   ('bc000001-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'bc-a@test.local'),
@@ -59,33 +59,33 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active)
 VALUES
   ('bc000001-0000-0000-0000-00000000000a', 'BC A', 'bc-a@test.local', 'quad',     true),
-  ('bc000001-0000-0000-0000-00000000000b', 'BC B', 'bc-b@test.local', 'house-05', true),
+  ('bc000001-0000-0000-0000-00000000000b', 'BC B', 'bc-b@test.local', 'harrison', true),
   ('bc000001-0000-0000-0000-00000000000c', 'BC C', 'bc-c@test.local', 'quad',     true),
-  ('bc000001-0000-0000-0000-00000000000d', 'BC D', 'bc-d@test.local', 'house-05', true),
+  ('bc000001-0000-0000-0000-00000000000d', 'BC D', 'bc-d@test.local', 'harrison', true),
   ('bc000001-0000-0000-0000-00000000000f', 'BC F', 'bc-f@test.local', 'quad',     true)
 ON CONFLICT (user_id) DO NOTHING;
 
 -- Blocks (block_id, house, time on 2029-11-23, headcount) + their seats.
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount) VALUES
-  -- A: single-staff house-05 08:00/08:30/09:00 (1 seat each, vacant) — claim all 3.
-  ('bc000002-0000-0000-0000-000000000801', 'house-05', ('2029-11-23 08:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
-  ('bc000002-0000-0000-0000-000000000802', 'house-05', ('2029-11-23 08:30'::timestamp AT TIME ZONE 'America/New_York'), 1),
-  ('bc000002-0000-0000-0000-000000000803', 'house-05', ('2029-11-23 09:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
+  -- A: single-staff harrison 08:00/08:30/09:00 (1 seat each, vacant) — claim all 3.
+  ('bc000002-0000-0000-0000-000000000801', 'harrison', ('2029-11-23 08:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
+  ('bc000002-0000-0000-0000-000000000802', 'harrison', ('2029-11-23 08:30'::timestamp AT TIME ZONE 'America/New_York'), 1),
+  ('bc000002-0000-0000-0000-000000000803', 'harrison', ('2029-11-23 09:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
   -- B: multi-staff quad 09:00 (3 seats vacant) — fill one.
   ('bc000002-0000-0000-0000-000000000900', 'quad',     ('2029-11-23 09:00'::timestamp AT TIME ZONE 'America/New_York'), 3),
-  -- C: house-05 10:00/10:30/11:00, the 10:30 pre-claimed (full) → trim.
-  ('bc000002-0000-0000-0000-000000001000', 'house-05', ('2029-11-23 10:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
-  ('bc000002-0000-0000-0000-000000001030', 'house-05', ('2029-11-23 10:30'::timestamp AT TIME ZONE 'America/New_York'), 1),
-  ('bc000002-0000-0000-0000-000000001100', 'house-05', ('2029-11-23 11:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
+  -- C: harrison 10:00/10:30/11:00, the 10:30 pre-claimed (full) → trim.
+  ('bc000002-0000-0000-0000-000000001000', 'harrison', ('2029-11-23 10:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
+  ('bc000002-0000-0000-0000-000000001030', 'harrison', ('2029-11-23 10:30'::timestamp AT TIME ZONE 'America/New_York'), 1),
+  ('bc000002-0000-0000-0000-000000001100', 'harrison', ('2029-11-23 11:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
   -- D: quad 12:00 (A already on seat1) + quad 12:30 (vacant) — time-conflict trim.
   ('bc000002-0000-0000-0000-000000001200', 'quad',     ('2029-11-23 12:00'::timestamp AT TIME ZONE 'America/New_York'), 3),
   ('bc000002-0000-0000-0000-000000001230', 'quad',     ('2029-11-23 12:30'::timestamp AT TIME ZONE 'America/New_York'), 3),
-  -- E: house-05 13:00 (vacant) — phase gating.
-  ('bc000002-0000-0000-0000-000000001300', 'house-05', ('2029-11-23 13:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
+  -- E: harrison 13:00 (vacant) — phase gating.
+  ('bc000002-0000-0000-0000-000000001300', 'harrison', ('2029-11-23 13:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
   -- F: harnwell 14:00 (vacant) — training deny.
   ('bc000002-0000-0000-0000-000000001400', 'harnwell', ('2029-11-23 14:00'::timestamp AT TIME ZONE 'America/New_York'), 2),
-  -- H: house-05 15:00 (1 seat) — FCFS single.
-  ('bc000002-0000-0000-0000-000000001500', 'house-05', ('2029-11-23 15:00'::timestamp AT TIME ZONE 'America/New_York'), 1);
+  -- H: harrison 15:00 (1 seat) — FCFS single.
+  ('bc000002-0000-0000-0000-000000001500', 'harrison', ('2029-11-23 15:00'::timestamp AT TIME ZONE 'America/New_York'), 1);
 
 INSERT INTO public.shift_block_assignments (assignment_id, block_id, user_id, status, vacancy_origin) VALUES
   ('bc000003-0000-0000-0000-000000000801', 'bc000002-0000-0000-0000-000000000801', NULL, 'vacant', 'never_assigned'),
@@ -95,7 +95,7 @@ INSERT INTO public.shift_block_assignments (assignment_id, block_id, user_id, st
   ('bc000003-0000-0000-0000-000000000901', 'bc000002-0000-0000-0000-000000000900', NULL, 'vacant', 'never_assigned'),
   ('bc000003-0000-0000-0000-000000000902', 'bc000002-0000-0000-0000-000000000900', NULL, 'vacant', 'never_assigned'),
   ('bc000003-0000-0000-0000-000000000903', 'bc000002-0000-0000-0000-000000000900', NULL, 'vacant', 'never_assigned'),
-  -- house-05 10:00 vacant, 10:30 FULL (D scheduled), 11:00 vacant.
+  -- harrison 10:00 vacant, 10:30 FULL (D scheduled), 11:00 vacant.
   ('bc000003-0000-0000-0000-000000001000', 'bc000002-0000-0000-0000-000000001000', NULL, 'vacant', 'never_assigned'),
   ('bc000003-0000-0000-0000-000000001030', 'bc000002-0000-0000-0000-000000001030', 'bc000001-0000-0000-0000-00000000000d', 'scheduled', 'none'),
   ('bc000003-0000-0000-0000-000000001100', 'bc000002-0000-0000-0000-000000001100', NULL, 'vacant', 'never_assigned'),
@@ -104,11 +104,11 @@ INSERT INTO public.shift_block_assignments (assignment_id, block_id, user_id, st
   ('bc000003-0000-0000-0000-000000001202', 'bc000002-0000-0000-0000-000000001200', NULL, 'vacant', 'never_assigned'),
   -- quad 12:30 — 1 vacant seat.
   ('bc000003-0000-0000-0000-000000001230', 'bc000002-0000-0000-0000-000000001230', NULL, 'vacant', 'never_assigned'),
-  -- house-05 13:00 vacant.
+  -- harrison 13:00 vacant.
   ('bc000003-0000-0000-0000-000000001300', 'bc000002-0000-0000-0000-000000001300', NULL, 'vacant', 'never_assigned'),
   -- harnwell 14:00 vacant.
   ('bc000003-0000-0000-0000-000000001400', 'bc000002-0000-0000-0000-000000001400', NULL, 'vacant', 'never_assigned'),
-  -- house-05 15:00 vacant.
+  -- harrison 15:00 vacant.
   ('bc000003-0000-0000-0000-000000001500', 'bc000002-0000-0000-0000-000000001500', NULL, 'vacant', 'never_assigned');
 
 -- Cap worker F: 78 filler quad blocks (39h) on Wed/Thu of the break week, all scheduled.

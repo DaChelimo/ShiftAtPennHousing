@@ -43,7 +43,7 @@
 
 BEGIN;
 
-SELECT plan(26);
+SELECT plan(28);
 
 -- ============================================================
 -- 0. Fixture
@@ -63,7 +63,9 @@ VALUES
   ('e0000506-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 'p05-inact@test.local'),
   ('e0000506-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000000',
-   'authenticated', 'authenticated', 'p05-harn2@test.local')
+   'authenticated', 'authenticated', 'p05-harn2@test.local'),
+  ('e0000506-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000000',
+   'authenticated', 'authenticated', 'p05-cov@test.local')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active)
@@ -75,13 +77,16 @@ VALUES
   ('e0000506-0000-0000-0000-000000000003', 'W Inactive', 'p05-inact@test.local',
    'harnwell', false),
   ('e0000506-0000-0000-0000-000000000004', 'W Harn 2', 'p05-harn2@test.local',
+   'harnwell', true),
+  ('e0000506-0000-0000-0000-000000000005', 'W Cov', 'p05-cov@test.local',
    'harnwell', true);
 
 INSERT INTO public.user_roles (user_id, role, scope_house_id) VALUES
   ('e0000506-0000-0000-0000-000000000001', 'sw', NULL),
   ('e0000506-0000-0000-0000-000000000002', 'sw', NULL),
   ('e0000506-0000-0000-0000-000000000003', 'sw', NULL),
-  ('e0000506-0000-0000-0000-000000000004', 'sw', NULL);
+  ('e0000506-0000-0000-0000-000000000004', 'sw', NULL),
+  ('e0000506-0000-0000-0000-000000000005', 'sw', NULL);
 
 -- Anchor for relative timing: hour-aligned NY timestamp 30 days from now().
 -- The 30-day forward offset keeps every fixture block in the future relative
@@ -144,6 +149,33 @@ VALUES
    'f0000506-0000-0000-0000-000000000005', NULL, 'vacant', 'temporary_drop'),
   ('a0000506-0000-0000-0000-000000000006',
    'f0000506-0000-0000-0000-000000000006', NULL, 'vacant', 'temporary_drop');
+
+-- Coverage-conditional fixture (BEH §5.4/§5.5): two double-staffed Harnwell
+-- blocks within T-2h, each with one vacant seat AND one scheduled sibling
+-- (W_harn) — the desk is still covered.
+--   D_covered (+1h)  : claimable within T-2h because a real worker remains on.
+--   D_locked  (+1h30): same, but one-way coverage-locked → unpickable.
+INSERT INTO public.shift_blocks
+  (block_id, house_id, block_start_at, required_headcount)
+VALUES
+  ('f0000506-0000-0000-0000-0000000000d1', 'harnwell',
+   (current_setting('test.phase05c.as_of')::timestamptz + interval '1 hour'), 2),
+  ('f0000506-0000-0000-0000-0000000000d2', 'harnwell',
+   (current_setting('test.phase05c.as_of')::timestamptz + interval '90 minutes'), 2);
+
+INSERT INTO public.shift_block_assignments
+  (assignment_id, block_id, user_id, status, vacancy_origin)
+VALUES
+  ('a0000506-0000-0000-0000-0000000000d1',  -- D_covered vacant seat
+   'f0000506-0000-0000-0000-0000000000d1', NULL, 'vacant', 'temporary_drop'),
+  ('a0000506-0000-0000-0000-0000000000e1',  -- D_covered sibling (scheduled, W_harn)
+   'f0000506-0000-0000-0000-0000000000d1',
+   'e0000506-0000-0000-0000-000000000001', 'scheduled', 'none'),
+  ('a0000506-0000-0000-0000-0000000000d2',  -- D_locked vacant seat
+   'f0000506-0000-0000-0000-0000000000d2', NULL, 'vacant', 'temporary_drop'),
+  ('a0000506-0000-0000-0000-0000000000e2',  -- D_locked sibling (scheduled, W_harn)
+   'f0000506-0000-0000-0000-0000000000d2',
+   'e0000506-0000-0000-0000-000000000001', 'scheduled', 'none');
 
 -- ============================================================
 -- 1. Function existence
@@ -587,6 +619,36 @@ SELECT lives_ok(
        'e0000506-0000-0000-0000-000000000001'::uuid,
        current_setting('test.phase05c.as_of')::timestamptz) $$,
   'a worker may reclaim a shift they themselves dropped (BEH §5.2)'
+);
+
+-- ============================================================
+-- 14. Coverage-conditional T-2h lock at claim time (BEH §5.4/§5.5)
+-- D_covered (+1h) is inside T-2h but double-staffed, so a fresh worker
+-- (W_cov) can still claim its vacant seat. D_locked (+1h30) is identical
+-- but one-way coverage-locked → the claim is rejected (the secured window
+-- never re-opens, even though a sibling is present).
+-- ============================================================
+
+SELECT lives_ok(
+  $$ SELECT public.claim_open_shift(
+       'a0000506-0000-0000-0000-0000000000d1'::uuid,
+       'e0000506-0000-0000-0000-000000000005'::uuid,
+       current_setting('test.phase05c.as_of')::timestamptz) $$,
+  'claim within T-2h on a STILL-STAFFED desk succeeds (coverage-conditional, §5.4)'
+);
+
+SELECT public.lock_block_coverage(
+  'f0000506-0000-0000-0000-0000000000d2'::uuid,
+  (current_setting('test.phase05c.as_of')::timestamptz));
+
+SELECT throws_ok(
+  $$ SELECT public.claim_open_shift(
+       'a0000506-0000-0000-0000-0000000000d2'::uuid,
+       'e0000506-0000-0000-0000-000000000005'::uuid,
+       current_setting('test.phase05c.as_of')::timestamptz) $$,
+  NULL,
+  'past_t2h_cutoff',
+  'claim on a coverage-locked block is rejected even while a sibling worker is present (one-way §5.5)'
 );
 
 SELECT finish();

@@ -49,7 +49,7 @@ VALUES
   ('e0000509-0000-0000-0000-000000000003', 'BC No Sub', 'p07bc-nosub@test.local',
    'harnwell', true, false),
   ('e0000509-0000-0000-0000-000000000004', 'BC Other House',
-   'p07bc-otherhouse@test.local', 'house-03', true, true);
+   'p07bc-otherhouse@test.local', 'lower-quad', true, true);
 
 SELECT set_config(
   'test.phase07bc.anchor',

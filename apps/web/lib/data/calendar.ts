@@ -23,8 +23,12 @@ import { selectByBlockIdChunks } from './blockChunks';
 // ===========================================================================
 
 const NY = 'America/New_York';
-const DAY_START_MIN = 8 * 60; // 08:00
-export const BLOCKS_PER_DAY = 32; // 08:00 → 24:00 in 30-min blocks
+// Fallback grid origin when a week has no blocks yet (e.g. an unpublished future
+// week) — matches the regular-season 08:00 open. Once real blocks exist, the grid
+// origin is DERIVED from the earliest block actually seen that week (see
+// getHouseCalendar), so an earlier-opening house/season (e.g. summer Harnwell at
+// 05:30) is never clipped. Do not reintroduce a hardcoded 08:00 assumption.
+const DEFAULT_DAY_START_MIN = 8 * 60; // 08:00
 
 // The calendar's visual state for a card — maps onto the shift-state palette.
 export type CalState =
@@ -58,6 +62,15 @@ export type CalShift = {
   dateKey: string; // the card's NY date (YYYY-MM-DD)
 };
 
+// A contiguous block-index range within a day that shares one required_headcount
+// (straight from shift_blocks, never inferred/hardcoded per-house). The grid
+// renders exactly `lanes` seat columns for this range, so a day that's genuinely
+// single-staffed 05:30–12:00 and double-staffed 12:00–24:00 collapses to one
+// column for the first range instead of showing a permanently-blank second lane.
+// A day with uniform headcount all day (the common case) is just one segment
+// spanning the whole day — identical to the old fixed-lane rendering.
+export type LaneSegment = { startBlock: number; endBlock: number; lanes: number };
+
 export type CalendarDay = {
   index: number;
   label: string; // Mon, Tue …
@@ -69,6 +82,7 @@ export type CalendarDay = {
   // closed day shows a "Closed" cell instead of the shift grid — no shifts, no
   // open-shifts feed.
   closed: boolean;
+  laneSegments: LaneSegment[];
 };
 
 // Same-house roster for the inline-override worker picker (S1). Filtered to this
@@ -92,6 +106,10 @@ export type CalendarModel = {
   isFuture: boolean;
   days: CalendarDay[];
   lanes: number;
+  // Fewest seats staffed at any block this week (== lanes when headcount never
+  // varies). Lets the toolbar show "1-2 staff per block" instead of a flat number
+  // when the desk genuinely collapses/expands over the week.
+  minLanes: number;
   shifts: CalShift[];
   hasBlocks: boolean;
   assignableWorkers: AssignableWorker[];
@@ -99,6 +117,12 @@ export type CalendarModel = {
   // candidate's headroom against it; `enforcement` is 'hard' during breaks.
   softCapHours: number;
   capEnforcement: 'soft' | 'hard';
+  // Grid geometry for this week, DERIVED from the earliest block actually seen
+  // (not hardcoded) — block index 0 = dayStartMin. A house/season opening earlier
+  // than 08:00 (e.g. summer Harnwell at 05:30) widens the grid instead of losing
+  // its early blocks. blocksPerDay always runs through to 24:00.
+  dayStartMin: number;
+  blocksPerDay: number;
 };
 
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -141,8 +165,9 @@ export function mondayOf(date: string): string {
   return at.toISOString().slice(0, 10);
 }
 
-// Today's date in NY ('YYYY-MM-DD'), via the provided clock (defaults to now).
-export function nyToday(now: Date = new Date()): string {
+// Today's date in NY ('YYYY-MM-DD'), via the provided clock. Always pass simNow()
+// from a page/action — a default here would silently ignore the sim-time offset.
+export function nyToday(now: Date): string {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: NY,
     year: 'numeric',
@@ -156,10 +181,7 @@ export function nyToday(now: Date = new Date()): string {
 // manager landing here outside the term (e.g. today is the Sun before the term
 // starts) lands on the first scheduled week instead of a blank grid. Returns the
 // current week unchanged when the house has no blocks at all.
-export async function defaultCalendarWeek(
-  houseId: string,
-  now: Date = new Date(),
-): Promise<string> {
+export async function defaultCalendarWeek(houseId: string, now: Date): Promise<string> {
   const supabase = createServiceClient();
   const thisMonday = mondayOf(nyToday(now));
 
@@ -186,6 +208,32 @@ export async function defaultCalendarWeek(
   if (thisMonday < firstMonday) return firstMonday;
   if (thisMonday > lastMonday) return lastMonday;
   return thisMonday;
+}
+
+// headcounts[i] is the real required_headcount for block i, or 0 where no
+// shift_blocks row was seen (an unpublished gap, or hours the house isn't
+// operating that day). A 0 carries forward the last known headcount so a data
+// gap doesn't fabricate a spurious segment boundary; `fallback` seeds the very
+// first block if it's unknown.
+export function computeLaneSegments(headcounts: number[], fallback: number): LaneSegment[] {
+  if (headcounts.length === 0) return [];
+  const segs: LaneSegment[] = [];
+  let start = 0;
+  let cur = headcounts[0]! > 0 ? headcounts[0]! : fallback;
+  for (let i = 1; i <= headcounts.length; i++) {
+    if (i === headcounts.length) {
+      segs.push({ startBlock: start, endBlock: i, lanes: cur });
+      break;
+    }
+    const raw = headcounts[i]!;
+    const v = raw > 0 ? raw : cur;
+    if (v !== cur) {
+      segs.push({ startBlock: start, endBlock: i, lanes: cur });
+      start = i;
+      cur = v;
+    }
+  }
+  return segs;
 }
 
 function dayLabelParts(dateKey: string): { date: string } {
@@ -409,7 +457,7 @@ export function buildShifts(
 export async function getHouseCalendar(
   houseId: string,
   weekStartDate: string,
-  now: Date = new Date(),
+  now: Date,
 ): Promise<CalendarModel> {
   const supabase = createServiceClient();
   const weekEnd = addDays(weekStartDate, 7);
@@ -437,6 +485,7 @@ export async function getHouseCalendar(
     dateKey,
     isToday: dateKey === today,
     closed: closedFlags[i] ?? false,
+    laneSegments: [{ startBlock: 0, endBlock: (24 * 60 - DEFAULT_DAY_START_MIN) / 30, lanes: 1 }],
   }));
 
   const base: CalendarModel = {
@@ -448,11 +497,14 @@ export async function getHouseCalendar(
     isFuture: weekStartDate > thisWeekMon,
     days,
     lanes: 1,
+    minLanes: 1,
     shifts: [],
     hasBlocks: false,
     assignableWorkers: [],
     softCapHours: 20,
     capEnforcement: 'soft',
+    dayStartMin: DEFAULT_DAY_START_MIN,
+    blocksPerDay: (24 * 60 - DEFAULT_DAY_START_MIN) / 30,
   };
 
   // House name.
@@ -537,16 +589,38 @@ export async function getHouseCalendar(
   });
   if (weekBlocks.length === 0) return base;
 
+  // Grid origin = the earliest block actually seen this week, floored to a block
+  // boundary and never LATER than the 08:00 default (so a normal 08:00 house's
+  // grid is unchanged). This is what makes an earlier-opening house/season (e.g.
+  // 05:30 summer Harnwell) render its full span instead of losing blocks before
+  // the old hardcoded 08:00 origin.
+  let dayStartMin = DEFAULT_DAY_START_MIN;
+  for (const b of weekBlocks) {
+    const m = Math.floor(nyMinutes(b.block_start_at) / 30) * 30;
+    if (m < dayStartMin) dayStartMin = m;
+  }
+  const blocksPerDay = (24 * 60 - dayStartMin) / 30;
+  base.dayStartMin = dayStartMin;
+  base.blocksPerDay = blocksPerDay;
+
   const blockMeta = new Map<string, { dayIndex: number; blockIndex: number; startAtIso: string }>();
+  const headcountByDay = new Map<number, number[]>(); // dayIndex -> required_headcount per block (0 = unseen)
   let maxHeadcount = 1;
+  let minHeadcount = Infinity;
   for (const b of weekBlocks) {
     const dateKey = nyDate(b.block_start_at);
     const dayIndex = days.findIndex((d) => d.dateKey === dateKey);
-    const blockIndex = Math.round((nyMinutes(b.block_start_at) - DAY_START_MIN) / 30);
-    if (dayIndex < 0 || blockIndex < 0 || blockIndex >= BLOCKS_PER_DAY) continue;
+    const blockIndex = Math.round((nyMinutes(b.block_start_at) - dayStartMin) / 30);
+    if (dayIndex < 0 || blockIndex < 0 || blockIndex >= blocksPerDay) continue;
     blockMeta.set(b.block_id, { dayIndex, blockIndex, startAtIso: b.block_start_at });
     maxHeadcount = Math.max(maxHeadcount, b.required_headcount);
+    minHeadcount = Math.min(minHeadcount, b.required_headcount);
+    const arr =
+      headcountByDay.get(dayIndex) ??
+      headcountByDay.set(dayIndex, new Array(blocksPerDay).fill(0)).get(dayIndex)!;
+    arr[blockIndex] = b.required_headcount;
   }
+  if (!Number.isFinite(minHeadcount)) minHeadcount = maxHeadcount;
   const blockIds = [...blockMeta.keys()];
 
   // Assignments + escalation steps for these blocks. Chunk the block_id filter —
@@ -623,5 +697,11 @@ export async function getHouseCalendar(
   });
 
   const lanes = Math.max(maxHeadcount, ...shifts.map((s) => s.lane + 1), 1);
-  return { ...base, lanes, shifts, hasBlocks: true };
+  const finalDays: CalendarDay[] = days.map((d) => ({
+    ...d,
+    laneSegments: d.closed
+      ? [{ startBlock: 0, endBlock: blocksPerDay, lanes: 1 }]
+      : computeLaneSegments(headcountByDay.get(d.index) ?? new Array(blocksPerDay).fill(0), lanes),
+  }));
+  return { ...base, days: finalDays, lanes, minLanes: minHeadcount, shifts, hasBlocks: true };
 }

@@ -125,7 +125,7 @@ describe('12 HMOD pin vs transfer', () => {
 
   it('12a unset terminal: nothing resolves → claimed, no recipient, no notification, no crash', async () => {
     await inTx(async (db) => {
-      const blk = await anyVacant(db, 'house-13', DATE); // house-13 has no HM
+      const blk = await anyVacant(db, 'rodin', DATE); // rodin has no HM
       const pNow = '2026-03-04 10:00:00-05';
       await db.query(
         `DELETE FROM system_config WHERE config_key = 'project_administrator_user_id'`,
@@ -134,7 +134,7 @@ describe('12 HMOD pin vs transfer', () => {
       const r = (
         await db.query(HMOD_STEP, [
           blk.blockId,
-          'house-13',
+          'rodin',
           blk.blockStartAt,
           pNow,
           'escalation_chain',
@@ -154,16 +154,16 @@ describe('12 HMOD pin vs transfer', () => {
 
   it('transfer: a non-Harnwell gap the lookup can cover floats a worker in from another house', async () => {
     await inTx(async (db) => {
-      const { gap } = await manufactureFloatGap(db, { dest: 'house-12', date: DATE });
-      const plan = await planFloat(db, 'house-12', gap);
+      const { gap } = await manufactureFloatGap(db, { dest: 'radian', date: DATE });
+      const plan = await planFloat(db, 'radian', gap);
 
       expect(plan.result.assignments.length).toBeGreaterThan(0);
       const a = plan.result.assignments[0];
       const { rows } = await db.query(`SELECT home_house_id FROM users WHERE user_id = $1`, [
         a.workerId,
       ]);
-      expect(rows[0].home_house_id).toBe('quad'); // transfers in from Quad, not house-12
-      expect(rows[0].home_house_id).not.toBe('house-12');
+      expect(rows[0].home_house_id).toBe('quad'); // transfers in from Quad, not radian
+      expect(rows[0].home_house_id).not.toBe('radian');
     });
   });
 });

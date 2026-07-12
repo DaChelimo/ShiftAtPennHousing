@@ -63,7 +63,7 @@ BEGIN;
 SELECT plan(55);
 
 -- ============================================================
--- 0. Fixtures: house-05 people (a float recipient, a leaving HM, a replacement
+-- 0. Fixtures: harrison people (a float recipient, a leaving HM, a replacement
 --    BM, two student workers), three float_assignments in distinct states, an
 --    hm_leave row, and a controlled "now" on a clean EST instant.
 --
@@ -83,18 +83,18 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active)
 VALUES
-  ('0d000001-0000-0000-0000-000000000001', 'Recipient W',  'p12-recipient@test.local', 'house-05', true),
-  ('0d000001-0000-0000-0000-000000000002', 'Leaving HM',   'p12-hm@test.local',        'house-05', true),
+  ('0d000001-0000-0000-0000-000000000001', 'Recipient W',  'p12-recipient@test.local', 'harrison', true),
+  ('0d000001-0000-0000-0000-000000000002', 'Leaving HM',   'p12-hm@test.local',        'harrison', true),
   -- single-token name so the mailto substring match is URL-encoding-proof.
-  ('0d000001-0000-0000-0000-000000000003', 'ReplBmgr',     'p12-repl@test.local',      'house-05', true),
-  ('0d000001-0000-0000-0000-000000000004', 'SW One',       'p12-sw1@test.local',       'house-05', true),
-  ('0d000001-0000-0000-0000-000000000005', 'SW Two',       'p12-sw2@test.local',       'house-05', true);
+  ('0d000001-0000-0000-0000-000000000003', 'ReplBmgr',     'p12-repl@test.local',      'harrison', true),
+  ('0d000001-0000-0000-0000-000000000004', 'SW One',       'p12-sw1@test.local',       'harrison', true),
+  ('0d000001-0000-0000-0000-000000000005', 'SW Two',       'p12-sw2@test.local',       'harrison', true);
 
 -- Roles: HM going on leave, BM replacement (→ "Building Manager" label), two SWs.
 INSERT INTO public.user_roles (user_id, role, scope_house_id)
 VALUES
-  ('0d000001-0000-0000-0000-000000000002', 'hm', 'house-05'),
-  ('0d000001-0000-0000-0000-000000000003', 'bm', 'house-05'),
+  ('0d000001-0000-0000-0000-000000000002', 'hm', 'harrison'),
+  ('0d000001-0000-0000-0000-000000000003', 'bm', 'harrison'),
   ('0d000001-0000-0000-0000-000000000004', 'sw', NULL),
   ('0d000001-0000-0000-0000-000000000005', 'sw', NULL);
 
@@ -102,7 +102,7 @@ VALUES
 -- float_assignments validates each array element exists in shift_block_assignments
 -- (an INSERT/UPDATE trigger, not a per-element FK — AGENTS phase-06 note).
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
-VALUES ('0d000006-0000-0000-0000-000000000001', 'house-05', '2026-02-10 20:00:00-05'::timestamptz, 1);
+VALUES ('0d000006-0000-0000-0000-000000000001', 'harrison', '2026-02-10 20:00:00-05'::timestamptz, 1);
 
 INSERT INTO public.shift_block_assignments (assignment_id, block_id, user_id, status, vacancy_origin)
 VALUES

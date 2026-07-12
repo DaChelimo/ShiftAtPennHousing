@@ -16,7 +16,7 @@ SELECT plan(4);
 DELETE FROM public.system_config WHERE config_key = 'project_administrator_user_id';
 
 -- A weekend (Saturday) moment forces the HMOD branch; with NO hmod_rotor row and
--- NO HM for house-03, both resolve to NULL -> the project-admin fallback applies.
+-- NO HM for lower-quad, both resolve to NULL -> the project-admin fallback applies.
 SELECT set_config('test.adt.mon', date_trunc('week', DATE '2031-09-15')::text, false);
 SELECT set_config('test.adt.now',
   (((current_setting('test.adt.mon')::date)::timestamp + interval '5 days' + interval '3 hours')
@@ -26,15 +26,15 @@ SELECT set_config('test.adt.bstart',
     AT TIME ZONE 'America/New_York')::text, false);
 
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount) VALUES
-  ('f0000ad7-0000-0000-0000-000000000001','house-03', current_setting('test.adt.bstart')::timestamptz, 1),
-  ('f0000ad7-0000-0000-0000-000000000002','house-03', current_setting('test.adt.bstart')::timestamptz + interval '30 minutes', 1);
+  ('f0000ad7-0000-0000-0000-000000000001','lower-quad', current_setting('test.adt.bstart')::timestamptz, 1),
+  ('f0000ad7-0000-0000-0000-000000000002','lower-quad', current_setting('test.adt.bstart')::timestamptz + interval '30 minutes', 1);
 
 -- Case A: terminal UNSET -> no recipient (event dropped + RAISE WARNING).
 DO $$
 DECLARE r jsonb;
 BEGIN
   r := public.process_hmod_notify_allied_step(
-    'f0000ad7-0000-0000-0000-000000000001'::uuid, 'house-03',
+    'f0000ad7-0000-0000-0000-000000000001'::uuid, 'lower-quad',
     current_setting('test.adt.bstart')::timestamptz,
     current_setting('test.adt.now')::timestamptz, 'verify_unset');
   PERFORM set_config('test.adt.unset_recipient', COALESCE(r->>'recipient_user_id','NULL'), true);
@@ -62,7 +62,7 @@ DO $$
 DECLARE r jsonb;
 BEGIN
   r := public.process_hmod_notify_allied_step(
-    'f0000ad7-0000-0000-0000-000000000002'::uuid, 'house-03',
+    'f0000ad7-0000-0000-0000-000000000002'::uuid, 'lower-quad',
     current_setting('test.adt.bstart')::timestamptz + interval '30 minutes',
     current_setting('test.adt.now')::timestamptz, 'verify_set');
   PERFORM set_config('test.adt.set_target', COALESCE(r->>'target','NULL'), true);

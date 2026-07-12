@@ -18,9 +18,9 @@ BEGIN;
 SELECT plan(12);
 
 -- ============================================================
--- 0. Fixtures: a harnwell worker (the floater), an SM initiator at house-03, and
+-- 0. Fixtures: a harnwell worker (the floater), an SM initiator at lower-quad, and
 --    future blocks (anchor +30d, hour-truncated NY-local, outside seed calendar).
---    Direction harnwell -> house-03 is the only one the harnwell-training trigger
+--    Direction harnwell -> lower-quad is the only one the harnwell-training trigger
 --    permits for a harnwell worker (see phase-08 suite).
 -- ============================================================
 
@@ -35,10 +35,10 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active)
 VALUES
   ('e1200001-0000-0000-0000-000000000001', 'FT Worker',    'p12ft-worker@test.local',    'harnwell', true),
-  ('e1200001-0000-0000-0000-000000000006', 'SM Initiator', 'p12ft-initiator@test.local', 'house-03', true);
+  ('e1200001-0000-0000-0000-000000000006', 'SM Initiator', 'p12ft-initiator@test.local', 'lower-quad', true);
 
 INSERT INTO public.user_roles (user_id, role, scope_house_id)
-VALUES ('e1200001-0000-0000-0000-000000000006', 'sm', 'house-03')
+VALUES ('e1200001-0000-0000-0000-000000000006', 'sm', 'lower-quad')
 ON CONFLICT DO NOTHING;
 
 -- Anchor 30 days out — every reminder offset (6h..5m before the T-10m deadline)
@@ -56,11 +56,11 @@ SELECT set_config(
   false
 );
 
--- Destination block (house-03, vacant assignment) + source block (harnwell,
+-- Destination block (lower-quad, vacant assignment) + source block (harnwell,
 -- worker scheduled). Both 30 days out.
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
 VALUES
-  ('f1200001-0000-0000-0000-0000000000d1', 'house-03', current_setting('test.p12ft.anchor')::timestamptz, 1),
+  ('f1200001-0000-0000-0000-0000000000d1', 'lower-quad', current_setting('test.p12ft.anchor')::timestamptz, 1),
   ('f1200001-0000-0000-0000-000000000051', 'harnwell', current_setting('test.p12ft.anchor')::timestamptz, 3);
 
 INSERT INTO public.shift_block_assignments
@@ -82,13 +82,13 @@ SELECT has_function('public', 'snapshot_float_ack_reminders',
   ARRAY['uuid', 'uuid[]', 'text', 'uuid', 'timestamptz'],
   'snapshot_float_ack_reminders(worker, dest_ids, house, float, now) exists');
 
--- Default config (no ack_cadence_config row for house-03 → COALESCE enabled=true,
+-- Default config (no ack_cadence_config row for lower-quad → COALESCE enabled=true,
 -- offsets default): all five offsets, long lead.
 SELECT is(
   public.snapshot_float_ack_reminders(
     'e1200001-0000-0000-0000-000000000001',
     ARRAY['a1200001-0000-0000-0000-0000000000d1']::uuid[],
-    'house-03',
+    'lower-quad',
     '11110001-0000-0000-0000-000000000001',
     now()),
   5, 'default config (no row) snapshots all five reminders (mandatory 3 + 6h + 2h)');
@@ -103,15 +103,15 @@ SELECT is(
         current_setting('test.p12ft.deadline')::timestamptz - interval '5 minutes')),
   3, 'the mandatory 1h/30m/5m reminders land at deadline − offset');
 
--- ack_cadence_config for house-03 with the 6h reminder DISABLED → 6h suppressed.
+-- ack_cadence_config for lower-quad with the 6h reminder DISABLED → 6h suppressed.
 INSERT INTO public.ack_cadence_config (house_id, reminder_6h_enabled, reminder_2h_enabled)
-VALUES ('house-03', false, true);
+VALUES ('lower-quad', false, true);
 
 SELECT is(
   public.snapshot_float_ack_reminders(
     'e1200001-0000-0000-0000-000000000001',
     ARRAY['a1200001-0000-0000-0000-0000000000d1']::uuid[],
-    'house-03',
+    'lower-quad',
     '11110001-0000-0000-0000-000000000002',
     now()),
   4, 'disabling the 6h reminder (enabled=false) drops it → four reminders');
@@ -127,13 +127,13 @@ SELECT is(
 UPDATE public.ack_cadence_config
 SET reminder_6h_enabled = true, reminder_2h_enabled = true,
     reminder_6h_offset = NULL, reminder_2h_offset = NULL
-WHERE house_id = 'house-03';
+WHERE house_id = 'lower-quad';
 
 SELECT is(
   public.snapshot_float_ack_reminders(
     'e1200001-0000-0000-0000-000000000001',
     ARRAY['a1200001-0000-0000-0000-0000000000d1']::uuid[],
-    'house-03',
+    'lower-quad',
     '11110001-0000-0000-0000-000000000003',
     now()),
   5, 'a NULL offset with enabled=true means the system default (-6h/-2h), NOT suppressed (ARCH §2.8)');
@@ -147,13 +147,13 @@ SELECT is(
 -- Both configurable reminders disabled → only the mandatory three.
 UPDATE public.ack_cadence_config
 SET reminder_6h_enabled = false, reminder_2h_enabled = false
-WHERE house_id = 'house-03';
+WHERE house_id = 'lower-quad';
 
 SELECT is(
   public.snapshot_float_ack_reminders(
     'e1200001-0000-0000-0000-000000000001',
     ARRAY['a1200001-0000-0000-0000-0000000000d1']::uuid[],
-    'house-03',
+    'lower-quad',
     '11110001-0000-0000-0000-000000000004',
     now()),
   3, 'disabling both configurable reminders leaves only the mandatory 1h/30m/5m');
@@ -162,20 +162,20 @@ SELECT is(
 -- offsets strictly under 45m (30m, 5m). Reset to default config first.
 UPDATE public.ack_cadence_config
 SET reminder_6h_enabled = true, reminder_2h_enabled = true
-WHERE house_id = 'house-03';
+WHERE house_id = 'lower-quad';
 
 SELECT is(
   public.snapshot_float_ack_reminders(
     'e1200001-0000-0000-0000-000000000001',
     ARRAY['a1200001-0000-0000-0000-0000000000d1']::uuid[],
-    'house-03',
+    'lower-quad',
     '11110001-0000-0000-0000-000000000005',
     current_setting('test.p12ft.deadline')::timestamptz - interval '45 minutes'),
   2, 'a short-lead float (45m before deadline) skips past 6h/2h/1h → only 30m/5m remain');
 
 -- ============================================================
 -- B. force_trigger_float — the integration: a force-triggered float now
---    snapshots the cadence (the audit gap). The house-03 config is back to
+--    snapshots the cadence (the audit gap). The lower-quad config is back to
 --    default (both enabled) → all five reminders.
 -- ============================================================
 
@@ -186,7 +186,7 @@ SELECT is(
      'harnwell',                                       -- source house
      ARRAY['a1200001-0000-0000-0000-000000000051']::uuid[],  -- source assignment
      ARRAY['a1200001-0000-0000-0000-0000000000d1']::uuid[],  -- destination assignment
-     'house-03',                                       -- destination house
+     'lower-quad',                                       -- destination house
      now()
    ) ->> 'assigned')::boolean,
   true, 'force_trigger_float assigns the float');

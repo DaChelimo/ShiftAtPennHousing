@@ -73,10 +73,10 @@ BEGIN;
 SELECT plan(48);
 
 -- ============================================================
--- 0. Fixtures: house-05 workers, four break periods (Thanksgiving / spring break
+-- 0. Fixtures: harrison workers, four break periods (Thanksgiving / spring break
 --    / spring fling / winter break), the operating calendar, and the break blocks.
 --
---    Houses (harnwell, house-05) come from seed.sql. The break profiles
+--    Houses (harnwell, harrison) come from seed.sql. The break profiles
 --    (short_break / winter_break, with the -14d/-3d/-1d claim offsets) are seeded;
 --    re-asserted here ON CONFLICT DO NOTHING so the suite is self-contained.
 --
@@ -99,9 +99,9 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active)
 VALUES
-  ('0c000001-0000-0000-0000-000000000001', 'WorkerA (house-05)', 'p11-workerA@test.local', 'house-05', true),
-  ('0c000001-0000-0000-0000-000000000002', 'WorkerB (house-05)', 'p11-workerB@test.local', 'house-05', true),
-  ('0c000001-0000-0000-0000-000000000003', 'WorkerC (house-05)', 'p11-workerC@test.local', 'house-05', true);
+  ('0c000001-0000-0000-0000-000000000001', 'WorkerA (harrison)', 'p11-workerA@test.local', 'harrison', true),
+  ('0c000001-0000-0000-0000-000000000002', 'WorkerB (harrison)', 'p11-workerB@test.local', 'harrison', true),
+  ('0c000001-0000-0000-0000-000000000003', 'WorkerC (harrison)', 'p11-workerC@test.local', 'harrison', true);
 
 -- Break profiles (self-contained; no-op if seeded). claim_phase offsets are the
 -- offset DURATIONS; break_periods.start_date is the anchor (ARCH §2.9).
@@ -151,24 +151,24 @@ VALUES
   ('2026-12-21', 'winter_break')          -- wb_harn's date (Harnwell winter)
 ON CONFLICT (date) DO UPDATE SET profile_name = EXCLUDED.profile_name;
 
--- Break blocks. tg* = house-05 Thanksgiving; reg1 = house-05 regular; wb_harn =
+-- Break blocks. tg* = harrison Thanksgiving; reg1 = harrison regular; wb_harn =
 -- Harnwell winter. All 18:00/19:00 NY-local.
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
 VALUES
   -- tg1: scheduled (by workerA) → cleared at T-14d, then re-claimed (FCFS).
-  ('0c000002-0000-0000-0000-000000000011', 'house-05', ('2026-11-25 18:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
+  ('0c000002-0000-0000-0000-000000000011', 'harrison', ('2026-11-25 18:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
   -- tg2: scheduled (by workerB) → cleared at T-14d (clearing count = 2).
-  ('0c000002-0000-0000-0000-000000000012', 'house-05', ('2026-11-26 18:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
+  ('0c000002-0000-0000-0000-000000000012', 'harrison', ('2026-11-26 18:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
   -- tg3: vacant claim-pool seat → pool/feed phase visibility.
-  ('0c000002-0000-0000-0000-000000000013', 'house-05', ('2026-11-27 18:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
+  ('0c000002-0000-0000-0000-000000000013', 'harrison', ('2026-11-27 18:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
   -- tg_last: vacant seat on the break's LAST day → anchored-to-start close.
-  ('0c000002-0000-0000-0000-000000000014', 'house-05', ('2026-11-29 18:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
+  ('0c000002-0000-0000-0000-000000000014', 'harrison', ('2026-11-29 18:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
   -- tgDropWin: claimed-during-window then dropped → returns to calendar pool.
-  ('0c000002-0000-0000-0000-000000000015', 'house-05', ('2026-11-28 18:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
+  ('0c000002-0000-0000-0000-000000000015', 'harrison', ('2026-11-28 18:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
   -- tgDropFeed: claimed-during-window, dropped AFTER close → enters the feed.
-  ('0c000002-0000-0000-0000-000000000016', 'house-05', ('2026-11-27 19:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
+  ('0c000002-0000-0000-0000-000000000016', 'harrison', ('2026-11-27 19:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
   -- reg1: regular (non-break) vacant shift → always in the open-shifts feed.
-  ('0c000002-0000-0000-0000-000000000020', 'house-05', ('2026-11-20 18:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
+  ('0c000002-0000-0000-0000-000000000020', 'harrison', ('2026-11-20 18:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
   -- wb_harn: a Harnwell winter-break seat (training-gated, closed-house control).
   ('0c000002-0000-0000-0000-000000000030', 'harnwell', ('2026-12-21 18:00'::timestamp AT TIME ZONE 'America/New_York'), 1);
 
@@ -308,7 +308,7 @@ SELECT is(
 );
 
 SELECT is(
-  public.open_break_claim_calendar('0c000004-0000-0000-0000-0000000000a1', 'house-05'),
+  public.open_break_claim_calendar('0c000004-0000-0000-0000-0000000000a1', 'harrison'),
   2,
   'clearing: open_break_claim_calendar reports 2 existing assignments cleared (tg1, tg2)'
 );
@@ -362,19 +362,19 @@ SELECT is(
 -- ============================================================
 
 SELECT is(
-  (SELECT count(*)::integer FROM public.break_claim_calendar_pool('house-05', current_setting('test.p11.window_now')::timestamptz)
+  (SELECT count(*)::integer FROM public.break_claim_calendar_pool('harrison', current_setting('test.p11.window_now')::timestamptz)
    WHERE block_id = '0c000002-0000-0000-0000-000000000013'),
   1,
   'pool: during the window the vacant break shift tg3 is in the calendar claim pool (§4.4)'
 );
 SELECT is(
-  (SELECT count(*)::integer FROM public.weekly_open_shifts_feed('house-05', current_setting('test.p11.window_now')::timestamptz)
+  (SELECT count(*)::integer FROM public.weekly_open_shifts_feed('harrison', current_setting('test.p11.window_now')::timestamptz)
    WHERE block_id = '0c000002-0000-0000-0000-000000000013'),
   0,
   'feed: during the window tg3 does NOT appear in the open-shifts feed (§4.4 — avoid clutter)'
 );
 SELECT is(
-  (SELECT count(*)::integer FROM public.weekly_open_shifts_feed('house-05', current_setting('test.p11.window_now')::timestamptz)
+  (SELECT count(*)::integer FROM public.weekly_open_shifts_feed('harrison', current_setting('test.p11.window_now')::timestamptz)
    WHERE block_id = '0c000002-0000-0000-0000-000000000020'),
   1,
   'feed: a regular (non-break) vacant shift is always in the open-shifts feed'
@@ -410,13 +410,13 @@ SELECT throws_ok(
 
 -- At/after T-1d: tg3 leaves the calendar pool and enters the open-shifts feed.
 SELECT is(
-  (SELECT count(*)::integer FROM public.break_claim_calendar_pool('house-05', current_setting('test.p11.closed_now')::timestamptz)
+  (SELECT count(*)::integer FROM public.break_claim_calendar_pool('harrison', current_setting('test.p11.closed_now')::timestamptz)
    WHERE block_id = '0c000002-0000-0000-0000-000000000013'),
   0,
   'pool: at/after T-1d the calendar pool is closed — tg3 is no longer in it'
 );
 SELECT is(
-  (SELECT count(*)::integer FROM public.weekly_open_shifts_feed('house-05', current_setting('test.p11.closed_now')::timestamptz)
+  (SELECT count(*)::integer FROM public.weekly_open_shifts_feed('harrison', current_setting('test.p11.closed_now')::timestamptz)
    WHERE block_id = '0c000002-0000-0000-0000-000000000013'),
   1,
   'feed: at/after T-1d the unclaimed tg3 enters the open-shifts feed (§4.4)'
@@ -451,13 +451,13 @@ SELECT set_config('test.p11.dropwin',
      '0c000001-0000-0000-0000-000000000003'::uuid, current_setting('test.p11.window_now')::timestamptz) LIMIT 1), false);
 
 SELECT is(
-  (SELECT count(*)::integer FROM public.break_claim_calendar_pool('house-05', current_setting('test.p11.window_now')::timestamptz)
+  (SELECT count(*)::integer FROM public.break_claim_calendar_pool('harrison', current_setting('test.p11.window_now')::timestamptz)
    WHERE block_id = '0c000002-0000-0000-0000-000000000015'),
   1,
   'drop-in-window: a dropped break shift returns to the CALENDAR claim pool (§4.4)'
 );
 SELECT is(
-  (SELECT count(*)::integer FROM public.weekly_open_shifts_feed('house-05', current_setting('test.p11.window_now')::timestamptz)
+  (SELECT count(*)::integer FROM public.weekly_open_shifts_feed('harrison', current_setting('test.p11.window_now')::timestamptz)
    WHERE block_id = '0c000002-0000-0000-0000-000000000015'),
   0,
   'drop-in-window: the dropped break shift does NOT go to the open-shifts feed (§4.4)'
@@ -469,13 +469,13 @@ SELECT set_config('test.p11.dropfeed',
      '0c000001-0000-0000-0000-000000000003'::uuid, current_setting('test.p11.closed_now')::timestamptz) LIMIT 1), false);
 
 SELECT is(
-  (SELECT count(*)::integer FROM public.break_claim_calendar_pool('house-05', current_setting('test.p11.closed_now')::timestamptz)
+  (SELECT count(*)::integer FROM public.break_claim_calendar_pool('harrison', current_setting('test.p11.closed_now')::timestamptz)
    WHERE block_id = '0c000002-0000-0000-0000-000000000016'),
   0,
   'drop-after-close: the calendar picker is closed — the dropped shift is NOT in the pool (§4.4)'
 );
 SELECT is(
-  (SELECT count(*)::integer FROM public.weekly_open_shifts_feed('house-05', current_setting('test.p11.closed_now')::timestamptz)
+  (SELECT count(*)::integer FROM public.weekly_open_shifts_feed('harrison', current_setting('test.p11.closed_now')::timestamptz)
    WHERE block_id = '0c000002-0000-0000-0000-000000000016'),
   1,
   'drop-after-close: a break shift dropped after T-1d enters the open-shifts feed (§4.4)'
@@ -488,9 +488,9 @@ SELECT is(
 -- ============================================================
 
 SELECT is(
-  (SELECT count(*)::integer FROM public.break_claim_calendar_pool('house-05', current_setting('test.p11.winter_now')::timestamptz)),
+  (SELECT count(*)::integer FROM public.break_claim_calendar_pool('harrison', current_setting('test.p11.winter_now')::timestamptz)),
   0,
-  'closed-house: house-05''s winter calendar pool is empty — closed houses have no break shifts (§3.4)'
+  'closed-house: harrison''s winter calendar pool is empty — closed houses have no break shifts (§3.4)'
 );
 SELECT is(
   (SELECT count(*)::integer FROM public.break_claim_calendar_pool('harnwell', current_setting('test.p11.winter_now')::timestamptz)
@@ -501,7 +501,7 @@ SELECT is(
 SELECT throws_ok(
   $$ SELECT public.claim_break_shift(
        '0c000003-0000-0000-0000-000000000030'::uuid,                 -- wb_harn (Harnwell)
-       '0c000001-0000-0000-0000-000000000001'::uuid,                 -- workerA (home house-05)
+       '0c000001-0000-0000-0000-000000000001'::uuid,                 -- workerA (home harrison)
        current_setting('test.p11.winter_now')::timestamptz) $$,
   'P0001', 'harnwell_training_required',
   'Harnwell training: a non-Harnwell worker is rejected at the calendar-claim write point (invariant #1)'

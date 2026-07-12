@@ -24,8 +24,8 @@ const CLAIM = `SELECT claim_open_shift($1::uuid, $2::uuid, $3::timestamptz) AS i
 describe('02 claim', () => {
   it('claims a vacant same-house shift: vacant → claimed, owner set', async () => {
     await inTx(async (db) => {
-      const seat = await vacantAt(db, 'house-06', '2026-03-04', '20:00');
-      const worker = await freeHomeWorker(db, 'house-06', seat.blockStartAt);
+      const seat = await vacantAt(db, 'hill', '2026-03-04', '20:00');
+      const worker = await freeHomeWorker(db, 'hill', seat.blockStartAt);
       const t = await anchors(db, seat.blockStartAt);
 
       const { rows } = await db.query(CLAIM, [seat.assignmentId, worker, t.dayBefore]);
@@ -42,19 +42,19 @@ describe('02 claim', () => {
 
   it('soft cap: claims past 20h still succeed (regular school year is soft)', async () => {
     await inTx(async (db) => {
-      const seat = await vacantAt(db, 'house-06', '2026-03-04', '20:00');
+      const seat = await vacantAt(db, 'hill', '2026-03-04', '20:00');
       const cap = await effectiveCap(db, seat.blockStartAt);
       expect(cap.hours_cap).toBe(20);
       expect(cap.cap_enforcement).toBe('soft');
 
-      const worker = WORKERS.find((w) => w.homeHouse === 'house-06')!.userId;
+      const worker = WORKERS.find((w) => w.homeHouse === 'hill')!.userId;
       const t = await anchors(db, seat.blockStartAt);
 
-      // Distinct-time vacant house-06 seats this worker doesn't already occupy.
+      // Distinct-time vacant hill seats this worker doesn't already occupy.
       const supply = await db.query(
         `SELECT a.assignment_id, b.block_start_at
            FROM shift_block_assignments a JOIN shift_blocks b ON b.block_id = a.block_id
-          WHERE a.status = 'vacant' AND b.house_id = 'house-06'
+          WHERE a.status = 'vacant' AND b.house_id = 'hill'
             AND (b.block_start_at AT TIME ZONE 'America/New_York')::date BETWEEN $1 AND $2
             AND b.block_start_at > $3::timestamptz + interval '2 hours'
             AND b.block_start_at NOT IN (
@@ -94,7 +94,7 @@ describe('02 claim', () => {
   it('5a: a non-Harnwell-home worker cannot claim a Harnwell seat', async () => {
     await inTx(async (db) => {
       const seat = await anyVacant(db, 'harnwell', '2026-03-04');
-      const intruder = WORKERS.find((w) => w.homeHouse === 'house-06')!.userId;
+      const intruder = WORKERS.find((w) => w.homeHouse === 'hill')!.userId;
       const t = await anchors(db, seat.blockStartAt);
 
       await expectRpcErrorTx(db, CLAIM, [seat.assignmentId, intruder, t.dayBefore], /cross_house/);

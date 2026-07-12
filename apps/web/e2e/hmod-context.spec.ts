@@ -230,21 +230,9 @@ test.describe('S6 — house-context switcher + cross-house gating', () => {
     await expect(name).not.toContainText(/quad/i);
   });
 
-  test('should default the on-duty HMOD coverage to "All houses" and narrow on ?house=', async ({
-    page,
-  }) => {
-    // D11d: the on-duty HMOD's coverage with no ?house= aggregates → "All houses";
-    // selecting one house (?house=quad) narrows the header to that house.
-    await login(page, HANA);
-
-    await goto(page, '/coverage');
-    const name = page.getByTestId('coverage-house-name');
-    await expect(name).toBeVisible();
-    await expect(name).toContainText(/all houses/i);
-
-    await goto(page, '/coverage?house=quad');
-    await expect(page.getByTestId('coverage-house-name')).toContainText(/quad/i);
-  });
+  // (Removed 2026-06-24: the on-duty-HMOD "All houses" coverage aggregate lived on the
+  // /coverage page, which was deleted with the Coverage Monitor. Cross-house calendar
+  // context is still covered by the calendar cases above/below.)
 
   test('should ignore ?house= for an off-duty manager (renders their own house)', async ({
     page,

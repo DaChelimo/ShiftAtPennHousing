@@ -12,8 +12,8 @@ BEGIN;
 SELECT plan(14);
 
 -- ============================================================
--- Fixture: at house-03 an RSM (Diana), an HM (Henry), a plain SW (Stu).
--- house-04 gets only an HM (Hilda) — its in-hours notification must fall back to
+-- Fixture: at lower-quad an RSM (Diana), an HM (Henry), a plain SW (Stu).
+-- gregory gets only an HM (Hilda) — its in-hours notification must fall back to
 -- the HMOD (proving the HM is never the in-hours recipient). An HMOD on the rotor
 -- for the anchor week makes that fallback resolvable.
 -- ============================================================
@@ -28,22 +28,22 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active)
 VALUES
-  ('a5000000-0000-0000-0000-000000000001', 'Diana RSM', 'rsm-diana@test.local', 'house-03', true),
-  ('a5000000-0000-0000-0000-000000000002', 'Henry HM',  'rsm-henry@test.local', 'house-03', true),
-  ('a5000000-0000-0000-0000-000000000003', 'Stu SW',    'rsm-stu@test.local',   'house-03', true),
-  ('a5000000-0000-0000-0000-000000000004', 'Hilda HM',  'rsm-hilda@test.local', 'house-04', true),
+  ('a5000000-0000-0000-0000-000000000001', 'Diana RSM', 'rsm-diana@test.local', 'lower-quad', true),
+  ('a5000000-0000-0000-0000-000000000002', 'Henry HM',  'rsm-henry@test.local', 'lower-quad', true),
+  ('a5000000-0000-0000-0000-000000000003', 'Stu SW',    'rsm-stu@test.local',   'lower-quad', true),
+  ('a5000000-0000-0000-0000-000000000004', 'Hilda HM',  'rsm-hilda@test.local', 'gregory', true),
   ('a5000000-0000-0000-0000-000000000005', 'Olga HMOD', 'rsm-hmod@test.local',  'harnwell', true);
 
--- The house-03 RSM and HM are the sole role holders for those slots in this txn.
-DELETE FROM public.user_roles WHERE role = 'rsm' AND scope_house_id IN ('house-03', 'house-04');
-DELETE FROM public.user_roles WHERE role = 'hm'  AND scope_house_id IN ('house-03', 'house-04');
+-- The lower-quad RSM and HM are the sole role holders for those slots in this txn.
+DELETE FROM public.user_roles WHERE role = 'rsm' AND scope_house_id IN ('lower-quad', 'gregory');
+DELETE FROM public.user_roles WHERE role = 'hm'  AND scope_house_id IN ('lower-quad', 'gregory');
 
 INSERT INTO public.user_roles (user_id, role, scope_house_id)
 VALUES
-  ('a5000000-0000-0000-0000-000000000001', 'rsm', 'house-03'),
-  ('a5000000-0000-0000-0000-000000000002', 'hm',  'house-03'),
+  ('a5000000-0000-0000-0000-000000000001', 'rsm', 'lower-quad'),
+  ('a5000000-0000-0000-0000-000000000002', 'hm',  'lower-quad'),
   ('a5000000-0000-0000-0000-000000000003', 'sw',  NULL),
-  ('a5000000-0000-0000-0000-000000000004', 'hm',  'house-04'),
+  ('a5000000-0000-0000-0000-000000000004', 'hm',  'gregory'),
   ('a5000000-0000-0000-0000-000000000005', 'hm',  'harnwell');
 
 -- Anchor a weekday inside HM hours (Wednesday 12:00 NY, 30 days out).
@@ -60,7 +60,7 @@ SELECT set_config(
   false
 );
 
--- HMOD on the rotor for the anchor's Friday-anchored duty week (for the house-04 fallback).
+-- HMOD on the rotor for the anchor's Friday-anchored duty week (for the gregory fallback).
 INSERT INTO public.hmod_rotor (week_start_date, hmod_user_id)
 VALUES (
   (
@@ -80,12 +80,15 @@ SELECT is(public.user_is_rsm('a5000000-0000-0000-0000-000000000001'), true,  'us
 SELECT is(public.user_is_rsm('a5000000-0000-0000-0000-000000000003'), false, 'user_is_rsm false for a plain SW');
 
 -- ============================================================
--- 3–6. Own-house admin power, but scope-matched (no cross-house write).
+-- 3–6. People-admin power stays SCOPE-MATCHED (own-house only), but as of the
+-- 2026-06-27 cross-house decision SCHEDULE-build power spans every house for the
+-- elevated tier (hm/bm/rsm). So user_has_house_admin_role (people/leave/cap) is
+-- still own-house, while user_can_build_schedule is now cross-house for an RSM.
 -- ============================================================
-SELECT is(public.user_has_house_admin_role('a5000000-0000-0000-0000-000000000001', 'house-03'), true,  'RSM is house admin of own house');
-SELECT is(public.user_has_house_admin_role('a5000000-0000-0000-0000-000000000001', 'quad'),     false, 'RSM is NOT house admin of another house');
-SELECT is(public.user_can_build_schedule('a5000000-0000-0000-0000-000000000001', 'house-03'),   true,  'RSM can build own house schedule');
-SELECT is(public.user_can_build_schedule('a5000000-0000-0000-0000-000000000001', 'quad'),       false, 'RSM cannot build another house schedule');
+SELECT is(public.user_has_house_admin_role('a5000000-0000-0000-0000-000000000001', 'lower-quad'), true,  'RSM is people-admin of own house');
+SELECT is(public.user_has_house_admin_role('a5000000-0000-0000-0000-000000000001', 'quad'),     false, 'RSM is NOT people-admin of another house (people admin stays own-house)');
+SELECT is(public.user_can_build_schedule('a5000000-0000-0000-0000-000000000001', 'lower-quad'),   true,  'RSM can build own house schedule');
+SELECT is(public.user_can_build_schedule('a5000000-0000-0000-0000-000000000001', 'quad'),       true,  'RSM can now build ANOTHER house schedule (cross-house schedule edit)');
 
 -- ============================================================
 -- 7. Scope is required for an rsm role row (like sm/hm/bm).
@@ -101,7 +104,7 @@ SELECT throws_ok(
 -- 8–9. resolve_rsm_for_house: the acting RSM, walking the leave chain.
 -- ============================================================
 SELECT is(
-  public.resolve_rsm_for_house('house-03', current_setting('test.rsm.anchor')::timestamptz),
+  public.resolve_rsm_for_house('lower-quad', current_setting('test.rsm.anchor')::timestamptz),
   'a5000000-0000-0000-0000-000000000001'::uuid,
   'resolve_rsm_for_house returns the house RSM'
 );
@@ -116,13 +119,13 @@ VALUES (
   'active'
 );
 SELECT is(
-  public.resolve_rsm_for_house('house-03', current_setting('test.rsm.anchor')::timestamptz),
+  public.resolve_rsm_for_house('lower-quad', current_setting('test.rsm.anchor')::timestamptz),
   'a5000000-0000-0000-0000-000000000002'::uuid,
   'resolve_rsm_for_house follows the RSM leave chain to the HM replacement'
 );
 
 -- ============================================================
--- 10–11. In-hours Allied notification → RSM (house-03), HMOD fallback (house-04, no RSM).
+-- 10–11. In-hours Allied notification → RSM (lower-quad), HMOD fallback (gregory, no RSM).
 -- Use a fresh anchor moment for the block start so the leave row above (which
 -- moved the acting RSM to the HM) does not affect target='rsm' — re-clear it.
 -- ============================================================
@@ -130,12 +133,12 @@ DELETE FROM public.hm_leave WHERE user_id = 'a5000000-0000-0000-0000-00000000000
 
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
 VALUES
-  ('a5b10000-0000-0000-0000-000000000003', 'house-03', current_setting('test.rsm.anchor')::timestamptz, 1),
-  ('a5b10000-0000-0000-0000-000000000004', 'house-04', current_setting('test.rsm.anchor')::timestamptz, 1);
+  ('a5b10000-0000-0000-0000-000000000003', 'lower-quad', current_setting('test.rsm.anchor')::timestamptz, 1),
+  ('a5b10000-0000-0000-0000-000000000004', 'gregory', current_setting('test.rsm.anchor')::timestamptz, 1);
 
 SELECT is(
   (public.process_hmod_notify_allied_step(
-     'a5b10000-0000-0000-0000-000000000003', 'house-03',
+     'a5b10000-0000-0000-0000-000000000003', 'lower-quad',
      current_setting('test.rsm.anchor')::timestamptz,
      current_setting('test.rsm.anchor')::timestamptz,
      'escalation_chain') ->> 'target'),
@@ -145,7 +148,7 @@ SELECT is(
 
 SELECT is(
   (public.process_hmod_notify_allied_step(
-     'a5b10000-0000-0000-0000-000000000004', 'house-04',
+     'a5b10000-0000-0000-0000-000000000004', 'gregory',
      current_setting('test.rsm.anchor')::timestamptz,
      current_setting('test.rsm.anchor')::timestamptz,
      'escalation_chain') ->> 'target'),

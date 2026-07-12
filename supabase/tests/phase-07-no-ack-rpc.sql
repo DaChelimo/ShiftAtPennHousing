@@ -23,7 +23,7 @@
 -- and passes p_now = block_start - 5 minutes for the in-lookahead
 -- branch, or p_now = block_start - 60 minutes for the outside-lookahead
 -- branch. Float direction: Harnwell home -> single-staff destination
--- (house-03), the only direction the harnwell-training trigger allows.
+-- (lower-quad), the only direction the harnwell-training trigger allows.
 
 BEGIN;
 
@@ -68,7 +68,7 @@ VALUES
   ('e0000507-0000-0000-0000-000000000005', 'Future Floater', 'p07-future@test.local',
    'harnwell', true),
   ('e0000507-0000-0000-0000-000000000006', 'SM Initiator', 'p07-sm-initiator@test.local',
-   'house-03', true),
+   'lower-quad', true),
   ('e0000507-0000-0000-0000-000000000007', 'Pre-Claimed Floater', 'p07-precl@test.local',
    'harnwell', true),
   ('e0000507-0000-0000-0000-000000000008', 'Gap Claimer', 'p07-gap-claimer@test.local',
@@ -102,31 +102,31 @@ INSERT INTO public.shift_blocks
 VALUES
   ('f0000507-0000-0000-0000-000000000001', 'harnwell',
    current_setting('test.phase07rpc.anchor')::timestamptz, 3),
-  ('f0000507-0000-0000-0000-000000000002', 'house-03',
+  ('f0000507-0000-0000-0000-000000000002', 'lower-quad',
    current_setting('test.phase07rpc.anchor')::timestamptz, 1),
   ('f0000507-0000-0000-0000-000000000003', 'harnwell',
    current_setting('test.phase07rpc.anchor')::timestamptz + interval '30 minutes', 3),
-  ('f0000507-0000-0000-0000-000000000004', 'house-03',
+  ('f0000507-0000-0000-0000-000000000004', 'lower-quad',
    current_setting('test.phase07rpc.anchor')::timestamptz + interval '30 minutes', 1),
   ('f0000507-0000-0000-0000-000000000005', 'harnwell',
    current_setting('test.phase07rpc.anchor')::timestamptz + interval '60 minutes', 3),
-  ('f0000507-0000-0000-0000-000000000006', 'house-03',
+  ('f0000507-0000-0000-0000-000000000006', 'lower-quad',
    current_setting('test.phase07rpc.anchor')::timestamptz + interval '60 minutes', 1),
   ('f0000507-0000-0000-0000-000000000007', 'harnwell',
    current_setting('test.phase07rpc.anchor')::timestamptz + interval '90 minutes', 3),
-  ('f0000507-0000-0000-0000-000000000008', 'house-03',
+  ('f0000507-0000-0000-0000-000000000008', 'lower-quad',
    current_setting('test.phase07rpc.anchor')::timestamptz + interval '90 minutes', 1),
   ('f0000507-0000-0000-0000-000000000009', 'harnwell',
    current_setting('test.phase07rpc.anchor')::timestamptz + interval '1440 minutes', 3),
-  ('f0000507-0000-0000-0000-00000000000a', 'house-03',
+  ('f0000507-0000-0000-0000-00000000000a', 'lower-quad',
    current_setting('test.phase07rpc.anchor')::timestamptz + interval '1440 minutes', 1),
   ('f0000507-0000-0000-0000-00000000000b', 'harnwell',
    current_setting('test.phase07rpc.anchor')::timestamptz + interval '120 minutes', 3),
-  ('f0000507-0000-0000-0000-00000000000c', 'house-03',
+  ('f0000507-0000-0000-0000-00000000000c', 'lower-quad',
    current_setting('test.phase07rpc.anchor')::timestamptz + interval '120 minutes', 1),
   ('f0000507-0000-0000-0000-00000000000d', 'harnwell',
    current_setting('test.phase07rpc.anchor')::timestamptz + interval '150 minutes', 3),
-  ('f0000507-0000-0000-0000-00000000000e', 'house-03',
+  ('f0000507-0000-0000-0000-00000000000e', 'lower-quad',
    current_setting('test.phase07rpc.anchor')::timestamptz + interval '150 minutes', 1);
 
 -- ============================================================
@@ -737,11 +737,11 @@ INSERT INTO public.shift_blocks
 VALUES
   ('f0000507-0000-0000-0000-000000000020', 'harnwell',
    current_setting('test.phase07rpc.anchor')::timestamptz + interval '180 minutes', 3),
-  ('f0000507-0000-0000-0000-000000000021', 'house-03',
+  ('f0000507-0000-0000-0000-000000000021', 'lower-quad',
    current_setting('test.phase07rpc.anchor')::timestamptz + interval '180 minutes', 1),
   ('f0000507-0000-0000-0000-000000000022', 'harnwell',
    current_setting('test.phase07rpc.anchor')::timestamptz + interval '210 minutes', 3),
-  ('f0000507-0000-0000-0000-000000000023', 'house-03',
+  ('f0000507-0000-0000-0000-000000000023', 'lower-quad',
    current_setting('test.phase07rpc.anchor')::timestamptz + interval '210 minutes', 1);
 
 INSERT INTO public.shift_block_assignments

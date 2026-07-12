@@ -13,7 +13,7 @@ import { SEED, login } from './helpers';
 //     integration (real pending_notification_deliveries backlog + push_tokens); the
 //     rest render explicit "Not configured" cards. House-admin OR project-admin.
 //
-// Seed: admin@pennhousing.test (SEED.projectAdmin, password test-Password-123) is
+// Seed: admin@upenn.edu (SEED.projectAdmin, password abc123) is
 // set as system_config.project_administrator_user_id; the seeded config rows include
 // no_ack_trigger_offset_minutes ('5'). hmQuad is a house admin (health-authorized,
 // config-unauthorized); smQuad is neither (health-unauthorized).

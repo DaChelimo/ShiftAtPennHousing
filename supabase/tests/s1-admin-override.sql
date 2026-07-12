@@ -57,53 +57,53 @@ SELECT plan(59);
 --    the same UTC offset; AGENTS invariant #6). All block local times are <= 19:30
 --    so each block's UTC-slice date equals its NY-local calendar date.
 --
---    Houses: house-05 (the override house), house-07 (cross-house target),
---    harnwell (training backstop). Workers all home house-05 unless noted.
+--    Houses: harrison (the override house), kings-court (cross-house target),
+--    harnwell (training backstop). Workers all home harrison unless noted.
 -- ============================================================
 
 INSERT INTO auth.users (id, instance_id, aud, role, email)
 VALUES
-  -- target SW (home house-05) — the worker assigned / removed
+  -- target SW (home harrison) — the worker assigned / removed
   ('51000001-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 's1-target@test.local'),
-  -- incumbent SW (home house-05) — reassigned away from
+  -- incumbent SW (home harrison) — reassigned away from
   ('51000001-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 's1-incumbent@test.local'),
-  -- SM of house-05 — the operator AND the sm_permanent_drop_alert recipient
+  -- SM of harrison — the operator AND the sm_permanent_drop_alert recipient
   ('51000001-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 's1-sm05@test.local'),
-  -- a cross-house worker (home house-07)
+  -- a cross-house worker (home kings-court)
   ('51000001-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 's1-xhouse@test.local'),
   -- a non-admin worker (sw) — an unauthorized operator
   ('51000001-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 's1-sw-operator@test.local'),
-  -- an SM of a DIFFERENT house (house-07) — admin, but not of house-05
+  -- an SM of a DIFFERENT house (kings-court) — admin, but not of harrison
   ('51000001-0000-0000-0000-000000000006', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 's1-sm07@test.local'),
-  -- a cap-loaded worker (home house-05) for the hard-cap fixture
+  -- a cap-loaded worker (home harrison) for the hard-cap fixture
   ('51000001-0000-0000-0000-000000000007', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 's1-capped@test.local')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active)
 VALUES
-  ('51000001-0000-0000-0000-000000000001', 'Target (house-05)',    's1-target@test.local',    'house-05', true),
-  ('51000001-0000-0000-0000-000000000002', 'Incumbent (house-05)', 's1-incumbent@test.local', 'house-05', true),
-  ('51000001-0000-0000-0000-000000000003', 'SM (house-05)',        's1-sm05@test.local',      'house-05', true),
-  ('51000001-0000-0000-0000-000000000004', 'XHouse (house-07)',    's1-xhouse@test.local',    'house-07', true),
-  ('51000001-0000-0000-0000-000000000005', 'SW operator (h05)',    's1-sw-operator@test.local','house-05', true),
-  ('51000001-0000-0000-0000-000000000006', 'SM (house-07)',        's1-sm07@test.local',      'house-07', true),
-  ('51000001-0000-0000-0000-000000000007', 'Capped (house-05)',    's1-capped@test.local',    'house-05', true);
+  ('51000001-0000-0000-0000-000000000001', 'Target (harrison)',    's1-target@test.local',    'harrison', true),
+  ('51000001-0000-0000-0000-000000000002', 'Incumbent (harrison)', 's1-incumbent@test.local', 'harrison', true),
+  ('51000001-0000-0000-0000-000000000003', 'SM (harrison)',        's1-sm05@test.local',      'harrison', true),
+  ('51000001-0000-0000-0000-000000000004', 'XHouse (kings-court)',    's1-xhouse@test.local',    'kings-court', true),
+  ('51000001-0000-0000-0000-000000000005', 'SW operator (h05)',    's1-sw-operator@test.local','harrison', true),
+  ('51000001-0000-0000-0000-000000000006', 'SM (kings-court)',        's1-sm07@test.local',      'kings-court', true),
+  ('51000001-0000-0000-0000-000000000007', 'Capped (harrison)',    's1-capped@test.local',    'harrison', true);
 
 INSERT INTO public.user_roles (user_id, role, scope_house_id)
 VALUES
   ('51000001-0000-0000-0000-000000000001', 'sw', NULL),
   ('51000001-0000-0000-0000-000000000002', 'sw', NULL),
-  ('51000001-0000-0000-0000-000000000003', 'sm', 'house-05'),   -- operator (authorized for house-05)
+  ('51000001-0000-0000-0000-000000000003', 'sm', 'harrison'),   -- operator (authorized for harrison)
   ('51000001-0000-0000-0000-000000000004', 'sw', NULL),
   ('51000001-0000-0000-0000-000000000005', 'sw', NULL),         -- unauthorized operator
-  ('51000001-0000-0000-0000-000000000006', 'sm', 'house-07'),   -- admin of the WRONG house
+  ('51000001-0000-0000-0000-000000000006', 'sm', 'kings-court'),   -- admin of the WRONG house
   ('51000001-0000-0000-0000-000000000007', 'sw', NULL)
 ON CONFLICT DO NOTHING;
 
@@ -159,46 +159,46 @@ VALUES (
 );
 
 -- ---- Blocks ----
--- The recurring slot: house-05, Thursdays, 19:00, occurrences at anchor + {0,7,
+-- The recurring slot: harrison, Thursdays, 19:00, occurrences at anchor + {0,7,
 -- 14,35,42} days (now / +1w / +2w / +5w / +6w). The clicked occurrence is the
 -- anchor's own block (b_now) for the permanent-scope derivation.
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
 VALUES
-  ('51000002-0000-0000-0000-0000000019a0', 'house-05', current_setting('test.s1.anchor')::timestamptz,                      1), -- b_now (clicked; == anchor)
-  ('51000002-0000-0000-0000-0000000019a1', 'house-05', current_setting('test.s1.anchor')::timestamptz + interval '7 days', 1), -- +1w
-  ('51000002-0000-0000-0000-0000000019a2', 'house-05', current_setting('test.s1.anchor')::timestamptz + interval '14 days',1), -- +2w
-  ('51000002-0000-0000-0000-0000000019a3', 'house-05', current_setting('test.s1.anchor')::timestamptz + interval '35 days',1), -- +5w (in-semester)
-  ('51000002-0000-0000-0000-0000000019a4', 'house-05', current_setting('test.s1.anchor')::timestamptz + interval '42 days',1), -- +6w (next semester)
-  -- A FUTURE vacant single seat for the this-week assign happy path (house-05 18:00, +1w).
-  ('51000002-0000-0000-0000-000000001801', 'house-05',
+  ('51000002-0000-0000-0000-0000000019a0', 'harrison', current_setting('test.s1.anchor')::timestamptz,                      1), -- b_now (clicked; == anchor)
+  ('51000002-0000-0000-0000-0000000019a1', 'harrison', current_setting('test.s1.anchor')::timestamptz + interval '7 days', 1), -- +1w
+  ('51000002-0000-0000-0000-0000000019a2', 'harrison', current_setting('test.s1.anchor')::timestamptz + interval '14 days',1), -- +2w
+  ('51000002-0000-0000-0000-0000000019a3', 'harrison', current_setting('test.s1.anchor')::timestamptz + interval '35 days',1), -- +5w (in-semester)
+  ('51000002-0000-0000-0000-0000000019a4', 'harrison', current_setting('test.s1.anchor')::timestamptz + interval '42 days',1), -- +6w (next semester)
+  -- A FUTURE vacant single seat for the this-week assign happy path (harrison 18:00, +1w).
+  ('51000002-0000-0000-0000-000000001801', 'harrison',
    (current_setting('test.s1.anchor')::timestamptz + interval '7 days') - interval '1 hour', 1),
-  -- A FUTURE occupied (incumbent) single seat for the this-week reassign path (house-05 17:00, +1w).
-  ('51000002-0000-0000-0000-000000001701', 'house-05',
+  -- A FUTURE occupied (incumbent) single seat for the this-week reassign path (harrison 17:00, +1w).
+  ('51000002-0000-0000-0000-000000001701', 'harrison',
    (current_setting('test.s1.anchor')::timestamptz + interval '7 days') - interval '2 hours', 1),
-  -- A FUTURE 2-seat block (house-05 17:30, +1w): seat 1 occupied by the incumbent,
+  -- A FUTURE 2-seat block (harrison 17:30, +1w): seat 1 occupied by the incumbent,
   -- seat 2 VACANT. The phantom-seat fixture — a Replace targeting the incumbent must
   -- overwrite seat 1, NOT fill the sibling vacant seat (the old reassign bug).
-  ('51000002-0000-0000-0000-000000001751', 'house-05',
+  ('51000002-0000-0000-0000-000000001751', 'harrison',
    (current_setting('test.s1.anchor')::timestamptz + interval '7 days') - interval '90 minutes', 2),
-  -- A PAST block for block_started (house-05 18:00, -1w).
-  ('51000002-0000-0000-0000-000000001802', 'house-05',
+  -- A PAST block for block_started (harrison 18:00, -1w).
+  ('51000002-0000-0000-0000-000000001802', 'harrison',
    (current_setting('test.s1.anchor')::timestamptz - interval '7 days') - interval '1 hour', 1),
-  -- A FUTURE float-committed seat (house-05 16:00, +1w) — pending_float_in.
-  ('51000002-0000-0000-0000-000000001601', 'house-05',
+  -- A FUTURE float-committed seat (harrison 16:00, +1w) — pending_float_in.
+  ('51000002-0000-0000-0000-000000001601', 'harrison',
    (current_setting('test.s1.anchor')::timestamptz + interval '7 days') - interval '3 hours', 1),
   -- A FUTURE Harnwell vacant seat for the training backstop (harnwell 15:00, +1w).
   ('51000002-0000-0000-0000-000000001501', 'harnwell',
    (current_setting('test.s1.anchor')::timestamptz + interval '7 days') - interval '4 hours', 1),
-  -- A FUTURE house-07 vacant seat for the cross-house rejection (house-07 18:00, +1w).
-  ('51000002-0000-0000-0000-000000007801', 'house-07',
+  -- A FUTURE kings-court vacant seat for the cross-house rejection (kings-court 18:00, +1w).
+  ('51000002-0000-0000-0000-000000007801', 'kings-court',
    (current_setting('test.s1.anchor')::timestamptz + interval '7 days') - interval '1 hour', 1),
-  -- A FUTURE vacant seat for the soft-confirm gating (house-05 14:00, +1w).
-  ('51000002-0000-0000-0000-000000001401', 'house-05',
+  -- A FUTURE vacant seat for the soft-confirm gating (harrison 14:00, +1w).
+  ('51000002-0000-0000-0000-000000001401', 'harrison',
    (current_setting('test.s1.anchor')::timestamptz + interval '7 days') - interval '5 hours', 1),
-  -- A FUTURE vacant seat for the hard-cap rejection (house-05, anchor-week Friday
+  -- A FUTURE vacant seat for the hard-cap rejection (harrison, anchor-week Friday
   -- 16:00 — the SAME NY week as the 40h load + the 40-hard override, and future vs
   -- the anchor, so the projection (80 existing + 1) * 0.5 = 40.5 > 40 trips the hard cap).
-  ('51000002-0000-0000-0000-000000001301', 'house-05',
+  ('51000002-0000-0000-0000-000000001301', 'harrison',
    current_setting('test.s1.anchor')::timestamptz + interval '21 hours', 1);
 
 -- ---- Assignment rows for the seats that need an existing row ----
@@ -225,10 +225,10 @@ VALUES
   ('51000003-0000-0000-0000-000000001802', '51000002-0000-0000-0000-000000001802', NULL, 'vacant', 'never_assigned', false, NULL),
   -- float-committed seat: pending_float_in (a floater inbound), occupant = the incumbent.
   ('51000003-0000-0000-0000-000000001601', '51000002-0000-0000-0000-000000001601',
-   '51000001-0000-0000-0000-000000000002', 'pending_float_in', 'none', false, 'house-07'),
+   '51000001-0000-0000-0000-000000000002', 'pending_float_in', 'none', false, 'kings-court'),
   -- Harnwell vacant seat.
   ('51000003-0000-0000-0000-000000001501', '51000002-0000-0000-0000-000000001501', NULL, 'vacant', 'never_assigned', false, NULL),
-  -- house-07 vacant seat (cross-house).
+  -- kings-court vacant seat (cross-house).
   ('51000003-0000-0000-0000-000000007801', '51000002-0000-0000-0000-000000007801', NULL, 'vacant', 'never_assigned', false, NULL),
   -- soft-confirm vacant seat.
   ('51000003-0000-0000-0000-000000001401', '51000002-0000-0000-0000-000000001401', NULL, 'vacant', 'never_assigned', false, NULL),
@@ -238,7 +238,7 @@ VALUES
 -- ---- Cap fixture ----
 -- Pin the anchor week to 40-HARD via weekly_cap_overrides, and load the capped
 -- worker with exactly 40h (80 half-hour blocks) of scheduled time in that week,
--- in a private house (house-09) so it does not collide with the slot blocks.
+-- in a private house (mayer) so it does not collide with the slot blocks.
 -- Assigning ONE more 30-min seat (b13:00 above, in the same week) → 40.5h > 40.
 INSERT INTO public.weekly_cap_overrides (week_start_date, hours_cap, cap_enforcement, modified_by)
 VALUES (current_setting('test.s1.anchor_monday')::date, 40, 'hard',
@@ -253,7 +253,7 @@ ON CONFLICT (week_start_date) DO UPDATE
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
 SELECT
   ('51000002-0000-0000-0000-' || lpad((900000 + n)::text, 12, '0'))::uuid,
-  'house-09',
+  'mayer',
   ((current_setting('test.s1.anchor_monday')::date + (n / 16))::timestamp
     + make_interval(mins => 480 + (n % 16) * 30)) AT TIME ZONE 'America/New_York',
   1
@@ -289,7 +289,7 @@ SELECT has_function(
 
 SELECT lives_ok(
   $$ SELECT public.admin_assign_worker(
-       '51000001-0000-0000-0000-000000000003'::uuid,                 -- operator (SM of house-05)
+       '51000001-0000-0000-0000-000000000003'::uuid,                 -- operator (SM of harrison)
        ARRAY['51000002-0000-0000-0000-000000001801']::uuid[],        -- the vacant 18:00 seat
        '51000001-0000-0000-0000-000000000001'::uuid,                 -- target worker
        'this_week', false,
@@ -351,7 +351,7 @@ SELECT is(
 -- the vacant seat and would leave the incumbent in place beside a new worker.
 SELECT lives_ok(
   $$ SELECT public.admin_assign_worker(
-       '51000001-0000-0000-0000-000000000003'::uuid,                 -- operator (SM of house-05)
+       '51000001-0000-0000-0000-000000000003'::uuid,                 -- operator (SM of harrison)
        ARRAY['51000002-0000-0000-0000-000000001751']::uuid[],        -- the 2-seat block
        '51000001-0000-0000-0000-000000000001'::uuid,                 -- new worker (target)
        'this_week', false,
@@ -379,7 +379,7 @@ SELECT is(
 
 -- ============================================================
 -- C. ASSIGN — permanent (§4b). Clicked occurrence = b_now; act on every future
---    in-semester occurrence of the (house-05, Thu, 19:00) slot.
+--    in-semester occurrence of the (harrison, Thu, 19:00) slot.
 -- ============================================================
 
 SELECT set_config(
@@ -428,7 +428,7 @@ SELECT is(
 );
 -- After the permanent assign over permanent_drop openings, the slot leaves the feed.
 SELECT is(
-  (SELECT count(*)::integer FROM public.permanent_openings_feed('house-05', current_setting('test.s1.anchor')::timestamptz)
+  (SELECT count(*)::integer FROM public.permanent_openings_feed('harrison', current_setting('test.s1.anchor')::timestamptz)
    WHERE block_start_time = '19:00'),
   0,
   'permanent assign: the 19:00 slot no longer appears in permanent_openings_feed'
@@ -444,7 +444,7 @@ SELECT throws_ok(
   $$ SELECT public.admin_assign_worker(
        '51000001-0000-0000-0000-000000000003'::uuid,
        ARRAY['51000002-0000-0000-0000-000000001501']::uuid[],        -- the Harnwell seat
-       '51000001-0000-0000-0000-000000000001'::uuid,                 -- a house-05 worker
+       '51000001-0000-0000-0000-000000000001'::uuid,                 -- a harrison worker
        'this_week', true,                                            -- even with override
        current_setting('test.s1.anchor')::timestamptz) $$,
   'P0001', NULL,
@@ -539,9 +539,9 @@ SELECT is(
 -- D6. Cross-house target.
 SELECT throws_ok(
   $$ SELECT public.admin_assign_worker(
-       '51000001-0000-0000-0000-000000000006'::uuid,                 -- operator: SM of house-07 (authorized for the block's house, so authz passes and the cross-house check is what fires)
-       ARRAY['51000002-0000-0000-0000-000000007801']::uuid[],        -- a house-07 seat
-       '51000001-0000-0000-0000-000000000001'::uuid,                 -- a house-05 worker (cross-house target)
+       '51000001-0000-0000-0000-000000000006'::uuid,                 -- operator: SM of kings-court (authorized for the block's house, so authz passes and the cross-house check is what fires)
+       ARRAY['51000002-0000-0000-0000-000000007801']::uuid[],        -- a kings-court seat
+       '51000001-0000-0000-0000-000000000001'::uuid,                 -- a harrison worker (cross-house target)
        'this_week', false,
        current_setting('test.s1.anchor')::timestamptz) $$,
   'P0001', 'cross_house_not_supported',
@@ -550,7 +550,7 @@ SELECT throws_ok(
 SELECT is(
   (SELECT status::text FROM public.shift_block_assignments WHERE assignment_id = '51000003-0000-0000-0000-000000007801'),
   'vacant',
-  'assign: the house-07 seat is untouched after the cross-house rejection'
+  'assign: the kings-court seat is untouched after the cross-house rejection'
 );
 
 -- ============================================================
@@ -575,11 +575,11 @@ VALUES (current_setting('test.s1.soft_monday')::date, 20, 'soft',
 ON CONFLICT (week_start_date) DO UPDATE
   SET hours_cap = EXCLUDED.hours_cap, cap_enforcement = EXCLUDED.cap_enforcement;
 
--- 40 half-hour blocks (= 20h) for the TARGET worker in the soft-cap week, house-10.
+-- 40 half-hour blocks (= 20h) for the TARGET worker in the soft-cap week, du-bois.
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
 SELECT
   ('51000002-0000-0000-0000-' || lpad((950000 + n)::text, 12, '0'))::uuid,
-  'house-10',
+  'du-bois',
   ((current_setting('test.s1.soft_monday')::date + (n / 16))::timestamp
     + make_interval(mins => 480 + (n % 16) * 30)) AT TIME ZONE 'America/New_York',
   1
@@ -593,10 +593,10 @@ SELECT
   'scheduled', 'none', false, NULL
 FROM generate_series(0, 39) AS n;
 
--- A vacant house-05 seat in the soft-cap week (anchor + 14d, 18:00).
+-- A vacant harrison seat in the soft-cap week (anchor + 14d, 18:00).
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
 VALUES (
-  '51000002-0000-0000-0000-000000148001', 'house-05',
+  '51000002-0000-0000-0000-000000148001', 'harrison',
   (current_setting('test.s1.anchor')::timestamptz + interval '14 days') - interval '1 hour', 1
 );
 INSERT INTO public.shift_block_assignments
@@ -649,10 +649,10 @@ SELECT is(
 -- F. AUTHZ (§4b). D7 — sm/hm/bm AND admin house == block house.
 -- ============================================================
 
--- A fresh vacant house-05 seat (anchor + 14d, 17:00) for the authz attempts.
+-- A fresh vacant harrison seat (anchor + 14d, 17:00) for the authz attempts.
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
 VALUES (
-  '51000002-0000-0000-0000-000000147001', 'house-05',
+  '51000002-0000-0000-0000-000000147001', 'harrison',
   (current_setting('test.s1.anchor')::timestamptz + interval '14 days') - interval '2 hours', 1
 );
 INSERT INTO public.shift_block_assignments
@@ -674,13 +674,13 @@ SELECT throws_ok(
 );
 SELECT throws_ok(
   $$ SELECT public.admin_assign_worker(
-       '51000001-0000-0000-0000-000000000006'::uuid,                 -- an SM of house-07
-       ARRAY['51000002-0000-0000-0000-000000147001']::uuid[],        -- a house-05 block
+       '51000001-0000-0000-0000-000000000006'::uuid,                 -- an SM of kings-court
+       ARRAY['51000002-0000-0000-0000-000000147001']::uuid[],        -- a harrison block
        '51000001-0000-0000-0000-000000000001'::uuid,
        'this_week', false,
        current_setting('test.s1.anchor')::timestamptz) $$,
   'P0001', 'not_authorized',
-  'authz: an sm/hm/bm whose admin house ≠ the block house is rejected (not_authorized)'
+  'authz: an SM whose admin house ≠ the block house is rejected (SM stays own-house; the elevated hm/bm/rsm tier is cross-house per 20260627000002)'
 );
 SELECT is(
   (SELECT status::text FROM public.shift_block_assignments WHERE assignment_id = '51000003-0000-0000-0000-000000147001'),
@@ -692,10 +692,10 @@ SELECT is(
 -- G. REMOVE — this_week (§4b). D6 — vacate only, no block_step_status row.
 -- ============================================================
 
--- A future occupied house-05 seat (anchor + 21d, 18:00) for the this-week remove.
+-- A future occupied harrison seat (anchor + 21d, 18:00) for the this-week remove.
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
 VALUES (
-  '51000002-0000-0000-0000-000000218001', 'house-05',
+  '51000002-0000-0000-0000-000000218001', 'harrison',
   (current_setting('test.s1.anchor')::timestamptz + interval '21 days') - interval '1 hour', 1
 );
 INSERT INTO public.shift_block_assignments
@@ -736,7 +736,7 @@ SELECT is(
 );
 
 -- ============================================================
--- H. REMOVE — permanent (§4b). The (house-05, Thu, 19:00) slot is now held by
+-- H. REMOVE — permanent (§4b). The (harrison, Thu, 19:00) slot is now held by
 --    the target worker on +1w/+2w/+5w (from section C). Permanently remove it.
 -- ============================================================
 
@@ -762,7 +762,7 @@ SELECT is(
   'permanent_drop',
   'permanent remove: the +5w occurrence is vacant+permanent_drop (re-enters the feed)'
 );
--- The SM of house-05 is notified (operator may be that SM — still a recipient).
+-- The SM of harrison is notified (operator may be that SM — still a recipient).
 SELECT is(
   (SELECT count(*)::integer FROM public.notifications
    WHERE recipient_user_id = '51000001-0000-0000-0000-000000000003'
@@ -779,18 +779,18 @@ SELECT is(
   'permanent remove: the removed worker receives an sw_permanent_removal_alert (operator ≠ worker, §8.4.2)'
 );
 SELECT is(
-  (SELECT count(*)::integer FROM public.permanent_openings_feed('house-05', current_setting('test.s1.anchor')::timestamptz)
+  (SELECT count(*)::integer FROM public.permanent_openings_feed('harrison', current_setting('test.s1.anchor')::timestamptz)
    WHERE block_start_time = '19:00'),
   1,
   'permanent remove: the 19:00 slot reappears in permanent_openings_feed'
 );
 
 -- Permanent remove SKIPS float-committed occurrences: seed a held +1w float-out on
--- a SEPARATE slot (house-05, Thu, 12:00) and confirm a permanent remove leaves it.
+-- a SEPARATE slot (harrison, Thu, 12:00) and confirm a permanent remove leaves it.
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
 VALUES
-  ('51000002-0000-0000-0000-0000000012a1', 'house-05', current_setting('test.s1.anchor')::timestamptz + interval '7 days'  - interval '7 hours', 1),
-  ('51000002-0000-0000-0000-0000000012a2', 'house-05', current_setting('test.s1.anchor')::timestamptz + interval '14 days' - interval '7 hours', 1);
+  ('51000002-0000-0000-0000-0000000012a1', 'harrison', current_setting('test.s1.anchor')::timestamptz + interval '7 days'  - interval '7 hours', 1),
+  ('51000002-0000-0000-0000-0000000012a2', 'harrison', current_setting('test.s1.anchor')::timestamptz + interval '14 days' - interval '7 hours', 1);
 INSERT INTO public.shift_block_assignments
   (assignment_id, block_id, user_id, status, vacancy_origin, is_float, source_house_id)
 VALUES

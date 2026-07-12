@@ -13,7 +13,7 @@ import { floatTimes, setupAutomatedFloat } from './float-lookup-bridge';
 import { expectAll, getAssignments, notificationsFor } from './helpers';
 import { PROJECT_ADMIN_ID } from './roster';
 
-const DEST = 'house-08';
+const DEST = 'lauder';
 const DATE = '2026-03-04';
 
 const NO_ACK = `SELECT process_no_ack_float($1::uuid, $2::timestamptz, 15) AS r`;
@@ -53,7 +53,7 @@ describe('09 no-ack float', () => {
       );
       expect(excl.rows.map((x) => x.reason)).toContain('no_acknowledgment');
 
-      // HMOD/Allied escalation: an hmod_urgent for the gap. house-08 has no HM and the rotor is
+      // HMOD/Allied escalation: an hmod_urgent for the gap. lauder has no HM and the rotor is
       // empty, so the guaranteed terminal (project administrator) receives it.
       const urgent = await notificationsFor(db, PROJECT_ADMIN_ID, 'hmod_urgent');
       const mine = urgent.find((n) => n.payload.house_id === DEST);

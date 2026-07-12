@@ -24,14 +24,14 @@ SELECT set_config('test.p07ad.anchor',
   ((date_trunc('hour', now() AT TIME ZONE 'America/New_York') + interval '30 days')
     AT TIME ZONE 'America/New_York')::text, false);
 
--- Blocks: destination (house-03) + source (harnwell) for ACK and for DECLINE.
+-- Blocks: destination (lower-quad) + source (harnwell) for ACK and for DECLINE.
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
 VALUES
-  ('f0000514-0000-0000-0000-0000000000d1', 'house-03',
+  ('f0000514-0000-0000-0000-0000000000d1', 'lower-quad',
    current_setting('test.p07ad.anchor')::timestamptz, 1),
   ('f0000514-0000-0000-0000-000000000051', 'harnwell',
    current_setting('test.p07ad.anchor')::timestamptz, 1),
-  ('f0000514-0000-0000-0000-0000000000d2', 'house-03',
+  ('f0000514-0000-0000-0000-0000000000d2', 'lower-quad',
    current_setting('test.p07ad.anchor')::timestamptz + interval '30 minutes', 1),
   ('f0000514-0000-0000-0000-000000000052', 'harnwell',
    current_setting('test.p07ad.anchor')::timestamptz + interval '30 minutes', 1);
@@ -135,7 +135,7 @@ SELECT is(
   (SELECT count(*)::integer FROM public.float_exclusions
     WHERE user_id = 'e0000514-0000-0000-0000-000000000001'
       AND reason = 'declined'
-      AND destination_house_id = 'house-03'),
+      AND destination_house_id = 'lower-quad'),
   1, 'a declined exclusion is recorded for the gap window');
 
 -- Re-declining an already-declined float is a no-op.

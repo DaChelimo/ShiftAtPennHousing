@@ -17,7 +17,7 @@ import {
   setupAutomatedFloat,
 } from './float-lookup-bridge';
 
-const DEST = 'house-06';
+const DEST = 'hill';
 const DATE = '2026-03-04';
 
 /** Sorted epoch-ms of the floater's ack_reminder scheduled_for instants for a given float. */

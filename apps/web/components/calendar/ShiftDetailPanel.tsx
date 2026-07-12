@@ -22,7 +22,14 @@ import {
   type EscalationStep,
 } from '../ui';
 
-import { blockLabel, blocksToHours, CAL_STATE_META, emptyCardName, spanLabel } from './format';
+import {
+  blockLabel,
+  blocksToHours,
+  CAL_STATE_META,
+  emptyCardName,
+  shiftOriginMinutes,
+  spanLabel,
+} from './format';
 
 function prettifyHouse(id: string): string {
   const m = /^house-(\d+)$/.exec(id);
@@ -101,7 +108,7 @@ export function ShiftDetailPanel({
           <div className="detail-row">
             <Icon name="clock" size={16} className="muted" />
             <span className="t-mono detail-time">
-              {spanLabel(shift.startBlock, shift.endBlock)}
+              {spanLabel(shift.startBlock, shift.endBlock, shiftOriginMinutes(shift))}
             </span>
             <span className="t-meta">· {blocksToHours(shift.startBlock, shift.endBlock)}h</span>
           </div>
@@ -242,12 +249,14 @@ function RangeSlider({
   endBlock,
   fromBlock,
   toBlock,
+  originMin,
   onChange,
 }: {
   startBlock: number;
   endBlock: number;
   fromBlock: number;
   toBlock: number;
+  originMin: number;
   onChange: (from: number, to: number) => void;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
@@ -311,7 +320,7 @@ function RangeSlider({
           aria-valuemin={startBlock}
           aria-valuemax={toBlock - 1}
           aria-valuenow={fromBlock}
-          aria-valuetext={blockLabel(fromBlock)}
+          aria-valuetext={blockLabel(fromBlock, originMin)}
           data-testid="override-range-from-thumb"
           onPointerDown={(e) => {
             e.preventDefault();
@@ -328,7 +337,7 @@ function RangeSlider({
           aria-valuemin={fromBlock + 1}
           aria-valuemax={endBlock}
           aria-valuenow={toBlock}
-          aria-valuetext={blockLabel(toBlock)}
+          aria-valuetext={blockLabel(toBlock, originMin)}
           data-testid="override-range-to-thumb"
           onPointerDown={(e) => {
             e.preventDefault();
@@ -363,6 +372,9 @@ function EditSection({
   const occupied = shift.userId !== null;
   const { startBlock, endBlock } = shift;
   const multiBlock = endBlock - startBlock > 1;
+  // Derived from the shift's own timestamp, not the grid's shared origin — the
+  // edit-range picker's times stay correct regardless of the grid's start hour.
+  const origin = shiftOriginMinutes(shift);
 
   // Sub-range [fromBlock, toBlock), defaulting to the whole shift. 30-min blocks.
   const [fromBlock, setFromBlock] = useState(startBlock);
@@ -488,11 +500,11 @@ function EditSection({
               >
                 {fromOptions.map((b) => (
                   <option key={b} value={b}>
-                    {blockLabel(b)}
+                    {blockLabel(b, origin)}
                   </option>
                 ))}
               </select>
-              <span className="range-dash">–</span>
+              <span className="range-dash">-</span>
               <select
                 data-testid="override-range-to"
                 className="input select"
@@ -505,7 +517,7 @@ function EditSection({
               >
                 {toOptions.map((b) => (
                   <option key={b} value={b}>
-                    {blockLabel(b)}
+                    {blockLabel(b, origin)}
                   </option>
                 ))}
               </select>
@@ -515,6 +527,7 @@ function EditSection({
               endBlock={endBlock}
               fromBlock={fromBlock}
               toBlock={toBlock}
+              originMin={origin}
               onChange={setRange}
             />
             <span className="t-helper" data-testid="override-range-help">

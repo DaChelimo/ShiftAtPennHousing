@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 
+import { Icon } from './Icon';
+
 export type Column<T> = {
   key: string;
   header: ReactNode;
@@ -11,11 +13,16 @@ export type Column<T> = {
 // Carbon data table convention. Presentational: the caller supplies columns +
 // rows and an optional row-click handler (rows become keyboard-activatable when
 // `onRowClick` is set). Sorting/filtering live in the screen, above this.
+//
+// `rowChevron` appends a trailing chevron cell to each row — a visible "opens on
+// click" affordance for clickable tables; it slides/brightens on row hover. Only
+// meaningful with `onRowClick`.
 export function DataTable<T>({
   columns,
   rows,
   getRowKey,
   onRowClick,
+  rowChevron = false,
   selectedKey,
   emptyText = 'No rows',
 }: {
@@ -23,9 +30,12 @@ export function DataTable<T>({
   rows: T[];
   getRowKey: (row: T) => string;
   onRowClick?: (row: T) => void;
+  rowChevron?: boolean;
   selectedKey?: string | null;
   emptyText?: ReactNode;
 }) {
+  const showChevron = rowChevron && onRowClick != null;
+  const colCount = columns.length + (showChevron ? 1 : 0);
   return (
     <div className="dtable-wrap">
       <table className="dtable">
@@ -36,12 +46,13 @@ export function DataTable<T>({
                 {c.header}
               </th>
             ))}
+            {showChevron && <th className="dtable-chevcol" aria-hidden="true" />}
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={columns.length}>
+              <td colSpan={colCount}>
                 <span className="t-helper">{emptyText}</span>
               </td>
             </tr>
@@ -73,6 +84,11 @@ export function DataTable<T>({
                       {c.render(row)}
                     </td>
                   ))}
+                  {showChevron && (
+                    <td className="dtable-chev">
+                      <Icon name="chevRight" size={16} />
+                    </td>
+                  )}
                 </tr>
               );
             })

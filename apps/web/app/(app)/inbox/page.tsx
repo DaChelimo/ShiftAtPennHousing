@@ -5,16 +5,12 @@ import { canBuildSchedule, getSessionUser } from '../../../lib/auth';
 import { getInboxData } from '../../../lib/data/inbox';
 import { simNow } from '../../../lib/time/simClock';
 
-// Action inbox / notifications (design screen 07). READ-only presentation over the
-// signed-in user's notifications (RLS-scoped); actions go through lib/actions/inbox.
-// Manager surface — gated to SM/HM/BM (workers use the mobile "Updates" tab). The
-// view is URL-driven (?show=resolved) so the resolved Allied alerts live behind a
-// shareable link, mirroring the calendar's ?week navigation.
-export default async function InboxPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ show?: string }>;
-}) {
+// Action inbox (design screen 07). READ-only presentation over the signed-in user's
+// notifications (RLS-scoped); actions go through lib/actions/inbox. Manager surface —
+// gated to SM/HM/BM (workers use the mobile "Updates" tab). Allied-coverage alerts
+// are surfaced soonest-window-first and archive themselves a day after their coverage
+// window passes (see lib/data/inbox + @shift/core alliedLifecycle).
+export default async function InboxPage() {
   const user = await getSessionUser();
   if (user === null) return null;
 
@@ -29,9 +25,6 @@ export default async function InboxPage({
     );
   }
 
-  const { show } = await searchParams;
-  const view = show === 'resolved' ? 'resolved' : 'default';
-
-  const data = await getInboxData(view, await simNow());
+  const data = await getInboxData(await simNow());
   return <ActionInbox data={data} />;
 }

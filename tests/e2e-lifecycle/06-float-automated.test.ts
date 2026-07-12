@@ -19,7 +19,7 @@ import {
 } from './float-lookup-bridge';
 import { anchors, expectAll, getAssignments, notificationsFor } from './helpers';
 
-const DEST = 'house-05';
+const DEST = 'harrison';
 const DATE = '2026-03-04';
 
 async function homeHouse(db: Client, userId: string): Promise<string> {

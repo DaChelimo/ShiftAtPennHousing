@@ -5,9 +5,10 @@ import { getSessionUser, isAdmin } from '../../../../lib/auth';
 import { getBreakAuthoringData } from '../../../../lib/data/breaks';
 import { simNow } from '../../../../lib/time/simClock';
 
-// Break authoring (BSpec §4.4). Project-administrator only: declare a break period
-// (pick an existing operating profile + dates), preview its consequences, and manage
-// existing breaks. SMs have no break authoring power.
+// Break authoring (BSpec §4.4). Project-administrator only: configure each house's break
+// coverage (open/closed, headcount, weekday/weekend hours, float), preview its
+// consequences via the compiler dry-run, and manage existing breaks. SMs have no break
+// authoring power.
 export default async function BreaksPage() {
   const user = await getSessionUser();
   if (user === null) return null; // layout redirected

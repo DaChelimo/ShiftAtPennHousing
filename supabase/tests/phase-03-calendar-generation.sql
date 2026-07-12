@@ -127,21 +127,21 @@ SELECT is(
 
 SELECT is(
   (SELECT count(*)::int FROM public.shift_blocks
-    WHERE house_id = 'house-03'
+    WHERE house_id = 'lower-quad'
       AND block_start_at >= '2026-02-02 00:00 America/New_York'::timestamptz
       AND block_start_at <  '2026-02-03 00:00 America/New_York'::timestamptz),
   32,
-  'regular weekday: single-staff house-03 has 32 shift_blocks rows'
+  'regular weekday: single-staff lower-quad has 32 shift_blocks rows'
 );
 
 SELECT is(
   (SELECT count(*)::int FROM public.shift_block_assignments a
     JOIN public.shift_blocks b USING (block_id)
-   WHERE b.house_id = 'house-03'
+   WHERE b.house_id = 'lower-quad'
      AND b.block_start_at >= '2026-02-02 00:00 America/New_York'::timestamptz
      AND b.block_start_at <  '2026-02-03 00:00 America/New_York'::timestamptz),
   32,
-  'regular weekday: single-staff house-03 has 32 assignment rows (32 × 1)'
+  'regular weekday: single-staff lower-quad has 32 assignment rows (32 × 1)'
 );
 
 -- All 13 houses are operational under regular_school_year, so 13 × 32 = 416 blocks.
@@ -336,11 +336,11 @@ SELECT is(
 SELECT is(
   (SELECT count(*)::int FROM public.shift_block_assignments a
     JOIN public.shift_blocks b USING (block_id)
-   WHERE b.house_id = 'house-03'
+   WHERE b.house_id = 'lower-quad'
      AND b.block_start_at >= '2026-02-07 00:00 America/New_York'::timestamptz
      AND b.block_start_at <  '2026-02-08 00:00 America/New_York'::timestamptz),
   32,
-  'regular weekend: single-staff house-03 has 32 assignment rows (32 × 1)'
+  'regular weekend: single-staff lower-quad has 32 assignment rows (32 × 1)'
 );
 
 -- ============================================================
@@ -433,9 +433,9 @@ SELECT is(
 
 SELECT is(
   (SELECT count(*)::int FROM public.shift_blocks
-    WHERE house_id IN ('quad','house-03','house-04','house-05','house-06',
-                       'house-07','house-08','house-09','house-10','house-11',
-                       'house-12','house-13')
+    WHERE house_id IN ('quad','lower-quad','gregory','harrison','hill',
+                       'kings-court','lauder','mayer','du-bois','gutmann',
+                       'radian','rodin')
       AND block_start_at >= '2025-12-22 00:00 America/New_York'::timestamptz
       AND block_start_at <  '2025-12-23 00:00 America/New_York'::timestamptz),
   0,

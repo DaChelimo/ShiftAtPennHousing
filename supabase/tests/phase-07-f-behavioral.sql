@@ -81,11 +81,11 @@ SELECT lives_ok(
 -- job, not drop_shift's — here we assert the drop is permitted and leaves a
 -- re-escalatable vacancy.)
 -- ============================================================
--- Destination seats the floater covers at house-03 (non-home), >2h out so no
+-- Destination seats the floater covers at lower-quad (non-home), >2h out so no
 -- direct-HMOD branch fires; one acknowledged (floated_in), one pending.
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount) VALUES
-  ('f000050f-0000-0000-0000-0000000000e1','house-03', current_setting('test.f.ref')::timestamptz + interval '3 hours', 1),
-  ('f000050f-0000-0000-0000-0000000000e2','house-03', current_setting('test.f.ref')::timestamptz + interval '3 hours 30 minutes', 1);
+  ('f000050f-0000-0000-0000-0000000000e1','lower-quad', current_setting('test.f.ref')::timestamptz + interval '3 hours', 1),
+  ('f000050f-0000-0000-0000-0000000000e2','lower-quad', current_setting('test.f.ref')::timestamptz + interval '3 hours 30 minutes', 1);
 
 INSERT INTO public.shift_block_assignments (assignment_id, block_id, user_id, status, vacancy_origin) VALUES
   ('a000050f-0000-0000-0000-0000000000e1','f000050f-0000-0000-0000-0000000000e1','e000050f-0000-0000-0000-000000000001','floated_in','none'),
@@ -116,7 +116,7 @@ SELECT lives_ok(
 -- F3: ack-cadence snapshot on float assignment.
 -- ============================================================
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount) VALUES
-  ('f000050f-0000-0000-0000-0000000000d1','house-03', current_setting('test.f.ref')::timestamptz + interval '2 days', 1),
+  ('f000050f-0000-0000-0000-0000000000d1','lower-quad', current_setting('test.f.ref')::timestamptz + interval '2 days', 1),
   ('f000050f-0000-0000-0000-0000000000c1','harnwell', current_setting('test.f.ref')::timestamptz + interval '2 days', 1);
 
 INSERT INTO public.shift_block_assignments (assignment_id, block_id, user_id, status, vacancy_origin) VALUES
@@ -128,7 +128,7 @@ SELECT lives_ok(
        'e000050f-0000-0000-0000-000000000001', 'harnwell',
        ARRAY['a000050f-0000-0000-0000-0000000000c1']::uuid[],
        ARRAY['a000050f-0000-0000-0000-0000000000d1']::uuid[],
-       'house-03', current_setting('test.f.ref')::timestamptz) $$,
+       'lower-quad', current_setting('test.f.ref')::timestamptz) $$,
   'float lookup assignment runs');
 
 -- All five reminders (6h/2h/1h/30m/5m before the T-10m deadline) are future

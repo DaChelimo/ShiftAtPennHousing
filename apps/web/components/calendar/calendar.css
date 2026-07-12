@@ -10,6 +10,17 @@
   flex-direction: column;
   gap: 0;
   min-height: 100%;
+  --panel-w: 400px;
+  transition: padding-right var(--motion) var(--ease);
+}
+/* When the detail panel is open on a wide viewport it becomes an inset drawer:
+   the whole page reflows into the space LEFT of the panel so no day column is
+   ever hidden behind it (the week grid stays fully scrollable). Below this
+   width the panel falls back to a full overlay (see the scrim rule). */
+@media (min-width: 1100px) {
+  .cal-page.is-panel-open {
+    padding-right: calc(var(--panel-w, 400px) + 16px);
+  }
 }
 .cal-toolbar {
   display: flex;
@@ -233,6 +244,22 @@
   font-size: 11px;
   color: var(--text-secondary);
 }
+/* The grid's very first tick (its day's opening time, e.g. 05:30/08:00) has no
+   row above it to straddle — the -7px offset above would push it up under the
+   sticky corner header and clip it in half. Keep it fully inside its own row
+   instead of centering it on a boundary line that doesn't exist. */
+.cal-tick-label.is-first {
+  top: 2px;
+}
+/* The closing boundary (e.g. 24:00) sits at the BOTTOM of the last row — the
+   default top:-7px offset doesn't apply here (there's no row below it to
+   straddle), and a bottom:-7px mirror would push it past the container's edge,
+   clipped the same way the first row used to be. Sit fully inside the row
+   instead, flush to its bottom edge. */
+.cal-tick-label.is-last {
+  top: auto;
+  bottom: 1px;
+}
 
 .cal-day {
   position: relative;
@@ -280,6 +307,16 @@
   border: 1px solid var(--brand-subtle-border);
   border-radius: 99px;
   padding: 1px 7px;
+}
+
+/* Stacks a day's lane-count segments vertically (e.g. 1 seat 05:30-12:00, then
+   2 seats 12:00-24:00) — each segment is its own full-width .cal-lanes row, so
+   the column only reserves as many seat lanes as the schedule actually calls
+   for at that time range. A uniformly-staffed day is just one segment, so this
+   renders identically to the old fixed-lane-count column. */
+.cal-segments {
+  display: flex;
+  flex-direction: column;
 }
 
 .cal-lanes {
@@ -492,12 +529,20 @@
   background: transparent;
   z-index: 90;
 }
+/* On wide viewports the panel is an inset drawer (the page reflows beside it),
+   so the calendar must stay interactive — drop the click-to-close scrim. Close
+   via the X or Esc. The scrim returns below 1100px where the panel overlays. */
+@media (min-width: 1100px) {
+  .panel-scrim {
+    display: none;
+  }
+}
 .panel {
   position: fixed;
   top: 48px;
   right: 0;
   bottom: 0;
-  width: 400px;
+  width: var(--panel-w, 400px);
   max-width: 100vw;
   background: var(--surface);
   border-left: 1px solid var(--border-subtle);

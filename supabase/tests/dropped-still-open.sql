@@ -13,13 +13,13 @@
 -- House choice: a QUAD block — W (quad) drops it and C (quad) re-claims it (a
 -- harnwell block could not be claimed by a non-harnwell isolation actor, and a
 -- same-home-house actor would see it via the unrelated home-house SELECT policy,
--- masking the dropped-by clause). The isolation actor X is home house-03, with no
+-- masking the dropped-by clause). The isolation actor X is home lower-quad, with no
 -- home-house match and no admin role over quad, so ONLY the dropped-by clause
 -- could expose W's row to X — and it must not.
 BEGIN;
 SELECT plan(8);
 
--- ---- Actors: W (quad dropper), C (quad reclaimer), X (house-03, isolation). ----
+-- ---- Actors: W (quad dropper), C (quad reclaimer), X (lower-quad, isolation). ----
 INSERT INTO auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
   created_at, updated_at, raw_app_meta_data, raw_user_meta_data,
   confirmation_token, recovery_token, email_change_token_new, email_change)
@@ -34,7 +34,7 @@ FROM (VALUES
 INSERT INTO users (user_id, name, email, home_house_id, is_active) VALUES
   ('d0000000-0000-4000-8000-000000000001','DSO W','dso.w@example.test','quad',true),
   ('d0000000-0000-4000-8000-000000000002','DSO C','dso.c@example.test','quad',true),
-  ('d0000000-0000-4000-8000-000000000003','DSO X','dso.x@example.test','house-03',true);
+  ('d0000000-0000-4000-8000-000000000003','DSO X','dso.x@example.test','lower-quad',true);
 
 INSERT INTO user_roles (user_id, role, scope_house_id) VALUES
   ('d0000000-0000-4000-8000-000000000001','sw',NULL),
@@ -75,7 +75,7 @@ SELECT ok(
       AND user_id='d0000000-0000-4000-8000-000000000001'),
   'after drop: W sees the block with dropped_still_open=true');
 
--- ===== RLS isolation: worker X (house-03, no quad access) never sees W's row =====
+-- ===== RLS isolation: worker X (lower-quad, no quad access) never sees W's row =====
 -- Probe worker_my_shifts as the `authenticated` role with X's simulated auth.uid().
 DO $$
 DECLARE v int;

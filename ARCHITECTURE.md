@@ -24,7 +24,8 @@ Every rule that varies by season, threshold, or operational policy lives in data
 - The acknowledgment cadence (6h, 2h, 1h, 30m, 5m); the 6h and 2h entries are configurable per house by HM/BM (Section 2.8) and may be disabled entirely. The 1h, 30m, and 5m entries are not configurable.
 - The T-5 minute no-show trigger offset.
 - The HM/HMOD on-duty windows.
-- The minimum float chunk size (currently 2 blocks = 1 hour).
+- The minimum float chunk size (currently 1 block = 30 minutes).
+- The maximum Allied coverage secured per pass (currently 8 blocks = 4 hours).
 - The float-assignment retention window (currently 14 days post-shift).
 - The swap expiry policies (shift swap, float swap, permanent swap).
 - The shift block granularity (currently 30 minutes).
@@ -95,7 +96,15 @@ Example rows:
 2026-03-09  →  short_break
 ```
 
-Summer dates (the gap between the end of spring semester and the start of fall semester) have no row in `operating_calendar`. The runtime treats the absence of a row as "non-operating": no shifts, no orchestrator activity, no notifications. Summer coverage is handled entirely off-platform per the behavioral spec Section 3.1.
+A date with no row in `operating_calendar` is "non-operating": no shifts, no orchestrator activity, no notifications. This is the mechanism by which any stretch of the year is turned off.
+
+**Operating seasons (the summer authoring layer).** The academic-year config layers below are seeded by migration. A summer season is instead authored by the Administrator (behavioral spec Section 2.8) and compiled down into these same layers, so no runtime code special-cases summer:
+
+1. **Authoring tables** (migration 20260702000003, admin-only RLS): `operating_seasons` (range + season-wide cap/enforcement/desk-hours/scheduling-mode), `season_house_windows` (per-house open windows + headcount, presence = open), `season_float_windows` (floating-on windows), `operating_config_audit`. Float routing is NOT authored — it is universal (any open multi-staffed house to any other open house, never into Harnwell) and derived by the compiler.
+2. **A pure compiler** (`packages/core/src/operating-seasons`, `compileSeason`) derives PHASES — one per date on which any setting changes — and emits, per phase, a compiled `operating_profiles` row named `s_<slug>_<YYYYMMDD>` (phase start), its `staffing_patterns` rows, an auto-generated all-pairs `float_routing` (universal float, Harnwell never a destination, precedence by descending source headcount), and the `operating_calendar` date→profile assignments. It is deterministic and does no I/O.
+3. **A reconciler RPC** (`apply_compiled_season`, migration 20260702000006) writes those config rows in one transaction and reconciles FUTURE blocks (`block_start_at > app_now()` only): generates newly-open blocks, adjusts `required_headcount` (adding vacant seats on an increase; trimming vacant seats and grandfathering occupied seats over the new floor on a decrease), and voids blocks whose house closed or whose desk hours shrank. Its `p_dry_run` mode runs the identical logic inside a rolled-back subtransaction to produce the preview impact, so preview and apply cannot drift.
+
+A block retired by a config change carries `shift_blocks.voided_at` (migration 20260702000005) and has its occupied assignments moved to `cancelled_config` and its vacant seats deleted, which makes it self-excluding on the status-filtered read paths; the orchestrator scan, `is_assignment_claimable`, and the house-schedule grids additionally filter `voided_at IS NULL` (migration 20260702000007). Changes are prospective only; past and in-progress blocks are immutable history.
 
 ### 2.2 Layer 2: Operating Profiles
 
@@ -243,7 +252,7 @@ The duty week runs Friday 08:00 (inclusive) → the following Friday 08:00 (excl
 **Academic-year scope.** Rotor entries exist only for weeks whose Friday falls within an academic semester. The rotor table has no row for any week falling entirely in summer. The final rotor entry of a spring semester represents an interval that ends at the end of the last spring operating day, **not** the following Friday 08:00 (per Behavioral Spec Section 2.5 "Academic-year scope of the rotor"). The HMOD-resolution function must:
 
 1. Look up the rotor row for the current week.
-2. If no row exists (summer date), return "no HMOD on duty" — the runtime treats this as an operational error if it is invoked at all (the orchestrator does not run during summer because no operating_calendar rows exist).
+2. If no row exists, return "no HMOD on duty". When summer is configured as an operating season (Section 2.1), its operating dates DO run the orchestrator, so a deployer who enables summer escalation must also populate `hmod_rotor` rows for the summer weeks (a go-live checklist item); an in-hours gap otherwise routes to the RSM per the normal resolution, and a missing rotor row surfaces as the terminal project-administrator fallback rather than silently dropping.
 3. If a row exists, check whether the current moment falls within the rotor's effective interval. For the last rotor entry of a spring semester, the effective interval ends at the end of the last spring operating date (e.g., Sunday 23:59) rather than the following Friday 08:00. This truncation rule applies only to the spring-to-summer boundary; all other rotor entries run their full Friday-to-Friday week.
 
 Populated by the HMs and BMs themselves before each semester. The HMOD on duty at any given time is determined by:
@@ -766,11 +775,13 @@ Each chain step is a named handler. The orchestrator looks up the step name from
 
 **Step: broadcast.** Query `users WHERE broadcast_subscribed = true AND home_house_id = :house_id AND is_active = true`. Because broadcast subscription is enforced at write time (Section 3.1 subscription guard), no role filter is needed here — `broadcast_subscribed` is structurally guaranteed to be false for all HMs and BMs. Generate notifications for each matched user. Done.
 
-**Step: float_lookup.** Mark the block as unpickable atomically. Invoke the float lookup algorithm (Section 5). If floaters are assigned, the affected blocks transition appropriately. If no floater is found, the step fails, and the orchestrator immediately fires the next chain step (`hmod_notify_allied`).
+**Step: float_lookup.** Mark the block as unpickable atomically via the coverage lock (see below). Invoke the float lookup algorithm (Section 5). If floaters are assigned, the affected blocks transition appropriately. If no floater is found, the step fails, and the orchestrator immediately fires the next chain step (`hmod_notify_allied`).
 
 **Step: hmod_notify_allied.** Resolve the current HMOD via `hmod_rotor` and `hm_leave`. Determine whether the current time is within HM working hours AND whether the block's start time is within HM working hours; if so, also (or instead) notify the relevant house's HM. Per behavioral spec Section 10, HM working hours notifications go to the HM directly; outside HM hours, only the HMOD is notified. Generate the notification. Block remains `vacant` until the HMOD confirms Allied, at which point the block flips to `allied`.
 
 The HMOD confirmation is a manual in-app action: "I've called Allied for these blocks." Until that action, the block is technically still vacant in the database.
+
+**Coverage-conditional pickup lock (Behavioral Spec §5.3/§5.4/§5.5).** Both securing-tier steps (`float_lookup`, `hmod_notify_allied`, but **not** `broadcast` — T-3h stays claimable) call `lock_block_coverage(block_id, now)`, which sets `shift_blocks.coverage_locked_at` once (idempotent, one-way). A block reaching these steps is necessarily EMPTY (the orchestrator skips covered blocks via `loadCoveredBlockIds`), so locking it makes its remaining vacant seats unpickable from that point on — even after a floater or Allied later fills the desk (the secured window never re-opens). Claimability is therefore **server-authoritative**: `is_assignment_claimable` and `claim_open_shift` return claimable iff the seat is vacant, not yet started, `coverage_locked_at IS NULL`, AND (`block_start_at > now + 2h` OR a sibling on the block is real-present in `{scheduled, claimed, floated_in, pending_float_in}`). The "real-present" set deliberately **excludes** `allied` (unlike the escalation coverage floor, which counts it): a still-staffed multi-staff desk (e.g. double-Harnwell) keeps its dropped seat claimable until block start, but a secured-Allied window stays locked. `worker_open_shifts` exposes `desk_covered` + `coverage_locked` so the worker clients consume the verdict rather than re-deriving T-2h.
 
 ### 4.3 Why Every Minute
 
@@ -878,19 +889,21 @@ A coverage gap consisting of (destination_house_id, list of contiguous block_ids
 
    b. **For each eligible worker, compute their largest consecutive coverage span within the remaining uncovered blocks.**
 
-   c. **Identify the worker with the largest coverage span.** If their span is at least 2 blocks (1 hour), tentatively assign them. **Always enforce the 2-block minimum at this step** — a worker whose largest span is 1 block is not selected at all. If multiple workers tie on span length, apply the tiebreaker chain (Section 5.3).
+   c. **Identify the worker with the largest coverage span.** If their span is at least 1 block (30 minutes), tentatively assign them. The minimum chunk size is a single block, so a worker whose largest span is 1 block IS selected (previously they were not). If multiple workers tie on span length, apply the tiebreaker chain (Section 5.3).
 
-   d. **Mark those blocks covered, remove the worker from the eligible pool, increment the per-block "tentatively-floating-out-from-source" counter, repeat** within the same source house until no more eligible workers can cover any remaining consecutive 2-block-or-longer runs.
+   d. **Mark those blocks covered, remove the worker from the eligible pool, increment the per-block "tentatively-floating-out-from-source" counter, repeat** within the same source house until no more eligible workers can cover any remaining consecutive block.
 
    The headcount-floor check in (a) reads the running tentative counter in addition to persisted `pending_float_out` / `floated_out` statuses. This guarantees that a single lookup pass cannot over-float a source by selecting more workers in one iteration than the source can spare. Example: Quad (required headcount 3, currently 3 workers on shift) → first floater tentatively selected → tentative counter = 1 → remaining floor = 3 − 1 = 2 workers available → second floater tentatively selected → tentative counter = 2 → remaining floor = 1 → third worker is ineligible (would drop Quad to zero, below the absolute floor of 1).
 
    The tentative counter is in-memory state during the single lookup invocation. It is materialized as `pending_float_out` rows on `shift_block_assignments` when the algorithm commits its result inside the enclosing transaction (§5.5 Edge Case: Mid-algorithm eligibility changes).
 
-   e. **Partial-coverage fallback.** If no worker can cover the full largest-consecutive run, fall back to selecting the worker who covers the _longest leading portion_ of the gap from the gap start, provided that portion is at least 2 blocks. Ties broken by §5.3. Allied procures the remaining tail.
+   e. **Partial-coverage fallback.** If no worker can cover the full largest-consecutive run, fall back to selecting the worker who covers the _longest leading portion_ of the gap from the gap start (a single block is sufficient). Ties broken by §5.3. Allied procures the remaining tail.
 
 4. **Advance to the next source house.** Once a source is exhausted, move to the next in precedence order and repeat step 3.
 
 5. **Any remaining uncovered blocks go to Allied.** Generate a single `hmod_notify_allied` event covering the union of remaining blocks. If there are non-contiguous remaining runs, group them by contiguity and emit one Allied request per contiguous run.
+
+> **Gap window cap (orchestrator, not the pure algorithm).** The pure float-lookup algorithm has no upper bound on the gap it is handed. The orchestrator bounds it: `loadVacantGap` builds a contiguous vacant gap of at most `MAX_ALLIED_COVERAGE_BLOCKS` (8 blocks = 4 hours) before snapshotting it into the algorithm input. So a single securing pass floats and, on failure, Allied-notifies at most 4 hours; the remainder stays vacant and re-escalates per block as its own escalation offsets arrive (Behavioral Spec §5.4). Because a float assignment's destination blocks are drawn from this capped gap, the no-ack void path (`process_no_ack_float`), which emits one Allied notification spanning the whole float, is transitively capped at 4 hours as well.
 
 ### 5.3 The Tiebreaker Chain
 
@@ -902,7 +915,7 @@ Tiebreakers are invoked once the chunking algorithm in §5.2 has identified the 
 
 3. **Check 3 — Arbitrary.** Pick one arbitrarily from the current candidate set.
 
-The 2-block minimum from §5.2 step 4 is a precondition for being in the candidate set — a worker who cannot meet it is excluded before the tiebreaker chain runs. The previous Check 3 ("shift ends within float span") was moved out of this chain into the partial-coverage fallback in §5.2 step 3e, where it logically belongs as a fallback rather than a tiebreaker.
+The 1-block minimum from §5.2 step 4 is a precondition for being in the candidate set — a worker who cannot meet it is excluded before the tiebreaker chain runs. The previous Check 3 ("shift ends within float span") was moved out of this chain into the partial-coverage fallback in §5.2 step 3e, where it logically belongs as a fallback rather than a tiebreaker.
 
 ### 5.4 Output
 
@@ -1385,7 +1398,8 @@ Initial values for system-wide configurable parameters (per behavioral spec Sect
 | Shift swap expiry                                         | T-3h of earlier shift                                          |
 | Float swap expiry                                         | 24h after float end                                            |
 | Permanent swap expiry                                     | 7 days after creation                                          |
-| Minimum float chunk size                                  | 2 blocks (1 hour) — non-negotiable                             |
+| Minimum float chunk size                                  | 1 block (30 minutes)                                           |
+| Maximum Allied coverage per securing                      | 8 blocks (4 hours)                                             |
 | HM working hours                                          | Mon-Fri 08:00 to 17:00                                         |
 | HMOD rotor cadence                                        | Weekly, Friday 08:00 handoff                                   |
 

@@ -36,7 +36,7 @@
 
 BEGIN;
 
-SELECT plan(32);
+SELECT plan(35);
 
 -- ============================================================
 -- 0. Setup: minimal fixture across a 60-day window.
@@ -329,6 +329,62 @@ SELECT is(
 );
 
 -- ============================================================
+-- 6b. Coverage-conditional T-2h lock (BEH §5.4/§5.5)
+-- A vacant seat within T-2h stays claimable while a REAL co-worker is
+-- still on the desk (block_has_present_worker); a one-way coverage lock
+-- (coverage_locked_at) makes it unpickable even when covered.
+-- ============================================================
+
+-- D_covered: Harnwell block 90 min out (inside T-2h), double-staffed — one
+-- vacant seat plus one scheduled sibling, so the desk is still covered. (90m,
+-- not 60m, to stay distinct from a5's as_of+1h block.)
+INSERT INTO public.shift_blocks
+  (block_id, house_id, block_start_at, required_headcount)
+VALUES
+  ('f0000005-0000-0000-0000-0000000000d1', 'harnwell',
+   ((current_setting('test.phase05.as_of')::timestamptz) + interval '90 minutes'), 2);
+
+INSERT INTO public.shift_block_assignments
+  (assignment_id, block_id, user_id, status, vacancy_origin)
+VALUES
+  ('e0000005-1000-0000-0000-0000000000d1',
+   'f0000005-0000-0000-0000-0000000000d1', NULL, 'vacant', 'temporary_drop'),
+  ('e0000005-3000-0000-0000-0000000000d1',
+   'f0000005-0000-0000-0000-0000000000d1',
+   'e0000005-0000-0000-0000-000000000099', 'scheduled', 'none');
+
+SELECT is(
+  public.is_assignment_claimable(
+    'e0000005-1000-0000-0000-0000000000d1'::uuid,
+    (current_setting('test.phase05.as_of')::timestamptz)),
+  true,
+  'vacant seat within T-2h on a STILL-STAFFED desk is claimable (coverage-conditional)'
+);
+
+-- One-way lock the block: now unpickable even though a sibling is still on.
+SELECT public.lock_block_coverage(
+  'f0000005-0000-0000-0000-0000000000d1'::uuid,
+  (current_setting('test.phase05.as_of')::timestamptz));
+
+SELECT is(
+  public.is_assignment_claimable(
+    'e0000005-1000-0000-0000-0000000000d1'::uuid,
+    (current_setting('test.phase05.as_of')::timestamptz)),
+  false,
+  'a coverage-locked block is unpickable even while a sibling worker is present (one-way §5.5)'
+);
+
+-- Control: a5 (1h out, single-seat, no present sibling) stays NOT claimable —
+-- confirms the within-T-2h exemption requires real coverage, not just any block.
+SELECT is(
+  public.is_assignment_claimable(
+    'e0000005-1000-0000-0000-0000000000a5'::uuid,
+    (current_setting('test.phase05.as_of')::timestamptz)),
+  false,
+  'vacant seat within T-2h on an EMPTY desk is NOT claimable (coverage floor)'
+);
+
+-- ============================================================
 -- 7. Permanent openings feed: only permanent_drop rows (BEH §5.1)
 -- ============================================================
 
@@ -468,13 +524,13 @@ SELECT is(
 
 SELECT is(
   (SELECT count(*) FROM public.weekly_open_shifts_feed(
-    'house-09', (current_setting('test.phase05.as_of')::timestamptz)))::integer,
+    'mayer', (current_setting('test.phase05.as_of')::timestamptz)))::integer,
   0,
   'house with no vacant blocks returns empty weekly feed (no error)'
 );
 
 SELECT is(
-  (SELECT count(*) FROM public.permanent_openings_feed('house-09'))::integer,
+  (SELECT count(*) FROM public.permanent_openings_feed('mayer'))::integer,
   0,
   'house with no permanent_drop blocks returns empty permanent openings feed (no error)'
 );

@@ -17,12 +17,12 @@ const PERM_DROP = `SELECT permanent_drop_slot($1::uuid, $2::text, $3::int, $4::t
 describe('04 drop (permanent)', () => {
   it('vacates the recurring slot to permanent_drop and alerts the SM', async () => {
     await inTx(async (db) => {
-      const run = await workerWithRun(db, 'house-04', '2026-03-04');
+      const run = await workerWithRun(db, 'gregory', '2026-03-04');
       const t = await anchors(db, run.firstStartAt);
 
       const { rows } = await db.query(PERM_DROP, [
         run.userId,
-        'house-04',
+        'gregory',
         run.dow,
         run.hhmms,
         t.dayBefore,
@@ -42,22 +42,22 @@ describe('04 drop (permanent)', () => {
       expectAll(after, 'vacant', 'permanent_drop');
       for (const a of after) expect(a.user_id).toBeNull();
 
-      // Exactly one SM alert (the e… all-house SM is the only SM scoped to house-04).
+      // Exactly one SM alert (the e… all-house SM is the only SM scoped to gregory).
       const alerts = await notificationsFor(db, SM.userId, 'sm_permanent_drop_alert');
       expect(alerts).toHaveLength(1);
-      expect(alerts[0].payload.house_id).toBe('house-04');
+      expect(alerts[0].payload.house_id).toBe('gregory');
       expect(alerts[0].payload.dropping_user_id).toBe(run.userId);
     });
   });
 
   it('operator-initiated drop also alerts the removed worker', async () => {
     await inTx(async (db) => {
-      const run = await workerWithRun(db, 'house-04', '2026-03-05');
+      const run = await workerWithRun(db, 'gregory', '2026-03-05');
       const t = await anchors(db, run.firstStartAt);
 
       await db.query(PERM_DROP, [
         run.userId,
-        'house-04',
+        'gregory',
         run.dow,
         run.hhmms,
         t.dayBefore,
@@ -67,7 +67,7 @@ describe('04 drop (permanent)', () => {
       const removal = await notificationsFor(db, run.userId, 'sw_permanent_removal_alert');
       expect(removal).toHaveLength(1);
       expect(removal[0].payload.operator_user_id).toBe(BUILDER.userId);
-      expect(removal[0].payload.house_id).toBe('house-04');
+      expect(removal[0].payload.house_id).toBe('gregory');
     });
   });
 });

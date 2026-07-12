@@ -46,7 +46,7 @@ SELECT plan(64);
 
 -- ============================================================
 -- 0. Fixture: users, roles, blocks, assignments.
---    Houses: house-05 / house-07 are single-staff; quad is the multi-staff
+--    Houses: harrison / kings-court are single-staff; quad is the multi-staff
 --    training-equivalent house; harnwell is training-gated.
 -- ============================================================
 
@@ -70,17 +70,17 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active)
 VALUES
-  ('09000001-0000-0000-0000-000000000001', 'A1 (house-05)',  'p09-a1@test.local',     'house-05', true),
-  ('09000001-0000-0000-0000-000000000002', 'B1 (house-07)',  'p09-b1@test.local',     'house-07', true),
-  ('09000001-0000-0000-0000-000000000003', 'C1 (house-05)',  'p09-c1@test.local',     'house-05', true),
+  ('09000001-0000-0000-0000-000000000001', 'A1 (harrison)',  'p09-a1@test.local',     'harrison', true),
+  ('09000001-0000-0000-0000-000000000002', 'B1 (kings-court)',  'p09-b1@test.local',     'kings-court', true),
+  ('09000001-0000-0000-0000-000000000003', 'C1 (harrison)',  'p09-c1@test.local',     'harrison', true),
   ('09000001-0000-0000-0000-000000000004', 'Harn (harnwell)','p09-harn@test.local',   'harnwell', true),
-  ('09000001-0000-0000-0000-000000000005', 'SM (house-05)',  'p09-smdest@test.local', 'house-05', true),
+  ('09000001-0000-0000-0000-000000000005', 'SM (harrison)',  'p09-smdest@test.local', 'harrison', true),
   ('09000001-0000-0000-0000-000000000006', 'Q1 (quad)',      'p09-q1@test.local',     'quad',     true),
   ('09000001-0000-0000-0000-000000000007', 'Q2 (quad)',      'p09-q2@test.local',     'quad',     true);
 
--- SM of house-05 — the destination SM notified on float-swap acceptance (§8.2).
+-- SM of harrison — the destination SM notified on float-swap acceptance (§8.2).
 INSERT INTO public.user_roles (user_id, role, scope_house_id)
-VALUES ('09000001-0000-0000-0000-000000000005', 'sm', 'house-05')
+VALUES ('09000001-0000-0000-0000-000000000005', 'sm', 'harrison')
 ON CONFLICT DO NOTHING;
 
 -- Anchor 30 days out, hour-truncated NY-local, outside seed-generated blocks.
@@ -91,23 +91,23 @@ SELECT set_config(
   false
 );
 
--- Blocks. Every house-05 block needs a distinct start (UNIQUE house_id,start).
+-- Blocks. Every harrison block needs a distinct start (UNIQUE house_id,start).
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
 VALUES
-  ('09000002-0000-0000-0000-0000000000a1', 'house-05', current_setting('test.p09.anchor')::timestamptz,                          1),
-  ('09000002-0000-0000-0000-0000000000b1', 'house-07', current_setting('test.p09.anchor')::timestamptz + interval '30 minutes', 1),
+  ('09000002-0000-0000-0000-0000000000a1', 'harrison', current_setting('test.p09.anchor')::timestamptz,                          1),
+  ('09000002-0000-0000-0000-0000000000b1', 'kings-court', current_setting('test.p09.anchor')::timestamptz + interval '30 minutes', 1),
   ('09000002-0000-0000-0000-0000000000d1', 'harnwell', current_setting('test.p09.anchor')::timestamptz + interval '60 minutes', 1),
-  ('09000002-0000-0000-0000-0000000000d2', 'house-05', current_setting('test.p09.anchor')::timestamptz + interval '90 minutes', 1),
-  ('09000002-0000-0000-0000-0000000000e1', 'house-05', current_setting('test.p09.anchor')::timestamptz + interval '120 minutes',1),
-  ('09000002-0000-0000-0000-0000000000e2', 'house-07', current_setting('test.p09.anchor')::timestamptz + interval '150 minutes',1),
-  ('09000002-0000-0000-0000-0000000000f1', 'house-05', current_setting('test.p09.anchor')::timestamptz + interval '180 minutes',1),
-  ('09000002-0000-0000-0000-0000000000f2', 'house-05', current_setting('test.p09.anchor')::timestamptz + interval '210 minutes',1),
-  ('09000002-0000-0000-0000-0000000000c1', 'house-05', current_setting('test.p09.anchor')::timestamptz + interval '1 day',      1),
-  ('09000002-0000-0000-0000-0000000000c2', 'house-05', current_setting('test.p09.anchor')::timestamptz + interval '8 days',     1),
-  ('09000002-0000-0000-0000-0000000000c3', 'house-05', current_setting('test.p09.anchor')::timestamptz + interval '15 days',    1),
+  ('09000002-0000-0000-0000-0000000000d2', 'harrison', current_setting('test.p09.anchor')::timestamptz + interval '90 minutes', 1),
+  ('09000002-0000-0000-0000-0000000000e1', 'harrison', current_setting('test.p09.anchor')::timestamptz + interval '120 minutes',1),
+  ('09000002-0000-0000-0000-0000000000e2', 'kings-court', current_setting('test.p09.anchor')::timestamptz + interval '150 minutes',1),
+  ('09000002-0000-0000-0000-0000000000f1', 'harrison', current_setting('test.p09.anchor')::timestamptz + interval '180 minutes',1),
+  ('09000002-0000-0000-0000-0000000000f2', 'harrison', current_setting('test.p09.anchor')::timestamptz + interval '210 minutes',1),
+  ('09000002-0000-0000-0000-0000000000c1', 'harrison', current_setting('test.p09.anchor')::timestamptz + interval '1 day',      1),
+  ('09000002-0000-0000-0000-0000000000c2', 'harrison', current_setting('test.p09.anchor')::timestamptz + interval '8 days',     1),
+  ('09000002-0000-0000-0000-0000000000c3', 'harrison', current_setting('test.p09.anchor')::timestamptz + interval '15 days',    1),
   -- c4: a future, A1-owned recurring-slot week that falls on a BREAK-profile date
   -- (mapped to winter_break below) — it must NOT be permanently swappable (§8.3).
-  ('09000002-0000-0000-0000-0000000000c4', 'house-05', current_setting('test.p09.anchor')::timestamptz + interval '22 days',    1);
+  ('09000002-0000-0000-0000-0000000000c4', 'harrison', current_setting('test.p09.anchor')::timestamptz + interval '22 days',    1);
 
 -- Operating-profile context so the permanent-swap regular_school_year guard has
 -- a calendar to read. Self-contained (no-op if seeded); mirrors phase-05-cap.sql.
@@ -144,27 +144,27 @@ ON CONFLICT (date) DO UPDATE SET profile_name = EXCLUDED.profile_name;
 INSERT INTO public.shift_block_assignments
   (assignment_id, block_id, user_id, status, vacancy_origin, is_float, source_house_id)
 VALUES
-  -- Shift-swap pair (A1 @ house-05  <->  B1 @ house-07).
+  -- Shift-swap pair (A1 @ harrison  <->  B1 @ kings-court).
   ('09000003-0000-0000-0000-0000000000a1', '09000002-0000-0000-0000-0000000000a1',
    '09000001-0000-0000-0000-000000000001', 'scheduled', 'none', false, NULL),
   ('09000003-0000-0000-0000-0000000000b1', '09000002-0000-0000-0000-0000000000b1',
    '09000001-0000-0000-0000-000000000002', 'scheduled', 'none', false, NULL),
-  -- Harnwell-guard pair (Harn @ harnwell  <->  B1 @ house-05).
+  -- Harnwell-guard pair (Harn @ harnwell  <->  B1 @ harrison).
   ('09000003-0000-0000-0000-0000000000d1', '09000002-0000-0000-0000-0000000000d1',
    '09000001-0000-0000-0000-000000000004', 'scheduled', 'none', false, NULL),
   ('09000003-0000-0000-0000-0000000000d2', '09000002-0000-0000-0000-0000000000d2',
    '09000001-0000-0000-0000-000000000002', 'scheduled', 'none', false, NULL),
-  -- Invalidation pair (A1 @ house-05  <->  B1 @ house-07).
+  -- Invalidation pair (A1 @ harrison  <->  B1 @ kings-court).
   ('09000003-0000-0000-0000-0000000000e1', '09000002-0000-0000-0000-0000000000e1',
    '09000001-0000-0000-0000-000000000001', 'scheduled', 'none', false, NULL),
   ('09000003-0000-0000-0000-0000000000e2', '09000002-0000-0000-0000-0000000000e2',
    '09000001-0000-0000-0000-000000000002', 'scheduled', 'none', false, NULL),
-  -- Float-swap pair: Q1's float-IN @ house-05  <->  Q2's desk shift @ house-05.
+  -- Float-swap pair: Q1's float-IN @ harrison  <->  Q2's desk shift @ harrison.
   ('09000003-0000-0000-0000-0000000000f1', '09000002-0000-0000-0000-0000000000f1',
    '09000001-0000-0000-0000-000000000006', 'floated_in', 'none', true, 'quad'),
   ('09000003-0000-0000-0000-0000000000f2', '09000002-0000-0000-0000-0000000000f2',
    '09000001-0000-0000-0000-000000000007', 'scheduled', 'none', false, NULL),
-  -- Permanent-swap recurring slot, three future weeks of A1's house-05 slot.
+  -- Permanent-swap recurring slot, three future weeks of A1's harrison slot.
   -- Week 2 was claimed away from A1 (now C1's) — it must be skipped.
   ('09000003-0000-0000-0000-0000000000c1', '09000002-0000-0000-0000-0000000000c1',
    '09000001-0000-0000-0000-000000000001', 'scheduled', 'none', false, NULL),
@@ -191,7 +191,7 @@ VALUES
    NULL, 'pending',
    current_setting('test.p09.anchor')::timestamptz - interval '1 day',
    current_setting('test.p09.anchor')::timestamptz + interval '100 days'),
-  -- D1. shift swap that would place B1 (house-07) at the Harnwell desk.
+  -- D1. shift swap that would place B1 (kings-court) at the Harnwell desk.
   ('09000004-0000-0000-0000-0000000000d0', 'shift_swap',
    '09000001-0000-0000-0000-000000000004', '09000001-0000-0000-0000-000000000002',
    ARRAY['09000003-0000-0000-0000-0000000000d1']::uuid[],
@@ -221,7 +221,7 @@ VALUES
    ARRAY['09000003-0000-0000-0000-0000000000c1',
          '09000003-0000-0000-0000-0000000000c3']::uuid[],
    NULL,
-   '{"house_id":"house-05","day_of_week":4,"block_start_local":"19:00"}'::jsonb,
+   '{"house_id":"harrison","day_of_week":4,"block_start_local":"19:00"}'::jsonb,
    'pending',
    current_setting('test.p09.anchor')::timestamptz - interval '1 day',
    current_setting('test.p09.anchor')::timestamptz + interval '100 days'),
@@ -230,7 +230,7 @@ VALUES
    '09000001-0000-0000-0000-000000000001', '09000001-0000-0000-0000-000000000002',
    ARRAY['09000003-0000-0000-0000-0000000000c4']::uuid[],
    NULL,
-   '{"house_id":"house-05","day_of_week":4,"block_start_local":"19:00"}'::jsonb,
+   '{"house_id":"harrison","day_of_week":4,"block_start_local":"19:00"}'::jsonb,
    'pending',
    current_setting('test.p09.anchor')::timestamptz - interval '1 day',
    current_setting('test.p09.anchor')::timestamptz + interval '100 days');
@@ -263,7 +263,7 @@ VALUES
    '09000001-0000-0000-0000-000000000001', '09000001-0000-0000-0000-000000000002',
    ARRAY['09000003-0000-0000-0000-0000000000c1']::uuid[],
    NULL,
-   '{"house_id":"house-05","day_of_week":4,"block_start_local":"19:00"}'::jsonb,
+   '{"house_id":"harrison","day_of_week":4,"block_start_local":"19:00"}'::jsonb,
    'pending',
    current_setting('test.p09.anchor')::timestamptz,
    current_setting('test.p09.anchor')::timestamptz + interval '7 days'),
@@ -473,16 +473,16 @@ SELECT is(
 SELECT is(
   (SELECT user_id FROM public.shift_block_assignments WHERE assignment_id = '09000003-0000-0000-0000-0000000000a1'),
   '09000001-0000-0000-0000-000000000002'::uuid,
-  'shift swap: A1''s former house-05 seat now belongs to B1 (atomic exchange)'
+  'shift swap: A1''s former harrison seat now belongs to B1 (atomic exchange)'
 );
 SELECT is(
   (SELECT user_id FROM public.shift_block_assignments WHERE assignment_id = '09000003-0000-0000-0000-0000000000b1'),
   '09000001-0000-0000-0000-000000000001'::uuid,
-  'shift swap: B1''s former house-07 seat now belongs to A1 (atomic exchange)'
+  'shift swap: B1''s former kings-court seat now belongs to A1 (atomic exchange)'
 );
 
 -- Edge: "swap, then one drops the newly received shift → the dropped shift
--- belongs to the new owner." B1 now owns the house-05 seat and drops it.
+-- belongs to the new owner." B1 now owns the harrison seat and drops it.
 UPDATE public.shift_block_assignments
 SET user_id = NULL, status = 'vacant', vacancy_origin = 'temporary_drop'
 WHERE assignment_id = '09000003-0000-0000-0000-0000000000a1'
@@ -499,7 +499,7 @@ SELECT is(
 -- ============================================================
 
 -- D1. The acceptance guard re-runs the symmetric eligibility check (§8.1):
---     B1 (house-07) cannot take the Harnwell desk. Acceptance is refused and
+--     B1 (kings-court) cannot take the Harnwell desk. Acceptance is refused and
 --     NO seat changes.
 SELECT is(
   (SELECT (public.accept_swap(
@@ -585,7 +585,7 @@ SELECT is(
 SELECT is(
   (SELECT user_id FROM public.shift_block_assignments WHERE assignment_id = '09000003-0000-0000-0000-0000000000f1'),
   '09000001-0000-0000-0000-000000000007'::uuid,
-  'float swap: the house-05 float-IN seat now shows the corrected floater (Q2)'
+  'float swap: the harrison float-IN seat now shows the corrected floater (Q2)'
 );
 SELECT is(
   (SELECT is_float FROM public.shift_block_assignments WHERE assignment_id = '09000003-0000-0000-0000-0000000000f1'),
@@ -701,9 +701,9 @@ SELECT is(
 -- G-fixture: a fresh pending shift swap (A1 [a2] <-> B1 [b2]).
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
 VALUES
-  ('09000002-0000-0000-0000-0000000000a2', 'house-05',
+  ('09000002-0000-0000-0000-0000000000a2', 'harrison',
    current_setting('test.p09.anchor')::timestamptz + interval '3 days', 1),
-  ('09000002-0000-0000-0000-0000000000b2', 'house-07',
+  ('09000002-0000-0000-0000-0000000000b2', 'kings-court',
    current_setting('test.p09.anchor')::timestamptz + interval '3 days' + interval '30 minutes', 1);
 
 INSERT INTO public.shift_block_assignments

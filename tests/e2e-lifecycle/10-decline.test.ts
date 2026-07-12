@@ -50,7 +50,7 @@ async function sourceSeats(
 describe('10 decline + reconciliation', () => {
   it('restore: an automated decline returns the floater to their home (source) seat', async () => {
     await inTx(async (db) => {
-      const f = await setupAutomatedFloat(db, { dest: 'house-09', date: DATE });
+      const f = await setupAutomatedFloat(db, { dest: 'mayer', date: DATE });
 
       const dayBefore = (await db.query(`SELECT $1::timestamptz - interval '12 hours' AS t`, [f.S]))
         .rows[0].t;
@@ -70,14 +70,14 @@ describe('10 decline + reconciliation', () => {
       expectAll(src, 'scheduled');
       for (const s of src) expect(s.user_id).toBe(f.floater);
 
-      expect(await exclusionReasons(db, f.floater, 'house-09')).toContain('declined');
+      expect(await exclusionReasons(db, f.floater, 'mayer')).toContain('declined');
     });
   });
 
   it('displace: a force-triggered decline whose source gap was filled re-opens as displaced_decliner', async () => {
     await inTx(async (db) => {
       const { gap, starts, sourceWorkerIds } = await manufactureFloatGap(db, {
-        dest: 'house-10',
+        dest: 'du-bois',
         date: DATE,
       });
       const floater = sourceWorkerIds[0];
@@ -93,7 +93,7 @@ describe('10 decline + reconciliation', () => {
         'quad',
         srcIds,
         destIds,
-        'house-10',
+        'du-bois',
         before,
       ]);
       const floatId = (ft.rows[0].r as { assigned: boolean; float_id: string }).float_id;
@@ -127,7 +127,7 @@ describe('10 decline + reconciliation', () => {
       expectAll(src, 'vacant', 'displaced_decliner');
       for (const s of src) expect(s.user_id).toBeNull();
 
-      expect(await exclusionReasons(db, floater, 'house-10')).toContain('declined');
+      expect(await exclusionReasons(db, floater, 'du-bois')).toContain('declined');
     });
   });
 });

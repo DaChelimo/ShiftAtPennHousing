@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 
 import { adminHouseId, getSessionUser, isHouseAdmin } from '../auth';
+import { generateSetupLink } from '../data/authLinks';
 import { createServiceClient } from '../supabase/server';
 import { simNow } from '../time/simClock';
 
@@ -41,6 +42,9 @@ export type HireWorkerSummary = {
   email: string;
   homeHouseId: string;
   role: AppRole;
+  // Phase D — the set-password link for the freshly created account (best-effort;
+  // null if generation failed). The admin can share it so the worker can sign in.
+  setupLink: string | null;
 };
 
 // Map the RPC's snake_case RAISE reasons (and the propagated step messages) to
@@ -195,6 +199,11 @@ export async function hireWorker(input: {
     role?: AppRole;
   };
 
+  // Phase D — issue the set-password link so the new hire can actually sign in.
+  // Best-effort: a failure here does not undo the successful hire (the admin can
+  // re-issue via "Resend invite").
+  const setupLink = await generateSetupLink(email);
+
   revalidatePath('/admin/people');
   return {
     ok: true,
@@ -204,6 +213,7 @@ export async function hireWorker(input: {
       email: result.email ?? email,
       homeHouseId: result.home_house_id ?? homeHouseId,
       role: result.role ?? input.role,
+      setupLink,
     },
   };
 }

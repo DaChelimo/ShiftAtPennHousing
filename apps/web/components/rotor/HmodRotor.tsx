@@ -79,7 +79,7 @@ export function HmodRotor({
                         setSelection((prev) => ({ ...prev, [week.weekStartDate]: e.target.value }));
                       }}
                     >
-                      <option value="">— Unassigned —</option>
+                      <option value="">Unassigned</option>
                       {candidates.map((c) => (
                         <option key={c.userId} value={c.userId}>
                           {c.name}

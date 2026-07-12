@@ -11,9 +11,10 @@ const ROLE_META: Record<AppRole, { short: string; full: string; kind: TagKind }>
   hm: { short: 'HM', full: 'Housing Manager', kind: 'purple' },
   rsm: { short: 'RSM', full: 'Residential Services Manager', kind: 'magenta' },
   bm: { short: 'BM', full: 'Building Manager', kind: 'teal' },
+  admin: { short: 'ADM', full: 'Administrator', kind: 'red' },
 };
 
-const ROLE_ORDER: AppRole[] = ['bm', 'hm', 'rsm', 'sm', 'sw'];
+const ROLE_ORDER: AppRole[] = ['admin', 'bm', 'hm', 'rsm', 'sm', 'sw'];
 
 function prettifyHouse(id: string): string {
   if (!id) return '';
@@ -67,7 +68,7 @@ function rosterColumns(cap: number): Column<PersonRow>[] {
                 <span title={ROLE_META[r].full}>{ROLE_META[r].short}</span>
               </Tag>
             ))}
-          {p.roles.length === 0 && <span className="t-meta">—</span>}
+          {p.roles.length === 0 && <span className="t-meta">-</span>}
         </span>
       ),
     },

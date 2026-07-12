@@ -72,7 +72,7 @@ Local stack (from `supabase status`): URL `http://127.0.0.1:54321`; DB `postgres
 
 Float routing (regular & short break): **Quad → all 11 single-staff houses** (precedence 1); **Harnwell → all houses** (precedence 2). Winter break: zero routing rows.
 
-Relevant `system_config`: `ack_deadline_offset_minutes=10`, `no_ack_trigger_offset_minutes=5`, `min_float_chunk_blocks=2`, `float_retention_days=14`, `shift_block_minutes=30`, `hm_working_hours=08:00–17:00`, `shift_swap_expiry_anchor=T-3h`, `float_swap_expiry_hours=24`, `permanent_swap_expiry_days=7`, `project_administrator_user_id=a0000000-…-00000000000b`.
+Relevant `system_config`: `ack_deadline_offset_minutes=10`, `no_ack_trigger_offset_minutes=5`, `min_float_chunk_blocks=1`, `max_allied_coverage_blocks=8`, `float_retention_days=14`, `shift_block_minutes=30`, `hm_working_hours=08:00–17:00`, `shift_swap_expiry_anchor=T-3h`, `float_swap_expiry_hours=24`, `permanent_swap_expiry_days=7`, `project_administrator_user_id=a0000000-…-00000000000b`.
 
 ### §2.3 Lifecycle RPC signatures (verified against migrations)
 

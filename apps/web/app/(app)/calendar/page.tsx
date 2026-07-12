@@ -3,7 +3,13 @@ import { canViewOtherHouses, resolveCalendarHouse } from '@shift/core';
 import { HouseCalendar } from '../../../components/calendar/HouseCalendar';
 import { Notification } from '../../../components/ui/Notification';
 import { PageHead } from '../../../components/ui/PageHead';
-import { adminHouseId, canBuildSchedule, getSessionUser, isRsm } from '../../../lib/auth';
+import {
+  adminHouseId,
+  canBuildSchedule,
+  getSessionUser,
+  isRsm,
+  isScheduleAdmin,
+} from '../../../lib/auth';
 import {
   defaultCalendarWeek,
   getHouseCalendar,
@@ -41,18 +47,19 @@ export default async function CalendarPage({
   }
 
   const { week, house } = await searchParams;
-  const todayKey = nyToday();
+  const now = await simNow();
+  const todayKey = nyToday(now);
   const thisMondayKey = mondayOf(todayKey);
 
   // §2.5 cross-house: the on-duty HMOD / project admin may open another house's
   // calendar via ?house=; everyone else is pinned to their own house (the param is
   // silently ignored — D6). Calendar is always single-house.
-  const now = await simNow();
   const onDutyId = await getOnDutyHmodId(now);
   const canViewOthers = canViewOtherHouses({
     isOnDutyHmod: onDutyId === user.userId,
     isProjectAdmin: await isProjectAdministrator(user.userId),
     isRsm: isRsm(user),
+    isScheduleAdmin: isScheduleAdmin(user),
   });
   const validHouseIds = (await getShellHouses()).map((h) => h.id);
   const viewHouse = resolveCalendarHouse({
@@ -68,9 +75,9 @@ export default async function CalendarPage({
   const weekStartDate =
     week && /^\d{4}-\d{2}-\d{2}$/.test(week)
       ? mondayOf(week)
-      : await defaultCalendarWeek(viewHouse);
+      : await defaultCalendarWeek(viewHouse, now);
 
-  const model = await getHouseCalendar(viewHouse, weekStartDate);
+  const model = await getHouseCalendar(viewHouse, weekStartDate, now);
 
   return <HouseCalendar model={model} todayKey={todayKey} thisMondayKey={thisMondayKey} />;
 }

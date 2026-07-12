@@ -8,7 +8,23 @@ import {
   runOrchestratorTick,
   setSimClock,
   type OrchestratorTickSummary,
+  type TickCoverage,
 } from '../lib/actions/devClock';
+import { TickResultCard } from './TickResultCard';
+
+type LastTick = { summary: OrchestratorTickSummary; coverage: TickCoverage };
+const LAST_TICK_KEY = 'shift.devclock.lastTick';
+
+// Read the persisted last run (client-only; returns null during SSR).
+function readStoredLastTick(): LastTick | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(LAST_TICK_KEY);
+    return raw ? (JSON.parse(raw) as LastTick) : null;
+  } catch {
+    return null;
+  }
+}
 
 // Dev-only time-travel control. Sits left of the HMOD pill. Shows the live
 // simulated clock (ticking forward at 1x) and lets you set it to any instant via
@@ -70,6 +86,9 @@ export function DevClockCard({ offsetSeconds }: { offsetSeconds: number }) {
   const [pick, setPick] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState<{ ok: boolean; text: string } | null>(null);
+  // Lazy-init from storage so the card can be reopened across refreshes/reloads.
+  const [lastTick, setLastTick] = useState<LastTick | null>(readStoredLastTick);
+  const [cardOpen, setCardOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [ticking, startTick] = useTransition();
   const nowMs = useSyncExternalStore(subscribeTick, getTickSnapshot, getTickServerSnapshot);
@@ -136,6 +155,14 @@ export function DevClockCard({ offsetSeconds }: { offsetSeconds: number }) {
         return;
       }
       setTick({ ok: true, text: summarizeTick(result.summary) });
+      const next: LastTick = { summary: result.summary, coverage: result.coverage };
+      setLastTick(next);
+      setCardOpen(true);
+      try {
+        localStorage.setItem(LAST_TICK_KEY, JSON.stringify(next));
+      } catch {
+        // ignore storage failures
+      }
       // The action revalidated the layout; pull the refreshed board into view.
       router.refresh();
     });
@@ -302,7 +329,24 @@ export function DevClockCard({ offsetSeconds }: { offsetSeconds: number }) {
               {tick.text}
             </div>
           )}
+          {lastTick && (
+            <button
+              type="button"
+              data-testid="dev-clock-view-last"
+              onClick={() => {
+                setCardOpen(true);
+                setOpen(false);
+              }}
+              style={chipStyle}
+            >
+              View last run
+            </button>
+          )}
         </div>
+      )}
+
+      {cardOpen && lastTick && (
+        <TickResultCard last={lastTick} onClose={() => setCardOpen(false)} />
       )}
     </div>
   );

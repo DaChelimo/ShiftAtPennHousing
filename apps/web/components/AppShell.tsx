@@ -29,7 +29,7 @@ export type ShellUser = {
   homeHouseId: string;
 };
 
-const GROUP_ORDER = ['Operate', 'Manage', 'System'];
+const GROUP_ORDER = ['Operate', 'Manage', 'System', 'Admin'];
 
 const ROLE_LABEL: Record<string, string> = {
   bm: 'Building Manager',
@@ -387,11 +387,6 @@ export function AppShell({
             ))}
           </div>
         ))}
-        <div className="nav-foot">
-          <div className="t-meta" style={{ padding: '0 16px' }}>
-            {prettifyHouse(user.homeHouseId)}
-          </div>
-        </div>
       </nav>
 
       <main className="main">{children}</main>

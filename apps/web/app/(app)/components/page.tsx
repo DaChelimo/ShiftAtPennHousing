@@ -142,7 +142,7 @@ function Gallery() {
                 {t.label}
               </span>
             ))}
-            <span className="t-mono t-body">08:00–24:00 · #A1B2C3</span>
+            <span className="t-mono t-body">08:00-24:00 · #A1B2C3</span>
           </div>
         </Section>
 
@@ -241,7 +241,7 @@ function Gallery() {
 
         {/* Forms */}
         <Section title="Form controls" sub="Text · select · searchable combo-box · date · toggle.">
-          <Field label="Search" helper="Filled field, brand underline on focus.">
+          <Field label="Search" helper="Rounded field, brand focus ring.">
             <TextInput icon="search" placeholder="Find a worker…" />
           </Field>
           <Field label="House">

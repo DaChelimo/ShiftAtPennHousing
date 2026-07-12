@@ -34,17 +34,17 @@ export const FIRST_BLOCK_MINUTE = 480; // 08:00
 export const HOUSES = [
   'harnwell',
   'quad',
-  'house-03',
-  'house-04',
-  'house-05',
-  'house-06',
-  'house-07',
-  'house-08',
-  'house-09',
-  'house-10',
-  'house-11',
-  'house-12',
-  'house-13',
+  'lower-quad',
+  'gregory',
+  'harrison',
+  'hill',
+  'kings-court',
+  'lauder',
+  'mayer',
+  'du-bois',
+  'gutmann',
+  'radian',
+  'rodin',
 ] as const;
 export type HouseId = (typeof HOUSES)[number];
 
@@ -124,7 +124,7 @@ export const BUILDER: Admin = {
   roles: HOUSES.map((h) => ({ role: 'bm', scope: h })),
 };
 
-// Minimal house-scoped HMs (PLAN S2: an HM for quad, harnwell, house-03) for later chunks
+// Minimal house-scoped HMs (PLAN S2: an HM for quad, harnwell, lower-quad) for later chunks
 // (HMOD/leave/escalation). The project administrator is the already-seeded admin@ (PROJECT_ADMIN_ID).
 export const HMS: Admin[] = [
   {
@@ -145,8 +145,8 @@ export const HMS: Admin[] = [
     userId: eid(4, 0xaaaa),
     name: 'E2E HM House-03',
     email: 'e.hm.house03@pennhousing.test',
-    homeHouse: 'house-03',
-    roles: [{ role: 'hm', scope: 'house-03' }],
+    homeHouse: 'lower-quad',
+    roles: [{ role: 'hm', scope: 'lower-quad' }],
   },
 ];
 

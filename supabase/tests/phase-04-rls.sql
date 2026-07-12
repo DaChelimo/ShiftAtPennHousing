@@ -17,14 +17,14 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active) VALUES
-  ('e0000d09-0000-0000-0000-000000000001','D9 SM','d9-sm@test.local','house-03',true),
-  ('e0000d09-0000-0000-0000-000000000002','D9 HM','d9-hm@test.local','house-03',true),
-  ('e0000d09-0000-0000-0000-000000000003','D9 SW','d9-sw@test.local','house-03',true),
-  ('e0000d09-0000-0000-0000-000000000004','D9 W','d9-w@test.local','house-03',true);
+  ('e0000d09-0000-0000-0000-000000000001','D9 SM','d9-sm@test.local','lower-quad',true),
+  ('e0000d09-0000-0000-0000-000000000002','D9 HM','d9-hm@test.local','lower-quad',true),
+  ('e0000d09-0000-0000-0000-000000000003','D9 SW','d9-sw@test.local','lower-quad',true),
+  ('e0000d09-0000-0000-0000-000000000004','D9 W','d9-w@test.local','lower-quad',true);
 
 INSERT INTO public.user_roles (user_id, role, scope_house_id) VALUES
-  ('e0000d09-0000-0000-0000-000000000001','sm','house-03'),
-  ('e0000d09-0000-0000-0000-000000000002','hm','house-03'),
+  ('e0000d09-0000-0000-0000-000000000001','sm','lower-quad'),
+  ('e0000d09-0000-0000-0000-000000000002','hm','lower-quad'),
   ('e0000d09-0000-0000-0000-000000000003','sw',NULL),
   ('e0000d09-0000-0000-0000-000000000004','sw',NULL);
 
@@ -32,8 +32,8 @@ INSERT INTO public.scheduling_periods (period_id, period_name, profile_name, sta
 VALUES ('c0000d09-0000-0000-0000-000000000001','D9 Period','regular_school_year','2031-09-15','2031-12-15', now() + interval '30 days');
 
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount) VALUES
-  ('f0000d09-0000-0000-0000-0000000000b1','house-03','2031-09-16 10:00:00 America/New_York'::timestamptz,2),
-  ('f0000d09-0000-0000-0000-0000000000b2','house-03','2031-09-16 10:30:00 America/New_York'::timestamptz,2);
+  ('f0000d09-0000-0000-0000-0000000000b1','lower-quad','2031-09-16 10:00:00 America/New_York'::timestamptz,2),
+  ('f0000d09-0000-0000-0000-0000000000b2','lower-quad','2031-09-16 10:30:00 America/New_York'::timestamptz,2);
 
 INSERT INTO public.draft_block_assignments (period_id, block_id, user_id, created_by) VALUES
   ('c0000d09-0000-0000-0000-000000000001','f0000d09-0000-0000-0000-0000000000b1',
@@ -94,7 +94,7 @@ BEGIN
   PERFORM set_config('request.jwt.claims','{"sub":"e0000d09-0000-0000-0000-000000000001","role":"authenticated"}',true);
   SET LOCAL ROLE authenticated;
   SELECT count(*)::int INTO v FROM public.users
-    WHERE home_house_id = 'house-03'
+    WHERE home_house_id = 'lower-quad'
       AND user_id <> 'e0000d09-0000-0000-0000-000000000001';
   RESET ROLE;
   PERFORM set_config('test.d9.sm_users', v::text, true);
@@ -108,7 +108,7 @@ BEGIN
   PERFORM set_config('request.jwt.claims','{"sub":"e0000d09-0000-0000-0000-000000000002","role":"authenticated"}',true);
   SET LOCAL ROLE authenticated;
   SELECT count(*)::int INTO v FROM public.users
-    WHERE home_house_id = 'house-03'
+    WHERE home_house_id = 'lower-quad'
       AND user_id <> 'e0000d09-0000-0000-0000-000000000002';
   RESET ROLE;
   PERFORM set_config('test.d9.hm_users', v::text, true);

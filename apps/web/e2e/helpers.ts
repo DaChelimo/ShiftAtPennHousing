@@ -15,7 +15,7 @@ import { expect, type Page } from '@playwright/test';
 //   2. The web app served at E2E_BASE_URL (playwright.config.ts starts `pnpm dev`).
 // ---------------------------------------------------------------------------
 
-const PASSWORD = 'test-Password-123';
+const PASSWORD = 'abc123';
 
 export type SeedUser = { email: string; name: string };
 
@@ -104,7 +104,7 @@ export const SEED = {
   hmIncoming: { email: 'hm.incoming@pennhousing.test', name: 'Ingrid Incoming' } as SeedUser,
   // The project administrator — ALWAYS a valid terminal replacement, never excluded
   // (BEH §2.6: "The project administrator is always a valid terminal selection").
-  projectAdmin: { email: 'admin@pennhousing.test', name: 'Project Administrator' } as SeedUser,
+  projectAdmin: { email: 'admin@upenn.edu', name: 'Project Administrator' } as SeedUser,
 
   // --- S4 fire-worker actor (web-remediation, audit #4) ---
   // A dedicated ACTIVE Quad SW the HM/BM may fire on /admin/people. Intentionally
@@ -131,6 +131,17 @@ export async function login(page: Page, user: SeedUser): Promise<void> {
   await page.getByTestId('login-submit').click();
   // The authenticated shell renders once the session is established.
   await expect(page.getByTestId('app-shell')).toBeVisible();
+}
+
+// Worker-portal login. A pure Student Worker lands on the worker shell (/home), not the
+// admin console. Reuses the phase-13b Quad SWs (role `sw`, home_house `quad`) — e.g.
+// SEED.alice. See e2e/README.md (worker portal) for the fixtures each worker spec needs.
+export async function workerLogin(page: Page, user: SeedUser): Promise<void> {
+  await page.goto('/login');
+  await page.getByTestId('login-email').fill(user.email);
+  await page.getByTestId('login-password').fill(SEED.password);
+  await page.getByTestId('login-submit').click();
+  await expect(page.getByTestId('worker-shell')).toBeVisible();
 }
 
 // ---------------------------------------------------------------------------

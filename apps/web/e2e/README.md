@@ -85,7 +85,7 @@ accessible name equal to the person's display name, so `getByRole('button'|'opti
 
 ## Seed contract
 
-All fixtures live in `helpers.ts` (`SEED`). Password for every user: `test-Password-123`.
+All fixtures live in `helpers.ts` (`SEED`). Password for every user: `abc123`.
 House under test: **Quad** (multi-staff, non-Harnwell — no training constraint to
 confound grouping). Build week: Monday **2026-02-02** (regular school year, EST).
 The period's preference window is closed (prefs locked) and `published_at` is NULL.
@@ -245,7 +245,7 @@ Notes on the data dependencies (all deterministic against `seed.sql`):
   is empty for Quad). No house closure is seeded anywhere, so the closed-day cell
   asserts the **negative** (absent on an open week); the populated closed path is
   covered by the mobile Maestro `calendar_closed_day` selector + pgTAP.
-- **Config** logs in as `SEED.projectAdmin` (`admin@pennhousing.test`), the
+- **Config** logs in as `SEED.projectAdmin` (`admin@upenn.edu`), the
   `system_config.project_administrator_user_id`. It edits `no_ack_trigger_offset_minutes`
   and **restores** it so the suite leaves `system_config` pristine.
 - **Health** authorizes on `isHouseAdmin` OR project-admin, so `hmQuad` passes and

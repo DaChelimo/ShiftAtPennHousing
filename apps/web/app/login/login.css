@@ -1,0 +1,163 @@
+/* ============================================================
+   login.css — split-screen auth layout
+   Left: dark brand panel (reuses the app's #161616 chrome so the
+   sign-in feels like the product, not a detached form). Right:
+   clean edge-to-edge form surface. Collapses to one column under
+   880px, where the brand panel is replaced by a compact lockup
+   above the form.
+   ============================================================ */
+
+.login {
+  min-height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+}
+
+/* ---------- Brand panel ---------- */
+.login-brand {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 48px;
+  padding: 56px;
+  background: var(--header-bg);
+  color: #fff;
+}
+/* Brand-blue glow + faint grid give the dark panel depth without noise. */
+.login-brand::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 90% at 85% 8%, rgba(0, 97, 252, 0.32), transparent 55%),
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size:
+    100% 100%,
+    44px 44px,
+    44px 44px;
+  pointer-events: none;
+}
+.login-brand > * {
+  position: relative;
+  z-index: 1;
+}
+
+.login-lockup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.login-mark {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--brand);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+.login-wordmark {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.login-wordmark .at {
+  color: #6aa3ff;
+  font-weight: 700;
+}
+
+.login-pitch {
+  max-width: 30ch;
+}
+.login-pitch h1 {
+  margin: 0;
+  font-size: 34px;
+  line-height: 1.18;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.login-pitch p {
+  margin: 16px 0 0;
+  font-size: 15px;
+  line-height: 1.55;
+  color: #c6c6c6;
+  max-width: 42ch;
+}
+
+.login-foot {
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: #8d8d8d;
+}
+
+/* ---------- Form side ---------- */
+.login-form-side {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 56px 24px;
+  background: var(--surface);
+}
+.login-form {
+  width: 100%;
+  max-width: 360px;
+}
+
+/* Compact lockup shown above the form only when the brand panel is hidden. */
+.login-form-lockup {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 32px;
+}
+.login-form-lockup .login-wordmark {
+  color: var(--text-primary);
+}
+.login-form-lockup .login-wordmark .at {
+  color: var(--brand);
+}
+
+.login-heading {
+  margin-bottom: 28px;
+}
+.login-heading h2 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.login-heading p {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+/* Password-help + back links (login / forgot / update-password). */
+.login-forgot {
+  align-self: flex-start;
+  margin-top: -12px;
+  color: var(--brand, #0061fc);
+  text-decoration: none;
+}
+.login-forgot:hover {
+  text-decoration: underline;
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 880px) {
+  .login {
+    grid-template-columns: 1fr;
+  }
+  .login-brand {
+    display: none;
+  }
+  .login-form-lockup {
+    display: flex;
+  }
+}

@@ -33,7 +33,7 @@ export const TEMPLATES: ShiftTemplate[] = [
 
 export const DEFAULT_MAX_SHIFTS = 4; // 4 × 4h = 16h/week (< 20h soft cap)
 export const THIN_SPOT_MAX_SHIFTS = 2; // deliberately understaffed houses
-export const THIN_SPOT_HOUSES = new Set<string>(['house-12', 'house-13']);
+export const THIN_SPOT_HOUSES = new Set<string>(['radian', 'rodin']);
 
 export function maxShiftsForHouse(house: string): number {
   return THIN_SPOT_HOUSES.has(house) ? THIN_SPOT_MAX_SHIFTS : DEFAULT_MAX_SHIFTS;

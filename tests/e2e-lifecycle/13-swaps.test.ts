@@ -44,8 +44,8 @@ async function swapStatus(db: Client, swapId: string): Promise<string> {
 describe('13 swaps', () => {
   it('shift swap: accept_swap atomically exchanges seat ownership (§8.1)', async () => {
     await inTx(async (db) => {
-      const runA = await workerWithRun(db, 'house-08', DATE);
-      const runB = await workerWithRun(db, 'house-09', DATE);
+      const runA = await workerWithRun(db, 'lauder', DATE);
+      const runB = await workerWithRun(db, 'mayer', DATE);
       const a1 = runA.assignmentIds[0];
       const b1 = runB.assignmentIds[0];
 
@@ -71,7 +71,7 @@ describe('13 swaps', () => {
 
   it('float swap: accept reassigns the float (float_assignments.user_id) + notifies the destination SM (§8.2)', async () => {
     await inTx(async (db) => {
-      const DEST = 'house-07';
+      const DEST = 'kings-court';
       const f = await setupAutomatedFloat(db, { dest: DEST, date: DATE });
 
       // Acknowledge so the destination seats are floated_in — the active-float state a float swap
@@ -124,9 +124,9 @@ describe('13 swaps', () => {
 
   it('permanent swap: apply_permanent_swap transfers only the initiator-owned regular-year seats (§8.3)', async () => {
     await inTx(async (db) => {
-      const runA = await workerWithRun(db, 'house-11', DATE); // initiator (owns the recurring slot)
-      const runB = await workerWithRun(db, 'house-09', DATE); // new owner (counterparty)
-      const runC = await workerWithRun(db, 'house-08', DATE); // third party — owns the skipped seat
+      const runA = await workerWithRun(db, 'gutmann', DATE); // initiator (owns the recurring slot)
+      const runB = await workerWithRun(db, 'mayer', DATE); // new owner (counterparty)
+      const runC = await workerWithRun(db, 'lauder', DATE); // third party — owns the skipped seat
       const newOwner = runB.userId;
 
       const aSeats = runA.assignmentIds.slice(0, 3);
@@ -155,8 +155,8 @@ describe('13 swaps', () => {
   describe('expiry', () => {
     it('expire_pending_swaps flips an overdue pending swap and is idempotent', async () => {
       await inTx(async (db) => {
-        const runA = await workerWithRun(db, 'house-08', DATE);
-        const runB = await workerWithRun(db, 'house-09', DATE);
+        const runA = await workerWithRun(db, 'lauder', DATE);
+        const runB = await workerWithRun(db, 'mayer', DATE);
         const { swapId, expiresAt } = await createSwap(db, {
           swapType: 'shift_swap',
           initiator: runA.userId,
@@ -181,8 +181,8 @@ describe('13 swaps', () => {
 
     it('a swap past its expires_at cannot be accepted (auto-expired → not_pending)', async () => {
       await inTx(async (db) => {
-        const runA = await workerWithRun(db, 'house-08', DATE);
-        const runB = await workerWithRun(db, 'house-09', DATE);
+        const runA = await workerWithRun(db, 'lauder', DATE);
+        const runB = await workerWithRun(db, 'mayer', DATE);
         const a1 = runA.assignmentIds[0];
         const b1 = runB.assignmentIds[0];
         const { swapId, expiresAt } = await createSwap(db, {
@@ -208,7 +208,7 @@ describe('13 swaps', () => {
     it('harnwell_training_required: a swap placing a non-Harnwell worker at the Harnwell desk is refused', async () => {
       await inTx(async (db) => {
         const harn = await workerWithRun(db, 'harnwell', DATE);
-        const outsider = await workerWithRun(db, 'house-08', DATE);
+        const outsider = await workerWithRun(db, 'lauder', DATE);
         const h1 = harn.assignmentIds[0]; // a Harnwell seat
         const n1 = outsider.assignmentIds[0];
 
@@ -234,13 +234,13 @@ describe('13 swaps', () => {
 
     it('single_staff_cannot_float: a float swap handing the float to a single-staff worker is refused', async () => {
       await inTx(async (db) => {
-        const DEST = 'house-07';
+        const DEST = 'kings-court';
         const f = await setupAutomatedFloat(db, { dest: DEST, date: DATE });
         const tAck = await tsShift(db, f.S, '-', '12 hours');
         await db.query(ACK, [f.floatId, f.floater, tAck]); // floated_in
 
         // Counterparty is a single-staff-home worker — ineligible to receive a float duty.
-        const single = await workerWithRun(db, 'house-08', DATE);
+        const single = await workerWithRun(db, 'lauder', DATE);
         const k = f.destinationAssignmentIds.length;
 
         const { swapId, expiresAt } = await createSwap(db, {
@@ -269,12 +269,12 @@ describe('13 swaps', () => {
 
     it('block_in_pending_float: a swap touching a seat in a pending (unacknowledged) float is ineligible', async () => {
       await inTx(async (db) => {
-        const DEST = 'house-07';
+        const DEST = 'kings-court';
         // No ack → the destination seats sit pending_float_in under a pending float.
         const f = await setupAutomatedFloat(db, { dest: DEST, date: DATE });
         expectAll(await getAssignments(db, f.destinationAssignmentIds), 'pending_float_in');
 
-        const other = await workerWithRun(db, 'house-08', DATE);
+        const other = await workerWithRun(db, 'lauder', DATE);
         const k = f.destinationAssignmentIds.length;
         const { swapId } = await createSwap(db, {
           swapType: 'shift_swap',

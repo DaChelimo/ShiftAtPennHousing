@@ -72,15 +72,15 @@ INSERT INTO public.shift_blocks
 VALUES
   ('f0000508-0000-0000-0000-000000000001', 'harnwell',
    current_setting('test.phase07fl.anchor')::timestamptz, 3),
-  ('f0000508-0000-0000-0000-000000000002', 'house-03',
+  ('f0000508-0000-0000-0000-000000000002', 'lower-quad',
    current_setting('test.phase07fl.anchor')::timestamptz, 1),
   ('f0000508-0000-0000-0000-000000000003', 'harnwell',
    current_setting('test.phase07fl.anchor')::timestamptz + interval '30 minutes', 3),
-  ('f0000508-0000-0000-0000-000000000004', 'house-03',
+  ('f0000508-0000-0000-0000-000000000004', 'lower-quad',
    current_setting('test.phase07fl.anchor')::timestamptz + interval '30 minutes', 1),
   ('f0000508-0000-0000-0000-000000000005', 'harnwell',
    current_setting('test.phase07fl.anchor')::timestamptz + interval '60 minutes', 3),
-  ('f0000508-0000-0000-0000-000000000006', 'house-03',
+  ('f0000508-0000-0000-0000-000000000006', 'lower-quad',
    current_setting('test.phase07fl.anchor')::timestamptz + interval '60 minutes', 1);
 
 -- Scenario A: floater scheduled at home (harnwell), destination vacant.
@@ -147,7 +147,7 @@ SELECT lives_ok(
        'harnwell',                                                                     -- source house
        ARRAY['a0000508-0000-0000-0000-000000000001']::uuid[],                          -- source ids
        ARRAY['a0000508-0000-0000-0000-000000000002']::uuid[],                          -- destination ids
-       'house-03',                                                                     -- destination house
+       'lower-quad',                                                                     -- destination house
        (current_setting('test.phase07fl.anchor')::timestamptz - interval '2 hours'),   -- now (T-2h)
        14                                                                              -- retention days
      ) $$,
@@ -255,7 +255,7 @@ SELECT is(
             'harnwell',
             ARRAY['a0000508-0000-0000-0000-000000000003']::uuid[],
             ARRAY['a0000508-0000-0000-0000-000000000004']::uuid[],
-            'house-03',
+            'lower-quad',
             (current_setting('test.phase07fl.anchor')::timestamptz + interval '30 minutes' - interval '2 hours'),
             14
           ) ->> 'assigned')::boolean),
@@ -297,7 +297,7 @@ SELECT lives_ok(
        'harnwell',
        ARRAY['a0000508-0000-0000-0000-000000000005']::uuid[],
        ARRAY['a0000508-0000-0000-0000-000000000006']::uuid[],
-       'house-03',
+       'lower-quad',
        (current_setting('test.phase07fl.anchor')::timestamptz + interval '60 minutes' - interval '2 hours'),
        14
      ) $$,
@@ -310,7 +310,7 @@ SELECT is(
             'harnwell',
             ARRAY['a0000508-0000-0000-0000-000000000005']::uuid[],
             ARRAY['a0000508-0000-0000-0000-000000000006']::uuid[],
-            'house-03',
+            'lower-quad',
             (current_setting('test.phase07fl.anchor')::timestamptz + interval '60 minutes' - interval '2 hours'),
             14
           ) ->> 'assigned')::boolean),

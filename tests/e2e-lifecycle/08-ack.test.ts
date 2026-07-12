@@ -12,7 +12,7 @@ import { inTx } from './client';
 import { floatTimes, setupAutomatedFloat } from './float-lookup-bridge';
 import { expectAll, getAssignments } from './helpers';
 
-const DEST = 'house-07';
+const DEST = 'kings-court';
 const DATE = '2026-03-04';
 
 const ACK = `SELECT acknowledge_float($1::uuid, $2::uuid, $3::timestamptz) AS r`;

@@ -2,25 +2,25 @@
 -- Source of truth: BEHAVIORAL_SPECIFICATION.md §1.1, §3.2, §3.3; ARCHITECTURE.md §2.2–§2.4, §3.10
 
 -- ============================================================
--- Houses (13 rows)
--- Harnwell and Quad have special rules throughout.
--- 11 single-staff houses use placeholder IDs — real names TODO before launch.
+-- Houses (13 rows). Real Penn College House names + ids.
+-- Harnwell (2-staff emergency desk) and Upper Quad (3-staff) have special rules
+-- throughout; the other 11 are single-staff by default (headcount set per profile).
 -- ============================================================
 
 INSERT INTO houses (id, name) VALUES
   ('harnwell', 'Harnwell'),
-  ('quad',     'Quad'),
-  ('house-03', 'House-03'),
-  ('house-04', 'House-04'),
-  ('house-05', 'House-05'),
-  ('house-06', 'House-06'),
-  ('house-07', 'House-07'),
-  ('house-08', 'House-08'),
-  ('house-09', 'House-09'),
-  ('house-10', 'House-10'),
-  ('house-11', 'House-11'),
-  ('house-12', 'House-12'),
-  ('house-13', 'House-13');
+  ('quad',     'Upper Quad'),
+  ('lower-quad', 'Lower Quad'),
+  ('gregory', 'Van Pelt / Gregory'),
+  ('harrison', 'Harrison'),
+  ('hill', 'Hill'),
+  ('kings-court', 'Kings Court English'),
+  ('lauder', 'Lauder'),
+  ('mayer', 'Mayer'),
+  ('du-bois', 'Du Bois'),
+  ('gutmann', 'Gutmann'),
+  ('radian', 'Radian'),
+  ('rodin', 'Rodin');
 
 -- ============================================================
 -- Operating Profiles (3 rows)
@@ -111,28 +111,28 @@ INSERT INTO staffing_patterns (profile_name, house_id, day_type, block_headcount
   ('regular_school_year', 'harnwell', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":2}]'),
   ('regular_school_year', 'quad',     'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":3}]'),
   ('regular_school_year', 'quad',     'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":3}]'),
-  ('regular_school_year', 'house-03', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('regular_school_year', 'house-03', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('regular_school_year', 'house-04', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('regular_school_year', 'house-04', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('regular_school_year', 'house-05', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('regular_school_year', 'house-05', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('regular_school_year', 'house-06', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('regular_school_year', 'house-06', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('regular_school_year', 'house-07', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('regular_school_year', 'house-07', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('regular_school_year', 'house-08', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('regular_school_year', 'house-08', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('regular_school_year', 'house-09', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('regular_school_year', 'house-09', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('regular_school_year', 'house-10', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('regular_school_year', 'house-10', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('regular_school_year', 'house-11', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('regular_school_year', 'house-11', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('regular_school_year', 'house-12', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('regular_school_year', 'house-12', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('regular_school_year', 'house-13', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('regular_school_year', 'house-13', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]');
+  ('regular_school_year', 'lower-quad', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('regular_school_year', 'lower-quad', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('regular_school_year', 'gregory', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('regular_school_year', 'gregory', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('regular_school_year', 'harrison', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('regular_school_year', 'harrison', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('regular_school_year', 'hill', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('regular_school_year', 'hill', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('regular_school_year', 'kings-court', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('regular_school_year', 'kings-court', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('regular_school_year', 'lauder', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('regular_school_year', 'lauder', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('regular_school_year', 'mayer', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('regular_school_year', 'mayer', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('regular_school_year', 'du-bois', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('regular_school_year', 'du-bois', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('regular_school_year', 'gutmann', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('regular_school_year', 'gutmann', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('regular_school_year', 'radian', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('regular_school_year', 'radian', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('regular_school_year', 'rodin', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('regular_school_year', 'rodin', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]');
 
 -- Winter Break: only Harnwell is operational (1 worker). All other 12 houses: NO ROW = closed.
 INSERT INTO staffing_patterns (profile_name, house_id, day_type, block_headcounts) VALUES
@@ -145,28 +145,28 @@ INSERT INTO staffing_patterns (profile_name, house_id, day_type, block_headcount
   ('short_break', 'harnwell', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":2}]'),
   ('short_break', 'quad',     'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":3}]'),
   ('short_break', 'quad',     'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":3}]'),
-  ('short_break', 'house-03', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('short_break', 'house-03', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('short_break', 'house-04', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('short_break', 'house-04', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('short_break', 'house-05', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('short_break', 'house-05', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('short_break', 'house-06', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('short_break', 'house-06', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('short_break', 'house-07', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('short_break', 'house-07', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('short_break', 'house-08', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('short_break', 'house-08', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('short_break', 'house-09', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('short_break', 'house-09', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('short_break', 'house-10', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('short_break', 'house-10', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('short_break', 'house-11', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('short_break', 'house-11', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('short_break', 'house-12', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('short_break', 'house-12', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('short_break', 'house-13', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
-  ('short_break', 'house-13', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]');
+  ('short_break', 'lower-quad', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('short_break', 'lower-quad', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('short_break', 'gregory', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('short_break', 'gregory', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('short_break', 'harrison', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('short_break', 'harrison', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('short_break', 'hill', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('short_break', 'hill', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('short_break', 'kings-court', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('short_break', 'kings-court', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('short_break', 'lauder', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('short_break', 'lauder', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('short_break', 'mayer', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('short_break', 'mayer', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('short_break', 'du-bois', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('short_break', 'du-bois', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('short_break', 'gutmann', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('short_break', 'gutmann', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('short_break', 'radian', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('short_break', 'radian', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('short_break', 'rodin', 'weekday', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]'),
+  ('short_break', 'rodin', 'weekend', '[{"block_start":"08:00","block_end":"00:00","headcount":1}]');
 
 -- ============================================================
 -- Float Routing
@@ -180,57 +180,57 @@ INSERT INTO staffing_patterns (profile_name, house_id, day_type, block_headcount
 -- Regular School Year float routing
 INSERT INTO float_routing (profile_name, source_house_id, destination_house_id, precedence_order) VALUES
   -- Quad (precedence 1) → 11 single-staff houses
-  ('regular_school_year', 'quad', 'house-03', 1),
-  ('regular_school_year', 'quad', 'house-04', 1),
-  ('regular_school_year', 'quad', 'house-05', 1),
-  ('regular_school_year', 'quad', 'house-06', 1),
-  ('regular_school_year', 'quad', 'house-07', 1),
-  ('regular_school_year', 'quad', 'house-08', 1),
-  ('regular_school_year', 'quad', 'house-09', 1),
-  ('regular_school_year', 'quad', 'house-10', 1),
-  ('regular_school_year', 'quad', 'house-11', 1),
-  ('regular_school_year', 'quad', 'house-12', 1),
-  ('regular_school_year', 'quad', 'house-13', 1),
+  ('regular_school_year', 'quad', 'lower-quad', 1),
+  ('regular_school_year', 'quad', 'gregory', 1),
+  ('regular_school_year', 'quad', 'harrison', 1),
+  ('regular_school_year', 'quad', 'hill', 1),
+  ('regular_school_year', 'quad', 'kings-court', 1),
+  ('regular_school_year', 'quad', 'lauder', 1),
+  ('regular_school_year', 'quad', 'mayer', 1),
+  ('regular_school_year', 'quad', 'du-bois', 1),
+  ('regular_school_year', 'quad', 'gutmann', 1),
+  ('regular_school_year', 'quad', 'radian', 1),
+  ('regular_school_year', 'quad', 'rodin', 1),
   -- Harnwell (precedence 2) → all houses including Quad
   -- Note: float algorithm also enforces Harnwell as destination = no float (§1.5 invariant)
   ('regular_school_year', 'harnwell', 'quad',     2),
-  ('regular_school_year', 'harnwell', 'house-03', 2),
-  ('regular_school_year', 'harnwell', 'house-04', 2),
-  ('regular_school_year', 'harnwell', 'house-05', 2),
-  ('regular_school_year', 'harnwell', 'house-06', 2),
-  ('regular_school_year', 'harnwell', 'house-07', 2),
-  ('regular_school_year', 'harnwell', 'house-08', 2),
-  ('regular_school_year', 'harnwell', 'house-09', 2),
-  ('regular_school_year', 'harnwell', 'house-10', 2),
-  ('regular_school_year', 'harnwell', 'house-11', 2),
-  ('regular_school_year', 'harnwell', 'house-12', 2),
-  ('regular_school_year', 'harnwell', 'house-13', 2);
+  ('regular_school_year', 'harnwell', 'lower-quad', 2),
+  ('regular_school_year', 'harnwell', 'gregory', 2),
+  ('regular_school_year', 'harnwell', 'harrison', 2),
+  ('regular_school_year', 'harnwell', 'hill', 2),
+  ('regular_school_year', 'harnwell', 'kings-court', 2),
+  ('regular_school_year', 'harnwell', 'lauder', 2),
+  ('regular_school_year', 'harnwell', 'mayer', 2),
+  ('regular_school_year', 'harnwell', 'du-bois', 2),
+  ('regular_school_year', 'harnwell', 'gutmann', 2),
+  ('regular_school_year', 'harnwell', 'radian', 2),
+  ('regular_school_year', 'harnwell', 'rodin', 2);
 
 -- Short Break float routing (same structure as regular_school_year)
 INSERT INTO float_routing (profile_name, source_house_id, destination_house_id, precedence_order) VALUES
-  ('short_break', 'quad', 'house-03', 1),
-  ('short_break', 'quad', 'house-04', 1),
-  ('short_break', 'quad', 'house-05', 1),
-  ('short_break', 'quad', 'house-06', 1),
-  ('short_break', 'quad', 'house-07', 1),
-  ('short_break', 'quad', 'house-08', 1),
-  ('short_break', 'quad', 'house-09', 1),
-  ('short_break', 'quad', 'house-10', 1),
-  ('short_break', 'quad', 'house-11', 1),
-  ('short_break', 'quad', 'house-12', 1),
-  ('short_break', 'quad', 'house-13', 1),
+  ('short_break', 'quad', 'lower-quad', 1),
+  ('short_break', 'quad', 'gregory', 1),
+  ('short_break', 'quad', 'harrison', 1),
+  ('short_break', 'quad', 'hill', 1),
+  ('short_break', 'quad', 'kings-court', 1),
+  ('short_break', 'quad', 'lauder', 1),
+  ('short_break', 'quad', 'mayer', 1),
+  ('short_break', 'quad', 'du-bois', 1),
+  ('short_break', 'quad', 'gutmann', 1),
+  ('short_break', 'quad', 'radian', 1),
+  ('short_break', 'quad', 'rodin', 1),
   ('short_break', 'harnwell', 'quad',     2),
-  ('short_break', 'harnwell', 'house-03', 2),
-  ('short_break', 'harnwell', 'house-04', 2),
-  ('short_break', 'harnwell', 'house-05', 2),
-  ('short_break', 'harnwell', 'house-06', 2),
-  ('short_break', 'harnwell', 'house-07', 2),
-  ('short_break', 'harnwell', 'house-08', 2),
-  ('short_break', 'harnwell', 'house-09', 2),
-  ('short_break', 'harnwell', 'house-10', 2),
-  ('short_break', 'harnwell', 'house-11', 2),
-  ('short_break', 'harnwell', 'house-12', 2),
-  ('short_break', 'harnwell', 'house-13', 2);
+  ('short_break', 'harnwell', 'lower-quad', 2),
+  ('short_break', 'harnwell', 'gregory', 2),
+  ('short_break', 'harnwell', 'harrison', 2),
+  ('short_break', 'harnwell', 'hill', 2),
+  ('short_break', 'harnwell', 'kings-court', 2),
+  ('short_break', 'harnwell', 'lauder', 2),
+  ('short_break', 'harnwell', 'mayer', 2),
+  ('short_break', 'harnwell', 'du-bois', 2),
+  ('short_break', 'harnwell', 'gutmann', 2),
+  ('short_break', 'harnwell', 'radian', 2),
+  ('short_break', 'harnwell', 'rodin', 2);
 
 -- winter_break: zero float_routing rows (floating is disabled for this profile)
 
@@ -241,7 +241,14 @@ INSERT INTO float_routing (profile_name, source_house_id, destination_house_id, 
 
 INSERT INTO system_config (config_key, config_value, value_type) VALUES
   ('drop_horizon_days',              '30',    'integer'),
-  ('min_float_chunk_blocks',         '2',     'integer'),
+  -- Minimum float chunk lowered 2 -> 1 (BSpec §6.2 #4, 2026-06-30): a single
+  -- coverable block is floated rather than sent to Allied. The pure algorithm
+  -- hardcodes MIN_FLOAT_CHUNK_BLOCKS; this row documents the §14 parameter.
+  ('min_float_chunk_blocks',         '1',     'integer'),
+  -- Max Allied coverage secured per pass (BSpec §5.4). The orchestrator caps a
+  -- single contiguous vacant gap at MAX_ALLIED_COVERAGE_BLOCKS before floating /
+  -- Allied-notifying; this row documents the §14 parameter.
+  ('max_allied_coverage_blocks',     '8',     'integer'),
   ('float_retention_days',           '14',    'integer'),
   ('shift_block_minutes',            '30',    'integer'),
   ('shift_swap_expiry_anchor',       'T-3h',  'enum'),
@@ -259,7 +266,7 @@ INSERT INTO system_config (config_key, config_value, value_type) VALUES
 -- no training constraint to confound grouping). Build week Monday 2026-02-02 (regular
 -- school year, EST). Preference window closed; period unpublished (published_at NULL).
 --
--- This block seeds the auth users (password `test-Password-123` for everyone), the
+-- This block seeds the auth users (password `abc123` for everyone), the
 -- public.users + roles, the period, four Quad blocks (10:00–11:30), the worker
 -- preferences + period targets, the incoming-chain leave row, and the
 -- project-administrator config. Idempotent against a fresh `supabase db reset`.
@@ -277,7 +284,7 @@ SELECT
   'authenticated',
   'authenticated',
   v.email,
-  extensions.crypt('test-Password-123', extensions.gen_salt('bf')),
+  extensions.crypt('abc123', extensions.gen_salt('bf')),
   now(), now(), now(),
   '{"provider":"email","providers":["email"]}'::jsonb,
   '{}'::jsonb,
@@ -293,7 +300,7 @@ FROM (VALUES
   ('a0000000-0000-4000-8000-000000000008', 'hm.quad@pennhousing.test'),
   ('a0000000-0000-4000-8000-000000000009', 'bm.quad@pennhousing.test'),
   ('a0000000-0000-4000-8000-00000000000a', 'hm.incoming@pennhousing.test'),
-  ('a0000000-0000-4000-8000-00000000000b', 'admin@pennhousing.test')
+  ('a0000000-0000-4000-8000-00000000000b', 'admin@upenn.edu')
 ) AS v(id, email);
 
 -- --- Auth identities (email provider) for each seeded user. ---
@@ -314,11 +321,13 @@ INSERT INTO users (user_id, name, email, home_house_id, is_active) VALUES
   ('a0000000-0000-4000-8000-000000000007', 'Fred Quad',             'fred.quad@pennhousing.test',   'quad',     true),
   ('a0000000-0000-4000-8000-000000000008', 'Hana Quad',             'hm.quad@pennhousing.test',     'quad',     true),
   ('a0000000-0000-4000-8000-000000000009', 'Bea Quad',              'bm.quad@pennhousing.test',     'quad',     true),
-  ('a0000000-0000-4000-8000-00000000000a', 'Ingrid Incoming',       'hm.incoming@pennhousing.test', 'house-03', true),
-  ('a0000000-0000-4000-8000-00000000000b', 'Project Administrator', 'admin@pennhousing.test',       'quad',     true);
+  ('a0000000-0000-4000-8000-00000000000a', 'Ingrid Incoming',       'hm.incoming@pennhousing.test', 'lower-quad', true),
+  ('a0000000-0000-4000-8000-00000000000b', 'Project Administrator', 'admin@upenn.edu',              'quad',     true);
 
--- --- Roles. SW workers (no scope); SM/HM/BM scoped to their house. Admin has no role
--- (the project administrator is identified solely via system_config, BSpec §2.6). ---
+-- --- Roles. SW workers (no scope); SM/HM/BM scoped to their house. The top-level
+-- `admin` role (BSpec §2.7, scope NULL) is granted below; it is distinct from the
+-- project-administrator TERMINAL CONTACT identified via system_config (BSpec §2.6),
+-- though the seeded admin user happens to be the same human as that pointer. ---
 INSERT INTO user_roles (user_id, role, scope_house_id) VALUES
   ('a0000000-0000-4000-8000-000000000001', 'sm', 'quad'),
   ('a0000000-0000-4000-8000-000000000002', 'sw', NULL),
@@ -329,7 +338,11 @@ INSERT INTO user_roles (user_id, role, scope_house_id) VALUES
   ('a0000000-0000-4000-8000-000000000007', 'sw', NULL),
   ('a0000000-0000-4000-8000-000000000008', 'hm', 'quad'),
   ('a0000000-0000-4000-8000-000000000009', 'bm', 'quad'),
-  ('a0000000-0000-4000-8000-00000000000a', 'hm', 'house-03');
+  ('a0000000-0000-4000-8000-00000000000a', 'hm', 'lower-quad'),
+  -- Top-level administrator (BSpec §2.7): house-agnostic superuser, scope NULL.
+  -- Same human the project_administrator_user_id pointer targets (line ~400), but
+  -- the ROLE grant is what confers admin powers; the pointer is a leave terminal.
+  ('a0000000-0000-4000-8000-00000000000b', 'admin', NULL);
 
 -- --- Scheduling period covering the build week (regular school year, unpublished). ---
 -- A future preference_deadline lets the preference rows below insert (the submission-
@@ -464,33 +477,38 @@ INSERT INTO period_targets (user_id, period_id, target_hours, opted_out) VALUES
   ('a0000000-0000-4000-8000-000000000007', 'c0000000-0000-4000-8000-000000000002', 0, true);
 
 -- =====================================================================
--- S3 Allied-resolved e2e fixtures (web-remediation, audit #3).
+-- Action-inbox e2e fixtures.
 -- The action inbox (/inbox) reads the SIGNED-IN manager's notifications (RLS-scoped).
--- These four rows give Hana Quad (the Quad HM, a0…0008) an UNRESOLVED + a RESOLVED
--- Allied alert (hmod_urgent, payload.house_id=quad → she may resolve via
--- user_has_house_admin_role(Hana,'quad')), a non-urgent UNREAD item (mark-read
--- target), and a FUTURE item (hidden by the #18b due gate). Times are now()-relative
--- because the inbox data layer judges due/future against the REAL clock
--- (getInboxData(view, new Date())). N1/N2 carry DISTINCT reasons so the Playwright
--- suite can address each row, and are seeded acknowledged (read) so N3 is the sole
--- unread dot. Fixed ids + ON CONFLICT → idempotent under `supabase db reset`.
+-- These four rows give Hana Quad (the Quad HM, a0…0008) an ACTIVE unresolved Allied
+-- alert (Coverage tab), an ARCHIVED resolved one (Archive tab — its coverage window
+-- has just elapsed), a non-urgent UNREAD item (Notifications tab / mark-read target),
+-- and a FUTURE item (hidden by the #18b due gate). Allied placement is by the coverage
+-- WINDOW (payload.block_start_at / block_end_at), so those are now()-relative:
+--   N1 active  → window straddles now (started 30m ago, ends in 30m);
+--   N2 archived→ window ended ~1h ago (inside the 24h archive). N1/N2 carry DISTINCT
+-- reasons so the Playwright suite can address each, and are seeded acknowledged (read)
+-- so N3 is the sole unread dot. Fixed ids + ON CONFLICT → idempotent under reset.
 -- =====================================================================
 INSERT INTO notifications
   (notification_id, recipient_user_id, type, scheduled_for, delivered_at, acknowledged_at,
    resolved_at, resolved_by, payload)
 VALUES
-  -- N1 — UNRESOLVED Allied alert for quad (default-view target). Acknowledged (read).
+  -- N1 — ACTIVE unresolved Allied alert for quad (Coverage tab). Window straddles now.
   ('f0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000008',
    'hmod_urgent', now() - interval '1 hour', now() - interval '1 hour', now() - interval '50 minutes',
    NULL, NULL,
    jsonb_build_object('target', 'hm', 'reason', 'float_no_acknowledgment', 'house_id', 'quad',
-     'block_id', 'b0000000-0000-4000-8000-000000060800', 'block_start_at', '2026-06-08 10:00:00-04')),
-  -- N2 — RESOLVED Allied alert for quad (resolved-view target). Resolved by Hana; read.
+     'block_id', 'b0000000-0000-4000-8000-000000060800',
+     'block_start_at', now() - interval '30 minutes',
+     'block_end_at', now() + interval '30 minutes')),
+  -- N2 — ARCHIVED resolved Allied alert for quad (Archive tab). Window ended ~1h ago.
   ('f0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000008',
    'hmod_urgent', now() - interval '2 hours', now() - interval '2 hours', now() - interval '90 minutes',
    now() - interval '30 minutes', 'a0000000-0000-4000-8000-000000000008',
    jsonb_build_object('target', 'hm', 'reason', 'floater_declined', 'house_id', 'quad',
-     'block_id', 'b0000000-0000-4000-8000-000000060830', 'block_start_at', '2026-06-08 10:30:00-04')),
+     'block_id', 'b0000000-0000-4000-8000-000000060830',
+     'block_start_at', now() - interval '90 minutes',
+     'block_end_at', now() - interval '60 minutes')),
   -- N3 — a NON-urgent UNREAD notification (mark-read target).
   ('f0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000008',
    'hm_leave_notice', now() - interval '1 hour', now() - interval '1 hour', NULL, NULL, NULL,
@@ -520,7 +538,7 @@ INSERT INTO auth.users (
   '00000000-0000-0000-0000-000000000000',
   'a0000000-0000-4000-8000-00000000000c',
   'authenticated', 'authenticated', 'gabe.quad@pennhousing.test',
-  extensions.crypt('test-Password-123', extensions.gen_salt('bf')),
+  extensions.crypt('abc123', extensions.gen_salt('bf')),
   now(), now(), now(),
   '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb,
   '', '', '', ''

@@ -57,7 +57,7 @@ BEGIN;
 SELECT plan(47);
 
 -- ============================================================
--- 0. Fixtures: users, the SM-of-house-05 role, the recurring-slot blocks, the
+-- 0. Fixtures: users, the SM-of-harrison role, the recurring-slot blocks, the
 --    operating calendar + scheduling period.
 --
 --    Anchor: a FIXED Thursday-evening NY-local timestamp in July 2027 — chosen
@@ -85,15 +85,15 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active)
 VALUES
-  ('0a000001-0000-0000-0000-000000000001', 'Dropper (house-05)', 'p10-dropper@test.local', 'house-05', true),
-  ('0a000001-0000-0000-0000-000000000002', 'Other (house-05)',   'p10-other@test.local',   'house-05', true),
-  ('0a000001-0000-0000-0000-000000000003', 'Picker (house-05)',  'p10-picker@test.local',  'house-05', true),
-  ('0a000001-0000-0000-0000-000000000004', 'SM (house-05)',      'p10-sm05@test.local',    'house-05', true),
-  ('0a000001-0000-0000-0000-000000000005', 'Worker2 (house-05)', 'p10-worker2@test.local', 'house-05', true);
+  ('0a000001-0000-0000-0000-000000000001', 'Dropper (harrison)', 'p10-dropper@test.local', 'harrison', true),
+  ('0a000001-0000-0000-0000-000000000002', 'Other (harrison)',   'p10-other@test.local',   'harrison', true),
+  ('0a000001-0000-0000-0000-000000000003', 'Picker (harrison)',  'p10-picker@test.local',  'harrison', true),
+  ('0a000001-0000-0000-0000-000000000004', 'SM (harrison)',      'p10-sm05@test.local',    'harrison', true),
+  ('0a000001-0000-0000-0000-000000000005', 'Worker2 (harrison)', 'p10-worker2@test.local', 'harrison', true);
 
--- SM of house-05 — the recipient of the sm_permanent_drop_alert (§10 / §8.4.1).
+-- SM of harrison — the recipient of the sm_permanent_drop_alert (§10 / §8.4.1).
 INSERT INTO public.user_roles (user_id, role, scope_house_id)
-VALUES ('0a000001-0000-0000-0000-000000000004', 'sm', 'house-05')
+VALUES ('0a000001-0000-0000-0000-000000000004', 'sm', 'harrison')
 ON CONFLICT DO NOTHING;
 
 -- Anchor: 2027-07-01 19:00 America/New_York (EDT). Stored as timestamptz.
@@ -151,37 +151,37 @@ VALUES (
     AT TIME ZONE 'America/New_York')::date
 );
 
--- The recurring slot: house-05, Thursdays, 19:00, eight consecutive weeks.
+-- The recurring slot: harrison, Thursdays, 19:00, eight consecutive weeks.
 -- Plus three single-week blocks for the SM-initiated (17:00), re-pickup (18:00)
--- and cross-house (house-07 17:00) / Harnwell (16:00) scenarios.
+-- and cross-house (kings-court 17:00) / Harnwell (16:00) scenarios.
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
 VALUES
-  ('0a000002-0000-0000-0000-0000000000a0', 'house-05', current_setting('test.p10.anchor')::timestamptz - interval '7 days',  1),
-  ('0a000002-0000-0000-0000-0000000000a1', 'house-05', current_setting('test.p10.anchor')::timestamptz,                       1),
-  ('0a000002-0000-0000-0000-0000000000a2', 'house-05', current_setting('test.p10.anchor')::timestamptz + interval '7 days',   1),
-  ('0a000002-0000-0000-0000-0000000000a3', 'house-05', current_setting('test.p10.anchor')::timestamptz + interval '14 days',  1),
-  ('0a000002-0000-0000-0000-0000000000a4', 'house-05', current_setting('test.p10.anchor')::timestamptz + interval '21 days',  1),
-  ('0a000002-0000-0000-0000-0000000000a5', 'house-05', current_setting('test.p10.anchor')::timestamptz + interval '28 days',  1),
-  ('0a000002-0000-0000-0000-0000000000a6', 'house-05', current_setting('test.p10.anchor')::timestamptz + interval '35 days',  1),
-  ('0a000002-0000-0000-0000-0000000000a7', 'house-05', current_setting('test.p10.anchor')::timestamptz + interval '42 days',  1),
-  -- C: WORKER2's single-week house-05 17:00 slot, SM/HM-removed.
-  ('0a000002-0000-0000-0000-0000000000b1', 'house-05',
+  ('0a000002-0000-0000-0000-0000000000a0', 'harrison', current_setting('test.p10.anchor')::timestamptz - interval '7 days',  1),
+  ('0a000002-0000-0000-0000-0000000000a1', 'harrison', current_setting('test.p10.anchor')::timestamptz,                       1),
+  ('0a000002-0000-0000-0000-0000000000a2', 'harrison', current_setting('test.p10.anchor')::timestamptz + interval '7 days',   1),
+  ('0a000002-0000-0000-0000-0000000000a3', 'harrison', current_setting('test.p10.anchor')::timestamptz + interval '14 days',  1),
+  ('0a000002-0000-0000-0000-0000000000a4', 'harrison', current_setting('test.p10.anchor')::timestamptz + interval '21 days',  1),
+  ('0a000002-0000-0000-0000-0000000000a5', 'harrison', current_setting('test.p10.anchor')::timestamptz + interval '28 days',  1),
+  ('0a000002-0000-0000-0000-0000000000a6', 'harrison', current_setting('test.p10.anchor')::timestamptz + interval '35 days',  1),
+  ('0a000002-0000-0000-0000-0000000000a7', 'harrison', current_setting('test.p10.anchor')::timestamptz + interval '42 days',  1),
+  -- C: WORKER2's single-week harrison 17:00 slot, SM/HM-removed.
+  ('0a000002-0000-0000-0000-0000000000b1', 'harrison',
    (current_setting('test.p10.anchor')::timestamptz + interval '7 days') - interval '2 hours', 1),
-  -- F: Dropper's single-week house-05 18:00 slot, dropped then re-picked-up.
-  ('0a000002-0000-0000-0000-0000000000c1', 'house-05',
+  -- F: Dropper's single-week harrison 18:00 slot, dropped then re-picked-up.
+  ('0a000002-0000-0000-0000-0000000000c1', 'harrison',
    (current_setting('test.p10.anchor')::timestamptz + interval '7 days') - interval '1 hour',  1),
-  -- E cross-house: a house-07 17:00 vacant+permanent_drop slot.
-  ('0a000002-0000-0000-0000-0000000000d1', 'house-07',
+  -- E cross-house: a kings-court 17:00 vacant+permanent_drop slot.
+  ('0a000002-0000-0000-0000-0000000000d1', 'kings-court',
    (current_setting('test.p10.anchor')::timestamptz + interval '7 days') - interval '2 hours', 1),
   -- E Harnwell: a harnwell 16:00 vacant+permanent_drop slot (training-gated).
   ('0a000002-0000-0000-0000-0000000000e1', 'harnwell',
    (current_setting('test.p10.anchor')::timestamptz + interval '7 days') - interval '3 hours', 1),
-  -- E6 partial-pickup feed removal: a house-05 19:30 two-week slot. Both weeks are
+  -- E6 partial-pickup feed removal: a harrison 19:30 two-week slot. Both weeks are
   -- dropped; w1 gets picked up and w2 is cap/conflict-skipped (19:30 <= the
   -- fixture's 19:30 ceiling, so UTC-slice date == NY-local date).
-  ('0a000002-0000-0000-0000-0000000000f1', 'house-05',
+  ('0a000002-0000-0000-0000-0000000000f1', 'harrison',
    current_setting('test.p10.anchor')::timestamptz + interval '7 days'  + interval '30 minutes', 1),
-  ('0a000002-0000-0000-0000-0000000000f2', 'house-05',
+  ('0a000002-0000-0000-0000-0000000000f2', 'harrison',
    current_setting('test.p10.anchor')::timestamptz + interval '14 days' + interval '30 minutes', 1);
 
 INSERT INTO public.shift_block_assignments
@@ -210,13 +210,13 @@ VALUES
   -- F: Dropper owns the 18:00 single-week slot.
   ('0a000003-0000-0000-0000-0000000000c1', '0a000002-0000-0000-0000-0000000000c1',
    '0a000001-0000-0000-0000-000000000001', 'scheduled', 'none', false, NULL),
-  -- E cross-house: an already-dropped house-07 slot (vacant+permanent_drop).
+  -- E cross-house: an already-dropped kings-court slot (vacant+permanent_drop).
   ('0a000003-0000-0000-0000-0000000000d1', '0a000002-0000-0000-0000-0000000000d1',
    NULL, 'vacant', 'permanent_drop', false, NULL),
   -- E Harnwell: an already-dropped harnwell slot (vacant+permanent_drop).
   ('0a000003-0000-0000-0000-0000000000e1', '0a000002-0000-0000-0000-0000000000e1',
    NULL, 'vacant', 'permanent_drop', false, NULL),
-  -- E6: the house-05 19:30 two-week dropped slot (both vacant+permanent_drop).
+  -- E6: the harrison 19:30 two-week dropped slot (both vacant+permanent_drop).
   ('0a000003-0000-0000-0000-0000000000f1', '0a000002-0000-0000-0000-0000000000f1',
    NULL, 'vacant', 'permanent_drop', false, NULL),
   ('0a000003-0000-0000-0000-0000000000f2', '0a000002-0000-0000-0000-0000000000f2',
@@ -247,7 +247,7 @@ SELECT set_config(
   'test.p10.drop_result',
   (public.permanent_drop_slot(
      '0a000001-0000-0000-0000-000000000001'::uuid,                       -- dropper
-     'house-05',
+     'harrison',
      EXTRACT(DOW FROM current_setting('test.p10.anchor')::timestamptz
                        AT TIME ZONE 'America/New_York')::integer,        -- slot day-of-week
      ARRAY['19:00'],                                                     -- slot block-start local time
@@ -337,7 +337,7 @@ SELECT is(
   'drop: a next-semester occurrence is excluded (semester_end_date boundary)'
 );
 
--- SM of house-05 notified; the self-dropping worker is NOT sent a removal alert.
+-- SM of harrison notified; the self-dropping worker is NOT sent a removal alert.
 SELECT is(
   (SELECT count(*)::integer FROM public.notifications
    WHERE recipient_user_id = '0a000001-0000-0000-0000-000000000004'
@@ -362,7 +362,7 @@ SELECT set_config(
   'test.p10.removal_result',
   (public.permanent_drop_slot(
      '0a000001-0000-0000-0000-000000000005'::uuid,                       -- worker being removed (WORKER2)
-     'house-05',
+     'harrison',
      EXTRACT(DOW FROM current_setting('test.p10.anchor')::timestamptz
                        AT TIME ZONE 'America/New_York')::integer,
      ARRAY['17:00'],                                                     -- WORKER2's 17:00 slot
@@ -406,7 +406,7 @@ SELECT is(
 SELECT throws_ok(
   $$ SELECT public.permanent_drop_slot(
        '0a000001-0000-0000-0000-000000000001'::uuid,
-       'house-05',
+       'harrison',
        EXTRACT(DOW FROM current_setting('test.p10.anchor')::timestamptz
                          AT TIME ZONE 'America/New_York')::integer,
        ARRAY['19:00'],
@@ -418,14 +418,14 @@ SELECT throws_ok(
 
 -- ============================================================
 -- E. PERMANENT PICKUP (§8.4.3 / ARCH §7.2). The two weeks vacated in section B
---    (w1, w4 — house-05 19:00) are the permanently-dropped slot. PICKER picks it
+--    (w1, w4 — harrison 19:00) are the permanently-dropped slot. PICKER picks it
 --    up; a stale-popup race claims w4 away first; cross-house + Harnwell are
 --    exercised on their dedicated dropped slots.
 -- ============================================================
 
 -- E0. Before pickup the permanent feed shows the 19:00 slot with both weeks.
 SELECT is(
-  (SELECT weeks_remaining::integer FROM public.permanent_openings_feed('house-05', current_setting('test.p10.anchor')::timestamptz)
+  (SELECT weeks_remaining::integer FROM public.permanent_openings_feed('harrison', current_setting('test.p10.anchor')::timestamptz)
    WHERE block_start_time = '19:00'),
   2,
   'pickup feed: the dropped 19:00 slot shows 2 remaining weeks before pickup'
@@ -440,7 +440,7 @@ WHERE assignment_id = '0a000003-0000-0000-0000-0000000000a6';
 SELECT set_config(
   'test.p10.pickup_result',
   (public.permanent_pickup_slot(
-     '0a000001-0000-0000-0000-000000000003'::uuid,                       -- picker (house-05)
+     '0a000001-0000-0000-0000-000000000003'::uuid,                       -- picker (harrison)
      ARRAY['0a000002-0000-0000-0000-0000000000a2',
            '0a000002-0000-0000-0000-0000000000a6']::uuid[]               -- w1 + (raced-away) w4
    ))::text,
@@ -481,13 +481,13 @@ SELECT is(
 -- E3. After pickup the slot is removed from the permanent feed regardless of
 --     completeness (w1 claimed, w4 claimed away → 0 vacant+permanent_drop left).
 SELECT is(
-  (SELECT count(*)::integer FROM public.permanent_openings_feed('house-05', current_setting('test.p10.anchor')::timestamptz)
+  (SELECT count(*)::integer FROM public.permanent_openings_feed('harrison', current_setting('test.p10.anchor')::timestamptz)
    WHERE block_start_time = '19:00'),
   0,
   'pickup feed: the 19:00 slot is removed from the permanent feed after pickup (§8.4.3)'
 );
 
--- E4. Cross-house pickup: PICKER (house-05) picks up the house-07 dropped slot.
+-- E4. Cross-house pickup: PICKER (harrison) picks up the kings-court dropped slot.
 SELECT set_config(
   'test.p10.xhouse_result',
   (public.permanent_pickup_slot(
@@ -499,7 +499,7 @@ SELECT set_config(
 SELECT is(
   current_setting('test.p10.xhouse_result')::jsonb ->> 'assigned_count',
   '1',
-  'cross-house pickup: the house-07 slot is assigned to the house-05 picker'
+  'cross-house pickup: the kings-court slot is assigned to the harrison picker'
 );
 SELECT is(
   (SELECT is_cross_house_pickup FROM public.shift_block_assignments WHERE assignment_id = '0a000003-0000-0000-0000-0000000000d1'),
@@ -508,7 +508,7 @@ SELECT is(
 );
 SELECT is(
   (SELECT source_house_id FROM public.shift_block_assignments WHERE assignment_id = '0a000003-0000-0000-0000-0000000000d1'),
-  'house-05',
+  'harrison',
   'cross-house pickup: source_house_id is the picker''s home house'
 );
 
@@ -528,7 +528,7 @@ SELECT is(
 );
 
 -- E6. PARTIAL-PICKUP FEED REMOVAL (§8.4.3 / ARCH §7.2 step 8). A two-week dropped
---     slot (house-05 19:30): PICKER takes w1 and the evaluator SKIPS w2 (cap or
+--     slot (harrison 19:30): PICKER takes w1 and the evaluator SKIPS w2 (cap or
 --     time conflict). The skip set is re-flagged OFF permanent_drop in the same
 --     transaction, so the slot leaves the permanent feed REGARDLESS of
 --     completeness and the skipped week routes to the weekly feed — it is NOT
@@ -538,7 +538,7 @@ SELECT is(
 SELECT set_config(
   'test.p10.partial_result',
   (public.permanent_pickup_slot(
-     '0a000001-0000-0000-0000-000000000003'::uuid,                        -- picker (house-05)
+     '0a000001-0000-0000-0000-000000000003'::uuid,                        -- picker (harrison)
      ARRAY['0a000002-0000-0000-0000-0000000000f1']::uuid[],               -- assigned: w1
      ARRAY['0a000002-0000-0000-0000-0000000000f2']::uuid[]                -- skipped:  w2 (cap/conflict)
    ))::text,
@@ -570,13 +570,13 @@ SELECT is(
   'partial pickup: the skipped w2 leaves permanent_drop -> temporary_drop (§8.4.3)'
 );
 SELECT is(
-  (SELECT count(*)::integer FROM public.permanent_openings_feed('house-05', current_setting('test.p10.anchor')::timestamptz)
+  (SELECT count(*)::integer FROM public.permanent_openings_feed('harrison', current_setting('test.p10.anchor')::timestamptz)
    WHERE block_start_time = '19:30'),
   0,
   'partial pickup: the 19:30 slot leaves the permanent feed REGARDLESS of completeness (§8.4.3 / ARCH §7.2.8)'
 );
 SELECT is(
-  (SELECT count(*)::integer FROM public.weekly_open_shifts_feed('house-05', current_setting('test.p10.anchor')::timestamptz)
+  (SELECT count(*)::integer FROM public.weekly_open_shifts_feed('harrison', current_setting('test.p10.anchor')::timestamptz)
    WHERE block_id = '0a000002-0000-0000-0000-0000000000f2'),
   1,
   'partial pickup: the skipped w2 surfaces in the WEEKLY feed instead (§8.4.3)'
@@ -591,7 +591,7 @@ SELECT set_config(
   'test.p10.redrop_result',
   (public.permanent_drop_slot(
      '0a000001-0000-0000-0000-000000000001'::uuid,
-     'house-05',
+     'harrison',
      EXTRACT(DOW FROM current_setting('test.p10.anchor')::timestamptz
                        AT TIME ZONE 'America/New_York')::integer,
      ARRAY['18:00'],
@@ -640,7 +640,7 @@ SELECT is(
 SELECT is(
   (public.permanent_drop_slot(
      '0a000001-0000-0000-0000-000000000001'::uuid,
-     'house-05',
+     'harrison',
      EXTRACT(DOW FROM current_setting('test.p10.anchor')::timestamptz
                        AT TIME ZONE 'America/New_York')::integer,
      ARRAY['19:00'],

@@ -30,12 +30,12 @@ const homeWorker = (house: string, exclude: string[] = []): string =>
 describe('05 cross-house pickup', () => {
   it('cross-house pickup claims + flags assigned seats; skipped seats → temporary_drop', async () => {
     await inTx(async (db) => {
-      // Set up permanent-drop vacancies in house-05.
-      const run = await workerWithRun(db, 'house-05', '2026-03-04');
+      // Set up permanent-drop vacancies in harrison.
+      const run = await workerWithRun(db, 'harrison', '2026-03-04');
       const t = await anchors(db, run.firstStartAt);
-      await db.query(PERM_DROP, [run.userId, 'house-05', run.dow, run.hhmms, t.dayBefore]);
+      await db.query(PERM_DROP, [run.userId, 'harrison', run.dow, run.hhmms, t.dayBefore]);
 
-      const picker = homeWorker('house-04'); // home ≠ house-05 → cross-house
+      const picker = homeWorker('gregory'); // home ≠ harrison → cross-house
       const half = Math.floor(run.blockIds.length / 2);
       const assigned = run.blockIds.slice(0, half);
       const skipped = run.blockIds.slice(half);
@@ -51,7 +51,7 @@ describe('05 cross-house pickup', () => {
         expect(a.status).toBe('claimed');
         expect(a.user_id).toBe(picker);
         expect(a.is_cross_house_pickup).toBe(true);
-        expect(a.source_house_id).toBe('house-04');
+        expect(a.source_house_id).toBe('gregory');
       }
 
       const skippedRows = await assignmentsForBlocks(db, skipped);
@@ -66,7 +66,7 @@ describe('05 cross-house pickup', () => {
       await db.query(PERM_DROP, [run.userId, 'harnwell', run.dow, run.hhmms, t.dayBefore]);
       const dropped = await permanentDropSeats(db, run.blockIds); // dropper's seats (Harnwell = 2/block)
 
-      const intruder = homeWorker('house-04');
+      const intruder = homeWorker('gregory');
       await expectRpcErrorTx(
         db,
         PICKUP,

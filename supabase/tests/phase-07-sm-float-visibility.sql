@@ -12,7 +12,7 @@ BEGIN;
 SELECT plan(4);
 
 -- ---- fixture ----
--- SM scoped to the destination house-03 (home elsewhere, so destination
+-- SM scoped to the destination lower-quad (home elsewhere, so destination
 -- visibility can ONLY come from the build-role branch, not home-house).
 -- An SM scoped to an unrelated house, a plain SW, and the floater (harnwell).
 INSERT INTO auth.users (id, instance_id, aud, role, email) VALUES
@@ -23,21 +23,21 @@ INSERT INTO auth.users (id, instance_id, aud, role, email) VALUES
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active) VALUES
-  ('e0000f17-0000-0000-0000-000000000001','F17 SM03','f17-sm03@test.local','house-09',true),
-  ('e0000f17-0000-0000-0000-000000000002','F17 SM04','f17-sm04@test.local','house-04',true),
-  ('e0000f17-0000-0000-0000-000000000003','F17 SW','f17-sw@test.local','house-05',true),
+  ('e0000f17-0000-0000-0000-000000000001','F17 SM03','f17-sm03@test.local','mayer',true),
+  ('e0000f17-0000-0000-0000-000000000002','F17 SM04','f17-sm04@test.local','gregory',true),
+  ('e0000f17-0000-0000-0000-000000000003','F17 SW','f17-sw@test.local','harrison',true),
   ('e0000f17-0000-0000-0000-000000000004','F17 Floater','f17-floater@test.local','harnwell',true);
 
 INSERT INTO public.user_roles (user_id, role, scope_house_id) VALUES
-  ('e0000f17-0000-0000-0000-000000000001','sm','house-03'),
-  ('e0000f17-0000-0000-0000-000000000002','sm','house-04'),
+  ('e0000f17-0000-0000-0000-000000000001','sm','lower-quad'),
+  ('e0000f17-0000-0000-0000-000000000002','sm','gregory'),
   ('e0000f17-0000-0000-0000-000000000003','sw',NULL);
 
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount) VALUES
   ('f0000f17-0000-0000-0000-000000000001','harnwell','2031-09-16 10:00:00 America/New_York'::timestamptz,2),
-  ('f0000f17-0000-0000-0000-000000000002','house-03','2031-09-16 10:00:00 America/New_York'::timestamptz,1);
+  ('f0000f17-0000-0000-0000-000000000002','lower-quad','2031-09-16 10:00:00 America/New_York'::timestamptz,1);
 
--- A pending inbound float: harnwell floater -> house-03 destination.
+-- A pending inbound float: harnwell floater -> lower-quad destination.
 INSERT INTO public.shift_block_assignments
   (assignment_id, block_id, user_id, status, vacancy_origin, is_float, source_house_id, parent_float_id)
 VALUES
@@ -57,7 +57,7 @@ SET parent_float_id = 'b0000f17-0000-0000-0000-000000000001'
 WHERE assignment_id IN ('a0000f17-0000-0000-0000-000000000001','a0000f17-0000-0000-0000-000000000002');
 
 -- ---- probes ----
--- Destination SM (scope house-03) CAN see the inbound float.
+-- Destination SM (scope lower-quad) CAN see the inbound float.
 DO $$ DECLARE v int; BEGIN
   PERFORM set_config('request.jwt.claims','{"sub":"e0000f17-0000-0000-0000-000000000001","role":"authenticated"}',true);
   SET LOCAL ROLE authenticated;
@@ -68,8 +68,8 @@ END $$;
 SELECT is(current_setting('test.f17.sm03_float')::int, 1,
   'destination SM can SELECT the inbound float (BSpec §7.1/§10)');
 
--- Destination SM CAN see the live (Pending) destination assignment row at house-03
--- (home is house-09, so this comes only from the build-role branch -> tests the fix).
+-- Destination SM CAN see the live (Pending) destination assignment row at lower-quad
+-- (home is mayer, so this comes only from the build-role branch -> tests the fix).
 DO $$ DECLARE v int; BEGIN
   PERFORM set_config('request.jwt.claims','{"sub":"e0000f17-0000-0000-0000-000000000001","role":"authenticated"}',true);
   SET LOCAL ROLE authenticated;

@@ -10,7 +10,7 @@ BEGIN;
 
 SELECT plan(11);
 
--- Three admins: A (hm, quad), B (bm, quad), C (hm, house-03). Active leave C -> A
+-- Three admins: A (hm, quad), B (bm, quad), C (hm, lower-quad). Active leave C -> A
 -- puts C in A's INCOMING chain, so A selecting C as replacement closes a cycle.
 INSERT INTO auth.users (id, instance_id, aud, role, email) VALUES
   ('a0001313-0000-0000-0000-00000000000a','00000000-0000-0000-0000-000000000000','authenticated','authenticated','leave-a@test.local'),
@@ -21,12 +21,12 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active) VALUES
   ('a0001313-0000-0000-0000-00000000000a','Adira HM','leave-a@test.local','quad',true),
   ('a0001313-0000-0000-0000-00000000000b','Boris BM','leave-b@test.local','quad',true),
-  ('a0001313-0000-0000-0000-00000000000c','Cora HM','leave-c@test.local','house-03',true);
+  ('a0001313-0000-0000-0000-00000000000c','Cora HM','leave-c@test.local','lower-quad',true);
 
 INSERT INTO public.user_roles (user_id, role, scope_house_id) VALUES
   ('a0001313-0000-0000-0000-00000000000a','hm','quad'),
   ('a0001313-0000-0000-0000-00000000000b','bm','quad'),
-  ('a0001313-0000-0000-0000-00000000000c','hm','house-03');
+  ('a0001313-0000-0000-0000-00000000000c','hm','lower-quad');
 
 -- Active leave: C -> A.
 INSERT INTO public.hm_leave (leave_id, user_id, start_date, end_date, replacement_user_id, status) VALUES

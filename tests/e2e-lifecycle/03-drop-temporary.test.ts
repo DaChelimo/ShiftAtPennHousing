@@ -16,7 +16,7 @@ const DROP = `SELECT * FROM drop_shift($1::uuid[], $2::uuid, $3::timestamptz)`;
 describe('03 drop (temporary)', () => {
   it('advance-notice drop vacates the run with no warnings', async () => {
     await inTx(async (db) => {
-      const run = await workerWithRun(db, 'house-06', '2026-03-03');
+      const run = await workerWithRun(db, 'hill', '2026-03-03');
       const t = await anchors(db, run.firstStartAt);
 
       const { rows } = await db.query(DROP, [run.assignmentIds, run.userId, t.dayBefore]);
@@ -32,7 +32,7 @@ describe('03 drop (temporary)', () => {
 
   it('short-notice drop of the sole worker flags short-notice + direct HMOD', async () => {
     await inTx(async (db) => {
-      const run = await workerWithRun(db, 'house-06', '2026-03-02');
+      const run = await workerWithRun(db, 'hill', '2026-03-02');
       const t = await anchors(db, run.firstStartAt);
 
       const { rows } = await db.query(DROP, [run.assignmentIds, run.userId, t.tMinus10m]);
@@ -46,8 +46,8 @@ describe('03 drop (temporary)', () => {
 
   it('dropping a run you do not own raises', async () => {
     await inTx(async (db) => {
-      const run = await workerWithRun(db, 'house-06', '2026-03-04');
-      const nonOwner = WORKERS.find((w) => w.homeHouse === 'quad')!.userId; // owns no house-06 blocks
+      const run = await workerWithRun(db, 'hill', '2026-03-04');
+      const nonOwner = WORKERS.find((w) => w.homeHouse === 'quad')!.userId; // owns no hill blocks
       const t = await anchors(db, run.firstStartAt);
 
       await expectRpcErrorTx(

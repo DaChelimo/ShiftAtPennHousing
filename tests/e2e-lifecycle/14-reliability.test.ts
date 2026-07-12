@@ -45,7 +45,7 @@ describe('14 reliability', () => {
   describe('no-takeback (inv #3)', () => {
     it('an ACKNOWLEDGED float is never revoked by the no-ack tick, even past the deadline', async () => {
       await inTx(async (db) => {
-        const f = await setupAutomatedFloat(db, { dest: 'house-07', date: DATE });
+        const f = await setupAutomatedFloat(db, { dest: 'kings-court', date: DATE });
         const tAck = await tsShift(db, f.S, '-', '12 hours');
         await db.query(ACK, [f.floatId, f.floater, tAck]);
 
@@ -71,7 +71,7 @@ describe('14 reliability', () => {
 
     it('a PENDING float is not revoked by a tick that fires before its no-ack window', async () => {
       await inTx(async (db) => {
-        const f = await setupAutomatedFloat(db, { dest: 'house-07', date: DATE });
+        const f = await setupAutomatedFloat(db, { dest: 'kings-court', date: DATE });
 
         // Six hours out, the float start is far beyond the 15-minute lookahead → no-op.
         const early = await tsShift(db, f.S, '-', '6 hours');
@@ -92,7 +92,7 @@ describe('14 reliability', () => {
   describe('idempotency (§10.1)', () => {
     it('re-running process_no_ack_float at the same instant does not double-apply', async () => {
       await inTx(async (db) => {
-        const f = await setupAutomatedFloat(db, { dest: 'house-07', date: DATE }); // pending, unacked
+        const f = await setupAutomatedFloat(db, { dest: 'kings-court', date: DATE }); // pending, unacked
         const noAckT = await tsShift(db, f.S, '-', '15 minutes');
 
         const first = await db.query(NO_ACK, [f.floatId, noAckT]);
@@ -124,7 +124,7 @@ describe('14 reliability', () => {
 
     it('deliver_notification / mark_notification_read stamp exactly once (re-delivery is a no-op)', async () => {
       await inTx(async (db) => {
-        const f = await setupAutomatedFloat(db, { dest: 'house-07', date: DATE });
+        const f = await setupAutomatedFloat(db, { dest: 'kings-court', date: DATE });
         // The float wrote a personal_shift notification for the floater.
         const n = await db.query(
           `SELECT notification_id FROM notifications

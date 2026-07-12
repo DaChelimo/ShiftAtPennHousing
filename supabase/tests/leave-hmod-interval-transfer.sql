@@ -30,11 +30,11 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active) VALUES
   ('c1000006-0000-0000-0000-0000000000a1','HMOD Orig','hmod-orig@test.local','quad',true),
-  ('c1000006-0000-0000-0000-0000000000b1','HMOD Repl','hmod-repl@test.local','house-03',true);
+  ('c1000006-0000-0000-0000-0000000000b1','HMOD Repl','hmod-repl@test.local','lower-quad',true);
 
 INSERT INTO public.user_roles (user_id, role, scope_house_id) VALUES
   ('c1000006-0000-0000-0000-0000000000a1','hm','quad'),
-  ('c1000006-0000-0000-0000-0000000000b1','hm','house-03');
+  ('c1000006-0000-0000-0000-0000000000b1','hm','lower-quad');
 
 -- Rotor: HMOD_ORIG owns the duty week starting Friday 2099-01-02 (isodow 5).
 INSERT INTO public.hmod_rotor (week_start_date, hmod_user_id)

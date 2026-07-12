@@ -116,7 +116,7 @@ export function WeekPicker({
         ))}
       </div>
       <div className="wkpick-foot">
-        <span className="t-meta">Whole Mon–Sun weeks</span>
+        <span className="t-meta">Whole Mon-Sun weeks</span>
         <button type="button" className="wkpick-today" onClick={onToday}>
           This week
         </button>

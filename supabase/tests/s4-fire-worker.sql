@@ -67,37 +67,37 @@ SELECT plan(69);
 --    one UTC offset; AGENTS invariant #6). All block local times are <= 19:30 so
 --    each block's UTC-slice date equals its NY-local calendar date.
 --
---    Houses: house-05 (multi-staff, the firing house; required_headcount 2 on the
---    headcount blocks), harnwell (training edge), house-07 (the cross-house float
+--    Houses: harrison (multi-staff, the firing house; required_headcount 2 on the
+--    headcount blocks), harnwell (training edge), kings-court (the cross-house float
 --    destination). All exist in seed.sql.
 -- ============================================================
 
 INSERT INTO auth.users (id, instance_id, aud, role, email)
 VALUES
-  -- the worker being fired (home house-05) — the canonical victim for A–H, the
+  -- the worker being fired (home harrison) — the canonical victim for A–H, the
   -- integration victim for L (one worker carries the whole obligation set).
   ('54000001-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 's4-victim@test.local'),
-  -- HM of house-05 — an authorized initiator.
+  -- HM of harrison — an authorized initiator.
   ('54000001-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 's4-hm05@test.local'),
-  -- BM of house-05 — an authorized initiator.
+  -- BM of harrison — an authorized initiator.
   ('54000001-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 's4-bm05@test.local'),
-  -- SM of house-05 — NOT authorized (people-admin is HM/BM-only).
+  -- SM of harrison — NOT authorized (people-admin is HM/BM-only).
   ('54000001-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 's4-sm05@test.local'),
-  -- HM of house-07 — admin, but of the WRONG house ⇒ NOT authorized for the victim.
+  -- HM of kings-court — admin, but of the WRONG house ⇒ NOT authorized for the victim.
   ('54000001-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 's4-hm07@test.local'),
-  -- a plain SW (home house-05) — NOT authorized.
+  -- a plain SW (home harrison) — NOT authorized.
   ('54000001-0000-0000-0000-000000000006', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 's4-sw@test.local'),
-  -- a co-worker (home house-05) — seats OTHER blocks so a desk can be over/under
+  -- a co-worker (home harrison) — seats OTHER blocks so a desk can be over/under
   -- required headcount, and proves "other workers untouched".
   ('54000001-0000-0000-0000-000000000007', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 's4-coworker@test.local'),
-  -- a SECOND co-worker (home house-05) — extra body for the at/above-headcount case.
+  -- a SECOND co-worker (home harrison) — extra body for the at/above-headcount case.
   ('54000001-0000-0000-0000-000000000008', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 's4-coworker2@test.local'),
   -- a Harnwell-home worker (the Harnwell-edge victim, section K).
@@ -109,14 +109,14 @@ VALUES
   -- a worker for the atomicity test (a scheduled seat on a NO-period date).
   ('54000001-0000-0000-0000-00000000000b', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 's4-atomic@test.local'),
-  -- a swap counterparty (home house-05) — the other party on the victim's swaps.
+  -- a swap counterparty (home harrison) — the other party on the victim's swaps.
   ('54000001-0000-0000-0000-00000000000c', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 's4-counterparty@test.local'),
   -- a currently-floated-out worker (section K).
   ('54000001-0000-0000-0000-00000000000d', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 's4-floatout@test.local'),
-  -- a HM of house-05 for the floated-out / Harnwell / atomic / inactive victims'
-  -- home houses (reused as initiator where the victim is home house-05; harnwell
+  -- a HM of harrison for the floated-out / Harnwell / atomic / inactive victims'
+  -- home houses (reused as initiator where the victim is home harrison; harnwell
   -- victim gets its own HM below).
   ('54000001-0000-0000-0000-00000000000e', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 's4-hmharn@test.local')
@@ -124,28 +124,28 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active, broadcast_subscribed)
 VALUES
-  ('54000001-0000-0000-0000-000000000001', 'Victim (house-05)',     's4-victim@test.local',       'house-05', true,  true),
-  ('54000001-0000-0000-0000-000000000002', 'HM (house-05)',         's4-hm05@test.local',         'house-05', true,  false),
-  ('54000001-0000-0000-0000-000000000003', 'BM (house-05)',         's4-bm05@test.local',         'house-05', true,  false),
-  ('54000001-0000-0000-0000-000000000004', 'SM (house-05)',         's4-sm05@test.local',         'house-05', true,  false),
-  ('54000001-0000-0000-0000-000000000005', 'HM (house-07)',         's4-hm07@test.local',         'house-07', true,  false),
-  ('54000001-0000-0000-0000-000000000006', 'SW (house-05)',         's4-sw@test.local',           'house-05', true,  false),
-  ('54000001-0000-0000-0000-000000000007', 'Coworker (house-05)',   's4-coworker@test.local',     'house-05', true,  false),
-  ('54000001-0000-0000-0000-000000000008', 'Coworker2 (house-05)',  's4-coworker2@test.local',    'house-05', true,  false),
+  ('54000001-0000-0000-0000-000000000001', 'Victim (harrison)',     's4-victim@test.local',       'harrison', true,  true),
+  ('54000001-0000-0000-0000-000000000002', 'HM (harrison)',         's4-hm05@test.local',         'harrison', true,  false),
+  ('54000001-0000-0000-0000-000000000003', 'BM (harrison)',         's4-bm05@test.local',         'harrison', true,  false),
+  ('54000001-0000-0000-0000-000000000004', 'SM (harrison)',         's4-sm05@test.local',         'harrison', true,  false),
+  ('54000001-0000-0000-0000-000000000005', 'HM (kings-court)',         's4-hm07@test.local',         'kings-court', true,  false),
+  ('54000001-0000-0000-0000-000000000006', 'SW (harrison)',         's4-sw@test.local',           'harrison', true,  false),
+  ('54000001-0000-0000-0000-000000000007', 'Coworker (harrison)',   's4-coworker@test.local',     'harrison', true,  false),
+  ('54000001-0000-0000-0000-000000000008', 'Coworker2 (harrison)',  's4-coworker2@test.local',    'harrison', true,  false),
   ('54000001-0000-0000-0000-000000000009', 'Harn victim (harnwell)','s4-harn@test.local',         'harnwell', true,  false),
-  ('54000001-0000-0000-0000-00000000000a', 'Inactive (house-05)',   's4-inactive@test.local',     'house-05', false, false),
-  ('54000001-0000-0000-0000-00000000000b', 'Atomic (house-05)',     's4-atomic@test.local',       'house-05', true,  false),
-  ('54000001-0000-0000-0000-00000000000c', 'Counterparty (h05)',    's4-counterparty@test.local', 'house-05', true,  false),
-  ('54000001-0000-0000-0000-00000000000d', 'Floatout (house-05)',   's4-floatout@test.local',     'house-05', true,  false),
+  ('54000001-0000-0000-0000-00000000000a', 'Inactive (harrison)',   's4-inactive@test.local',     'harrison', false, false),
+  ('54000001-0000-0000-0000-00000000000b', 'Atomic (harrison)',     's4-atomic@test.local',       'harrison', true,  false),
+  ('54000001-0000-0000-0000-00000000000c', 'Counterparty (h05)',    's4-counterparty@test.local', 'harrison', true,  false),
+  ('54000001-0000-0000-0000-00000000000d', 'Floatout (harrison)',   's4-floatout@test.local',     'harrison', true,  false),
   ('54000001-0000-0000-0000-00000000000e', 'HM (harnwell)',         's4-hmharn@test.local',       'harnwell', true,  false);
 
 INSERT INTO public.user_roles (user_id, role, scope_house_id)
 VALUES
   ('54000001-0000-0000-0000-000000000001', 'sw', NULL),
-  ('54000001-0000-0000-0000-000000000002', 'hm', 'house-05'),   -- authorized initiator
-  ('54000001-0000-0000-0000-000000000003', 'bm', 'house-05'),   -- authorized initiator
-  ('54000001-0000-0000-0000-000000000004', 'sm', 'house-05'),   -- NOT authorized (HM/BM-only)
-  ('54000001-0000-0000-0000-000000000005', 'hm', 'house-07'),   -- admin of the WRONG house
+  ('54000001-0000-0000-0000-000000000002', 'hm', 'harrison'),   -- authorized initiator
+  ('54000001-0000-0000-0000-000000000003', 'bm', 'harrison'),   -- authorized initiator
+  ('54000001-0000-0000-0000-000000000004', 'sm', 'harrison'),   -- NOT authorized (HM/BM-only)
+  ('54000001-0000-0000-0000-000000000005', 'hm', 'kings-court'),   -- admin of the WRONG house
   ('54000001-0000-0000-0000-000000000006', 'sw', NULL),         -- NOT authorized
   ('54000001-0000-0000-0000-000000000007', 'sw', NULL),
   ('54000001-0000-0000-0000-000000000008', 'sw', NULL),
@@ -203,44 +203,44 @@ VALUES (
 --
 -- The victim holds, in ONE coherent fixture (the integration scenario L is built
 -- on exactly these rows so L can assert the whole end state):
---   * IN-PROGRESS below-headcount block: house-05 Thu 19:00 (== anchor),
+--   * IN-PROGRESS below-headcount block: harrison Thu 19:00 (== anchor),
 --     required_headcount 2, only the victim present ⇒ vacating drops to 0 < 2.
---   * RECURRING slot A: house-05 Thursdays 17:00 — occurrences at +0(in-prog? no,
+--   * RECURRING slot A: harrison Thursdays 17:00 — occurrences at +0(in-prog? no,
 --     17:00<19:00 so it's a PAST-today seat → see below), +7, +14, +35 days.
 --     To keep "recurring future" crisp we anchor slot A at occurrences strictly
 --     future: +7/+14/+35 (Thursdays). A PAST occurrence (-7d 17:00) proves
 --     "past untouched".
---   * RECURRING slot B: house-05 FRIDAYS 16:00 — a DIFFERENT day-of-week, +1/+8
+--   * RECURRING slot B: harrison FRIDAYS 16:00 — a DIFFERENT day-of-week, +1/+8
 --     days, proving ≥2 distinct slots dropped in one call.
---   * NON-RECURRING claim: house-05 +7d 15:00 (status 'claimed') → temporary_drop.
---   * OUTBOUND pending float: source = victim's home seat (house-05 +14d 12:00,
+--   * NON-RECURRING claim: harrison +7d 15:00 (status 'claimed') → temporary_drop.
+--   * OUTBOUND pending float: source = victim's home seat (harrison +14d 12:00,
 --     floated_out→ wait: pending float ⇒ pending_float_out source / pending_float_in
---     destination at house-07 +14d 12:00).
---   * INBOUND acknowledged float: source = victim's home seat (house-05 +21d 12:00,
---     floated_out), destination house-07 +21d 12:00 (floated_in).
+--     destination at kings-court +14d 12:00).
+--   * INBOUND acknowledged float: source = victim's home seat (harrison +21d 12:00,
+--     floated_out), destination kings-court +21d 12:00 (floated_in).
 --   * OPEN swap: a pending shift_swap on the victim's +35d 17:00 seat.
 -- ============================================================
 
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
 VALUES
-  -- IN-PROGRESS below-headcount: house-05 19:00 (== anchor), headcount 2.
-  ('54000002-0000-0000-0000-0000000019b0', 'house-05', current_setting('test.s4.anchor')::timestamptz, 2),
+  -- IN-PROGRESS below-headcount: harrison 19:00 (== anchor), headcount 2.
+  ('54000002-0000-0000-0000-0000000019b0', 'harrison', current_setting('test.s4.anchor')::timestamptz, 2),
   -- Recurring slot A (Thursdays 17:00): past (-7d), future +7d / +14d / +35d.
-  ('54000002-0000-0000-0000-0000000017c0', 'house-05', (current_setting('test.s4.anchor')::timestamptz - interval '7 days')  - interval '2 hours', 1), -- past
-  ('54000002-0000-0000-0000-0000000017c1', 'house-05', (current_setting('test.s4.anchor')::timestamptz + interval '7 days')  - interval '2 hours', 1), -- +7d
-  ('54000002-0000-0000-0000-0000000017c2', 'house-05', (current_setting('test.s4.anchor')::timestamptz + interval '14 days') - interval '2 hours', 1), -- +14d
-  ('54000002-0000-0000-0000-0000000017c3', 'house-05', (current_setting('test.s4.anchor')::timestamptz + interval '35 days') - interval '2 hours', 1), -- +35d (swap seat)
+  ('54000002-0000-0000-0000-0000000017c0', 'harrison', (current_setting('test.s4.anchor')::timestamptz - interval '7 days')  - interval '2 hours', 1), -- past
+  ('54000002-0000-0000-0000-0000000017c1', 'harrison', (current_setting('test.s4.anchor')::timestamptz + interval '7 days')  - interval '2 hours', 1), -- +7d
+  ('54000002-0000-0000-0000-0000000017c2', 'harrison', (current_setting('test.s4.anchor')::timestamptz + interval '14 days') - interval '2 hours', 1), -- +14d
+  ('54000002-0000-0000-0000-0000000017c3', 'harrison', (current_setting('test.s4.anchor')::timestamptz + interval '35 days') - interval '2 hours', 1), -- +35d (swap seat)
   -- Recurring slot B (Fridays 16:00 = anchor + 1 day - 3h): +1d / +8d.
-  ('54000002-0000-0000-0000-0000000016d0', 'house-05', (current_setting('test.s4.anchor')::timestamptz + interval '1 day')  - interval '3 hours', 1), -- next-day Fri
-  ('54000002-0000-0000-0000-0000000016d1', 'house-05', (current_setting('test.s4.anchor')::timestamptz + interval '8 days') - interval '3 hours', 1), -- +8d Fri
-  -- Non-recurring claim: house-05 +7d 15:00.
-  ('54000002-0000-0000-0000-0000000015e0', 'house-05', (current_setting('test.s4.anchor')::timestamptz + interval '7 days') - interval '4 hours', 1),
-  -- Outbound pending float: source house-05 +14d 12:00, destination house-07 +14d 12:00.
-  ('54000002-0000-0000-0000-0000000012f0', 'house-05', (current_setting('test.s4.anchor')::timestamptz + interval '14 days') - interval '7 hours', 1),
-  ('54000002-0000-0000-0000-000000071200', 'house-07', (current_setting('test.s4.anchor')::timestamptz + interval '14 days') - interval '7 hours', 1),
-  -- Inbound acknowledged float: source house-05 +21d 12:00, destination house-07 +21d 12:00.
-  ('54000002-0000-0000-0000-0000000012f1', 'house-05', (current_setting('test.s4.anchor')::timestamptz + interval '21 days') - interval '7 hours', 1),
-  ('54000002-0000-0000-0000-000000071201', 'house-07', (current_setting('test.s4.anchor')::timestamptz + interval '21 days') - interval '7 hours', 1);
+  ('54000002-0000-0000-0000-0000000016d0', 'harrison', (current_setting('test.s4.anchor')::timestamptz + interval '1 day')  - interval '3 hours', 1), -- next-day Fri
+  ('54000002-0000-0000-0000-0000000016d1', 'harrison', (current_setting('test.s4.anchor')::timestamptz + interval '8 days') - interval '3 hours', 1), -- +8d Fri
+  -- Non-recurring claim: harrison +7d 15:00.
+  ('54000002-0000-0000-0000-0000000015e0', 'harrison', (current_setting('test.s4.anchor')::timestamptz + interval '7 days') - interval '4 hours', 1),
+  -- Outbound pending float: source harrison +14d 12:00, destination kings-court +14d 12:00.
+  ('54000002-0000-0000-0000-0000000012f0', 'harrison', (current_setting('test.s4.anchor')::timestamptz + interval '14 days') - interval '7 hours', 1),
+  ('54000002-0000-0000-0000-000000071200', 'kings-court', (current_setting('test.s4.anchor')::timestamptz + interval '14 days') - interval '7 hours', 1),
+  -- Inbound acknowledged float: source harrison +21d 12:00, destination kings-court +21d 12:00.
+  ('54000002-0000-0000-0000-0000000012f1', 'harrison', (current_setting('test.s4.anchor')::timestamptz + interval '21 days') - interval '7 hours', 1),
+  ('54000002-0000-0000-0000-000000071201', 'kings-court', (current_setting('test.s4.anchor')::timestamptz + interval '21 days') - interval '7 hours', 1);
 
 INSERT INTO public.shift_block_assignments
   (assignment_id, block_id, user_id, status, vacancy_origin, is_float, source_house_id, parent_float_id)
@@ -269,12 +269,12 @@ VALUES
   ('54000003-0000-0000-0000-0000000012f0', '54000002-0000-0000-0000-0000000012f0',
    '54000001-0000-0000-0000-000000000001', 'pending_float_out', 'none', false, NULL, NULL),
   ('54000003-0000-0000-0000-000000071200', '54000002-0000-0000-0000-000000071200',
-   '54000001-0000-0000-0000-000000000001', 'pending_float_in', 'none', true, 'house-05', NULL),
+   '54000001-0000-0000-0000-000000000001', 'pending_float_in', 'none', true, 'harrison', NULL),
   -- Inbound acknowledged float: source (floated_out), destination (floated_in).
   ('54000003-0000-0000-0000-0000000012f1', '54000002-0000-0000-0000-0000000012f1',
    '54000001-0000-0000-0000-000000000001', 'floated_out', 'none', false, NULL, NULL),
   ('54000003-0000-0000-0000-000000071201', '54000002-0000-0000-0000-000000071201',
-   '54000001-0000-0000-0000-000000000001', 'floated_in', 'none', true, 'house-05', NULL);
+   '54000001-0000-0000-0000-000000000001', 'floated_in', 'none', true, 'harrison', NULL);
 
 -- The two float rows (the victim is the floater on BOTH; user_id = victim).
 INSERT INTO public.float_assignments
@@ -351,13 +351,13 @@ SELECT is(
 --    rejection rolls back its own statement, but a SUCCESS would consume seats).
 -- ============================================================
 
--- A dedicated, obligation-free permission victim (home house-05).
+-- A dedicated, obligation-free permission victim (home harrison).
 INSERT INTO auth.users (id, instance_id, aud, role, email)
 VALUES ('54000001-0000-0000-0000-0000000000b0', '00000000-0000-0000-0000-000000000000',
         'authenticated', 'authenticated', 's4-permvictim@test.local')
 ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active)
-VALUES ('54000001-0000-0000-0000-0000000000b0', 'PermVictim (h05)', 's4-permvictim@test.local', 'house-05', true);
+VALUES ('54000001-0000-0000-0000-0000000000b0', 'PermVictim (h05)', 's4-permvictim@test.local', 'harrison', true);
 INSERT INTO public.user_roles (user_id, role, scope_house_id)
 VALUES ('54000001-0000-0000-0000-0000000000b0', 'sw', NULL) ON CONFLICT DO NOTHING;
 
@@ -371,7 +371,7 @@ SELECT throws_ok(
 );
 SELECT throws_ok(
   $$ SELECT public.fire_worker(
-       '54000001-0000-0000-0000-000000000004'::uuid,   -- SM of house-05 (the victim's home house)
+       '54000001-0000-0000-0000-000000000004'::uuid,   -- SM of harrison (the victim's home house)
        '54000001-0000-0000-0000-0000000000b0'::uuid,
        current_setting('test.s4.anchor')::timestamptz) $$,
   'P0001', 'not_authorized',
@@ -379,7 +379,7 @@ SELECT throws_ok(
 );
 SELECT throws_ok(
   $$ SELECT public.fire_worker(
-       '54000001-0000-0000-0000-000000000005'::uuid,   -- HM of house-07 (a DIFFERENT house)
+       '54000001-0000-0000-0000-000000000005'::uuid,   -- HM of kings-court (a DIFFERENT house)
        '54000001-0000-0000-0000-0000000000b0'::uuid,
        current_setting('test.s4.anchor')::timestamptz) $$,
   'P0001', 'not_authorized',
@@ -387,7 +387,7 @@ SELECT throws_ok(
 );
 SELECT throws_ok(
   $$ SELECT public.fire_worker(
-       '54000001-0000-0000-0000-000000000002'::uuid,   -- HM of house-05
+       '54000001-0000-0000-0000-000000000002'::uuid,   -- HM of harrison
        '54000001-0000-0000-0000-0000000000ff'::uuid,   -- no such users row
        current_setting('test.s4.anchor')::timestamptz) $$,
   'P0001', 'worker_not_found',
@@ -396,7 +396,7 @@ SELECT throws_ok(
 -- Allowed: the HM of the worker's home house fires the obligation-free perm victim.
 SELECT lives_ok(
   $$ SELECT public.fire_worker(
-       '54000001-0000-0000-0000-000000000002'::uuid,   -- HM of house-05
+       '54000001-0000-0000-0000-000000000002'::uuid,   -- HM of harrison
        '54000001-0000-0000-0000-0000000000b0'::uuid,
        current_setting('test.s4.anchor')::timestamptz) $$,
   'should allow when initiator is the HM of the worker''s home house'
@@ -412,19 +412,19 @@ VALUES ('54000001-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000
         'authenticated', 'authenticated', 's4-permvictim2@test.local')
 ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active)
-VALUES ('54000001-0000-0000-0000-0000000000b1', 'PermVictim2 (h05)', 's4-permvictim2@test.local', 'house-05', true);
+VALUES ('54000001-0000-0000-0000-0000000000b1', 'PermVictim2 (h05)', 's4-permvictim2@test.local', 'harrison', true);
 INSERT INTO public.user_roles (user_id, role, scope_house_id)
 VALUES ('54000001-0000-0000-0000-0000000000b1', 'sw', NULL) ON CONFLICT DO NOTHING;
 SELECT lives_ok(
   $$ SELECT public.fire_worker(
-       '54000001-0000-0000-0000-000000000003'::uuid,   -- BM of house-05
+       '54000001-0000-0000-0000-000000000003'::uuid,   -- BM of harrison
        '54000001-0000-0000-0000-0000000000b1'::uuid,
        current_setting('test.s4.anchor')::timestamptz) $$,
   'should allow when initiator is the BM of the worker''s home house'
 );
 
 -- ============================================================
--- THE BIG FIRE. Fire the canonical victim ONCE (HM of house-05). Sections C–H + L
+-- THE BIG FIRE. Fire the canonical victim ONCE (HM of harrison). Sections C–H + L
 --    assert the resulting end state; the returned jsonb is captured for the count
 --    assertions. (One fire, many asserts — the high-blast-radius action exercised
 --    in full per the user's "thorough tests" ask.)
@@ -433,7 +433,7 @@ SELECT lives_ok(
 SELECT set_config(
   'test.s4.fire',
   (public.fire_worker(
-     '54000001-0000-0000-0000-000000000002'::uuid,     -- HM of house-05
+     '54000001-0000-0000-0000-000000000002'::uuid,     -- HM of harrison
      '54000001-0000-0000-0000-000000000001'::uuid,     -- the canonical victim
      current_setting('test.s4.anchor')::timestamptz
    ))::text,
@@ -489,13 +489,13 @@ SELECT is(
 );
 -- The dropped recurring slots surface in the permanent openings feed.
 SELECT is(
-  (SELECT count(*)::integer FROM public.permanent_openings_feed('house-05', current_setting('test.s4.anchor')::timestamptz)
+  (SELECT count(*)::integer FROM public.permanent_openings_feed('harrison', current_setting('test.s4.anchor')::timestamptz)
    WHERE block_start_time = '17:00'),
   1,
   'should surface dropped recurring occurrences in the permanent_openings_feed (slot-A 17:00)'
 );
 SELECT is(
-  (SELECT count(*)::integer FROM public.permanent_openings_feed('house-05', current_setting('test.s4.anchor')::timestamptz)
+  (SELECT count(*)::integer FROM public.permanent_openings_feed('harrison', current_setting('test.s4.anchor')::timestamptz)
    WHERE block_start_time = '16:00'),
   1,
   'should surface dropped recurring occurrences in the permanent_openings_feed (slot-B 16:00)'
@@ -520,13 +520,13 @@ SELECT is(
   'should vacate every future claimed seat to vacancy_origin=temporary_drop (NOT permanent_drop)'
 );
 SELECT is(
-  (SELECT count(*)::integer FROM public.weekly_open_shifts_feed('house-05', current_setting('test.s4.anchor')::timestamptz)
+  (SELECT count(*)::integer FROM public.weekly_open_shifts_feed('harrison', current_setting('test.s4.anchor')::timestamptz)
    WHERE assignment_id = '54000003-0000-0000-0000-0000000015e0'),
   1,
   'should surface vacated non-recurring occurrences in the weekly_open_shifts_feed when within 30 days'
 );
 SELECT is(
-  (SELECT count(*)::integer FROM public.permanent_openings_feed('house-05', current_setting('test.s4.anchor')::timestamptz)
+  (SELECT count(*)::integer FROM public.permanent_openings_feed('harrison', current_setting('test.s4.anchor')::timestamptz)
    WHERE block_start_time = '15:00'),
   0,
   'should NOT place a vacated non-recurring seat in the permanent_openings_feed'
@@ -564,32 +564,32 @@ SELECT is(
 
 -- The at/above-headcount case: a SEPARATE in-progress overstaffed desk → NO step.
 -- A now()-instant in-progress block must start exactly at p_now (the 30-min span
--- start), so it cannot share house-05's anchor slot (UNIQUE house_id+start). Put it
--- at house-07 19:00 (headcount 1) with the over-victim + a coworker present; firing
--- the over-victim leaves the coworker (1 >= 1). The over-victim is home house-07, so
--- the HM of house-07 is the authorized initiator.
+-- start), so it cannot share harrison's anchor slot (UNIQUE house_id+start). Put it
+-- at kings-court 19:00 (headcount 1) with the over-victim + a coworker present; firing
+-- the over-victim leaves the coworker (1 >= 1). The over-victim is home kings-court, so
+-- the HM of kings-court is the authorized initiator.
 INSERT INTO auth.users (id, instance_id, aud, role, email)
 VALUES ('54000001-0000-0000-0000-0000000000c0', '00000000-0000-0000-0000-000000000000',
         'authenticated', 'authenticated', 's4-ovictim@test.local')
 ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active)
-VALUES ('54000001-0000-0000-0000-0000000000c0', 'OverVictim (h07)', 's4-ovictim@test.local', 'house-07', true);
+VALUES ('54000001-0000-0000-0000-0000000000c0', 'OverVictim (h07)', 's4-ovictim@test.local', 'kings-court', true);
 INSERT INTO public.user_roles (user_id, role, scope_house_id)
 VALUES ('54000001-0000-0000-0000-0000000000c0', 'sw', NULL) ON CONFLICT DO NOTHING;
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
-VALUES ('54000002-0000-0000-0000-0000000019c0', 'house-07', current_setting('test.s4.anchor')::timestamptz, 1);
+VALUES ('54000002-0000-0000-0000-0000000019c0', 'kings-court', current_setting('test.s4.anchor')::timestamptz, 1);
 INSERT INTO public.shift_block_assignments
   (assignment_id, block_id, user_id, status, vacancy_origin, is_float, source_house_id)
 VALUES
   ('54000003-0000-0000-0000-0000000019c0', '54000002-0000-0000-0000-0000000019c0',
-   '54000001-0000-0000-0000-0000000000c0', 'scheduled', 'none', false, NULL),       -- the over-victim (home house-07)
+   '54000001-0000-0000-0000-0000000000c0', 'scheduled', 'none', false, NULL),       -- the over-victim (home kings-court)
   ('54000003-0000-0000-0000-0000000019c1', '54000002-0000-0000-0000-0000000019c0',
    '54000001-0000-0000-0000-000000000007', 'scheduled', 'none', false, NULL);       -- a coworker who stays
 SELECT set_config(
   'test.s4.fire_over',
   (public.fire_worker(
-     '54000001-0000-0000-0000-000000000005'::uuid,                                  -- HM of house-07
-     '54000001-0000-0000-0000-0000000000c0'::uuid,                                  -- the over-victim (home house-07)
+     '54000001-0000-0000-0000-000000000005'::uuid,                                  -- HM of kings-court
+     '54000001-0000-0000-0000-0000000000c0'::uuid,                                  -- the over-victim (home kings-court)
      current_setting('test.s4.anchor')::timestamptz
    ))::text,
   false
@@ -633,7 +633,7 @@ SELECT is(
   'should reopen each voided float''s DESTINATION seat as vacant/temporary_drop (acknowledged float dest)'
 );
 -- Source seats are restored to the worker, then permanent-dropped as recurring
--- slots (they are future house-05 12:00 seats ⇒ slot drop). End state: vacant /
+-- slots (they are future harrison 12:00 seats ⇒ slot drop). End state: vacant /
 -- permanent_drop, NOT floated_out / pending_float_out.
 SELECT is(
   (SELECT status::text || '/' || vacancy_origin::text
@@ -662,20 +662,20 @@ VALUES ('54000001-0000-0000-0000-0000000000d0', '00000000-0000-0000-0000-0000000
         'authenticated', 'authenticated', 's4-ftvictim@test.local')
 ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active)
-VALUES ('54000001-0000-0000-0000-0000000000d0', 'FTVictim (h05)', 's4-ftvictim@test.local', 'house-05', true);
+VALUES ('54000001-0000-0000-0000-0000000000d0', 'FTVictim (h05)', 's4-ftvictim@test.local', 'harrison', true);
 INSERT INTO public.user_roles (user_id, role, scope_house_id)
 VALUES ('54000001-0000-0000-0000-0000000000d0', 'sw', NULL) ON CONFLICT DO NOTHING;
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
 VALUES
-  ('54000002-0000-0000-0000-0000000012e0', 'house-05', (current_setting('test.s4.anchor')::timestamptz + interval '14 days') - interval '8 hours', 1),
-  ('54000002-0000-0000-0000-000000071280', 'house-07', (current_setting('test.s4.anchor')::timestamptz + interval '14 days') - interval '8 hours', 1);
+  ('54000002-0000-0000-0000-0000000012e0', 'harrison', (current_setting('test.s4.anchor')::timestamptz + interval '14 days') - interval '8 hours', 1),
+  ('54000002-0000-0000-0000-000000071280', 'kings-court', (current_setting('test.s4.anchor')::timestamptz + interval '14 days') - interval '8 hours', 1);
 INSERT INTO public.shift_block_assignments
   (assignment_id, block_id, user_id, status, vacancy_origin, is_float, source_house_id)
 VALUES
   ('54000003-0000-0000-0000-0000000012e0', '54000002-0000-0000-0000-0000000012e0',
    '54000001-0000-0000-0000-0000000000d0', 'pending_float_out', 'none', false, NULL),
   ('54000003-0000-0000-0000-000000071280', '54000002-0000-0000-0000-000000071280',
-   '54000001-0000-0000-0000-0000000000d0', 'pending_float_in', 'none', true, 'house-05');
+   '54000001-0000-0000-0000-0000000000d0', 'pending_float_in', 'none', true, 'harrison');
 INSERT INTO public.float_assignments
   (float_id, user_id, source_assignment_ids, destination_assignment_ids, status,
    initiated_by, force_triggered_by, expires_for_cleanup_at)
@@ -712,13 +712,13 @@ VALUES ('54000001-0000-0000-0000-0000000000d1', '00000000-0000-0000-0000-0000000
         'authenticated', 'authenticated', 's4-declvictim@test.local')
 ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active)
-VALUES ('54000001-0000-0000-0000-0000000000d1', 'DeclVictim (h05)', 's4-declvictim@test.local', 'house-05', true);
+VALUES ('54000001-0000-0000-0000-0000000000d1', 'DeclVictim (h05)', 's4-declvictim@test.local', 'harrison', true);
 INSERT INTO public.user_roles (user_id, role, scope_house_id)
 VALUES ('54000001-0000-0000-0000-0000000000d1', 'sw', NULL) ON CONFLICT DO NOTHING;
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
 VALUES
-  ('54000002-0000-0000-0000-0000000012e1', 'house-05', (current_setting('test.s4.anchor')::timestamptz + interval '14 days') - interval '9 hours', 1),
-  ('54000002-0000-0000-0000-000000071281', 'house-07', (current_setting('test.s4.anchor')::timestamptz + interval '14 days') - interval '9 hours', 1);
+  ('54000002-0000-0000-0000-0000000012e1', 'harrison', (current_setting('test.s4.anchor')::timestamptz + interval '14 days') - interval '9 hours', 1),
+  ('54000002-0000-0000-0000-000000071281', 'kings-court', (current_setting('test.s4.anchor')::timestamptz + interval '14 days') - interval '9 hours', 1);
 INSERT INTO public.shift_block_assignments
   (assignment_id, block_id, user_id, status, vacancy_origin, is_float, source_house_id)
 VALUES
@@ -767,13 +767,13 @@ VALUES ('54000001-0000-0000-0000-0000000000e0', '00000000-0000-0000-0000-0000000
         'authenticated', 'authenticated', 's4-swapvictim@test.local')
 ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active)
-VALUES ('54000001-0000-0000-0000-0000000000e0', 'SwapVictim (h05)', 's4-swapvictim@test.local', 'house-05', true);
+VALUES ('54000001-0000-0000-0000-0000000000e0', 'SwapVictim (h05)', 's4-swapvictim@test.local', 'harrison', true);
 INSERT INTO public.user_roles (user_id, role, scope_house_id)
 VALUES ('54000001-0000-0000-0000-0000000000e0', 'sw', NULL) ON CONFLICT DO NOTHING;
 -- A pristine future seat that the swap-victim holds (so firing has a seat to act on
 -- but the swap-void assertions are about swap_requests rows, not seat unwinding).
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
-VALUES ('54000002-0000-0000-0000-0000000013e0', 'house-05', (current_setting('test.s4.anchor')::timestamptz + interval '14 days') - interval '6 hours', 1);
+VALUES ('54000002-0000-0000-0000-0000000013e0', 'harrison', (current_setting('test.s4.anchor')::timestamptz + interval '14 days') - interval '6 hours', 1);
 INSERT INTO public.shift_block_assignments
   (assignment_id, block_id, user_id, status, vacancy_origin, is_float, source_house_id)
 VALUES ('54000003-0000-0000-0000-0000000013e0', '54000002-0000-0000-0000-0000000013e0',
@@ -831,9 +831,9 @@ SELECT is(
   'should auto-clear broadcast_subscribed when deactivating a subscribed worker'
 );
 -- Unclaimable afterward: claim_open_shift raises user_inactive for the fired worker.
--- (Use a fresh vacant house-05 seat well in the future.)
+-- (Use a fresh vacant harrison seat well in the future.)
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
-VALUES ('54000002-0000-0000-0000-0000000014a0', 'house-05', (current_setting('test.s4.anchor')::timestamptz + interval '21 days') - interval '5 hours', 1);
+VALUES ('54000002-0000-0000-0000-0000000014a0', 'harrison', (current_setting('test.s4.anchor')::timestamptz + interval '21 days') - interval '5 hours', 1);
 INSERT INTO public.shift_block_assignments
   (assignment_id, block_id, user_id, status, vacancy_origin, is_float, source_house_id)
 VALUES ('54000003-0000-0000-0000-0000000014a0', '54000002-0000-0000-0000-0000000014a0',
@@ -946,7 +946,7 @@ SELECT set_config(
   false
 );
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
-VALUES ('54000002-0000-0000-0000-0000000099a0', 'house-05', (current_setting('test.s4.anchor')::timestamptz + interval '407 days'), 1);
+VALUES ('54000002-0000-0000-0000-0000000099a0', 'harrison', (current_setting('test.s4.anchor')::timestamptz + interval '407 days'), 1);
 INSERT INTO public.shift_block_assignments
   (assignment_id, block_id, user_id, status, vacancy_origin, is_float, source_house_id)
 VALUES ('54000003-0000-0000-0000-0000000099a0', '54000002-0000-0000-0000-0000000099a0',
@@ -1039,15 +1039,15 @@ SELECT ok(
 -- voided AND the home (source) seat is handled (restored→dropped).
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
 VALUES
-  ('54000002-0000-0000-0000-0000000012fa', 'house-05', (current_setting('test.s4.anchor')::timestamptz + interval '7 days') - interval '6 hours', 1),
-  ('54000002-0000-0000-0000-0000000712fa', 'house-07', (current_setting('test.s4.anchor')::timestamptz + interval '7 days') - interval '6 hours', 1);
+  ('54000002-0000-0000-0000-0000000012fa', 'harrison', (current_setting('test.s4.anchor')::timestamptz + interval '7 days') - interval '6 hours', 1),
+  ('54000002-0000-0000-0000-0000000712fa', 'kings-court', (current_setting('test.s4.anchor')::timestamptz + interval '7 days') - interval '6 hours', 1);
 INSERT INTO public.shift_block_assignments
   (assignment_id, block_id, user_id, status, vacancy_origin, is_float, source_house_id, parent_float_id)
 VALUES
   ('54000003-0000-0000-0000-0000000012fa', '54000002-0000-0000-0000-0000000012fa',
    '54000001-0000-0000-0000-00000000000d', 'floated_out', 'none', false, NULL, NULL),
   ('54000003-0000-0000-0000-0000000712fa', '54000002-0000-0000-0000-0000000712fa',
-   '54000001-0000-0000-0000-00000000000d', 'floated_in', 'none', true, 'house-05', NULL);
+   '54000001-0000-0000-0000-00000000000d', 'floated_in', 'none', true, 'harrison', NULL);
 INSERT INTO public.float_assignments
   (float_id, user_id, source_assignment_ids, destination_assignment_ids, status,
    initiated_by, force_triggered_by, acknowledged_at, expires_for_cleanup_at)

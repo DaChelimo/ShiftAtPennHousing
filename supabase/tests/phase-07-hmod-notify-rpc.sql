@@ -26,18 +26,18 @@
 
 BEGIN;
 
-SELECT plan(12);
+SELECT plan(13);
 
--- The shared seed (supabase/seed.sql) registers more than one hm for house-03: both
+-- The shared seed (supabase/seed.sql) registers more than one hm for lower-quad: both
 -- "Ingrid Incoming" (a0000000-…-000a) and the e2e-lifecycle fixture "E2E HM House-03"
 -- (e0000000-…-aaaa00000004). resolve_hm_for_house loops the house's hm roles with NO
--- ORDER BY and returns the first that resolves, so any seeded house-03 hm can be returned
+-- ORDER BY and returns the first that resolves, so any seeded lower-quad hm can be returned
 -- ahead of this suite's own fixture HM — making the HM-recipient assertions below pass or
--- fail by physical scan order. Remove ALL pre-existing house-03 hm roles (rolled back at
--- the end) so the fixture HM inserted below is the sole house-03 hm.
+-- fail by physical scan order. Remove ALL pre-existing lower-quad hm roles (rolled back at
+-- the end) so the fixture HM inserted below is the sole lower-quad hm.
 DELETE FROM public.user_roles
   WHERE role IN ('hm', 'rsm')
-    AND scope_house_id = 'house-03';
+    AND scope_house_id = 'lower-quad';
 
 -- ============================================================
 -- 0. Fixture: an HM at one house + an HMOD on the rotor for a known
@@ -59,19 +59,19 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active)
 VALUES
   ('e000050a-0000-0000-0000-000000000001', 'Test HM', 'p07hm-hm@test.local',
-   'house-03', true),
+   'lower-quad', true),
   ('e000050a-0000-0000-0000-000000000002', 'Test HMOD', 'p07hm-hmod@test.local',
    'harnwell', true),
   ('e000050a-0000-0000-0000-000000000003', 'Test RSM', 'p07hm-rsm@test.local',
-   'house-03', true);
+   'lower-quad', true);
 
 -- §2.3a/§10.1: during HM hours the in-house recipient is the house's RSM, not the
--- HM. The fixture RSM is the sole house-03 rsm (pre-existing ones were deleted above).
+-- HM. The fixture RSM is the sole lower-quad rsm (pre-existing ones were deleted above).
 INSERT INTO public.user_roles (user_id, role, scope_house_id)
 VALUES
-  ('e000050a-0000-0000-0000-000000000001', 'hm', 'house-03'),
+  ('e000050a-0000-0000-0000-000000000001', 'hm', 'lower-quad'),
   ('e000050a-0000-0000-0000-000000000002', 'hm', 'harnwell'),
-  ('e000050a-0000-0000-0000-000000000003', 'rsm', 'house-03');
+  ('e000050a-0000-0000-0000-000000000003', 'rsm', 'lower-quad');
 
 -- Anchor: a Wednesday 30 days out, 12:00 EDT — solidly inside HM
 -- working hours so the HM path is exercised. We resolve the
@@ -113,13 +113,13 @@ INSERT INTO public.shift_blocks
   (block_id, house_id, block_start_at, required_headcount)
 VALUES
   -- Block A: 12:00 Wednesday — HM hours, HM at the block's house.
-  ('f000050a-0000-0000-0000-000000000001', 'house-03',
+  ('f000050a-0000-0000-0000-000000000001', 'lower-quad',
    current_setting('test.phase07hm.anchor')::timestamptz, 1),
   -- Block B: 22:00 Wednesday (same date, +10h) — outside HM hours.
-  ('f000050a-0000-0000-0000-000000000002', 'house-03',
+  ('f000050a-0000-0000-0000-000000000002', 'lower-quad',
    current_setting('test.phase07hm.anchor')::timestamptz + interval '10 hours', 1),
   -- Block C: idempotency target.
-  ('f000050a-0000-0000-0000-000000000003', 'house-03',
+  ('f000050a-0000-0000-0000-000000000003', 'lower-quad',
    current_setting('test.phase07hm.anchor')::timestamptz + interval '30 minutes', 1);
 
 -- ============================================================
@@ -140,7 +140,7 @@ SELECT has_function(
 SELECT lives_ok(
   $$ SELECT public.process_hmod_notify_allied_step(
        'f000050a-0000-0000-0000-000000000001'::uuid,
-       'house-03',
+       'lower-quad',
        current_setting('test.phase07hm.anchor')::timestamptz,
        current_setting('test.phase07hm.anchor')::timestamptz - interval '2 hours',
        'float_lookup_failed'
@@ -180,6 +180,20 @@ SELECT is(
   'B-1 hmod: notification carries the reason'
 );
 
+-- block_end_at (migration 20260624000001): a per-block chain alert's coverage window
+-- ends one 30-minute block after its start, so the action inbox archives it on the
+-- TRUE window end rather than the start.
+SELECT is(
+  (SELECT (payload ->> 'block_end_at')::timestamptz FROM public.notifications
+   WHERE type = 'hmod_urgent'
+     AND payload ->> 'block_id' = 'f000050a-0000-0000-0000-000000000001'),
+  (SELECT (payload ->> 'block_start_at')::timestamptz + interval '30 minutes'
+   FROM public.notifications
+   WHERE type = 'hmod_urgent'
+     AND payload ->> 'block_id' = 'f000050a-0000-0000-0000-000000000001'),
+  'B-1 hmod: payload.block_end_at = block_start_at + 30 minutes'
+);
+
 -- ============================================================
 -- 3. HMOD-hours path: block starts at 22:00 (outside HM hours) → HMOD
 --    is the recipient even if the scan time is inside HM hours.
@@ -188,7 +202,7 @@ SELECT is(
 SELECT lives_ok(
   $$ SELECT public.process_hmod_notify_allied_step(
        'f000050a-0000-0000-0000-000000000002'::uuid,
-       'house-03',
+       'lower-quad',
        current_setting('test.phase07hm.anchor')::timestamptz + interval '10 hours',
        current_setting('test.phase07hm.anchor')::timestamptz - interval '1 hour',
        'escalation_chain'
@@ -219,7 +233,7 @@ SELECT is(
 SELECT lives_ok(
   $$ SELECT public.process_hmod_notify_allied_step(
        'f000050a-0000-0000-0000-000000000003'::uuid,
-       'house-03',
+       'lower-quad',
        current_setting('test.phase07hm.anchor')::timestamptz + interval '30 minutes',
        current_setting('test.phase07hm.anchor')::timestamptz - interval '90 minutes',
        'float_lookup_failed'
@@ -230,7 +244,7 @@ SELECT lives_ok(
 SELECT is(
   (SELECT (public.process_hmod_notify_allied_step(
             'f000050a-0000-0000-0000-000000000003'::uuid,
-            'house-03',
+            'lower-quad',
             current_setting('test.phase07hm.anchor')::timestamptz + interval '30 minutes',
             current_setting('test.phase07hm.anchor')::timestamptz - interval '90 minutes',
             'float_lookup_failed'

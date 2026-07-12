@@ -42,7 +42,14 @@ export type {
   CompiledSeason,
 } from './operating-seasons/index.js';
 export * from './permanent-ops/index.js';
+export * from './preference-generation/index.js';
 export * from './preferences/index.js';
+export * from './random/seeded.js';
+export * from './schedule-generation/index.js';
 export * from './scheduling/phase1Grouping.js';
 export * from './scheduling/scheduleBuilderCard.js';
 export * from './time/index.js';
+export * from './worker-shifts/index.js';
+export * from './worker-shifts/format.js';
+export * from './worker-swaps/index.js';
+export * from './worker-floats/index.js';

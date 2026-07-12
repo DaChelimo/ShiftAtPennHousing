@@ -12,11 +12,11 @@ export default async function ConfigPage() {
 
   const authorized = await isProjectAdministrator(user.userId);
   return (
-    <div className="page" style={{ maxWidth: 760 }}>
+    <div className="page" style={{ maxWidth: 980 }}>
       <PageHead
         eyebrow="System"
         title="System configuration"
-        sub="Project-wide runtime values, each with an audit trail (§6.12)."
+        sub="Project-wide runtime values that control scheduling, floats, and escalation."
       />
       {authorized ? (
         <SystemConfigEditor initialRows={await getSystemConfig()} />

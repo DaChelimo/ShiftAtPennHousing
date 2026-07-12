@@ -69,17 +69,17 @@ VALUES ('d2000001-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000
         'authenticated', 'authenticated', 't22c-worker@test.local')
 ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active)
-VALUES ('d2000001-0000-0000-0000-000000000001', 'T2-2c Worker', 't22c-worker@test.local', 'house-05', true)
+VALUES ('d2000001-0000-0000-0000-000000000001', 'T2-2c Worker', 't22c-worker@test.local', 'harrison', true)
 ON CONFLICT (user_id) DO NOTHING;
 
 INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
 VALUES
   -- breakWin: claimed-in-window, dropped-in-window → returns to calendar pool.
-  ('d2000002-0000-0000-0000-000000000013', 'house-05', ('2026-11-27 18:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
+  ('d2000002-0000-0000-0000-000000000013', 'harrison', ('2026-11-27 18:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
   -- breakFeed: vacant break seat dropped/evaluated after T-1d → open-shifts feed.
-  ('d2000002-0000-0000-0000-000000000014', 'house-05', ('2026-11-28 18:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
+  ('d2000002-0000-0000-0000-000000000014', 'harrison', ('2026-11-28 18:00'::timestamp AT TIME ZONE 'America/New_York'), 1),
   -- reg: a normal (non-break) seat, owned then dropped → always in the feed.
-  ('d2000002-0000-0000-0000-000000000020', 'house-05', ('2026-11-20 18:00'::timestamp AT TIME ZONE 'America/New_York'), 1);
+  ('d2000002-0000-0000-0000-000000000020', 'harrison', ('2026-11-20 18:00'::timestamp AT TIME ZONE 'America/New_York'), 1);
 
 INSERT INTO public.shift_block_assignments (assignment_id, block_id, user_id, status, vacancy_origin)
 VALUES
@@ -119,7 +119,7 @@ SELECT lives_ok(
 
 SELECT is(
   (SELECT count(*)::integer FROM public.break_claim_calendar_pool(
-       'house-05', current_setting('t22c.in_window')::timestamptz)
+       'harrison', current_setting('t22c.in_window')::timestamptz)
     WHERE block_id = 'd2000002-0000-0000-0000-000000000013'),
   1,
   'pre-T-1d: a dropped claimed break shift returns to the CALENDAR claim pool (§4.4)'
@@ -127,7 +127,7 @@ SELECT is(
 
 SELECT is(
   (SELECT count(*)::integer FROM public.weekly_open_shifts_feed(
-       'house-05', current_setting('t22c.in_window')::timestamptz)
+       'harrison', current_setting('t22c.in_window')::timestamptz)
     WHERE block_id = 'd2000002-0000-0000-0000-000000000013'),
   0,
   'pre-T-1d: the dropped break shift does NOT appear in the open-shifts feed (§4.4)'
@@ -138,7 +138,7 @@ SELECT is(
 -- start-anchored T-1d; the picker is closed for the whole break.
 SELECT is(
   (SELECT count(*)::integer FROM public.break_claim_calendar_pool(
-       'house-05', current_setting('t22c.after_close')::timestamptz)
+       'harrison', current_setting('t22c.after_close')::timestamptz)
     WHERE block_id = 'd2000002-0000-0000-0000-000000000014'),
   0,
   'post-T-1d: the calendar picker is closed — the break shift is NOT in the pool (§4.4)'
@@ -146,7 +146,7 @@ SELECT is(
 
 SELECT is(
   (SELECT count(*)::integer FROM public.weekly_open_shifts_feed(
-       'house-05', current_setting('t22c.after_close')::timestamptz)
+       'harrison', current_setting('t22c.after_close')::timestamptz)
     WHERE block_id = 'd2000002-0000-0000-0000-000000000014'),
   1,
   'post-T-1d: the break shift enters the OPEN-SHIFTS feed (§4.4)'
@@ -164,7 +164,7 @@ SELECT lives_ok(
 
 SELECT is(
   (SELECT count(*)::integer FROM public.weekly_open_shifts_feed(
-       'house-05', current_setting('t22c.in_window')::timestamptz)
+       'harrison', current_setting('t22c.in_window')::timestamptz)
     WHERE block_id = 'd2000002-0000-0000-0000-000000000020'),
   1,
   'no-regression: the dropped non-break shift is in the open-shifts feed (drop path unchanged)'

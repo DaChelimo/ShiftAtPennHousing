@@ -72,8 +72,8 @@ SELECT plan(35);
 --    Houses (all seeded by supabase/seed.sql, applied before pgTAP):
 --      quad     — the ALERT house (payload.house_id). Hana the HM + Bea the BM
 --                 administer it.
---      house-05 — a SECOND house; its HM is the wrong-house-admin rejection (10).
---      house-07 — the HMOD's HOME house (≠ quad), so line 9 proves the on-duty-HMOD
+--      harrison — a SECOND house; its HM is the wrong-house-admin rejection (10).
+--      kings-court — the HMOD's HOME house (≠ quad), so line 9 proves the on-duty-HMOD
 --                 branch authorized them, NOT house-admin.
 -- ============================================================
 
@@ -91,10 +91,10 @@ VALUES
   -- Wendy — a plain SW. NEVER authorized.
   ('53000001-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 's3-sw@test.local'),
-  -- Otto — HM of house-05. An admin of a DIFFERENT house; NOT the on-duty HMOD → rejected.
+  -- Otto — HM of harrison. An admin of a DIFFERENT house; NOT the on-duty HMOD → rejected.
   ('53000001-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 's3-hm-other@test.local'),
-  -- Holly — HM of house-07, wired on duty as HMOD via hmod_rotor. Authorized for a
+  -- Holly — HM of kings-court, wired on duty as HMOD via hmod_rotor. Authorized for a
   --         quad alert ONLY through the HMOD branch (her home house ≠ quad).
   ('53000001-0000-0000-0000-000000000006', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 's3-hmod@test.local')
@@ -106,8 +106,8 @@ VALUES
   ('53000001-0000-0000-0000-000000000002', 'Bea Quad',    's3-bm-quad@test.local', 'quad',     true),
   ('53000001-0000-0000-0000-000000000003', 'Sam Quad',    's3-sm-quad@test.local', 'quad',     true),
   ('53000001-0000-0000-0000-000000000004', 'Wendy Quad',  's3-sw@test.local',      'quad',     true),
-  ('53000001-0000-0000-0000-000000000005', 'Otto Five',   's3-hm-other@test.local','house-05', true),
-  ('53000001-0000-0000-0000-000000000006', 'Holly Seven', 's3-hmod@test.local',    'house-07', true);
+  ('53000001-0000-0000-0000-000000000005', 'Otto Five',   's3-hm-other@test.local','harrison', true),
+  ('53000001-0000-0000-0000-000000000006', 'Holly Seven', 's3-hmod@test.local',    'kings-court', true);
 
 INSERT INTO public.user_roles (user_id, role, scope_house_id)
 VALUES
@@ -115,8 +115,8 @@ VALUES
   ('53000001-0000-0000-0000-000000000002', 'bm', 'quad'),       -- alert-house BM
   ('53000001-0000-0000-0000-000000000003', 'sm', 'quad'),       -- alert-house SM (NOT authorized)
   ('53000001-0000-0000-0000-000000000004', 'sw', NULL),         -- plain SW (NOT authorized)
-  ('53000001-0000-0000-0000-000000000005', 'hm', 'house-05'),   -- HM of the WRONG house
-  ('53000001-0000-0000-0000-000000000006', 'hm', 'house-07');   -- HMOD's home-house HM role
+  ('53000001-0000-0000-0000-000000000005', 'hm', 'harrison'),   -- HM of the WRONG house
+  ('53000001-0000-0000-0000-000000000006', 'hm', 'kings-court');   -- HMOD's home-house HM role
 
 -- Anchor: 2026-07-04 14:00 America/New_York (EDT, a Saturday). Stored as timestamptz.
 SELECT set_config(
@@ -143,7 +143,7 @@ SELECT set_config(
   false
 );
 
--- Wire Holly (HM of house-07) on duty as HMOD for p_now's week. She is active with
+-- Wire Holly (HM of kings-court) on duty as HMOD for p_now's week. She is active with
 -- NO hm_leave covering the interval, so resolve_hm_for_user returns her unchanged →
 -- resolve_hmod_on_duty(p_now) = Holly.
 INSERT INTO public.hmod_rotor (week_start_date, hmod_user_id)
@@ -381,7 +381,7 @@ SELECT is(
   'BM resolve: the BM of the alert''s house re-resolves the alert (state changed)'
 );
 
--- Line 9 — the on-duty HMOD (Holly, home house house-07 ≠ quad) may resolve a quad
+-- Line 9 — the on-duty HMOD (Holly, home house kings-court ≠ quad) may resolve a quad
 -- alert. A4 is for quad; Holly is NOT a house-admin of quad, so success here proves
 -- the HMOD branch (not house-admin) authorized her.
 SELECT lives_ok(
@@ -400,12 +400,12 @@ SELECT is(
   'HMOD authz: Holly is NOT an hm/bm of quad — her authorization is the on-duty-HMOD branch alone'
 );
 
--- Line 10 — an HM of a DIFFERENT house (Otto, HM of house-05) who is not the on-duty
+-- Line 10 — an HM of a DIFFERENT house (Otto, HM of harrison) who is not the on-duty
 -- HMOD is rejected; A5 (a quad alert) is left unchanged.
 SELECT throws_ok(
   $$ SELECT public.set_allied_resolved(
        '53000005-0000-0000-0000-000000000005'::uuid,
-       '53000001-0000-0000-0000-000000000005'::uuid,               -- Otto (HM of house-05)
+       '53000001-0000-0000-0000-000000000005'::uuid,               -- Otto (HM of harrison)
        true,
        current_setting('test.s3.now')::timestamptz) $$,
   'P0001', 'not_authorized',

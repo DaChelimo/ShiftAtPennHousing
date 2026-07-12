@@ -30,7 +30,7 @@ BEGIN;
 SELECT plan(24);
 
 -- ============================================================
--- 0. Fixtures: initiators (HM/BM/SM/SW of house-05; HM of house-07) + the auth.users
+-- 0. Fixtures: initiators (HM/BM/SM/SW of harrison; HM of kings-court) + the auth.users
 --    rows for the to-be-hired workers (the EF would create these).
 -- ============================================================
 INSERT INTO auth.users (id, instance_id, aud, role, email)
@@ -60,20 +60,20 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active)
 VALUES
-  ('26000001-0000-0000-0000-000000000002', 'HM (house-05)', 't26-hm05@test.local', 'house-05', true),
-  ('26000001-0000-0000-0000-000000000003', 'BM (house-05)', 't26-bm05@test.local', 'house-05', true),
-  ('26000001-0000-0000-0000-000000000004', 'SM (house-05)', 't26-sm05@test.local', 'house-05', true),
-  ('26000001-0000-0000-0000-000000000006', 'SW (house-05)', 't26-sw05@test.local', 'house-05', true),
-  ('26000001-0000-0000-0000-000000000005', 'HM (house-07)', 't26-hm07@test.local', 'house-07', true)
+  ('26000001-0000-0000-0000-000000000002', 'HM (harrison)', 't26-hm05@test.local', 'harrison', true),
+  ('26000001-0000-0000-0000-000000000003', 'BM (harrison)', 't26-bm05@test.local', 'harrison', true),
+  ('26000001-0000-0000-0000-000000000004', 'SM (harrison)', 't26-sm05@test.local', 'harrison', true),
+  ('26000001-0000-0000-0000-000000000006', 'SW (harrison)', 't26-sw05@test.local', 'harrison', true),
+  ('26000001-0000-0000-0000-000000000005', 'HM (kings-court)', 't26-hm07@test.local', 'kings-court', true)
 ON CONFLICT DO NOTHING;
 
 INSERT INTO public.user_roles (user_id, role, scope_house_id)
 VALUES
-  ('26000001-0000-0000-0000-000000000002', 'hm', 'house-05'),
-  ('26000001-0000-0000-0000-000000000003', 'bm', 'house-05'),
-  ('26000001-0000-0000-0000-000000000004', 'sm', 'house-05'),
+  ('26000001-0000-0000-0000-000000000002', 'hm', 'harrison'),
+  ('26000001-0000-0000-0000-000000000003', 'bm', 'harrison'),
+  ('26000001-0000-0000-0000-000000000004', 'sm', 'harrison'),
   ('26000001-0000-0000-0000-000000000006', 'sw', NULL),
-  ('26000001-0000-0000-0000-000000000005', 'hm', 'house-07')
+  ('26000001-0000-0000-0000-000000000005', 'hm', 'kings-court')
 ON CONFLICT DO NOTHING;
 
 -- ============================================================
@@ -109,7 +109,7 @@ SELECT throws_ok(
   $$ SELECT hire_worker(
        '26000001-0000-0000-0000-000000000004',
        '26000001-0000-0000-0000-0000000000a5',
-       'Rejected SM Hire', 't26-new-reject@test.local', 'house-05', 'sw', NULL) $$,
+       'Rejected SM Hire', 't26-new-reject@test.local', 'harrison', 'sw', NULL) $$,
   'not_authorized',
   'SM of the house may NOT hire (people-admin is HM/BM-only)'
 );
@@ -119,7 +119,7 @@ SELECT throws_ok(
   $$ SELECT hire_worker(
        '26000001-0000-0000-0000-000000000006',
        '26000001-0000-0000-0000-0000000000a5',
-       'Rejected SW Hire', 't26-new-reject@test.local', 'house-05', 'sw', NULL) $$,
+       'Rejected SW Hire', 't26-new-reject@test.local', 'harrison', 'sw', NULL) $$,
   'not_authorized',
   'A plain SW may NOT hire'
 );
@@ -129,9 +129,9 @@ SELECT throws_ok(
   $$ SELECT hire_worker(
        '26000001-0000-0000-0000-000000000005',
        '26000001-0000-0000-0000-0000000000a5',
-       'Rejected Cross Hire', 't26-new-reject@test.local', 'house-05', 'sw', NULL) $$,
+       'Rejected Cross Hire', 't26-new-reject@test.local', 'harrison', 'sw', NULL) $$,
   'not_authorized',
-  'An HM of a different house may NOT hire into house-05'
+  'An HM of a different house may NOT hire into harrison'
 );
 
 -- Confirm none of the rejected attempts created the row.
@@ -148,13 +148,13 @@ SELECT lives_ok(
   $$ SELECT hire_worker(
        '26000001-0000-0000-0000-000000000002',
        '26000001-0000-0000-0000-0000000000a1',
-       '  New SW  ', 'New.SW@Test.Local', 'house-05', 'sw', '  (215) 555-0100  ') $$,
-  'HM of house-05 can hire an SW'
+       '  New SW  ', 'New.SW@Test.Local', 'harrison', 'sw', '  (215) 555-0100  ') $$,
+  'HM of harrison can hire an SW'
 );
 
 SELECT is(
   (SELECT home_house_id FROM users WHERE user_id = '26000001-0000-0000-0000-0000000000a1'),
-  'house-05',
+  'harrison',
   'new SW has the correct home house'
 );
 
@@ -207,14 +207,14 @@ SELECT lives_ok(
   $$ SELECT hire_worker(
        '26000001-0000-0000-0000-000000000003',
        '26000001-0000-0000-0000-0000000000a2',
-       'New SM', 't26-new-sm@test.local', 'house-05', 'sm', NULL) $$,
-  'BM of house-05 can hire an SM'
+       'New SM', 't26-new-sm@test.local', 'harrison', 'sm', NULL) $$,
+  'BM of harrison can hire an SM'
 );
 
 SELECT is(
   (SELECT scope_house_id FROM user_roles
    WHERE user_id = '26000001-0000-0000-0000-0000000000a2' AND role = 'sm'),
-  'house-05',
+  'harrison',
   'an sm hire is scoped to the home house'
 );
 
@@ -225,7 +225,7 @@ SELECT throws_ok(
   $$ SELECT hire_worker(
        '26000001-0000-0000-0000-000000000002',
        '26000001-0000-0000-0000-0000000000a3',
-       '   ', 't26-new-bm@test.local', 'house-05', 'sw', NULL) $$,
+       '   ', 't26-new-bm@test.local', 'harrison', 'sw', NULL) $$,
   'name_required',
   'a blank name is rejected'
 );
@@ -234,7 +234,7 @@ SELECT throws_ok(
   $$ SELECT hire_worker(
        '26000001-0000-0000-0000-000000000002',
        '26000001-0000-0000-0000-0000000000a3',
-       'Bad Email', 'not-an-email', 'house-05', 'sw', NULL) $$,
+       'Bad Email', 'not-an-email', 'harrison', 'sw', NULL) $$,
   'invalid_email',
   'a malformed email is rejected'
 );
@@ -253,7 +253,7 @@ SELECT throws_ok(
   $$ SELECT hire_worker(
        '26000001-0000-0000-0000-000000000002',
        '26000001-0000-0000-0000-0000000000a1',
-       'Dup SW', 't26-new-sw@test.local', 'house-05', 'sw', NULL) $$,
+       'Dup SW', 't26-new-sw@test.local', 'harrison', 'sw', NULL) $$,
   'worker_already_exists',
   'hiring an already-present worker is rejected'
 );
@@ -261,7 +261,7 @@ SELECT throws_ok(
 -- ============================================================
 -- E. Harnwell edge — a Harnwell hire is created (home harnwell, no shift). The
 --    initiator is an HM/BM of harnwell; reuse the seed's harnwell admin if any,
---    else the gate would reject — so we grant house-05's HM a harnwell admin role
+--    else the gate would reject — so we grant harrison's HM a harnwell admin role
 --    just for this assertion is wrong; instead use an HM scoped to harnwell.
 -- ============================================================
 INSERT INTO public.user_roles (user_id, role, scope_house_id)

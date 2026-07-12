@@ -84,6 +84,40 @@ describe('budget exhaustion', () => {
   });
 });
 
+describe('cancellation', () => {
+  it('makes zero calls and reports no candidate when pre-aborted', async () => {
+    const llm = new ScriptedLlm([fullDay('W1'), fullDay('W2'), fullDay('W3')]);
+    const controller = new AbortController();
+    controller.abort();
+    const result = await runAiSchedule(smallHouseSnapshot(), llm, {
+      candidates: 1,
+      signal: controller.signal,
+    });
+    expect(result.diagnostics.stoppedEarly).toBe('aborted');
+    expect(result.diagnostics.llmCallCount).toBe(0);
+    expect(result.best).toBeNull();
+    expect(result.unfilledSeats).toHaveLength(24);
+  });
+
+  it('stops issuing new calls once aborted mid-run, keeping completed days', async () => {
+    const llm = new ScriptedLlm([fullDay('W1'), fullDay('W2'), fullDay('W3')]);
+    const controller = new AbortController();
+    const result = await runAiSchedule(smallHouseSnapshot(), llm, {
+      candidates: 1,
+      // Abort as soon as Mon's day-done fires, before Tue's propose call.
+      onProgress: (ev: AiProgressEvent) => {
+        if (ev.type === 'day-done') controller.abort();
+      },
+      signal: controller.signal,
+    });
+    expect(result.diagnostics.stoppedEarly).toBe('aborted');
+    expect(result.diagnostics.llmCallCount).toBe(1);
+    expect(result.best?.assignments).toHaveLength(8); // Mon only
+    const monWorkers = new Set((result.best?.assignments ?? []).map((a) => a.workerId));
+    expect(monWorkers).toEqual(new Set(['alice']));
+  });
+});
+
 describe('prune safety net', () => {
   it('drops what repair never fixes and stays feasible', async () => {
     const doubled = {

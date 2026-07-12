@@ -13,10 +13,11 @@ import {
   type WorkerScheduleInfo,
 } from '@shift/core';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 
 import {
   assignDraft,
+  clearDraftBlocks,
   publishScheduleAction,
   removeDraftSpan,
   type ActionResult,
@@ -50,6 +51,28 @@ function prettifyHouse(id: string): string {
 function dowLabel(dayKey: string): string {
   return DOW[new Date(`${dayKey}T00:00:00Z`).getUTCDay()] ?? '';
 }
+// "5 AM" / "12 PM" for a pinned time-rail tick (shown only on the hour so the rail stays
+// uncluttered). The per-cell gray time labels were removed in favour of these rails.
+function railHourLabel(iso: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: NY,
+    hour: 'numeric',
+    hour12: true,
+  }).format(new Date(iso));
+}
+
+// Like railHourLabel, but includes the minute when the block isn't on the hour —
+// used only for the rail's forced-visible first row, so an odd opening time (e.g.
+// 05:30 for summer Harnwell) reads as "5:30 AM", not a misleading "5 AM".
+function railTimeLabel(iso: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: NY,
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: true,
+  }).format(new Date(iso));
+}
+
 
 type PendingAssign = {
   userId: string;
@@ -65,9 +88,21 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
   const [drafts, setDrafts] = useState<Record<string, string[]>>(data.drafts);
   const [anchorIdx, setAnchorIdx] = useState<number | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  // Live pointer x-position during a drag, as a 0..1 fraction of the day column's
+  // width — drives which single lane is highlighted per row (see Grid).
+  const [dragColFrac, setDragColFrac] = useState<number | null>(null);
+  // Live AI proposal painted into the grid while the generator streams (and the
+  // finished proposal until the SM accepts or discards it). blockId -> userIds,
+  // client-only; never persisted here. Non-null puts the grid in read-only
+  // preview mode.
+  const [aiPreview, setAiPreview] = useState<Record<string, string[]> | null>(null);
   const [dragging, setDragging] = useState(false);
   const [selectedBlockIds, setSelectedBlockIds] = useState<string[]>([]);
   const [pending, setPending] = useState<PendingAssign | null>(null);
+  // Confirm dialogs for the two destructive draft actions (§4.3): removing one worker
+  // from the whole week, and wiping the whole week to start over.
+  const [removeWorker, setRemoveWorker] = useState<{ userId: string; name: string } | null>(null);
+  const [clearOpen, setClearOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
   const [published, setPublished] = useState(data.published);
   const [publishStats, setPublishStats] = useState<PublishStats | null>(null);
@@ -178,15 +213,16 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      if (pending !== null || publishOpen) return;
+      if (pending !== null || publishOpen || clearOpen || removeWorker !== null) return;
       setDragging(false);
       setAnchorIdx(null);
       setHoverIdx(null);
+      setDragColFrac(null);
       setSelectedBlockIds([]);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [pending, publishOpen]);
+  }, [pending, publishOpen, clearOpen, removeWorker]);
 
   const workerName = useMemo(() => {
     const map = new Map<string, string>();
@@ -237,7 +273,7 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
     const first = selectedBlocks[0]!;
     const last = selectedBlocks[selectedBlocks.length - 1]!;
     const end = nyTime(new Date(new Date(last.startAtIso).getTime() + 30 * 60000));
-    return `${first.timeLabel}–${end}`;
+    return `${first.timeLabel}-${end}`;
   }, [selectedBlocks]);
 
   const phase1Card: Phase1Card | null = useMemo(() => {
@@ -259,25 +295,20 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
 
   const commitAssign = useCallback(
     async (userId: string, blockIds: string[]) => {
-      // Staffing-limit guard: never push a block past its required_headcount. Mirrors
-      // the DB trigger so the SM gets immediate feedback instead of a failed write.
-      const overCapacity = blockIds.some((blockId) => {
-        const req = capacityByBlock.get(blockId) ?? 1;
+      // Fill only the OPEN seats in the span: a block gains this worker when it still has a
+      // free seat (drafted count < required_headcount) and the worker isn't already on it.
+      // Blocks whose seats are all taken are silently skipped — the drag "flows" past them into
+      // the next open seat instead of erroring. New workers append, so the seat renderer packs
+      // them leftmost-first.
+      const added = blockIds.filter((blockId) => {
         const current = drafts[blockId] ?? [];
-        const adding = current.includes(userId) ? 0 : 1;
-        return current.length + adding > req;
+        const req = capacityByBlock.get(blockId) ?? 1;
+        return current.length < req && !current.includes(userId);
       });
-      if (overCapacity) {
+      if (added.length === 0) {
         setPending(null);
-        setError(
-          'Those blocks are already fully staffed for this house. Remove the current worker before assigning another.',
-        );
         return;
       }
-
-      // Only the blocks that actually gain this worker (others are idempotent) — so a
-      // failed write reverts exactly what it added.
-      const added = blockIds.filter((blockId) => !(drafts[blockId] ?? []).includes(userId));
       setDrafts((prev) => {
         const next = { ...prev };
         for (const blockId of added) next[blockId] = [...(next[blockId] ?? []), userId];
@@ -286,7 +317,7 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
       setPending(null);
       if (data.periodId !== null) {
         const periodId = data.periodId;
-        const res = await runWrite(() => assignDraft({ periodId, blockIds, userId }));
+        const res = await runWrite(() => assignDraft({ periodId, blockIds: added, userId }));
         if (!res.ok) {
           setDrafts((prev) => {
             const next = { ...prev };
@@ -318,6 +349,79 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
     },
     [data.periodId, runWrite],
   );
+
+  // The distinct workers currently drafted anywhere this week, with their block counts —
+  // powers the "On this schedule" list + its per-worker "remove from the whole week" control.
+  const workersOnSchedule = useMemo(() => {
+    const count = new Map<string, number>();
+    for (const users of Object.values(drafts)) {
+      for (const userId of users) count.set(userId, (count.get(userId) ?? 0) + 1);
+    }
+    return [...count.entries()]
+      .map(([userId, blocks]) => ({ userId, name: workerName.get(userId) ?? userId, blocks }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [drafts, workerName]);
+
+  // Workers drafted anywhere INSIDE the current selection, with the exact blocks each holds
+  // within it. Powers the "In this range" list, which trims a worker out of just the selected
+  // slice (e.g. drop Bob from 4:00-6:00 of his 12:00-20:00 run, splitting the run in two)
+  // without disturbing the rest of the run — the surgical middle-of-a-shift removal the
+  // whole-run "×" and the whole-week "Remove all" can't do.
+  const workersInSelection = useMemo(() => {
+    if (selectedBlockIds.length === 0) return [];
+    const byUser = new Map<string, string[]>();
+    for (const blockId of selectedBlockIds) {
+      for (const userId of drafts[blockId] ?? []) {
+        const list = byUser.get(userId) ?? [];
+        list.push(blockId);
+        byUser.set(userId, list);
+      }
+    }
+    return [...byUser.entries()]
+      .map(([userId, blockIds]) => ({ userId, name: workerName.get(userId) ?? userId, blockIds }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [selectedBlockIds, drafts, workerName]);
+
+  // Remove ONE worker from every block they're drafted in this week (not just one run).
+  // A worker's whole-week block set is small (<= a full week of their own shifts), so a
+  // single removeDraftSpan call is under the URI limit — no chunking needed here.
+  const onRemoveWorker = useCallback(
+    async (userId: string) => {
+      const blockIds = Object.entries(drafts)
+        .filter(([, users]) => users.includes(userId))
+        .map(([blockId]) => blockId);
+      setRemoveWorker(null);
+      if (blockIds.length === 0) return;
+      const snapshot = drafts;
+      setDrafts((prev) => {
+        const next: Record<string, string[]> = {};
+        for (const [blockId, users] of Object.entries(prev)) {
+          next[blockId] = users.filter((id) => id !== userId);
+        }
+        return next;
+      });
+      if (data.periodId !== null) {
+        const periodId = data.periodId;
+        const res = await runWrite(() => removeDraftSpan({ periodId, blockIds, userId }));
+        if (!res.ok) setDrafts(snapshot);
+      }
+    },
+    [drafts, data.periodId, runWrite],
+  );
+
+  // Wipe every draft for this house's build week (start from scratch). Scoped to the week's
+  // blocks so a period shared across houses only loses THIS house's week.
+  const onClearAll = useCallback(async () => {
+    setClearOpen(false);
+    const snapshot = drafts;
+    setDrafts({});
+    if (data.periodId !== null) {
+      const periodId = data.periodId;
+      const blockIds = data.blocks.map((b) => b.blockId);
+      const res = await runWrite(() => clearDraftBlocks({ periodId, blockIds }));
+      if (!res.ok) setDrafts(snapshot);
+    }
+  }, [drafts, data.blocks, data.periodId, runWrite]);
 
   const onPhase1Click = (entry: Phase1Entry) => {
     if (!entry.selectable) return;
@@ -360,7 +464,7 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
     setPublishOpen(false);
     if (data.periodId === null) return;
     const periodId = data.periodId;
-    const res = await runWrite(() => publishScheduleAction({ periodId }));
+    const res = await runWrite(() => publishScheduleAction({ periodId, houseId: data.houseId }));
     if (!res.ok) return;
     setPublished(true);
     setPublishStats(res.data);
@@ -389,7 +493,7 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
         <div className="bld-toolbar">
           <div className="col gap-1">
             <div className="row gap-2">
-              <h1 className="t-h1">Schedule builder — {prettifyHouse(data.houseId)}</h1>
+              <h1 className="t-h1">{prettifyHouse(data.houseId)} weekly template</h1>
               {published ? (
                 <span data-testid="schedule-published-badge">
                   <Tag kind="green" icon="check">
@@ -397,16 +501,13 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
                   </Tag>
                 </span>
               ) : (
-                <Tag kind="amber">Draft · recurring weekly pattern</Tag>
+                <Tag kind="amber">Draft</Tag>
               )}
               <SaveStatus saving={saving} savedAt={savedAt} />
             </div>
             <div className="t-helper">
-              Build the recurring weekly pattern{' '}
-              {data.weekStartDate !== null && <>(template week of {data.weekStartDate})</>}. Drag a
-              span of consecutive 30-min blocks, then assign from preferences (Phase 1) or the full
-              roster (Phase 2). Publishing applies this pattern to every week of the term — edit
-              individual weeks later in the live calendar.
+              Drag consecutive blocks, then pick who works them. This repeating pattern applies to
+              every week until you edit a specific week.
             </div>
           </div>
           <div className="row gap-2 wrap">
@@ -428,6 +529,16 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
                 Phase 2 · Manual
               </button>
             </div>
+            {!published && aiPreview === null && assignedBlockCount > 0 && (
+              <Button
+                kind="ghost"
+                data-testid="clear-all-button"
+                icon="trash"
+                onClick={() => setClearOpen(true)}
+              >
+                Clear all
+              </Button>
+            )}
             {!published && (
               <Button
                 data-testid="publish-button"
@@ -448,45 +559,88 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
           </div>
         )}
 
-        <AiSchedulePanel
-          houseId={data.houseId}
-          periodId={data.periodId}
-          published={published}
-          deadlineOpen={data.deadlineOpen}
-        />
+        <div className="bld-content">
+          <AiSchedulePanel
+            houseId={data.houseId}
+            periodId={data.periodId}
+            published={published}
+            deadlineOpen={data.deadlineOpen}
+            onPreviewChange={setAiPreview}
+          />
 
-        <div className="bld-body">
+          <div className="bld-body">
           <Grid
             blocks={data.blocks}
-            drafts={drafts}
+            drafts={aiPreview ?? drafts}
+            preview={aiPreview !== null}
             workerName={workerName}
             anchorIdx={anchorIdx}
             hoverIdx={hoverIdx}
+            dragColFrac={dragColFrac}
             dragging={dragging}
             selectedBlockIds={selectedBlockIds}
-            onCellDown={(idx) => {
+            onCellDown={(idx, colFrac) => {
               setDragging(true);
               setAnchorIdx(idx);
               setHoverIdx(idx);
+              setDragColFrac(colFrac);
               setSelectedBlockIds([]);
             }}
-            onCellEnter={(idx) => dragging && setHoverIdx(idx)}
+            onCellEnter={(idx, colFrac) => {
+              if (!dragging) return;
+              setHoverIdx(idx);
+              setDragColFrac(colFrac);
+            }}
             onRemoveSpan={onRemoveSpan}
           />
 
           <aside className="builder-side">
             {selectedBlockIds.length === 0 ? (
-              <div className="side-empty">
-                <Icon name="drag" size={24} />
-                <div className="t-h3">Select blocks to assign</div>
-                <div className="t-helper">
-                  Drag across one or more consecutive cells to pick a span. Press Esc to clear it.
+              <>
+                <div className="side-empty">
+                  <Icon name="drag" size={24} />
+                  <div className="t-h3">Select blocks to assign</div>
+                  <div className="t-helper">
+                    Drag across one or more consecutive cells to pick a span. Press Esc to clear it.
+                  </div>
+                  <div className="side-stat">
+                    <span className="t-meta">Assigned so far</span>
+                    <b className="t-mono">{assignedBlockCount} blocks</b>
+                  </div>
                 </div>
-                <div className="side-stat">
-                  <span className="t-meta">Assigned so far</span>
-                  <b className="t-mono">{assignedBlockCount} blocks</b>
-                </div>
-              </div>
+                {aiPreview === null && !published && workersOnSchedule.length > 0 && (
+                  <div className="side-workers" data-testid="side-workers">
+                    <span className="side-list-label t-label">On this schedule</span>
+                    <div className="t-helper side-workers-hint">
+                      Removes a worker from their whole week. To drop just part of a shift, select
+                      that time range on the grid instead.
+                    </div>
+                    <div className="side-worker-list">
+                      {workersOnSchedule.map((w) => (
+                        <div key={w.userId} className="side-worker-row">
+                          <Avatar name={w.name} size={26} />
+                          <div className="side-worker-meta">
+                            <b>{w.name}</b>
+                            <span className="t-meta">
+                              {w.blocks * HOURS_PER_BLOCK}h · {w.blocks} blocks
+                            </span>
+                          </div>
+                          <Button
+                            kind="ghost"
+                            size="sm"
+                            icon="trash"
+                            data-testid={`remove-worker-${w.userId}`}
+                            aria-label={`Remove ${w.name} from the whole week`}
+                            onClick={() => setRemoveWorker({ userId: w.userId, name: w.name })}
+                          >
+                            Remove all
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             ) : (
               <>
                 <div className="side-head">
@@ -500,6 +654,34 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
                   </div>
                   <IconButton icon="close" label="Clear selection" onClick={clearSelection} />
                 </div>
+                {aiPreview === null && !published && workersInSelection.length > 0 && (
+                  <div className="side-workers" data-testid="side-in-range">
+                    <span className="side-list-label t-label">In this range</span>
+                    <div className="side-worker-list">
+                      {workersInSelection.map((w) => (
+                        <div key={w.userId} className="side-worker-row">
+                          <Avatar name={w.name} size={26} />
+                          <div className="side-worker-meta">
+                            <b>{w.name}</b>
+                            <span className="t-meta">
+                              {w.blockIds.length * HOURS_PER_BLOCK}h in this range
+                            </span>
+                          </div>
+                          <Button
+                            kind="ghost"
+                            size="sm"
+                            icon="close"
+                            data-testid={`remove-in-range-${w.userId}`}
+                            aria-label={`Remove ${w.name} from ${spanLabel}`}
+                            onClick={() => void onRemoveSpan(w.userId, w.blockIds)}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {!spanValid ? (
                   <div className="side-note">
                     <Notification kind="warning" title="Adjust your selection">
@@ -527,6 +709,7 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
               </>
             )}
           </aside>
+          </div>
         </div>
       </div>
 
@@ -591,6 +774,66 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
         </Modal>
       )}
 
+      {removeWorker !== null && (
+        <Modal
+          testId="remove-worker-dialog"
+          eyebrow="Remove from schedule"
+          title={`Remove ${removeWorker.name}?`}
+          width={440}
+          onClose={() => setRemoveWorker(null)}
+          footer={
+            <>
+              <Button kind="secondary" onClick={() => setRemoveWorker(null)}>
+                Cancel
+              </Button>
+              <Button
+                kind="danger"
+                icon="close"
+                data-testid="remove-worker-confirm"
+                onClick={() => void onRemoveWorker(removeWorker.userId)}
+              >
+                Remove from week
+              </Button>
+            </>
+          }
+        >
+          <Notification kind="warning" title={`Clear all of ${removeWorker.name}'s shifts?`}>
+            This removes {removeWorker.name} from every block they hold in this build week. It only
+            affects the draft, so you can add them back before publishing.
+          </Notification>
+        </Modal>
+      )}
+
+      {clearOpen && (
+        <Modal
+          testId="clear-all-dialog"
+          eyebrow="Start from scratch"
+          title="Clear the whole week?"
+          width={440}
+          onClose={() => setClearOpen(false)}
+          footer={
+            <>
+              <Button kind="secondary" onClick={() => setClearOpen(false)}>
+                Keep draft
+              </Button>
+              <Button
+                kind="danger"
+                icon="trash"
+                data-testid="clear-all-confirm"
+                onClick={() => void onClearAll()}
+              >
+                Clear all
+              </Button>
+            </>
+          }
+        >
+          <Notification kind="warning" title="This empties the draft grid">
+            Every assignment in this build week is removed so you can rebuild from scratch. It only
+            affects the unpublished draft, not any already-published schedule.
+          </Notification>
+        </Modal>
+      )}
+
       {publishOpen && (
         <Modal
           testId="publish-confirm-dialog"
@@ -623,25 +866,39 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
 
 // A2: surfaces that every assignment is saved the instant it's made (the
 // builder has no batch "Save" — drafts persist per-action), so the HM can
-// refresh for new preferences without fear of losing work.
+// close the tab and resume later without losing work. The indicator is ALWAYS
+// present (even before the first edit) so the autosave contract is discoverable,
+// not something the SM has to be told about.
+function savedTimeLabel(ts: number): string {
+  return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(
+    new Date(ts),
+  );
+}
+
+  const tip = 'Every change saves automatically. You can close this and pick up where you left off.';
 function SaveStatus({ saving, savedAt }: { saving: boolean; savedAt: number | null }) {
   if (saving) {
     return (
-      <span data-testid="builder-save-status" className="bld-savestate is-saving">
-        <Icon name="refresh" size={14} className="bld-spin" />
+      <span data-testid="builder-save-status" className="bld-savestate is-saving" title={tip}>
+        <Icon name="refresh" size={13} className="bld-spin" />
         Saving…
       </span>
     );
   }
   if (savedAt !== null) {
     return (
-      <span data-testid="builder-save-status" className="bld-savestate is-saved">
-        <Icon name="check" size={14} />
-        All changes saved
+      <span data-testid="builder-save-status" className="bld-savestate is-saved" title={tip}>
+        <Icon name="check" size={13} />
+        Saved {savedTimeLabel(savedAt)}
       </span>
     );
   }
-  return null;
+  return (
+    <span data-testid="builder-save-status" className="bld-savestate is-idle" title={tip}>
+      <Icon name="check" size={13} />
+      Saves automatically
+    </span>
+  );
 }
 
 function advisoryText(a: Phase2Advisory): string {
@@ -706,22 +963,137 @@ function assignLanes(runs: BlockRun[]): { laned: LanedRun[]; laneCount: number }
   });
   return { laned, laneCount: Math.max(1, laneEnd.length) };
 }
+// An unfilled required seat: a contiguous run of blocks in one lane where the block's
+// required_headcount demands a body but none is drafted. This is what makes the staffing
+// pattern visible — a Harnwell afternoon (required 2) with one worker shows one ghost seat,
+// so the SM sees the second seat is still open (it becomes an open shift on publish).
+type SeatGap = { lane: number; startLocal: number; len: number; req: number };
 
-// "08:00–12:00" for a run — the END is the last block's start + 30 min, so the span reads
-// as one continuous block and the 11:30-vs-12:00 "is that the end?" ambiguity disappears.
-function runRangeLabel(dayBlocks: BuilderBlock[], run: BlockRun): string {
-  const first = dayBlocks[run.startLocal]!;
-  const last = dayBlocks[run.startLocal + run.len - 1]!;
+// Split a run into contiguous segments of constant required_headcount. Each segment renders
+// at its OWN width/lane offset, so a run is full width exactly where the desk is single-staff
+// and narrows to a half/third exactly at the block where the house doubles/triples up — not
+// for the run's whole length. Without this, a run that STARTS single-staff and later crosses
+// into a double-staff stretch (e.g. Ben 10:00-14:00 where only 12:00-14:00 is required=2)
+// would draw half width the whole way, leaving a misleading empty "lane" beside its
+// single-staff portion where no second seat actually exists. Mirrors computeSeatGaps, which
+// already breaks ghost seats at every required-headcount change.
+type RunSegment = { startLocal: number; len: number; req: number };
+function runSegments(dayBlocks: BuilderBlock[], run: BlockRun): RunSegment[] {
+  const segs: RunSegment[] = [];
+  let i = 0;
+  while (i < run.len) {
+    const req = dayBlocks[run.startLocal + i]?.requiredHeadcount ?? 1;
+    let j = i;
+    while (j + 1 < run.len && (dayBlocks[run.startLocal + j + 1]?.requiredHeadcount ?? 1) === req) {
+      j += 1;
+    }
+    segs.push({ startLocal: run.startLocal + i, len: j - i + 1, req });
+    i = j + 1;
+  }
+  return segs;
+}
+
+// Derive the ghost seats for a day. Lanes 0..laneCount-1 are the staffing slots; lane `l`
+// is "required" at a block when that block's required_headcount > l. A seat is a gap wherever
+// a required lane is not covered by a drafted run. Contiguous gaps in the same lane coalesce
+// into one placeholder — but a gap also BREAKS when the required headcount changes (noon on a
+// Harnwell weekday), so each seat spans a single width and the morning ghost is full width
+// while the afternoon ghosts are half width.
+function computeSeatGaps(dayBlocks: BuilderBlock[], laned: LanedRun[], laneCount: number): SeatGap[] {
+  const covered: boolean[][] = Array.from({ length: laneCount }, () =>
+    new Array(dayBlocks.length).fill(false),
+  );
+  for (const run of laned) {
+    for (let k = 0; k < run.len; k += 1) covered[run.lane]![run.startLocal + k] = true;
+  }
+  const reqOf = (idx: number) => dayBlocks[idx]?.requiredHeadcount ?? 1;
+
+  const gaps: SeatGap[] = [];
+  for (let lane = 0; lane < laneCount; lane += 1) {
+    let i = 0;
+    while (i < dayBlocks.length) {
+      const req = reqOf(i);
+      if (req <= lane || covered[lane]![i]) {
+        i += 1;
+        continue;
+      }
+      let j = i;
+      while (
+        j + 1 < dayBlocks.length &&
+        reqOf(j + 1) === req &&
+        reqOf(j + 1) > lane &&
+        !covered[lane]![j + 1]
+      ) {
+        j += 1;
+      }
+      gaps.push({ lane, startLocal: i, len: j - i + 1, req });
+      i = j + 1;
+    }
+  }
+  return gaps;
+}
+
+
+// "08:00–12:00" for a [startLocal, startLocal+len) span — the END is the last block's
+// start + 30 min, so the span reads as one continuous block and the 11:30-vs-12:00
+// "is that the end?" ambiguity disappears. Shared by both assigned runs and empty seats,
+// so an open slot's start/end time is always visible, not just an assigned one's.
+function rangeLabel(dayBlocks: BuilderBlock[], startLocal: number, len: number): string {
+  const first = dayBlocks[startLocal]!;
+  const last = dayBlocks[startLocal + len - 1]!;
   const end = nyTime(new Date(new Date(last.startAtIso).getTime() + 30 * 60000));
-  return `${first.timeLabel}–${end}`;
+  return `${first.timeLabel}-${end}`;
+}
+
+function runRangeLabel(dayBlocks: BuilderBlock[], run: BlockRun): string {
+  return rangeLabel(dayBlocks, run.startLocal, run.len);
+}
+
+// Pinned time axis. One rail is rendered on the LEFT and one on the RIGHT of the grid, both
+// sticky to their edge, so the SM can always read a block's time no matter how far they've
+// scrolled horizontally (§ design: mirrors the live calendar's frozen gutter). Rows align 1:1
+// with each day column's 30-min cells, so the per-cell gray time labels are no longer needed.
+function TimeRail({ cells, side }: { cells: BuilderBlock[]; side: 'left' | 'right' }) {
+  return (
+    <div className={`bld-rail bld-rail-${side}`} aria-hidden="true">
+      <div className="bld-rail-head" />
+      {cells.map((b, i) => {
+        // Always label the very first row with the day's real open time (e.g.
+        // 05:30 for summer Harnwell), even off the hour — then only label
+        // on-the-hour rows after that (06:00, 07:00…), not every 30-min step
+        // relative to an odd origin, which is unreadable.
+        const showLabel = i === 0 || b.timeKey.endsWith('00');
+        const isLast = i === cells.length - 1;
+        return (
+          <div className="bld-tick" key={b.blockId} style={{ height: CELL_H }}>
+            {showLabel && (
+              <span className={`bld-tick-label t-mono ${i === 0 ? 'is-first' : ''}`.trim()}>
+                {i === 0 ? railTimeLabel(b.startAtIso) : railHourLabel(b.startAtIso)}
+              </span>
+            )}
+            {/* The closing boundary (e.g. midnight) isn't the START of any cell, so
+                it never gets a label above — without this the rail's end time is
+                never shown at all. */}
+            {isLast && (
+              <span className="bld-tick-label t-mono is-last">
+                {railTimeLabel(new Date(new Date(b.startAtIso).getTime() + 30 * 60000).toISOString())}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function Grid({
   blocks,
   drafts,
+  preview = false,
   workerName,
   anchorIdx,
   hoverIdx,
+  dragColFrac,
   dragging,
   selectedBlockIds,
   onCellDown,
@@ -730,19 +1102,31 @@ function Grid({
 }: {
   blocks: BuilderBlock[];
   drafts: Record<string, string[]>;
+  // Read-only AI preview mode: renders `drafts` as ghost proposal cells filling
+  // in, with drag/select and the per-run remove control suppressed (CSS).
+  preview?: boolean;
   workerName: Map<string, string>;
   anchorIdx: number | null;
   hoverIdx: number | null;
+  // Fraction (0..1) across a day column's own width, tracking the pointer's
+  // horizontal position during a drag — this is what lets the highlighted seat
+  // track "the side of the row the mouse is currently over" (see the drag
+  // handlers on .bld-cell below).
+  dragColFrac: number | null;
   dragging: boolean;
   selectedBlockIds: string[];
-  onCellDown: (idx: number) => void;
-  onCellEnter: (idx: number) => void;
+  onCellDown: (idx: number, colFrac: number) => void;
+  onCellEnter: (idx: number, colFrac: number) => void;
   onRemoveSpan: (userId: string, blockIds: string[]) => void;
 }) {
   const lo = anchorIdx !== null && hoverIdx !== null ? Math.min(anchorIdx, hoverIdx) : -1;
   const hi = anchorIdx !== null && hoverIdx !== null ? Math.max(anchorIdx, hoverIdx) : -1;
   const selected = new Set(selectedBlockIds);
   const days = [...new Set(blocks.map((b) => b.dayKey))];
+  // The time rails read their rows from the first day's blocks; every day in a period shares
+  // the same 30-min row set (the grid already stacks days on identical rows), so the left and
+  // right rails line up with all columns.
+  const railCells = blocks.filter((b) => b.dayKey === days[0]);
 
   if (blocks.length === 0) {
     return (
@@ -763,7 +1147,11 @@ function Grid({
   }
 
   return (
-    <div data-testid="schedule-builder-grid" className="bld-grid">
+    <div
+      data-testid="schedule-builder-grid"
+      className={`bld-grid ${preview ? 'is-ai-preview' : ''}`.trim()}
+    >
+      <TimeRail cells={railCells} side="left" />
       {days.map((day) => {
         // This day's blocks, paired with their index in the flat `blocks` array (the drag
         // model keys on the flat index). The local index drives vertical positioning.
@@ -772,24 +1160,58 @@ function Grid({
           if (b.dayKey === day) dayCells.push({ b, flatIdx });
         });
         const dayBlocks = dayCells.map((c) => c.b);
-        const { laned, laneCount } = assignLanes(computeRuns(dayBlocks, drafts));
+        const assigned = assignLanes(computeRuns(dayBlocks, drafts));
+        // Seat lanes = the day's peak required headcount (Harnwell 1 before noon, 2 after;
+        // Quad 3), so every required slot has its own lane even when it's still empty. The
+        // capacity guard keeps drafted lanes <= required, so this never truncates a real run.
+        const maxReq = dayBlocks.reduce((m, b) => Math.max(m, b.requiredHeadcount), 1);
+        const laneCount = Math.max(assigned.laneCount, maxReq);
+        const laned = assigned.laned;
+        const seatGaps = computeSeatGaps(dayBlocks, laned, laneCount);
 
-        // The active drag / finalized selection, as one contiguous local range in this day.
-        let selStart = -1;
-        let selEnd = -1;
-        dayCells.forEach(({ b, flatIdx }, localIdx) => {
+        // Exactly ONE lane is ever highlighted per row: the single lane directly
+        // under the pointer, never the whole multi-seat row and never a second
+        // lane. Which lane comes from the pointer's live horizontal position
+        // (dragColFrac, a 0..1 fraction of the day column's width) mapped into
+        // THIS row's own seat count — so the highlight tracks the mouse across
+        // lanes and, when a drag crosses from a single-seat row into a two-seat
+        // row, lands on the side the mouse is actually over. A single-seat row
+        // has just one full-width lane, so its highlight naturally spans the row.
+        const selLane: Array<number | null> = dayCells.map(({ b, flatIdx }) => {
           const on = (dragging && flatIdx >= lo && flatIdx <= hi) || selected.has(b.blockId);
-          if (on) {
-            if (selStart === -1) selStart = localIdx;
-            selEnd = localIdx;
-          }
+          if (!on) return null;
+          const req = b.requiredHeadcount;
+          const frac = dragColFrac ?? 0;
+          return Math.min(req - 1, Math.max(0, Math.floor(frac * req)));
         });
+        // Coalesce contiguous blocks that share a lane (and seat count) into one band.
+        const selSegs: Array<{ seat: number; startLocal: number; len: number; req: number }> = [];
+        {
+          let i = 0;
+          while (i < dayBlocks.length) {
+            const lane = selLane[i];
+            if (lane === null) {
+              i += 1;
+              continue;
+            }
+            const req = dayBlocks[i]!.requiredHeadcount;
+            let j = i;
+            while (
+              j + 1 < dayBlocks.length &&
+              selLane[j + 1] === lane &&
+              dayBlocks[j + 1]!.requiredHeadcount === req
+            ) {
+              j += 1;
+            }
+            selSegs.push({ seat: lane, startLocal: i, len: j - i + 1, req });
+            i = j + 1;
+          }
+        }
 
         return (
           <div className="bld-day" key={day}>
             <div className="bld-dayhead">
               <span className="cal-dow">{dowLabel(day)}</span>
-              <span className="cal-date t-mono">{day}</span>
             </div>
             <div className="bld-col">
               {/* Drag layer: one target per 30-min block (preserves the e2e drag contract).
@@ -798,23 +1220,30 @@ function Grid({
               {dayCells.map(({ b, flatIdx }) => {
                 const isHour = b.timeKey.endsWith('00');
                 const assignees = drafts[b.blockId] ?? [];
-                // Each empty cell reads as its full 30-min range ("08:00–08:30"), not
-                // just the start — so the end boundary is unambiguous (08:30 means this
-                // block ENDS at 08:30, not that an 08:30 block begins). Assigned cells
-                // are covered by the .bld-run overlay, which carries the run's range.
-                const endLabel = nyTime(new Date(new Date(b.startAtIso).getTime() + 30 * 60000));
+                // The cell is a bare drag target now — the time reference lives in the pinned
+                // left/right rails, not repeated in every cell (that was too crowded). The
+                // assignee name stays here (visually hidden) so each block's testid keeps
+                // reporting who's on it for the e2e drag contract.
+                // Fraction (0..1) across THIS cell's own width — the shared x-position
+                // signal that lets every row (regardless of its own seat count) pick
+                // "the lane under the mouse" independently. Read on down/enter/move so
+                // the highlighted lane keeps tracking the pointer even while it drifts
+                // horizontally without crossing into a new row.
+                const fracX = (e: MouseEvent<HTMLDivElement>): number => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  if (rect.width === 0) return 0;
+                  return Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+                };
                 return (
                   <div
                     key={b.blockId}
                     data-testid={`block-${b.cellKey}`}
-                    onMouseDown={() => onCellDown(flatIdx)}
-                    onMouseEnter={() => onCellEnter(flatIdx)}
+                    onMouseDown={(e) => onCellDown(flatIdx, fracX(e))}
+                    onMouseEnter={(e) => onCellEnter(flatIdx, fracX(e))}
+                    onMouseMove={(e) => dragging && onCellEnter(flatIdx, fracX(e))}
                     className={`bld-cell ${isHour ? 'is-hour' : ''}`.trim()}
                     style={{ height: CELL_H }}
                   >
-                    <span className="bld-time">
-                      {b.timeLabel}–{endLabel}
-                    </span>
                     {assignees.length > 0 && (
                       <span className="bld-cell-assignee" aria-hidden="true">
                         {assignees.map((u) => workerName.get(u) ?? u).join(', ')}
@@ -824,47 +1253,97 @@ function Grid({
                 );
               })}
 
-              {/* Selection band — one continuous highlight, not per-cell. */}
-              {selStart !== -1 && (
+              {/* Empty seats — one dashed slot per required seat the house's pattern defines
+                  for that span (1 / 2 / 3 = the season's max headcount for the block). A
+                  single-staff span is one full-width slot; a double-staff span splits into two,
+                  a triple into three. Purely visual (pointer-events none) so a drag passes
+                  straight through to the cells beneath; the SM fills a slot by dragging. */}
+              {seatGaps.map((seat) => (
                 <div
-                  className="bld-selection"
-                  style={{ top: selStart * CELL_H, height: (selEnd - selStart + 1) * CELL_H }}
+                  key={`seat-${seat.lane}-${seat.startLocal}`}
+                  className="bld-seat"
+                  style={{
+                    top: seat.startLocal * CELL_H,
+                    height: seat.len * CELL_H,
+                    left: `${(seat.lane / seat.req) * 100}%`,
+                    width: `${100 / seat.req}%`,
+                  }}
                   aria-hidden="true"
                 />
-              )}
+              ))}
 
-              {/* Assignment layer — each contiguous run is ONE continuous block. */}
+              {/* Selection highlight — one band per contiguous same-lane run, ONE lane wide.
+                  Exactly one lane is highlighted per row: the single lane under the pointer.
+                  Never both sides of a multi-seat row at once. */}
+              {selSegs.map((s) => (
+                <div
+                  key={`sel-${s.seat}-${s.startLocal}`}
+                  className="bld-selection"
+                  style={{
+                    top: s.startLocal * CELL_H,
+                    height: s.len * CELL_H,
+                    left: `${(s.seat / s.req) * 100}%`,
+                    width: `${100 / s.req}%`,
+                  }}
+                  aria-hidden="true"
+                />
+              ))}
+
+              {/* Assignment layer — each contiguous run is ONE continuous block, but rendered
+                  as one rectangle PER required-headcount segment so it's full width where the
+                  desk is single-staff and narrows only where it doubles up (no phantom empty
+                  lane beside a single-staff stretch). The name/time/× live on the tallest
+                  segment; the others are plain tinted rectangles so the run still reads as one
+                  L-shaped block. */}
               {laned.map((run) => {
                 const name = workerName.get(run.userId) ?? run.userId;
-                return (
-                  <div
-                    key={`${run.userId}-${run.startLocal}`}
-                    className="bld-run"
-                    style={{
-                      top: run.startLocal * CELL_H,
-                      height: run.len * CELL_H,
-                      left: `${(run.lane / laneCount) * 100}%`,
-                      width: `${100 / laneCount}%`,
-                    }}
-                  >
-                    <span className="bld-run-name">{name}</span>
-                    <span className="bld-run-time t-mono">{runRangeLabel(dayBlocks, run)}</span>
-                    <button
-                      type="button"
-                      className="bld-run-x"
-                      aria-label={`Remove ${name}`}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onClick={() => onRemoveSpan(run.userId, run.blockIds)}
+                const segs = runSegments(dayBlocks, run);
+                // The tallest segment carries the label + remove control (most room to show it).
+                let labelSeg = 0;
+                for (let s = 1; s < segs.length; s += 1) {
+                  if (segs[s]!.len > segs[labelSeg]!.len) labelSeg = s;
+                }
+                return segs.map((seg, si) => {
+                  // A run covering a block never sits in a lane >= that block's seat count, so
+                  // this clamp is just defensive; for a single-staff segment it forces full width.
+                  const laneOffset = Math.min(run.lane, seg.req - 1);
+                  return (
+                    <div
+                      key={`${run.userId}-${seg.startLocal}`}
+                      className="bld-run"
+                      style={{
+                        top: seg.startLocal * CELL_H,
+                        height: seg.len * CELL_H,
+                        left: `${(laneOffset / seg.req) * 100}%`,
+                        width: `${100 / seg.req}%`,
+                      }}
                     >
-                      ×
-                    </button>
-                  </div>
-                );
+                      {si === labelSeg && (
+                        <>
+                          <span className="bld-run-name">{name}</span>
+                          <span className="bld-run-time t-mono">
+                            {runRangeLabel(dayBlocks, run)}
+                          </span>
+                          <button
+                            type="button"
+                            className="bld-run-x"
+                            aria-label={`Remove ${name}`}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={() => onRemoveSpan(run.userId, run.blockIds)}
+                          >
+                            ×
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  );
+                });
               })}
             </div>
           </div>
         );
       })}
+      <TimeRail cells={railCells} side="right" />
     </div>
   );
 }
@@ -923,7 +1402,7 @@ function Phase1CardView({
                   {blocked && entry.blockedReason !== undefined ? (
                     <span className="t-meta" style={{ color: 'var(--st-danger)' }}>
                       {entry.blockedReason.kind === 'cannot'
-                        ? `Cannot — ${nyTime(entry.blockedReason.blockStartAt)}`
+                        ? `Cannot at ${nyTime(entry.blockedReason.blockStartAt)}`
                         : 'No preference'}
                     </span>
                   ) : (

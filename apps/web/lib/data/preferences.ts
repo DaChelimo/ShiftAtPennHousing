@@ -119,7 +119,7 @@ const STATUS_ORDER: Record<SubmissionStatus, number> = { not_yet: 0, no_hours: 1
 
 export async function getPreferencesOversight(
   houseId: string,
-  now: Date = new Date(),
+  now: Date,
 ): Promise<PreferencesOversight> {
   const svc = createServiceClient();
   const base: PreferencesOversight = {

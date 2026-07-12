@@ -69,13 +69,14 @@ export async function runAiSchedule(
   const candidates: AiCandidate[] = [];
   let calls = 0;
   let pruned = 0;
-  let stoppedEarly: 'plateau' | 'budget' | null = null;
+  let stoppedEarly: 'plateau' | 'budget' | 'aborted' | null = null;
+  const aborted = (): boolean => opts.signal?.aborted === true;
 
   // Week-level planning pass (once, candidate-independent): sets the strategy
   // the day-by-day build follows. Its plain-language output is threaded into
   // every propose prompt.
   let plan = '';
-  if (opts.planningPass && calls < opts.maxLlmCalls) {
+  if (opts.planningPass && calls < opts.maxLlmCalls && !aborted()) {
     emit({ type: 'planning' });
     const planResp = await llm.complete({
       system: buildPlanSystemPrompt(input),
@@ -89,6 +90,10 @@ export async function runAiSchedule(
   }
 
   for (let c = 0; c < opts.candidates; c++) {
+    if (aborted()) {
+      stoppedEarly = 'aborted';
+      break;
+    }
     if (calls >= opts.maxLlmCalls) {
       stoppedEarly = 'budget';
       break;
@@ -101,6 +106,10 @@ export async function runAiSchedule(
     for (let d = 0; d < dayOrder.length; d++) {
       const day = dayOrder[d];
       if (day === undefined) continue;
+      if (aborted()) {
+        stoppedEarly = 'aborted';
+        break;
+      }
       if (calls >= opts.maxLlmCalls) {
         stoppedEarly = 'budget';
         break;
@@ -123,6 +132,10 @@ export async function runAiSchedule(
           ...violationsForDay(result.violations, day, parsed.assignments),
         ];
         if (!feedback.some((v) => v.severity === 'hard')) break;
+        if (aborted()) {
+          stoppedEarly = 'aborted';
+          break;
+        }
         if (calls >= opts.maxLlmCalls) {
           stoppedEarly = 'budget';
           break;
@@ -157,7 +170,7 @@ export async function runAiSchedule(
     const breakdown = scoreWithGrid(input, grid, acc);
     const finished: AiCandidate = { assignments: acc, score: breakdown.total, breakdown };
     candidates.push(finished);
-    if (stoppedEarly === 'budget') break;
+    if (stoppedEarly === 'budget' || stoppedEarly === 'aborted') break;
 
     // Plateau: once at least two candidates exist, stop when the running
     // best has not improved by more than epsilon.

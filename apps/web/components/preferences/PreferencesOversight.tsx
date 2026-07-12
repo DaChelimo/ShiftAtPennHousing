@@ -1,87 +1,10 @@
 import Link from 'next/link';
 
-import type {
-  PreferenceRow,
-  PreferencesOversight as PreferencesOversightData,
-  ReminderCell,
-} from '../../lib/data/preferences';
-import {
-  Avatar,
-  type Column,
-  DataTable,
-  EmptyState,
-  type IconName,
-  PageHead,
-  Tag,
-  type TagKind,
-} from '../ui';
+import type { PreferencesOversight as PreferencesOversightData } from '../../lib/data/preferences';
+import { EmptyState, PageHead, Tag } from '../ui';
 
 import { DeadlineEditor } from './DeadlineEditor';
-
-const ROLE_META: Record<PreferenceRow['role'], { short: string; full: string; kind: TagKind }> = {
-  sm: { short: 'SM', full: 'Student Manager', kind: 'blue' },
-  sw: { short: 'SW', full: 'Student Worker', kind: 'gray' },
-};
-
-const STATUS_META: Record<
-  PreferenceRow['status'],
-  { label: string; kind: TagKind; icon?: IconName; dot?: boolean }
-> = {
-  submitted: { label: 'Submitted', kind: 'green', icon: 'check' },
-  no_hours: { label: 'No hours', kind: 'gray', dot: true },
-  not_yet: { label: 'Not yet', kind: 'amber', icon: 'clock' },
-};
-
-// Reminder cadence chips (5d / 3d / 1d). Color is never the only cue: a sent
-// reminder carries a check, upcoming is a hollow outline, overdue a filled dot —
-// three distinct shapes, plus a per-chip title and the explanatory legend below.
-const REMINDER_CHIP: Record<
-  ReminderCell['state'],
-  { kind: TagKind; icon?: 'check'; dot?: boolean }
-> = {
-  sent: { kind: 'green', icon: 'check' },
-  overdue: { kind: 'amber', dot: true },
-  upcoming: { kind: 'outline' },
-  na: { kind: 'gray' },
-};
-
-function reminderTitle(cell: ReminderCell): string {
-  switch (cell.state) {
-    case 'sent':
-      return `${cell.day}-day reminder sent${cell.sentAtLabel ? ` · ${cell.sentAtLabel}` : ''}`;
-    case 'overdue':
-      return `${cell.day}-day reminder window has passed — no send recorded`;
-    case 'upcoming':
-      return `${cell.day}-day reminder is scheduled`;
-    default:
-      return `${cell.day}-day reminder not applicable`;
-  }
-}
-
-function Reminders({ cells }: { cells: ReminderCell[] }) {
-  // Responded workers (or no deadline) have no live reminder window.
-  if (cells.every((c) => c.state === 'na')) {
-    return (
-      <span className="t-meta" title="No reminder due — worker has responded">
-        —
-      </span>
-    );
-  }
-  return (
-    <span className="row gap-1">
-      {cells.map((c) => {
-        const meta = REMINDER_CHIP[c.state];
-        return (
-          <Tag key={c.day} kind={meta.kind} icon={meta.icon} dot={meta.dot}>
-            <span title={reminderTitle(c)} aria-label={reminderTitle(c)}>
-              {c.day}d
-            </span>
-          </Tag>
-        );
-      })}
-    </span>
-  );
-}
+import { PreferenceRoster } from './PreferenceRoster';
 
 const REMINDER_LEGEND = (
   <span className="row gap-3 wrap center">
@@ -103,65 +26,6 @@ const REMINDER_LEGEND = (
     </span>
   </span>
 );
-
-function columns(): Column<PreferenceRow>[] {
-  return [
-    {
-      key: 'worker',
-      header: 'Worker',
-      render: (r) => (
-        <span className="cell-name row gap-3 center">
-          <Avatar name={r.name} size={28} />
-          <span className="col">
-            <b>{r.name}</b>
-            <span className="cell-sub">
-              <span title={ROLE_META[r.role].full}>{ROLE_META[r.role].full}</span>
-            </span>
-          </span>
-        </span>
-      ),
-    },
-    {
-      key: 'role',
-      header: 'Role',
-      render: (r) => (
-        <Tag kind={ROLE_META[r.role].kind}>
-          <span title={ROLE_META[r.role].full}>{ROLE_META[r.role].short}</span>
-        </Tag>
-      ),
-    },
-    {
-      key: 'status',
-      header: 'Submission',
-      render: (r) => {
-        const m = STATUS_META[r.status];
-        return (
-          <Tag kind={m.kind} icon={m.icon} dot={m.dot}>
-            {m.label}
-          </Tag>
-        );
-      },
-    },
-    {
-      key: 'target',
-      header: 'Target',
-      numeric: true,
-      render: (r) =>
-        r.targetHours !== null ? (
-          <span className="t-mono">{r.targetHours}h</span>
-        ) : r.status === 'no_hours' ? (
-          <span className="t-meta">opted out</span>
-        ) : (
-          <span className="t-meta">—</span>
-        ),
-    },
-    {
-      key: 'reminders',
-      header: 'Reminders',
-      render: (r) => <Reminders cells={r.reminders} />,
-    },
-  ];
-}
 
 function StatCard({ num, label, color }: { num: number; label: string; color?: string }) {
   return (
@@ -265,12 +129,10 @@ export function PreferencesOversight({ data }: { data: PreferencesOversightData 
         {REMINDER_LEGEND}
       </div>
 
-      <DataTable
-        columns={columns()}
-        rows={data.rows}
-        getRowKey={(r) => r.userId}
-        emptyText="No student workers are home-housed here yet."
-      />
+      <span className="t-helper" style={{ display: 'block', marginBottom: 8 }}>
+        Select a worker to view or edit their availability.
+      </span>
+      <PreferenceRoster rows={data.rows} houseId={data.houseId} />
     </div>
   );
 }

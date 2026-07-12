@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { adminHouseId, canBuildSchedule, getSessionUser } from '../auth';
+import { canBuildForHouse, canBuildSchedule, getSessionUser } from '../auth';
 import { createClient, createServiceClient } from '../supabase/server';
 
 export type ActionResult<T = undefined> = { ok: true; data: T } | { ok: false; error: string };
@@ -117,17 +117,55 @@ export async function removeDraftSpan(input: {
   return { ok: true, data: undefined };
 }
 
+// Clear EVERY worker from the given blocks — the builder's "Clear all" / start-from-scratch.
+// Scoped to the block ids passed in (the current house's build week), NOT the whole period:
+// a scheduling period spans all houses, so a period-wide wipe would blow away other houses'
+// drafts. The caller passes this house's week block ids. Chunked because a full week is 200+
+// block ids and a single `.in(...)` filter 414s ("URI too long") — same limit as the reads.
+export async function clearDraftBlocks(input: {
+  periodId: string;
+  blockIds: string[];
+}): Promise<ActionResult> {
+  const me = await getSessionUser();
+  if (!canBuildSchedule(me)) return { ok: false, error: 'Not authorized to build the schedule.' };
+
+  const supabase = await createClient();
+  const CHUNK = 100;
+  for (let i = 0; i < input.blockIds.length; i += CHUNK) {
+    const chunk = input.blockIds.slice(i, i + CHUNK);
+    if (chunk.length === 0) continue;
+    const { error } = await supabase
+      .from('draft_block_assignments')
+      .delete()
+      .eq('period_id', input.periodId)
+      .in('block_id', chunk);
+    if (error !== null) return { ok: false, error: error.message };
+  }
+
+  revalidatePath('/schedule-builder');
+  return { ok: true, data: undefined };
+}
+
 export type PublishStats = { scheduled: number; houseId: string };
 
-// Publish the period for the admin's house (§4.3 Phase 3). publish_schedule is
+// Publish the period for `houseId` (§4.3 Phase 3). publish_schedule is
 // service_role-only (phase-04/batch-A3): converts drafts → assignments, fills the
 // remaining headcount with vacancy rows, and is guarded against re-publish.
+//
+// 2026-06-27 cross-house: a schedule admin (hm/bm/rsm) may publish any house —
+// the target is the builder's loaded house (data.houseId), not the admin's own.
+// An sm is held to their own house (canBuildForHouse). The RPC re-checks
+// user_can_build_schedule(published_by, house) authoritatively.
 export async function publishScheduleAction(input: {
   periodId: string;
+  houseId: string;
 }): Promise<ActionResult<PublishStats>> {
   const me = await getSessionUser();
   if (!canBuildSchedule(me)) return { ok: false, error: 'Not authorized to publish.' };
-  const houseId = adminHouseId(me!);
+  const houseId = input.houseId;
+  if (!canBuildForHouse(me, houseId)) {
+    return { ok: false, error: 'You are not authorized to publish this house’s schedule.' };
+  }
 
   const service = createServiceClient();
   const { data, error } = await service.rpc('publish_schedule', {

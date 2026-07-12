@@ -29,14 +29,32 @@ export async function POST(request: Request): Promise<Response> {
       ? (body as { houseId: string }).houseId
       : '';
 
+  // Cancellation: the client's Stop / Stop and clear buttons abort their own
+  // fetch, which the runtime surfaces here via the stream's `cancel()` (the
+  // standard Web Streams signal for "the consumer went away"). Threading the
+  // resulting AbortSignal into runAiSchedule stops it from issuing any FURTHER
+  // (paid) model calls; a call already in flight still finishes normally.
+  const abortController = new AbortController();
+
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      // Both defensive: once the client has disconnected, enqueue/close on the
+      // now-cancelled controller throw. Nothing to deliver to at that point,
+      // so swallow rather than let it surface as an unhandled rejection.
       const send = (event: AiStreamEvent): void => {
-        controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+        try {
+          controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+        } catch {
+          /* client disconnected */
+        }
       };
       const fail = (message: string): void => {
         send({ t: 'error', message });
-        controller.close();
+        try {
+          controller.close();
+        } catch {
+          /* already closed/cancelled */
+        }
       };
 
       try {
@@ -48,6 +66,43 @@ export async function POST(request: Request): Promise<Response> {
         const ctx = await getAiScheduleContext(houseId);
         if (!ctx.gate.canGenerate || ctx.input === null) {
           return fail(ctx.gate.reason ?? 'The generator is not available right now.');
+        }
+
+        // DEV-ONLY TEST SCAFFOLDING: set AI_SCHEDULE_MOCK=1 to replay the same
+        // phase/day-start/day-repair events with dummy delays instead of paying
+        // for a real model run, so the progress card can be exercised on a real
+        // dev server. Remove this block once the card is signed off; it never
+        // activates unless the env var is explicitly set.
+        if (process.env.AI_SCHEDULE_MOCK === '1') {
+          const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+          const stopped = () => abortController.signal.aborted;
+          const weekdays = Array.from(new Set(ctx.input.blocks.map((b) => b.weekday))).sort(
+            (a, b) => a - b,
+          );
+
+          send({ t: 'phase', phase: 'planning' });
+          await wait(1200);
+          if (stopped()) return;
+          send({ t: 'phase', phase: 'planned' });
+          await wait(900);
+          for (let i = 0; i < weekdays.length && !stopped(); i++) {
+            const weekday = weekdays[i]!;
+            send({ t: 'day-start', weekday, dayIndex: i, dayCount: weekdays.length });
+            await wait(1000);
+            if (stopped()) break;
+            if (i === 1) {
+              send({ t: 'day-repair', weekday, round: 1 });
+              await wait(1200);
+              if (stopped()) break;
+            }
+          }
+          if (stopped()) return;
+          send({ t: 'phase', phase: 'finalizing' });
+          await wait(900 * 5);
+          // No 'result' event: the client just returns to idle, since the point
+          // is to watch the day stepper, not to exercise the accept-draft flow.
+          controller.close();
+          return;
         }
 
         let handle;
@@ -88,7 +143,13 @@ export async function POST(request: Request): Promise<Response> {
           planningPass: true,
           finalize: true,
           onProgress,
+          signal: abortController.signal,
         });
+
+        // The client severed the connection to trigger the stop (there is no
+        // other way to reach it mid-stream), so it is gone regardless of what
+        // partial result the loop produced; skip building/sending it.
+        if (abortController.signal.aborted) return;
 
         const dto = buildProposalDto({
           houseId,
@@ -112,6 +173,11 @@ export async function POST(request: Request): Promise<Response> {
       } catch (e) {
         fail(e instanceof Error ? e.message : 'Schedule generation failed. Try again.');
       }
+    },
+    // Fires when the client disconnects (its fetch was aborted, or the tab
+    // closed) — the one reliable, runtime-agnostic signal for "stop now".
+    cancel(reason) {
+      abortController.abort(reason);
     },
   });
 

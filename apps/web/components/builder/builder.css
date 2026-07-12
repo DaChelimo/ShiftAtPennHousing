@@ -56,11 +56,31 @@
   flex-wrap: wrap;
 }
 
-.bld-body {
+/* Scroll container for the AI panel + grid together. The AI panel (Score,
+   open-seats list, hours-vs-target) has no fixed height, so when it's showing
+   it can outgrow the viewport; without this the grid below was the only
+   scrollable element (its own overflow:auto), so wheel input over the panel
+   did nothing and the panel could never be scrolled past. */
+.bld-content {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.bld-body {
+  flex: 1;
+  /* Keep the grid usable even when the AI panel above it is tall — it stops
+     shrinking here and the extra height overflows .bld-content instead. */
+  min-height: 420px;
   display: grid;
   grid-template-columns: 1fr 340px;
+  /* Fill the panel's full height so the grid (and its day dividers) reach the
+     bottom even when the day's blocks are shorter than the viewport. Without an
+     explicit row track the single auto row collapses to content height, leaving a
+     border-less gap below the last block. */
+  grid-template-rows: minmax(0, 1fr);
 }
 
 /* ---------- continuous-block time grid ----------
@@ -82,6 +102,12 @@
   flex: 1;
   min-width: 178px;
   border-right: 2px solid var(--cal-day-line);
+  /* Size to the day's own content (so the divider spans ALL blocks, not just the viewport),
+     but never shorter than the visible grid (so a short day still fills to the bottom). Without
+     align-self:start the flex row caps the column at the viewport height and the divider stops
+     mid-scroll. */
+  align-self: start;
+  min-height: 100%;
 }
 .bld-day:last-child {
   border-right: none;
@@ -95,7 +121,9 @@
   height: 40px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  /* Recurring pattern: the day-of-week is centered and dateless (a specific date
+     would be misleading for a template that repeats every week). */
+  justify-content: center;
   padding: 0 12px;
 }
 .bld-dayhead .cal-dow {
@@ -123,12 +151,74 @@
 .bld-cell:hover {
   background: var(--field);
 }
-.bld-time {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-secondary);
-  opacity: 0.6;
+/* Pinned time rails — one sticky to the left edge, one to the right, so the time axis is
+   always readable no matter how far the grid is scrolled horizontally. Rows align 1:1 with
+   the day cells (CELL_H) and the head matches the day-header height. */
+.bld-rail {
+  position: sticky;
+  z-index: 4;
+  flex: none;
+  width: 56px;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  /* Match the day columns: content-height so the rail's separator line spans every block, but
+     at least fill the viewport. */
+  align-self: start;
+  min-height: 100%;
 }
+.bld-rail-left {
+  left: 0;
+  border-right: 1px solid var(--border-subtle);
+}
+.bld-rail-right {
+  right: 0;
+  border-left: 1px solid var(--border-subtle);
+}
+.bld-rail-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  flex: none;
+  height: 40px;
+  background: var(--surface);
+  border-bottom: 2px solid var(--cal-day-line);
+}
+.bld-tick {
+  position: relative;
+  /* Exact CELL_H per row (no flex-shrink) so the rail is (blocks * CELL_H) tall and every
+     tick lines up with its day cell. Without this the flex column compresses the ticks to the
+     grid's visible height and the time labels drift out of alignment with the shifts. */
+  flex: none;
+}
+.bld-tick-label {
+  position: absolute;
+  top: -7px;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  background: var(--surface);
+  padding: 0 4px;
+}
+/* The rail's very first tick (the day's opening block) has no row above it to
+   straddle — the -7px offset above would push it up under the sticky rail head
+   and clip it in half. Keep it fully inside its own row instead. */
+.bld-tick-label.is-first {
+  top: 2px;
+}
+/* The closing boundary (e.g. midnight) sits at the BOTTOM of the last cell —
+   mirror of is-first, so it stays inside the row instead of straddling past the
+   rail's bottom edge and getting clipped. */
+.bld-tick-label.is-last {
+  top: auto;
+  bottom: 1px;
+}
+.bld-rail-left .bld-tick-label {
+  right: 6px;
+}
+.bld-rail-right .bld-tick-label {
+  left: 6px;
+}
+
 /* Present in the DOM (so each block's testid reports its assignee[s]) but
    visually hidden — the visible assignment is .bld-run. */
 .bld-cell-assignee {
@@ -144,19 +234,37 @@
 }
 
 /* Continuous selection highlight (one per day, spanning the dragged range) —
-   shown WHILE dragging and AFTER release. A translucent tint + outline (not an
-   opaque fill) so the per-cell time labels underneath stay readable through the
-   highlight. */
+   shown WHILE dragging and AFTER release, on the ONE lane directly under the
+   pointer. Only ever one lane wide, even on a multi-seat row (which lane tracks
+   the pointer's live x-position, see ScheduleBuilder.tsx's dragColFrac). A
+   deeper, richer blue than .bld-run's soft 16%-tint (below), so "this is a
+   selection" reads clearly and never looks like a lighter assigned shift. */
 .bld-selection {
   box-sizing: border-box;
   position: absolute;
-  left: 0;
-  right: 0;
+  z-index: 3;
+  pointer-events: none;
+  background: color-mix(in srgb, color-mix(in srgb, var(--brand) 82%, #001a4d) 68%, transparent);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--brand) 82%, #001a4d);
+  border-radius: 4px;
+}
+
+/* Ghost staffing seat — a dashed placeholder for a required-but-unfilled slot, so the
+   house's staffing pattern (e.g. Harnwell double-staffed after noon) is visible while
+   building. Sits below the selection band and real runs; pointer-events:none keeps drag
+   passing through to the cells. */
+.bld-seat {
+  box-sizing: border-box;
+  position: absolute;
   z-index: 1;
   pointer-events: none;
-  background: color-mix(in srgb, var(--brand) 14%, transparent);
-  box-shadow: inset 0 0 0 1.5px var(--brand);
-  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 4px;
+  border: 1px dashed color-mix(in srgb, var(--border-strong) 60%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--text-secondary) 4%, transparent);
 }
 
 /* continuous assignment block — one per contiguous same-worker run. A calm light
@@ -257,6 +365,44 @@
   flex-direction: column;
   gap: 2px;
   align-items: center;
+}
+/* "On this schedule" — the drafted-worker roster in the empty side panel, each row
+   with a per-worker "remove from the whole week" control. Left-aligned (unlike the
+   centered .side-empty hint above it). */
+.side-workers {
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+}
+.side-workers-hint {
+  padding: 0 16px 8px;
+}
+.side-worker-list {
+  display: flex;
+  flex-direction: column;
+}
+.side-worker-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.side-worker-row:last-child {
+  border-bottom: none;
+}
+.side-worker-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+.side-worker-meta b {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .side-head {
   display: flex;
@@ -365,18 +511,24 @@
   opacity: 1;
 }
 
-/* Save status (A2) — sits beside the Draft/Published tag in the toolbar. */
+/* Save status (A2) — sits beside the Draft/Published tag in the toolbar. Always
+   present (even idle) as a pill so the autosave contract is self-evident. */
 .bld-savestate {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   font-size: 12px;
   font-weight: 500;
+  padding: 3px 9px;
+  border-radius: 99px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
 }
 .bld-savestate.is-saved {
   color: var(--success);
 }
-.bld-savestate.is-saving {
+.bld-savestate.is-saving,
+.bld-savestate.is-idle {
   color: var(--text-secondary);
 }
 .bld-spin {
@@ -415,45 +567,116 @@
   }
 }
 
-.ai-progress-track {
-  height: 6px;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--brand) 12%, var(--surface));
-  overflow: hidden;
+/* The running state (phase text, day stepper, footer caption) gets its own
+   card, distinct from the panel's own square chrome, since it represents a
+   live process rather than a static container. */
+.ai-processing-card {
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 16px;
 }
-.ai-progress-fill {
-  height: 100%;
-  border-radius: 3px;
-  background: var(--brand);
-  transition: width 0.4s ease;
+
+/* Spinner shown next to the phase text while generation runs. */
+.ai-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--brand) 25%, transparent);
+  border-top-color: var(--brand);
+  animation: ai-spin 0.8s linear infinite;
+  flex-shrink: 0;
 }
-.ai-ellipsis::after {
-  content: '';
-  animation: bld-ellipsis 1.2s steps(4, end) infinite;
-}
-@keyframes bld-ellipsis {
-  0% {
-    content: '';
+@keyframes ai-spin {
+  to {
+    transform: rotate(360deg);
   }
-  25% {
-    content: '.';
+}
+
+/* Day stepper: one chip per day the generator will schedule. A chip fills
+   solid once its day settles, pulses while its day is being built, and
+   turns warn-colored while a repair pass fixes a rule violation on it. */
+.ai-day-row {
+  display: flex;
+  gap: 6px;
+}
+.ai-day-chip {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.ai-day-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--border-subtle);
+  background: var(--surface);
+  color: var(--text-placeholder);
+  font-size: 11px;
+  font-weight: 700;
+  position: relative;
+  transition:
+    background-color 0.25s ease,
+    border-color 0.25s ease,
+    color 0.25s ease;
+}
+.ai-day-chip.is-done .ai-day-dot {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--text-on-color);
+}
+.ai-day-chip.is-active .ai-day-dot {
+  background: var(--brand-subtle-bg);
+  border-color: var(--brand);
+  color: var(--brand);
+}
+.ai-day-chip.is-repair .ai-day-dot {
+  background: var(--warn-bg);
+  border-color: var(--warn);
+  color: var(--text-primary);
+}
+.ai-day-chip.is-active .ai-day-dot::after {
+  content: '';
+  position: absolute;
+  inset: -1.5px;
+  border-radius: 50%;
+  border: 1.5px solid var(--brand);
+  animation: ai-day-pulse 1.6s ease-out infinite;
+}
+@keyframes ai-day-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--brand) 35%, transparent);
   }
   50% {
-    content: '..';
-  }
-  75% {
-    content: '...';
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--brand) 0%, transparent);
   }
 }
+.ai-day-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.ai-day-chip.is-active .ai-day-label,
+.ai-day-chip.is-repair .ai-day-label {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .bld-grid.is-ai-preview .bld-run {
     animation: none;
   }
-  .ai-progress-fill {
-    transition: none;
-  }
-  .ai-ellipsis::after {
+  .ai-spinner {
     animation: none;
-    content: '';
+    border-top-color: color-mix(in srgb, var(--brand) 25%, transparent);
+  }
+  .ai-day-chip.is-active .ai-day-dot::after {
+    animation: none;
   }
 }

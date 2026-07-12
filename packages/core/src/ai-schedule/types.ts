@@ -141,6 +141,11 @@ export type AiScheduleOptions = {
   finalize?: boolean;
   // Observational progress callback (see AiProgressEvent). Optional.
   onProgress?: (event: AiProgressEvent) => void;
+  // Cooperative cancellation: checked before every LLM call (planning, each
+  // day's propose, each repair round). Aborting stops new calls immediately
+  // but cannot recall a call already in flight; the loop still finalizes
+  // and scores whatever days completed, same as the maxLlmCalls cutoff.
+  signal?: AbortSignal;
 };
 
 export type AiCandidate = {
@@ -158,7 +163,7 @@ export type AiScheduleResult = {
     llmCallCount: number;
     candidateScores: number[];
     prunedAssignments: number; // safety-net removals across all candidates
-    stoppedEarly: 'plateau' | 'budget' | null;
+    stoppedEarly: 'plateau' | 'budget' | 'aborted' | null;
     notes: string[];
   };
 };

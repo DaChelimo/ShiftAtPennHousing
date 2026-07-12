@@ -7,6 +7,15 @@ import { Button } from '../../components/ui/Button';
 import { Field, TextInput } from '../../components/ui/Field';
 import { Icon } from '../../components/ui/Icon';
 import { createClient } from '../../lib/supabase/client';
+import './login.css';
+
+function Wordmark() {
+  return (
+    <span className="login-wordmark">
+      Shift<span className="at">@</span>PennHousing
+    </span>
+  );
+}
 
 function LoginForm() {
   const router = useRouter();
@@ -37,81 +46,88 @@ function LoginForm() {
   }
 
   return (
-    <main
-      style={{
-        minHeight: '100%',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 24,
-        background: 'linear-gradient(135deg, var(--brand), var(--brand-active))',
-      }}
-    >
-      <form
-        onSubmit={handleSubmit}
-        className="card col gap-6"
-        style={{ width: '100%', maxWidth: 400, padding: 40, boxShadow: 'var(--shadow-2)' }}
-      >
-        <div className="col gap-4">
-          <span
-            aria-hidden="true"
-            style={{
-              width: 44,
-              height: 44,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'var(--brand)',
-              color: '#fff',
-            }}
-          >
-            <Icon name="calendar" size={24} />
+    <main className="login">
+      <aside className="login-brand" aria-hidden="true">
+        <div className="login-lockup">
+          <span className="login-mark">
+            <Icon name="calendar" size={22} />
           </span>
-          <div className="col gap-1">
-            <h1 className="t-h1">
-              Shift<span style={{ color: 'var(--brand)', fontWeight: 700 }}>@</span>PennHousing
-            </h1>
-            <p className="t-helper">Sign in to the admin console.</p>
-          </div>
+          <Wordmark />
         </div>
 
-        <Field label="Email">
-          <TextInput
-            data-testid="login-email"
-            type="email"
-            autoComplete="username"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-        </Field>
-
-        <Field label="Password">
-          <TextInput
-            data-testid="login-password"
-            type="password"
-            autoComplete="current-password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </Field>
-
-        {error !== null && (
-          <p
-            data-testid="login-error"
-            role="alert"
-            className="t-helper"
-            style={{ color: 'var(--st-danger)' }}
-          >
-            {error}
+        <div className="login-pitch">
+          <h1>Residential desk coverage, coordinated.</h1>
+          <p>
+            Build schedules, manage floats and swaps, and keep every front desk staffed — all from
+            one console.
           </p>
-        )}
+        </div>
 
-        <Button data-testid="login-submit" type="submit" disabled={submitting} full>
-          {submitting ? 'Signing in…' : 'Sign in'}
-        </Button>
-      </form>
+        <div className="login-foot">University of Pennsylvania · Residential Services</div>
+      </aside>
+
+      <section className="login-form-side">
+        <form onSubmit={handleSubmit} className="login-form col gap-6">
+          <div className="login-form-lockup">
+            <span className="login-mark">
+              <Icon name="calendar" size={20} />
+            </span>
+            <Wordmark />
+          </div>
+
+          <div className="login-heading">
+            <h2>Sign in</h2>
+            <p>Welcome back. Enter your credentials to access the admin console.</p>
+          </div>
+
+          <Field label="Email">
+            <TextInput
+              data-testid="login-email"
+              type="email"
+              autoComplete="username"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </Field>
+
+          <Field label="Password">
+            <TextInput
+              data-testid="login-password"
+              type="password"
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </Field>
+
+          <a href="/auth/forgot" data-testid="login-forgot" className="t-helper login-forgot">
+            Forgot or need to set your password?
+          </a>
+
+          {error !== null && (
+            <p
+              data-testid="login-error"
+              role="alert"
+              className="t-helper"
+              style={{ color: 'var(--st-danger)' }}
+            >
+              {error}
+            </p>
+          )}
+
+          <Button
+            data-testid="login-submit"
+            type="submit"
+            disabled={submitting}
+            iconRight="arrowRight"
+            full
+          >
+            {submitting ? 'Signing in…' : 'Sign in'}
+          </Button>
+        </form>
+      </section>
     </main>
   );
 }

@@ -171,5 +171,24 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return jsonResponse({ error: message }, status);
   }
 
-  return jsonResponse({ ok: true, worker: data }, 201);
+  // ③ Phase D — issue a set-password (recovery) link so the new hire can sign in.
+  //    Best-effort: a failure here never undoes the successful hire; the admin can
+  //    re-issue via the web "Resend invite". SITE_URL is the WEB app origin (distinct
+  //    from SUPABASE_URL); when set the link lands on /auth/update-password. When unset,
+  //    generateLink still returns a link but GoTrue redirects to the project's configured
+  //    site_url instead, so deployers should set SITE_URL to the web origin.
+  let setupLink: string | null = null;
+  const siteUrl = Deno.env.get('SITE_URL');
+  try {
+    const { data: link } = await supabase.auth.admin.generateLink({
+      type: 'recovery',
+      email: cleanEmail,
+      options: siteUrl ? { redirectTo: `${siteUrl}/auth/update-password` } : undefined,
+    });
+    setupLink = link?.properties?.action_link ?? null;
+  } catch {
+    setupLink = null;
+  }
+
+  return jsonResponse({ ok: true, worker: data, setupLink }, 201);
 });

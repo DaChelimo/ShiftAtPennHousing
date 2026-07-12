@@ -116,20 +116,31 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       group: 'System',
     });
   }
+  // Project-admin-exclusive surfaces (role = 'admin', or the system_config-designated
+  // project administrator) get their OWN sidebar section, separate from the
+  // house-scoped Operate/Manage/System groups above — these pages act across every
+  // house and are invisible to a house-scoped SM/HM/BM/RSM.
   if (isAdmin(user)) {
+    nav.push({
+      href: '/admin/launch',
+      label: 'Launch',
+      testId: 'nav-admin-launch',
+      icon: 'power',
+      group: 'Admin',
+    });
     nav.push({
       href: '/admin/operations',
       label: 'Operations',
       testId: 'nav-admin-operations',
       icon: 'calendar',
-      group: 'System',
+      group: 'Admin',
     });
     nav.push({
       href: '/admin/breaks',
       label: 'Break coverage',
       testId: 'nav-admin-breaks',
       icon: 'layers',
-      group: 'System',
+      group: 'Admin',
     });
   }
   if (await isProjectAdministrator(user.userId)) {
@@ -138,7 +149,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       label: 'Config',
       testId: 'nav-admin-config',
       icon: 'settings',
-      group: 'System',
+      group: 'Admin',
     });
     if (!isHouseAdmin(user)) {
       nav.push({

@@ -16,6 +16,12 @@ const LOCAL_SERVICE_ROLE_KEY =
 export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? LOCAL_SUPABASE_URL;
 export const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? LOCAL_ANON_KEY;
 
+// The public origin of THIS web app (not Supabase). Used to build the redirect target
+// for invite / password-setup / reset links so GoTrue sends the worker back to
+// /auth/update-password. Must be listed in supabase/config.toml site_url /
+// additional_redirect_urls (and the deployed project's Auth redirect allowlist).
+export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://127.0.0.1:3000';
+
 // Server-only. Never import this into a client component.
 export const SUPABASE_SERVICE_ROLE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY ?? LOCAL_SERVICE_ROLE_KEY;

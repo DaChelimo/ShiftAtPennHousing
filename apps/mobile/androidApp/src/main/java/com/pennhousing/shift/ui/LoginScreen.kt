@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.pennhousing.shift.BuildConfig
 import com.pennhousing.shift.shared.auth.AuthError
 import com.pennhousing.shift.shared.auth.AuthGateway
 import com.pennhousing.shift.shared.auth.AuthOutcome
@@ -106,7 +107,7 @@ class LoginHost(
             val outcome = gateway.signIn(snapshot.email, snapshot.password)
             when (outcome) {
                 is AuthOutcome.Success -> dispatch(LoginEvent.AuthSucceeded(outcome.session))
-                is AuthOutcome.Failure -> dispatch(LoginEvent.AuthFailed(outcome.error))
+                is AuthOutcome.Failure -> dispatch(LoginEvent.AuthFailed(outcome.error, outcome.detail))
             }
         }
     }
@@ -185,7 +186,7 @@ fun LoginScreen(
                     letterSpacing = (-0.02).em,
                 )
                 Text(
-                    "Your schedule, floats and open shifts — for Residential Services staff.",
+                    "Your schedule, floats and open shifts, for Residential Services staff.",
                     modifier = Modifier.padding(top = 6.dp),
                     color = c.sec,
                     fontSize = 14.5.sp,
@@ -277,6 +278,26 @@ fun LoginScreen(
                         tone = BannerTone.Error,
                         modifier = Modifier.testTag("login_error"),
                     )
+                    // DEBUG-only: the raw underlying error (yellow), so a network/config
+                    // failure is not mistaken for a wrong password. Never shown in release.
+                    if (BuildConfig.DEBUG && state.formErrorDetail != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "debug: ${state.formErrorDetail}",
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0x22C79200))
+                                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                                    .testTag("login_error_debug"),
+                            color = Color(0xFFB8860B),
+                            fontSize = 12.sp,
+                            lineHeight = 15.sp,
+                            maxLines = 3,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        )
+                    }
                 }
 
                 Spacer(Modifier.height(28.dp))

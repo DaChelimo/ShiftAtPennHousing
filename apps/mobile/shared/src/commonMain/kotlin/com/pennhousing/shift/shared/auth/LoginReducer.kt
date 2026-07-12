@@ -14,6 +14,8 @@ data class LoginUiState(
     val phase: LoginPhase = LoginPhase.EDITING,
     val errors: FormErrors = FormErrors(null, null),
     val formError: AuthError? = null,
+    /** DEBUG-only raw diagnostic behind [formError] (never shown to end users). */
+    val formErrorDetail: String? = null,
     val session: AuthSession? = null,
 )
 
@@ -26,7 +28,7 @@ sealed interface LoginEvent {
 
     data class AuthSucceeded(val session: AuthSession) : LoginEvent
 
-    data class AuthFailed(val error: AuthError) : LoginEvent
+    data class AuthFailed(val error: AuthError, val detail: String? = null) : LoginEvent
 }
 
 /**
@@ -57,6 +59,7 @@ object LoginReducer {
                         session = event.session,
                         errors = FormErrors(null, null),
                         formError = null,
+                        formErrorDetail = null,
                     )
                 } else {
                     state
@@ -66,6 +69,7 @@ object LoginReducer {
                     state.copy(
                         phase = LoginPhase.ERROR,
                         formError = event.error,
+                        formErrorDetail = event.detail,
                         session = null,
                     )
                 } else {
@@ -83,7 +87,7 @@ object LoginReducer {
         mutate: (LoginUiState) -> LoginUiState,
     ): LoginUiState {
         if (state.phase == LoginPhase.SUBMITTING || state.phase == LoginPhase.AUTHENTICATED) return state
-        val next = mutate(state).copy(formError = null)
+        val next = mutate(state).copy(formError = null, formErrorDetail = null)
         return if (next.phase == LoginPhase.ERROR) next.copy(phase = LoginPhase.EDITING) else next
     }
 
@@ -97,9 +101,9 @@ object LoginReducer {
         if (state.phase == LoginPhase.SUBMITTING || state.phase == LoginPhase.AUTHENTICATED) return state
         val errors = LoginFormValidator.validate(state.email, state.password)
         return if (errors.hasError) {
-            state.copy(phase = LoginPhase.EDITING, errors = errors, formError = null)
+            state.copy(phase = LoginPhase.EDITING, errors = errors, formError = null, formErrorDetail = null)
         } else {
-            state.copy(phase = LoginPhase.SUBMITTING, errors = FormErrors(null, null), formError = null)
+            state.copy(phase = LoginPhase.SUBMITTING, errors = FormErrors(null, null), formError = null, formErrorDetail = null)
         }
     }
 }

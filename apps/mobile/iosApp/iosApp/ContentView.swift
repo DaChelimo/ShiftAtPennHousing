@@ -31,10 +31,21 @@ final class ShiftsObservable: ObservableObject {
     private func subscribe() {
         task?.cancel()
         state = vm.uiState.value
+        pushWidget(state)
         task = Task { [weak self] in
             guard let self else { return }
-            for await s in self.vm.uiState { self.state = s }
+            for await s in self.vm.uiState {
+                self.state = s
+                self.pushWidget(s)
+            }
         }
+    }
+
+    /// Mirror the worker's own + open shifts (as shown) into the home-screen widgets.
+    /// Driven off the UI state so BOTH the demo and live builds keep the widget in step.
+    private func pushWidget(_ s: ShiftsUiState) {
+        let open = s.homeOpen.weekly + s.homeOpen.permanentOpenings + s.otherHouses.openShifts
+        WidgetSync.update(myShifts: s.myShifts.inDisplayOrder(), openShifts: open)
     }
 
     func activateLive(repo: WorkerShiftsRepository, userId: String) {
@@ -48,6 +59,7 @@ final class ShiftsObservable: ObservableObject {
                 guard let self else { return }
                 self.vm = DemoFactory.shared.shiftsViewModel(snapshot: snapshot)
                 self.weeklyHours = DemoFactory.shared.weeklyHoursFor(snapshot: snapshot)
+                // subscribe() pushes the fresh shifts to the home-screen widgets.
                 self.subscribe()
             }
         }
@@ -300,15 +312,18 @@ final class FloatCarouselObservable: ObservableObject {
     /// The floats the VM was built from — tapping a card resolves its `PendingFloat` to
     /// open the full ack hero for THAT float.
     private(set) var floats: [PendingFloat]
+    private(set) var recentFloats: [RecentFloat]
     @Published var state: FloatCarouselUiState
     private var task: Task<Void, Never>?
 
-    init(floats: [PendingFloat]) {
+    init(floats: [PendingFloat], recentFloats: [RecentFloat] = []) {
         self.floats = floats
-        let vm = FloatCarouselViewModel(floats: floats, now: DemoFactory.shared.now())
+        self.recentFloats = recentFloats
+        let vm = FloatCarouselViewModel(floats: floats, now: DemoFactory.shared.now(), recentFloats: recentFloats)
         self.vm = vm
         self.state = vm.uiState.value
         subscribe()
+        WidgetSync.update(pendingFloats: floats)
     }
 
     private func subscribe() {
@@ -322,10 +337,13 @@ final class FloatCarouselObservable: ObservableObject {
 
     /// Rebuild the VM from a fresh float list (the live `fetchPendingFloats` read). A new
     /// `now` is sampled so the cards' respondable/deadline state is decided at load time.
-    func rebuild(floats: [PendingFloat]) {
+    func rebuild(floats: [PendingFloat], recentFloats: [RecentFloat] = []) {
         self.floats = floats
-        vm = FloatCarouselViewModel(floats: floats, now: DemoFactory.shared.now())
+        self.recentFloats = recentFloats
+        vm = FloatCarouselViewModel(floats: floats, now: DemoFactory.shared.now(), recentFloats: recentFloats)
         subscribe()
+        // Keep the home-screen float banner in step with the in-app carousel.
+        WidgetSync.update(pendingFloats: floats)
     }
 
     func acknowledge(_ floatId: String) { vm.acknowledge(floatId: floatId) }
@@ -435,7 +453,9 @@ struct ShiftsRootView: View {
     // §7.1 — the My-Shifts float-request carousel. Demo-seeded (two floats) so the swipe +
     // completion are visible in the login-bypass build; the live host rebuilds it from the
     // worker's real `worker_pending_floats` read in `.task`.
-    @StateObject private var floatCarouselModel = FloatCarouselObservable(floats: DemoData().pendingFloats(now: DemoFactory.shared.now()))
+    @StateObject private var floatCarouselModel = FloatCarouselObservable(
+        floats: DemoData().pendingFloats(now: DemoFactory.shared.now()),
+        recentFloats: DemoData().recentFloats(now: DemoFactory.shared.now()))
     @Environment(\.colorScheme) private var scheme
 
     @State private var tab: Tab = .mine
@@ -462,9 +482,10 @@ struct ShiftsRootView: View {
     // masquerades as success) and auto-cleared; the optimistic card is reverted to
     // server truth via `model.revertToServer`.
     @State private var writeError: String?
-    // D2/D3 — swap proposal target (opened from the drop sheet's pivot).
-    @State private var swapTarget: MyShift?
     @State private var swapProposed = false
+    /// How long a transient toast stays on screen, in nanoseconds — derived from the shared
+    /// `TOAST_DURATION_MS` single source of truth so both platforms match.
+    private var toastDurationNanos: UInt64 { UInt64(WriteFeedbackKt.TOAST_DURATION_MS) * 1_000_000 }
     // Incoming-swap accept/decline popup, opened from a flagged My-Shifts card.
     @State private var decisionTarget: IdentifiedSwapDecision?
     // OUTGOING-swap "swap pending" notice (cancel / keep waiting), opened from a flagged
@@ -487,19 +508,36 @@ struct ShiftsRootView: View {
     /// `@MainActor`-isolated so UI mutations stay on the main thread; the `await op()`
     /// network call still suspends off the UI. Mirrors Android's `launchWrite`.
     private func liveWrite(
+        _ writeOp: WriteOp,
         revert: Bool = true,
         onFailure: @escaping () async -> Void = {},
-        _ op: @escaping () async -> Bool
+        _ op: @escaping () async -> EdgeResult?
     ) {
         Task { @MainActor in
-            let ok = await op()
-            if !ok {
-                writeError = "Couldn't reach the server — your change wasn't saved. Try again."
+            let result = await op() ?? EdgeResult(ok: false, status: 0, body: "")
+            if !result.ok {
+                // Descriptive, classified copy (the server's error code → human message)
+                // instead of a single generic "couldn't reach the server".
+                writeError = WriteFeedbackKt.edgeErrorMessage(op: writeOp, result: result)
                 await onFailure()
                 if revert, let uid = liveUserId {
                     await model.revertToServer(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
                 }
             }
+        }
+    }
+
+    /// Boolean variant for non-EF writes (Postgrest direct: opt-out / broadcast toggle),
+    /// which either complete or throw. A failure classifies off a status-0 result (offline
+    /// copy) with the op's verb — mirrors Android's `launchWriteBool`.
+    private func liveWriteBool(
+        _ writeOp: WriteOp,
+        revert: Bool = true,
+        onFailure: @escaping () async -> Void = {},
+        _ op: @escaping () async -> Bool
+    ) {
+        liveWrite(writeOp, revert: revert, onFailure: onFailure) {
+            (await op()) ? EdgeResult(ok: true, status: 200, body: "") : EdgeResult(ok: false, status: 0, body: "")
         }
     }
 
@@ -545,20 +583,25 @@ struct ShiftsRootView: View {
                 guard !blockIds.isEmpty else { return }
                 let repo = WorkerBackend.shared.shiftsRepository
                 let vm = breakModel.vm
-                liveWrite(revert: false, onFailure: revertBreak) {
-                    guard let result = try? await repo.claimBreakRange(blockIds: blockIds) else { return false }
-                    if !result.claimedAssignmentIds.isEmpty { vm.reconcileClaim(claimedAssignmentIds: result.claimedAssignmentIds) }
-                    // Claiming NOTHING (window closed / all taken / EF rejected) is a failure —
-                    // surface it (toast + revert) instead of a false success.
-                    return result.ok && !result.claimedAssignmentIds.isEmpty
+                Task { @MainActor in
+                    let result = try? await repo.claimBreakRange(blockIds: blockIds)
+                    if let claimed = result?.claimedAssignmentIds, !claimed.isEmpty {
+                        vm.reconcileClaim(claimedAssignmentIds: claimed)
+                    } else {
+                        // Claiming NOTHING (window closed / all taken / EF rejected): the server
+                        // returns 200 with an empty list, so there is no error code to classify —
+                        // describe the likely reasons and revert.
+                        writeError = "Couldn't claim those break shifts. The sign-up window may be closed, or they were just taken."
+                        await revertBreak()
+                    }
                 }
             },
             // POST ONE `drop-shift` covering the run's seats (no break-specific RPC).
             onDropSeats: liveUserId == nil ? nil : { seatIds in
                 guard !seatIds.isEmpty else { return }
                 let repo = WorkerBackend.shared.shiftsRepository
-                liveWrite(revert: false, onFailure: revertBreak) {
-                    (try? await repo.dropBlocks(assignmentIds: seatIds))?.ok ?? false
+                liveWrite(.breakDrop, revert: false, onFailure: revertBreak) {
+                    try? await repo.dropBlocks(assignmentIds: seatIds)
                 }
             },
             // Live host writes the §4.4 "no break hours" opt-out (own `break_optouts` row)
@@ -567,7 +610,7 @@ struct ShiftsRootView: View {
             onToggleOptOut: liveUserId == nil ? nil : { optedOut in
                 guard let uid = liveUserId, let bid = breakModel.vm.breakId else { return }
                 let repo = WorkerBackend.shared.breakRepository
-                liveWrite(revert: false, onFailure: { _ = breakModel.vm.toggleOptedOut() }) {
+                liveWriteBool(.preferences, revert: false, onFailure: { _ = breakModel.vm.toggleOptedOut() }) {
                     (try? await repo.setBreakOptOut(userId: uid, breakId: bid, optedOut: optedOut)) != nil
                 }
             },
@@ -581,11 +624,15 @@ struct ShiftsRootView: View {
             if breakModel.state.phase == .claimWindow && tab != .breakShifts {
                 BreakOpenBanner(breakName: breakModel.state.breakName) { tab = .breakShifts }
             }
-            // The break calendar manages its OWN scroll + a bottom action bar pinned above
-            // the nav, so it renders OUTSIDE the shared ScrollView; every other tab scrolls.
+            // The break calendar and the House grid manage their OWN scroll + a bottom bar
+            // pinned above the nav, so they render OUTSIDE the shared ScrollView (the grid is
+            // a bounded scroll window with its week navigator pinned to the screen bottom);
+            // every other tab scrolls as one page.
             Group {
                 if tab == .breakShifts {
                     breakTab
+                } else if tab == .house {
+                    houseTab
                 } else {
                     ScrollView {
                         switch tab {
@@ -593,7 +640,7 @@ struct ShiftsRootView: View {
                         // collapses the two open feeds under a My-House / Others sub-tab.
                         case .mine: calendarTab
                         case .openShifts: openShiftsTab
-                        case .house: houseTab
+                        case .house: EmptyView() // rendered above, outside the ScrollView
                         case .updates: updates
                         case .swaps: swapsTab
                         case .preferences: PreferencesScreen(model: prefsModel)
@@ -607,8 +654,8 @@ struct ShiftsRootView: View {
                             onToggleBroadcast: liveUserId == nil ? nil : { subscribed in
                                 guard let uid = liveUserId else { return }
                                 let repo = WorkerBackend.shared.profileRepository
-                                liveWrite(revert: false, onFailure: { settingsModel.vm.toggleBroadcast() }) {
-                                    (try? await repo.setBroadcastSubscription(userId: uid, subscribed: subscribed))?.ok ?? false
+                                liveWrite(.broadcast, revert: false, onFailure: { settingsModel.vm.toggleBroadcast() }) {
+                                    try? await repo.setBroadcastSubscription(userId: uid, subscribed: subscribed)
                                 }
                             }
                         )
@@ -633,7 +680,24 @@ struct ShiftsRootView: View {
 
             bottomBar
         }
+        // Full-bleed black behind every tab, regardless of content height — short screens
+        // (Settings/Preferences) used to leave the tail of the shared ScrollView unpainted,
+        // falling through to the system default and reading grey/lighter next to the other
+        // (content-filled) tabs that appeared black. One root paint keeps every tab identical.
+        .background(ShiftColors.resolve(scheme).bg.ignoresSafeArea())
         .accessibilityIdentifier("shifts_screen")
+        .onChange(of: deepLink.requestedRoute) { route in
+            // A widget tile asked to land on a specific tab.
+            guard let route else { return }
+            switch route {
+            case .myShifts: requestTab(.mine)
+            case .updates: requestTab(.updates)
+            case .openShifts(let scope):
+                openSub = (scope == .otherHouses) ? 1 : 0
+                requestTab(.openShifts)
+            }
+            deepLink.requestedRoute = nil
+        }
         .sheet(isPresented: $showMore) { moreSheet }
         .confirmationDialog(
             "Unsaved preferences",
@@ -641,7 +705,7 @@ struct ShiftsRootView: View {
             titleVisibility: .visible
         ) {
             // §4 save-safety — leaving Preferences with unsaved edits.
-            Button("Submit & leave") {
+            Button("Save & leave") {
                 let target = pendingTab
                 prefsModel.submit()
                 pendingTab = nil
@@ -655,44 +719,41 @@ struct ShiftsRootView: View {
             }
             Button("Keep editing", role: .cancel) { pendingTab = nil }
         } message: {
-            Text("You've changed your preferences but haven't submitted. Submit them before leaving, or discard them.")
+            Text("You've changed your preferences but haven't saved them. Save them before leaving, or discard them.")
         }
         .sheet(item: $dropTarget) { shift in
-            // Drop from the calendar agenda: the dropped (sub)shift leaves the agenda
-            // (calendar VM) and becomes a vacant opening in the Open-Shifts tabs (shifts
-            // VM) — claimable, partial or full, like any open shift. No reclaim.
-            DropFlowSheet(vm: model.vm, shift: shift, onDrop: { droppedShift, permanent in
-                // Optimistic two-VM move (demo + live).
-                calendarModel.vm.drop(blockIds: droppedShift.blockIds)
-                model.vm.dropToOpen(shift: droppedShift)
-                // Live host POSTs the real drop (best-effort); on failure surface the toast,
-                // revert the calendar (the card returns) + the open feed (model.revertToServer).
-                if liveUserId != nil {
-                    let repo = WorkerBackend.shared.shiftsRepository
-                    liveWrite(onFailure: revertCalendar) {
-                        if permanent {
-                            return (try? await repo.permanentDrop(shift: droppedShift))?.ok ?? false
-                        } else {
-                            return (try? await repo.dropShift(shift: droppedShift))?.ok ?? false
+            // ONE sheet, two in-place pages (manage ⇄ swap). Drop from the calendar agenda: the
+            // dropped (sub)shift leaves the agenda (calendar VM) and becomes a vacant opening in
+            // the Open-Shifts tabs (shifts VM). "Choose who to swap with" pages to the give/take
+            // picker inside the SAME sheet (no dismiss-and-re-present).
+            ManageShiftSheet(
+                vm: model.vm,
+                shift: shift,
+                onDrop: { droppedShift, permanent in
+                    // Optimistic two-VM move (demo + live).
+                    calendarModel.vm.drop(blockIds: droppedShift.blockIds)
+                    model.vm.dropToOpen(shift: droppedShift)
+                    // Live host POSTs the real drop (best-effort); on failure surface the toast,
+                    // revert the calendar (the card returns) + the open feed (model.revertToServer).
+                    if liveUserId != nil {
+                        let repo = WorkerBackend.shared.shiftsRepository
+                        liveWrite(permanent ? .permanentDrop : .drop, onFailure: revertCalendar) {
+                            if permanent {
+                                return try? await repo.permanentDrop(shift: droppedShift)
+                            } else {
+                                return try? await repo.dropShift(shift: droppedShift)
+                            }
                         }
                     }
-                }
-            }, onProposeSwap: swapKindsFor(shift: shift, breakProfile: false).isEmpty ? nil : {
-                // D2 — pivot from dropping to proposing a swap for the same card.
-                dropTarget = nil
-                swapTarget = shift
-            })
-        }
-        .sheet(item: $swapTarget) { shift in
-            SwapCalendarSheetView(
-                giveShift: shift,
+                },
+                swapKinds: swapKindsFor(shift: shift, breakProfile: false),
                 meUserId: liveUserId,
                 repo: liveUserId != nil ? WorkerBackend.shared.shiftsRepository : nil,
                 demoSeats: houseModel.state.seats,
-                // Drop the worker's already-pending shifts from the give pool (defensive —
-                // the pinned give is never pending, but a give-picker must not offer one).
+                // Drop the worker's already-pending shifts from the give pool (defensive — the
+                // pinned give is never pending, but a give-picker must not offer one).
                 pendingGiveAssignmentIds: calendarModel.vm.pendingGiveAssignmentIds(),
-                onSubmit: { proposals in
+                onSubmitSwap: { proposals in
                     // Multi-party = INDEPENDENT LEGS (decision 2026-06-15): fire one
                     // `create-swap` per leg so one failing never affects the others. The
                     // server stays authoritative for §8 eligibility/conflicts.
@@ -704,13 +765,13 @@ struct ShiftsRootView: View {
                                 // actually lands; a failed write raises the red writeError toast.
                                 // There is no Realtime on swap_requests, so refetch to surface
                                 // the real, voidable row after the optimistic add.
-                                let ok = (try? await repo.createSwap(proposal: proposal))?.ok ?? false
-                                if ok {
+                                let result = (try? await repo.createSwap(proposal: proposal)) ?? EdgeResult(ok: false, status: 0, body: "")
+                                if result.ok {
                                     swapsModel.addOutgoing(proposal)
                                     await swapsModel.refreshFromServer(repo: repo, userId: uid)
                                     swapProposed = true
                                 } else {
-                                    writeError = "Couldn't propose the swap — please try again."
+                                    writeError = WriteFeedbackKt.edgeErrorMessage(op: .proposeSwap, result: result)
                                 }
                             }
                         }
@@ -773,17 +834,34 @@ struct ShiftsRootView: View {
                     // Mirror the pickup into the calendar ("My Shifts") so the claimed shift
                     // shows in the agenda — and a re-pickup of a shift dropped here un-hides it.
                     calendarModel.vm.claim(shift: effective)
-                    claimSuccessMessage = message
+                    claimSuccessMessage = message // optimistic; the live path corrects it below
                     if liveUserId != nil {
                         let repo = WorkerBackend.shared.shiftsRepository
-                        // On failure: revert the optimistic pickup (shifts VM via the default
-                        // model revert + the calendar via revertCalendar) AND clear the success
-                        // toast (the claim did not actually land).
-                        liveWrite(onFailure: { claimSuccessMessage = nil; await revertCalendar() }) {
-                            if effective.feed == .permanentOpening {
-                                return (try? await repo.permanentPickup(shift: effective))?.ok ?? false
-                            } else {
-                                return (try? await repo.claimShift(shift: effective))?.ok ?? false
+                        if effective.feed == .permanentOpening {
+                            // Permanent pickup: on failure clear the optimistic toast, show the
+                            // classified error and revert (shifts VM + calendar).
+                            liveWrite(.permanentPickup, onFailure: { claimSuccessMessage = nil; await revertCalendar() }) {
+                                try? await repo.permanentPickup(shift: effective)
+                            }
+                        } else {
+                            // Weekly claim is per-block, so a coalesced card can land PARTIALLY
+                            // (e.g. a sub-range overlapping an existing shift): full → accurate
+                            // success; partial → an informative "claimed part of this shift" note
+                            // (NOT a red failure — the bug this fixes); none → classified error.
+                            Task { @MainActor in
+                                let outcome = (try? await repo.claimShift(shift: effective)) ?? ClaimOutcome.companion.offline()
+                                let toast = WriteFeedbackKt.claimToast(op: .claim, outcome: outcome, successMessage: message)
+                                if toast.isError {
+                                    claimSuccessMessage = nil
+                                    writeError = toast.message
+                                    await revertCalendar()
+                                    if let uid = liveUserId {
+                                        await model.revertToServer(repo: repo, userId: uid)
+                                    }
+                                } else {
+                                    writeError = nil
+                                    claimSuccessMessage = toast.message
+                                }
                             }
                         }
                     }
@@ -822,19 +900,19 @@ struct ShiftsRootView: View {
             // Auto-dismiss the write-failure toast after a few seconds (restarts if a new
             // failure replaces it). `Task.sleep` throws on cancellation → silently ignore.
             guard writeError != nil else { return }
-            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            try? await Task.sleep(nanoseconds: toastDurationNanos)
             writeError = nil
         }
         .task(id: claimSuccessMessage) {
-            // Auto-dismiss the claim/pickup success toast (~3.5s), mirroring writeError.
+            // Auto-dismiss the claim/pickup confirmation toast, mirroring writeError.
             guard claimSuccessMessage != nil else { return }
-            try? await Task.sleep(nanoseconds: 3_500_000_000)
+            try? await Task.sleep(nanoseconds: toastDurationNanos)
             claimSuccessMessage = nil
         }
         .task(id: swapProposed) {
-            // Auto-dismiss the swap-proposed toast (~3.5s), mirroring writeError.
+            // Auto-dismiss the swap-proposed toast, mirroring writeError.
             guard swapProposed else { return }
-            try? await Task.sleep(nanoseconds: 3_500_000_000)
+            try? await Task.sleep(nanoseconds: toastDurationNanos)
             swapProposed = false
         }
         .task(id: floatCarouselModel.state.allHandled) {
@@ -860,7 +938,8 @@ struct ShiftsRootView: View {
                 // Empty list on live with none outstanding → the carousel hides (NO demo
                 // fallback on live, so a worker without a float never sees a phantom one).
                 let liveFloats = (try? await WorkerBackend.shared.shiftsRepository.fetchPendingFloats(userId: uid)) ?? []
-                floatCarouselModel.rebuild(floats: liveFloats)
+                let liveRecentFloats = (try? await WorkerBackend.shared.shiftsRepository.fetchRecentFloats(userId: uid)) ?? []
+                floatCarouselModel.rebuild(floats: liveFloats, recentFloats: liveRecentFloats)
                 await settingsModel.activateLive(repo: WorkerBackend.shared.profileRepository, userId: uid)
                 // Closed-house days + the live week for the calendar (§3.4/§11.3 + D8).
                 calendarModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
@@ -883,8 +962,8 @@ struct ShiftsRootView: View {
     private func acceptFloat(_ floatId: String) {
         guard liveUserId != nil else { return }
         let repo = WorkerBackend.shared.shiftsRepository
-        liveWrite(revert: false) {
-            (try? await repo.acknowledgeFloat(floatId: floatId))?.ok ?? false
+        liveWrite(.ackFloat, revert: false) {
+            try? await repo.acknowledgeFloat(floatId: floatId)
         }
     }
 
@@ -892,8 +971,8 @@ struct ShiftsRootView: View {
     private func declineFloat(_ floatId: String) {
         guard liveUserId != nil else { return }
         let repo = WorkerBackend.shared.shiftsRepository
-        liveWrite(revert: false) {
-            (try? await repo.declineFloat(floatId: floatId))?.ok ?? false
+        liveWrite(.declineFloat, revert: false) {
+            try? await repo.declineFloat(floatId: floatId)
         }
     }
 
@@ -905,14 +984,14 @@ struct ShiftsRootView: View {
             vm: ackModel.vm,
             onAcknowledge: liveUserId == nil ? nil : { floatId in
                 let repo = WorkerBackend.shared.shiftsRepository
-                liveWrite(revert: false, onFailure: revertAck) {
-                    (try? await repo.acknowledgeFloat(floatId: floatId))?.ok ?? false
+                liveWrite(.ackFloat, revert: false, onFailure: revertAck) {
+                    try? await repo.acknowledgeFloat(floatId: floatId)
                 }
             },
             onDecline: liveUserId == nil ? nil : { floatId in
                 let repo = WorkerBackend.shared.shiftsRepository
-                liveWrite(revert: false, onFailure: revertAck) {
-                    (try? await repo.declineFloat(floatId: floatId))?.ok ?? false
+                liveWrite(.declineFloat, revert: false, onFailure: revertAck) {
+                    try? await repo.declineFloat(floatId: floatId)
                 }
             }
         )
@@ -939,7 +1018,7 @@ struct ShiftsRootView: View {
             }
             if swapProposed {
                 // D2 — the server stays authoritative; the request shows under Updates once created.
-                ShiftToast(message: "Swap proposed — your housemate has been asked", tone: .success, systemIcon: ShiftIcons.check)
+                ShiftToast(message: "Swap proposed. Your housemate has been asked", tone: .success, systemIcon: ShiftIcons.check)
                     .accessibilityIdentifier("swap_proposed_toast")
             }
         }
@@ -980,16 +1059,16 @@ struct ShiftsRootView: View {
     ) -> some View {
         let c = ShiftColors.resolve(scheme)
         return Button(action: action) {
-            VStack(spacing: 3) {
+            VStack(spacing: 4) {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: icon)
-                        .font(.system(size: 20, weight: selected ? .semibold : .regular))
-                        .frame(height: 24)
+                        .font(.system(size: 24, weight: selected ? .semibold : .regular))
+                        .frame(height: 28)
                     if badge {
-                        Circle().fill(c.danger.accent).frame(width: 7, height: 7).offset(x: 7, y: -1)
+                        Circle().fill(c.danger.accent).frame(width: 8, height: 8).offset(x: 8, y: -1)
                     }
                 }
-                Text(title).font(ShiftFont.sans(10.5, selected ? .semibold : .medium))
+                Text(title).font(ShiftFont.sans(11.5, selected ? .semibold : .medium))
             }
             .foregroundColor(selected ? c.blue : c.sec)
             .frame(maxWidth: .infinity)
@@ -1023,6 +1102,8 @@ struct ShiftsRootView: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Slight fade+rise as the overflow menu opens (matches the shared drawers).
+        .sheetContentEntrance()
         .background(c.bg)
         .accessibilityIdentifier("more_sheet")
         .presentationDetents([.height(312)])
@@ -1435,8 +1516,8 @@ struct ShiftsRootView: View {
         swapsModel.cancelOutgoing(swapId)
         guard liveUserId != nil else { return }
         let repo = WorkerBackend.shared.shiftsRepository
-        liveWrite(revert: false, onFailure: revertSwaps) {
-            (try? await repo.voidSwap(swapId: swapId))?.ok ?? false
+        liveWrite(.cancelSwap, revert: false, onFailure: revertSwaps) {
+            try? await repo.voidSwap(swapId: swapId)
         }
     }
 
@@ -1448,11 +1529,19 @@ struct ShiftsRootView: View {
         updatesModel.resolveSwap(swapId)
         guard liveUserId != nil else { return }
         let repo = WorkerBackend.shared.shiftsRepository
-        liveWrite(revert: false, onFailure: revertSwaps) {
-            if accept {
-                return (try? await repo.acceptSwap(swapId: swapId))?.ok ?? false
-            } else {
-                return (try? await repo.rejectSwap(swapId: swapId))?.ok ?? false
+        if accept {
+            // accept-swap returns 200 even on a logical no-op ({accepted:false,reason}); confirm
+            // the body actually applied, else classify the reason.
+            Task { @MainActor in
+                let result = (try? await repo.acceptSwap(swapId: swapId)) ?? EdgeResult(ok: false, status: 0, body: "")
+                if !(result.ok && WriteFeedbackKt.swapAccepted(body: result.body)) {
+                    writeError = WriteFeedbackKt.edgeErrorMessage(op: .acceptSwap, result: result)
+                    await revertSwaps()
+                }
+            }
+        } else {
+            liveWrite(.declineSwap, revert: false, onFailure: revertSwaps) {
+                try? await repo.rejectSwap(swapId: swapId)
             }
         }
     }
@@ -1580,7 +1669,7 @@ struct ShiftsRootView: View {
             EmptyState(
                 title: "No outgoing swaps",
                 systemIcon: ShiftIcons.refresh,
-                bodyText: "Swaps you propose — from a shift on My Shifts — wait here until your housemate responds."
+                bodyText: "Swaps you propose (from a shift on My Shifts) wait here until your housemate responds."
             )
             .padding(.top, 40)
         } else {
@@ -1662,14 +1751,48 @@ struct ShiftsRootView: View {
         }
     }
 
-    /// The give ⇄ get block — the time SLOTS side by side (the decision is about when).
+    /// The give ⇄ get block — the time SLOTS side by side (the decision is about when). A
+    /// one-directional transfer isn't a swap, so it collapses to a single full-width panel
+    /// ("someone wants to give you these hours" / "you're offering …") instead.
+    @ViewBuilder
     private func swapExchangeRow(_ row: SwapRow, _ c: ShiftColors) -> some View {
-        let connector = (row.give == nil || row.get == nil) ? "arrow.right" : "arrow.left.arrow.right"
-        return HStack(spacing: 8) {
-            swapSideBox("You give", row.give, bg: c.surfaceVar, accent: c.sec, c)
-            Image(systemName: connector).font(.system(size: 15)).foregroundColor(c.sec)
-            swapSideBox("You get", row.get, bg: c.blue.opacity(0.08), accent: c.blue, c)
+        if row.isOneWayTransfer {
+            swapTransferPanel(row, c)
+        } else {
+            HStack(spacing: 8) {
+                swapSideBox("You give", row.give, bg: c.surfaceVar, accent: c.sec, c)
+                Image(systemName: "arrow.left.arrow.right").font(.system(size: 15)).foregroundColor(c.sec)
+                swapSideBox("You get", row.get, bg: c.blue.opacity(0.08), accent: c.blue, c)
+            }
         }
+    }
+
+    /// The one-directional transfer panel — a single full-width blue block leading with the
+    /// receive/offer headline (never "give nothing / get this"), then the shift's hero time +
+    /// day + house. Replaces the two-box exchange when nothing is given in return.
+    private func swapTransferPanel(_ row: SwapRow, _ c: ShiftColors) -> some View {
+        let side = row.transferSide
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(row.transferHeadline).font(ShiftFont.sans(12.5, .semibold)).foregroundColor(c.blue)
+                Spacer(minLength: 0)
+                if let s = side {
+                    Text(s.hours).font(ShiftFont.sans(12.5, .medium)).foregroundColor(c.blue)
+                }
+            }
+            // The time slot is the hero; fall back to the hours when the time isn't resolved yet.
+            Text(side?.timeRange ?? side?.hours ?? "-").font(ShiftFont.sans(18, .semibold)).foregroundColor(c.ink)
+            if let day = side?.dayLabel {
+                Text(day).font(ShiftFont.sans(13, .medium)).foregroundColor(c.ink)
+            }
+            if let house = side?.houseName {
+                swapHouseLine(house, c.blue)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 13).padding(.vertical, 11)
+        .background(c.blue.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .accessibilityIdentifier("swap_transfer_panel")
     }
 
     /// One side of the exchange — the TIME RANGE as the hero, the day beneath, hours a tiny chip.
@@ -1682,7 +1805,7 @@ struct ShiftsRootView: View {
                 }
             }
             // The time slot is the hero; fall back to hours when the time isn't known yet.
-            Text(side?.timeRange ?? side?.hours ?? "—").font(ShiftFont.sans(17, .medium)).foregroundColor(c.ink)
+            Text(side?.timeRange ?? side?.hours ?? "-").font(ShiftFont.sans(17, .medium)).foregroundColor(c.ink)
             // The date is decision-critical too — render it prominently, not squint-small.
             Text(side?.dayLabel ?? (side == nil ? "Nothing back" : "")).font(ShiftFont.sans(13, .medium)).foregroundColor(c.ink)
             // The house this side is actually worked at (the float destination, if floated) — the
@@ -1745,7 +1868,7 @@ struct ShiftsRootView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             houseWeekNavBar(st, c)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .accessibilityIdentifier("house_screen")
         .task { await houseModel.loadHouses() }
         // Reload whenever the shown house OR week changes (switching re-centres on today).
@@ -1988,26 +2111,34 @@ struct ShiftsRootView: View {
                     .frame(width: colW, height: 1)
                     .offset(y: Self.housePxPerHour * CGFloat(h - startHour))
             }
-            ForEach(day.blocks, id: \.id) { b in houseBlockView(b, startHour, c) }
+            ForEach(day.blocks, id: \.id) { b in houseBlockView(b, startHour, day.isToday, c) }
         }
         .frame(width: colW, height: gridHeight, alignment: .topLeading)
         .accessibilityIdentifier("house_day_column")
     }
 
     /// One positioned desk block, coloured by its state (design `HouseBlock`).
-    private func houseBlockView(_ b: HouseGridBlock, _ startHour: Int, _ c: ShiftColors) -> some View {
+    ///
+    /// Three-tier "mine" emphasis so the grid is scannable (BEH §11.4): someone else's
+    /// shift is gray; my shift on another day is a mild pale blue; my shift TODAY gets the
+    /// full `today` blue + a solid blue ring so it's the one block that pops.
+    private func houseBlockView(_ b: HouseGridBlock, _ startHour: Int, _ isToday: Bool, _ c: ShiftColors) -> some View {
         let top = Self.housePxPerHour * CGFloat(Int(b.startMin) - startHour * 60) / 60
         let h = max(Self.housePxPerHour * CGFloat(Int(b.endMin) - Int(b.startMin)) / 60 - 3, 18)
         let x = Self.houseColPad + (Self.houseLaneW + Self.houseLaneGap) * CGFloat(Int(b.lane))
         let bg: Color
         let accent: Color
         let fg: Color
+        // mine + today → solid blue ring (the one block that should pop).
+        var emphatic = false
         if b.vacant {
             bg = c.surface; accent = c.outline; fg = c.ter
         } else if b.mine && b.floatIn {
             bg = c.floatIn.tint; accent = c.floatIn.accent; fg = c.floatIn.deep
+        } else if b.mine && isToday {
+            bg = c.today; accent = c.blue; fg = c.onBlueContainer; emphatic = true
         } else if b.mine {
-            bg = c.blueContainer; accent = c.blue; fg = c.onBlueContainer
+            bg = c.blueContainer.opacity(0.5); accent = c.blue.opacity(0.5); fg = c.onBlueContainer
         } else if b.pending {
             bg = c.surfaceVar; accent = c.pending; fg = c.ink
         } else if b.floatIn {
@@ -2032,8 +2163,8 @@ struct ShiftsRootView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(
-                    b.vacant ? accent : accent.opacity(0.45),
-                    style: StrokeStyle(lineWidth: b.vacant ? 1.5 : 1, dash: b.vacant ? [6, 4] : [])
+                    b.vacant ? accent : (emphatic ? c.blue : accent.opacity(0.45)),
+                    style: StrokeStyle(lineWidth: b.vacant ? 1.5 : (emphatic ? 1.5 : 1), dash: b.vacant ? [6, 4] : [])
                 )
         )
         .offset(x: x, y: top)
@@ -2049,30 +2180,30 @@ struct ShiftsRootView: View {
             HStack(spacing: 0) {
                 if st.canPreviousWeek {
                     Button(action: { houseModel.prevWeek() }) {
-                        Image(systemName: "chevron.left").font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(c.sec).frame(width: 36, height: 34)
+                        Image(systemName: "chevron.left").font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(c.sec).frame(width: 40, height: 40)
                     }.buttonStyle(.plain).accessibilityIdentifier("house_prev_week")
                 } else {
-                    Spacer().frame(width: 36)
+                    Spacer().frame(width: 40)
                 }
                 Button(action: { showHouseWeekPicker = true }) {
                     HStack(spacing: 7) {
-                        Image(systemName: ShiftIcons.calendar).font(.system(size: 15)).foregroundColor(c.blue)
-                        Text(st.weekRelative).font(ShiftFont.sans(14, .semibold)).foregroundColor(c.ink)
-                        Text("·  \(st.weekRange)").font(ShiftFont.sans(13)).foregroundColor(c.sec)
+                        Image(systemName: ShiftIcons.calendar).font(.system(size: 18)).foregroundColor(c.blue)
+                        Text(st.weekRelative).font(ShiftFont.sans(15.5, .semibold)).foregroundColor(c.ink)
+                        Text("·  \(st.weekRange)").font(ShiftFont.sans(14)).foregroundColor(c.sec)
                     }
                     .frame(maxWidth: .infinity).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityIdentifier("house_week_picker_open")
                 if st.canNextWeek {
                     Button(action: { houseModel.nextWeek() }) {
-                        Image(systemName: "chevron.right").font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(c.sec).frame(width: 36, height: 34)
+                        Image(systemName: "chevron.right").font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(c.sec).frame(width: 40, height: 40)
                     }.buttonStyle(.plain).accessibilityIdentifier("house_next_week")
                 } else {
-                    Spacer().frame(width: 36)
+                    Spacer().frame(width: 40)
                 }
             }
-            .padding(.horizontal, 10).padding(.vertical, 5).background(c.surface)
+            .padding(.horizontal, 10).padding(.vertical, 9).background(c.surface)
         }
     }
 
@@ -2091,9 +2222,10 @@ struct ShiftsRootView: View {
                             Text(option.rangeLabel).font(ShiftFont.mono(12.5)).monospacedDigit().foregroundColor(c.sec)
                         }
                         .padding(.horizontal, 13).padding(.vertical, 11)
-                        .background(Int(st.weekOffset) == Int(option.offset) ? c.blue.opacity(0.08) : c.surface)
+                        .background(Int(st.weekOffset) == Int(option.offset) ? c.today : c.surface)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(c.divider, lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(option.offset == 0 ? c.blue : c.divider, lineWidth: option.offset == 0 ? 1.5 : 1))
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("house_week_picker_option")
@@ -2122,7 +2254,7 @@ struct ShiftsRootView: View {
                     PageTitle(title: "My Shifts")
                     ShiftBanner(
                         title: "Viewing the recurring template",
-                        bodyText: "Derived from your scheduled weeks — permanent drops and swaps change every future week.",
+                        bodyText: "Derived from your scheduled weeks. Permanent drops and swaps change every future week.",
                         tone: .info
                     )
                     .padding(.horizontal, 16)
@@ -2162,6 +2294,7 @@ struct ShiftsRootView: View {
             // be missed. Renders nothing when there are no pending floats.
             FloatCarouselView(
                 cards: floatCarouselModel.state.cards,
+                recentRows: floatCarouselModel.state.recentRows,
                 onAccept: { id in
                     // Accept = POST `acknowledge-float` (host, best-effort) AND advance the stack.
                     acceptFloat(id)
@@ -2190,14 +2323,14 @@ struct ShiftsRootView: View {
                         EmptyState(
                             title: "House closed",
                             systemIcon: ShiftIcons.building,
-                            bodyText: "Your house is closed this day — no desk shifts are scheduled."
+                            bodyText: "Your house is closed this day, so no desk shifts are scheduled."
                         )
                         .padding(.top, 8)
                     } else {
                         EmptyState(
                             title: "No shifts this day",
                             systemIcon: ShiftIcons.calendar,
-                            bodyText: "Enjoy the day off — or browse Open Shifts to pick one up."
+                            bodyText: "Enjoy the day off, or browse Open Shifts to pick one up."
                         )
                         .padding(.top, 8)
                     }
@@ -2385,20 +2518,20 @@ struct ShiftsRootView: View {
             Divider()
             HStack(spacing: 0) {
                 if template {
-                    Spacer().frame(width: 36)
+                    Spacer().frame(width: 40)
                 } else {
                     Button(action: { calendarModel.vm.previousWeek() }) {
-                        Image(systemName: "chevron.left").font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(c.sec).frame(width: 36, height: 34)
+                        Image(systemName: "chevron.left").font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(c.sec).frame(width: 40, height: 40)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("calendar_prev_week")
                 }
                 Button(action: { showWeekPicker = true }) {
                     HStack(spacing: 7) {
-                        Image(systemName: ShiftIcons.calendar).font(.system(size: 15)).foregroundColor(c.blue)
-                        Text(title).font(ShiftFont.sans(14, .semibold)).foregroundColor(c.ink)
-                        Text("·  \(range)").font(ShiftFont.sans(13)).foregroundColor(c.sec)
+                        Image(systemName: ShiftIcons.calendar).font(.system(size: 18)).foregroundColor(c.blue)
+                        Text(title).font(ShiftFont.sans(15.5, .semibold)).foregroundColor(c.ink)
+                        Text("·  \(range)").font(ShiftFont.sans(14)).foregroundColor(c.sec)
                     }
                     .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())
@@ -2406,17 +2539,17 @@ struct ShiftsRootView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("calendar_week_picker_open")
                 if template {
-                    Spacer().frame(width: 36)
+                    Spacer().frame(width: 40)
                 } else {
                     Button(action: { calendarModel.vm.nextWeek() }) {
-                        Image(systemName: "chevron.right").font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(c.sec).frame(width: 36, height: 34)
+                        Image(systemName: "chevron.right").font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(c.sec).frame(width: 40, height: 40)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("calendar_next_week")
                 }
             }
-            .padding(.horizontal, 10).padding(.vertical, 5)
+            .padding(.horizontal, 10).padding(.vertical, 9)
             .background(c.surface)
         }
     }
@@ -2436,9 +2569,10 @@ struct ShiftsRootView: View {
                             Text(option.rangeLabel).font(ShiftFont.mono(12.5)).monospacedDigit().foregroundColor(c.sec)
                         }
                         .padding(.horizontal, 13).padding(.vertical, 11)
-                        .background(Int(calendarModel.state.weekOffset) == Int(option.offset) ? c.blue.opacity(0.08) : c.surface)
+                        .background(Int(calendarModel.state.weekOffset) == Int(option.offset) ? c.today : c.surface)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(c.divider, lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(option.offset == 0 ? c.blue : c.divider, lineWidth: option.offset == 0 ? 1.5 : 1))
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("week_picker_option")
@@ -2448,13 +2582,14 @@ struct ShiftsRootView: View {
                     showWeekPicker = false
                 }) {
                     HStack {
-                        Text("Recurring template").font(ShiftFont.sans(14, .semibold)).foregroundColor(c.permanent.deep)
+                        Text("Recurring template").font(ShiftFont.sans(14, .semibold)).foregroundColor(c.sec)
                         Spacer(minLength: 0)
-                        Text("derived").font(ShiftFont.sans(12.5)).foregroundColor(c.sec)
+                        Text("derived").font(ShiftFont.sans(12.5)).foregroundColor(c.ter)
                     }
                     .padding(.horizontal, 13).padding(.vertical, 11)
-                    .background(c.permanent.tint)
+                    .background(c.surfaceVar)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(c.divider, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("week_picker_template")
@@ -2472,16 +2607,16 @@ struct ShiftsRootView: View {
             Divider()
             HStack(spacing: 0) {
                 Button(action: { model.vm.previousOpenWeek() }) {
-                    Image(systemName: "chevron.left").font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(c.sec).frame(width: 36, height: 34)
+                    Image(systemName: "chevron.left").font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(c.sec).frame(width: 40, height: 40)
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("open_prev_week")
                 Button(action: { showOpenWeekPicker = true }) {
                     HStack(spacing: 7) {
-                        Image(systemName: ShiftIcons.calendar).font(.system(size: 15)).foregroundColor(c.blue)
-                        Text(weekOffsetTitle(Int(st.openWeekOffset))).font(ShiftFont.sans(14, .semibold)).foregroundColor(c.ink)
-                        Text("·  \(st.openWeekRangeLabel)").font(ShiftFont.sans(13)).foregroundColor(c.sec)
+                        Image(systemName: ShiftIcons.calendar).font(.system(size: 18)).foregroundColor(c.blue)
+                        Text(weekOffsetTitle(Int(st.openWeekOffset))).font(ShiftFont.sans(15.5, .semibold)).foregroundColor(c.ink)
+                        Text("·  \(st.openWeekRangeLabel)").font(ShiftFont.sans(14)).foregroundColor(c.sec)
                     }
                     .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())
@@ -2489,13 +2624,13 @@ struct ShiftsRootView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("open_week_picker_open")
                 Button(action: { model.vm.nextOpenWeek() }) {
-                    Image(systemName: "chevron.right").font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(c.sec).frame(width: 36, height: 34)
+                    Image(systemName: "chevron.right").font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(c.sec).frame(width: 40, height: 40)
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("open_next_week")
             }
-            .padding(.horizontal, 10).padding(.vertical, 5)
+            .padding(.horizontal, 10).padding(.vertical, 9)
             .background(c.surface)
         }
         .sheet(isPresented: $showOpenWeekPicker) { openWeekPickerSheet(c) }
@@ -2516,9 +2651,10 @@ struct ShiftsRootView: View {
                             Text(option.rangeLabel).font(ShiftFont.mono(12.5)).monospacedDigit().foregroundColor(c.sec)
                         }
                         .padding(.horizontal, 13).padding(.vertical, 11)
-                        .background(Int(model.state.openWeekOffset) == Int(option.offset) ? c.blue.opacity(0.08) : c.surface)
+                        .background(Int(model.state.openWeekOffset) == Int(option.offset) ? c.today : c.surface)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(c.divider, lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(option.offset == 0 ? c.blue : c.divider, lineWidth: option.offset == 0 ? 1.5 : 1))
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("open_week_picker_option")
@@ -2802,7 +2938,7 @@ private struct ClaimFlowSheet: View {
                 }
                 if overHard {
                     ShiftBanner(
-                        title: "Over the 40h limit — can't claim",
+                        title: "Over the 40h limit, can't claim",
                         bodyText: "Break-period hard cap. Drop another shift first.",
                         tone: .error
                     )
@@ -2833,9 +2969,9 @@ private struct ClaimFlowSheet: View {
                                         weeksSkipped: scope.weeksSkipped
                                     )
                                 } else if permanent {
-                                    message = "Picked up — it's now in My Shifts"
+                                    message = "Picked up. It's now in My Shifts"
                                 } else {
-                                    message = "Claimed — it's now in My Shifts"
+                                    message = "Claimed. It's now in My Shifts"
                                 }
                                 onConfirmed(effective, message)
                                 dismiss()
@@ -2918,7 +3054,7 @@ private struct PermanentRecurringNote: View {
             Text("Recurring · \(row.dayLabel) · \(row.timeLabel)")
                 .font(ShiftFont.sans(13, .semibold)).foregroundColor(c.permanent.deep)
             if let meta = row.meta {
-                Text("Repeats weekly — \(meta).").font(ShiftFont.sans(12.5)).foregroundColor(c.sec)
+                Text("Repeats weekly: \(meta).").font(ShiftFont.sans(12.5)).foregroundColor(c.sec)
             }
             if let scope {
                 let skipped = scope.weeksSkipped > 0 ? " · \(scope.weeksSkipped) skipped" : ""
@@ -2936,18 +3072,74 @@ private struct PermanentRecurringNote: View {
 
 // MARK: - Drop flow (§5.2)
 
-private struct DropFlowSheet: View {
+private enum ManagePageKind { case manage, swap }
+
+/// The manage-shift sheet (§5.2 / §8) — ONE sheet with two in-place pages: the Drop/Swap
+/// chooser (Option C) and, when the worker proceeds to swap, the week-paged give/take picker.
+/// "Choose who to swap with" PUSHES the swap page within the SAME sheet (a back chevron
+/// returns) rather than dismissing and presenting a new sheet; the selected range + scope
+/// carry into the give.
+private struct ManageShiftSheet: View {
+    let vm: ShiftsScreenViewModel
+    let shift: MyShift
+    var onDrop: ((MyShift, Bool) -> Void)? = nil
+    var swapKinds: [SwapKind] = []
+    let meUserId: String?
+    let repo: WorkerShiftsRepository?
+    let demoSeats: [HouseSeat]
+    var pendingGiveAssignmentIds: Set<String> = []
+    let onSubmitSwap: ([SwapProposal]) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var page: ManagePageKind = .manage
+    @State private var swapGive: MyShift?
+    @State private var swapPermanent = false
+
+    var body: some View {
+        ShiftSheet(
+            title: page == .swap ? "Propose a swap" : "Manage shift",
+            onBack: page == .swap ? { withAnimation(.easeInOut(duration: 0.25)) { page = .manage } } : nil,
+            onClose: { dismiss() }
+        ) {
+            ZStack {
+                if page == .manage {
+                    ManagePageContent(
+                        vm: vm, shift: shift, onDrop: onDrop, swapKinds: swapKinds,
+                        onProposeSwap: { sub, permanent in
+                            swapGive = sub
+                            swapPermanent = permanent
+                            withAnimation(.easeInOut(duration: 0.25)) { page = .swap }
+                        }
+                    )
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+                } else if let give = swapGive {
+                    SwapCalendarPage(
+                        giveShift: give, meUserId: meUserId, repo: repo, demoSeats: demoSeats,
+                        initialPermanent: swapPermanent, pendingGiveAssignmentIds: pendingGiveAssignmentIds,
+                        onSubmit: onSubmitSwap
+                    )
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
+            }
+        }
+    }
+}
+
+private struct ManagePageContent: View {
     let vm: ShiftsScreenViewModel
     let shift: MyShift
     /// Live host POSTs to `drop-shift` / `permanent-drop` on confirm (best-effort);
     /// nil in the demo path. The Bool is the permanent-vs-occurrence scope.
     var onDrop: ((MyShift, Bool) -> Void)? = nil
-    /// D2 — non-nil when this card can propose a swap (§8); pivots to the SwapSheet.
-    var onProposeSwap: (() -> Void)? = nil
+    /// §8 — the swap kinds this card supports (empty ⇒ the "Swap it" intent is disabled).
+    var swapKinds: [SwapKind] = []
+    /// §8 pivot — navigate to the swap PAGE (same sheet) carrying the SELECTED sub-shift (range
+    /// pre-fills the give) + whether the shared scope is Permanent (drives a permanent swap).
+    var onProposeSwap: (MyShift, Bool) -> Void = { _, _ in }
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
+    // Drop ⇄ Swap are equal-weight intents (Option C); the scope + range below are SHARED.
+    @State private var swapIntent = false
     @State private var permanentScope = false
-    @State private var acknowledged = false
     // §5.2 partial range (T2-11) — block indexes on the shift's own grid, [from, to).
     // rangeTo < 0 means "whole shift" (the default; planDropRange clamps).
     @State private var rangeFrom = 0
@@ -2955,17 +3147,20 @@ private struct DropFlowSheet: View {
 
     private var blockCount: Int { shift.blockIds.count }
     private var effectiveTo: Int { rangeTo < 0 ? blockCount : rangeTo }
+    private var canSwap: Bool { !swapKinds.isEmpty }
+    private var canSwapPermanently: Bool { swapKinds.contains { $0 == .permanent } }
 
     var body: some View {
         let c = ShiftColors.resolve(scheme)
         let row = shift.toRow(zone: ShiftsKt.NEW_YORK)
         let options = vm.dropOptions(shift: shift, breakProfile: false)
         let plan = vm.planDropRange(shift: shift, fromBlock: Int32(rangeFrom), toBlock: Int32(effectiveTo))
-        // Short-notice anchors to the SELECTED range's gap start (the whole-shift default
-        // == the shift start) — for both occurrence and permanent drops.
-        let shortNotice = plan.shortNotice
-        ShiftSheet(title: "Drop shift", onClose: { dismiss() }) {
-            VStack(alignment: .leading, spacing: 12) {
+        // Permanent is valid for the CURRENT intent: drop → recurring slot; swap → permanent swap.
+        let permanentAllowed = swapIntent ? canSwapPermanently : options.canDropPermanently
+        let scopeRowVisible = options.canDropPermanently || canSwapPermanently
+        // Short-notice gates the DROP confirm only — a swap proposal isn't a short-notice drop.
+        let shortNotice = !swapIntent && plan.shortNotice
+        VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 12) {
                     HouseBadge(initial: row.houseInitial, bg: c.surfaceVar, fg: c.ink)
                     VStack(alignment: .leading, spacing: 2) {
@@ -2975,72 +3170,140 @@ private struct DropFlowSheet: View {
                     }
                 }
 
-                DropScopeOption(
-                    selected: !permanentScope, title: "Drop this occurrence",
-                    detail: "Drops just this occurrence. The slot opens for others to claim.",
-                    systemIcon: ShiftIcons.calendar, accent: c.blue, id: "drop_occurrence_option"
-                ) { permanentScope = false }
+                // Equal-weight intent choice — Drop vs Swap (§5.2 / §8).
+                HStack(spacing: 10) {
+                    intentCard(selected: !swapIntent, title: "Drop the shift", detail: "Opens for others to claim.",
+                               icon: ShiftIcons.calendar, enabled: true, id: "intent_drop", c) {
+                        swapIntent = false
+                        if !options.canDropPermanently { permanentScope = false }
+                    }
+                    intentCard(selected: swapIntent, title: "Swap it", detail: "Trade with a housemate.",
+                               icon: ShiftIcons.refresh, enabled: canSwap, id: "intent_swap", c) {
+                        if canSwap {
+                            swapIntent = true
+                            if !canSwapPermanently { permanentScope = false }
+                        }
+                    }
+                }
 
-                DropScopeOption(
-                    selected: permanentScope, title: "Drop permanently",
-                    detail: "Releases this recurring slot. It becomes a permanent opening.",
-                    systemIcon: ShiftIcons.refresh, accent: c.permanent.accent, enabled: options.canDropPermanently,
-                    id: "drop_permanent_option"
-                ) { if options.canDropPermanently { permanentScope = true } }
+                // Shared scope — drives BOTH the drop and the swap (this-week vs permanent).
+                if scopeRowVisible {
+                    scopeControl(permanent: permanentScope, permanentEnabled: permanentAllowed, c,
+                                 onThisWeek: { permanentScope = false },
+                                 onPermanent: { if permanentAllowed { permanentScope = true } })
+                }
 
-                // Shown for BOTH scopes (>1 block) so a permanent drop can release just a
-                // sub-range of the recurring slot; the "From now" shortcut stays occurrence-only.
+                // §5.2 partial range — SHARED: sizes the drop AND pre-fills the swap give.
                 if blockCount > 1 {
                     dropRangeSelector(plan, c, showFromNow: !permanentScope)
                 }
 
-                if let propose = onProposeSwap {
-                    // D2 — keep the shift, trade it with a housemate instead (§8).
-                    ShiftButton(title: "Propose a swap instead", action: { dismiss(); propose() }, variant: .tonal, fullWidth: true)
-                        .accessibilityIdentifier("swap_propose_option")
-                }
-
-                if shortNotice && !acknowledged {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ShiftBanner(
-                            title: "Starts within 20 minutes",
-                            bodyText: "Short-notice drop — your manager is notified immediately to arrange cover.",
-                            tone: .warning
-                        )
-                        ShiftButton(title: "Continue anyway", action: { acknowledged = true }, variant: .outlined, size: .sm)
-                            .accessibilityIdentifier("drop_short_notice_continue")
+                // Short-notice is a non-blocking heads-up, NOT a gate: a red-outlined
+                // caution that sits directly above the (red) Drop button so the
+                // consequence reads as part of that action. The drop stays one tap away.
+                if shortNotice {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: ShiftIcons.warning)
+                            .font(.system(size: 16, weight: .semibold)).foregroundColor(c.danger.accent)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Starts within 20 minutes")
+                                .font(ShiftFont.sans(13.5, .semibold)).foregroundColor(c.ink)
+                            Text("Short-notice drop. Your manager is notified immediately to arrange cover.")
+                                .font(ShiftFont.sans(13)).foregroundColor(c.sec)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
                     }
+                    .padding(.horizontal, 13).padding(.vertical, 11)
+                    .background(c.danger.tint)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(c.danger.accent, lineWidth: 1))
                     .accessibilityIdentifier("drop_short_notice_warning")
                 }
 
-                ShiftButton(
-                    title: permanentScope
-                        ? "Drop permanently"
-                        : (plan.wholeShift ? "Drop this week" : "Drop \(plan.rangeLabel)"),
-                    action: {
-                        // onDrop owns the whole move (the optimistic two-VM shuffle + the
-                        // live POST). BOTH scopes drop the SELECTED sub-shift — its blockIds
-                        // are the contiguous run the EF posts; the rest re-coalesce. A
-                        // whole-shift selection (the default) drops the whole slot.
-                        onDrop?(subShiftFor(shift: shift, plan: plan), permanentScope)
-                        dismiss()
-                    },
-                    variant: .destructiveFilled, fullWidth: true
-                )
-                .disabled(shortNotice && !acknowledged)
-                .accessibilityIdentifier("drop_confirm_button")
+                if swapIntent {
+                    // §8 pivot — navigate to the swap page carrying the SELECTED sub-shift + scope.
+                    ShiftButton(title: "Choose who to swap with", action: {
+                        onProposeSwap(subShiftFor(shift: shift, plan: plan), permanentScope)
+                    }, fullWidth: true)
+                    .accessibilityIdentifier("swap_continue_button")
+                } else {
+                    ShiftButton(
+                        title: permanentScope
+                            ? "Drop permanently"
+                            : (plan.wholeShift ? "Drop this week" : "Drop \(plan.rangeLabel)"),
+                        action: {
+                            // onDrop owns the whole move (the optimistic two-VM shuffle + the
+                            // live POST). BOTH scopes drop the SELECTED sub-shift — its blockIds
+                            // are the contiguous run the EF posts; the rest re-coalesce.
+                            onDrop?(subShiftFor(shift: shift, plan: plan), permanentScope)
+                            dismiss()
+                        },
+                        variant: .destructiveFilled, fullWidth: true
+                    )
+                    .accessibilityIdentifier("drop_confirm_button")
+                }
             }
-            .accessibilityIdentifier("drop_options_sheet")
-        }
+            .accessibilityIdentifier("manage_shift_sheet")
     }
 
-    /// The §5.2 "How much to drop" block-range selector (T2-11): a two-thumb range slider
-    /// over the card's 30-min block boundaries with a live "17:30 – 19:00 · 1h 30m"
-    /// summary, plus the mid-shift "From now" quick action. Defaults to the whole shift.
+    /// One equal-weight intent card (Option C) — "Drop the shift" / "Swap it". A disabled card
+    /// (no swap available) dims and ignores taps.
+    private func intentCard(selected: Bool, title: String, detail: String, icon: String, enabled: Bool, id: String, _ c: ShiftColors, onTap: @escaping () -> Void) -> some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 5) {
+                Image(systemName: icon).font(.system(size: 18, weight: .medium)).foregroundColor(selected ? c.blue : c.sec)
+                Text(title).font(ShiftFont.sans(13.5, .semibold)).foregroundColor(c.ink)
+                Text(detail).font(ShiftFont.sans(11.5)).foregroundColor(c.sec).fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12).padding(.vertical, 11)
+            .background(selected ? c.blue.opacity(0.08) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(selected ? c.blue : c.divider, lineWidth: selected ? 1.5 : 1))
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.4)
+        .accessibilityIdentifier(id)
+    }
+
+    /// The shared this-week / permanent scope selector. "Permanent" dims + ignores taps when
+    /// the current intent can't go permanent (a pickup or float card).
+    private func scopeControl(permanent: Bool, permanentEnabled: Bool, _ c: ShiftColors, onThisWeek: @escaping () -> Void, onPermanent: @escaping () -> Void) -> some View {
+        HStack(spacing: 3) {
+            scopeSegment("This week only", selected: !permanent, enabled: true, id: "scope_this_week", c, onTap: onThisWeek)
+            scopeSegment("Permanent", selected: permanent, enabled: permanentEnabled, id: "scope_permanent", c, onTap: onPermanent)
+        }
+        .padding(3)
+        .background(c.surfaceVar)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .accessibilityIdentifier("scope_segmented")
+    }
+
+    private func scopeSegment(_ label: String, selected: Bool, enabled: Bool, id: String, _ c: ShiftColors, onTap: @escaping () -> Void) -> some View {
+        Button(action: onTap) {
+            Text(label)
+                .font(ShiftFont.sans(13, selected ? .semibold : .medium))
+                .foregroundColor(selected ? c.ink : c.sec)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(selected ? c.surface : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.4)
+        .accessibilityIdentifier(id)
+    }
+
+    /// The §5.2 "How much" block-range selector (T2-11): a two-thumb range slider over the
+    /// card's 30-min block boundaries with a live "17:30 – 19:00 · 1h 30m" summary, plus the
+    /// mid-shift "From now" quick action. Shared by drop + swap. Defaults to the whole shift.
     private func dropRangeSelector(_ plan: PartialDropPlan, _ c: ShiftColors, showFromNow: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("How much to drop").font(ShiftFont.sans(13, .medium)).foregroundColor(c.sec)
+                Text("How much").font(ShiftFont.sans(13, .medium)).foregroundColor(c.sec)
                 Spacer(minLength: 0)
                 if showFromNow, let idx = vm.dropFromNowIndex(shift: shift) {
                     Button("From now") {
@@ -3136,7 +3399,7 @@ private struct SwapSheetView: View {
                         kindButton("Permanently", 1, c)
                     }
                 } else if kind == .float {
-                    Text("Float swap — a housemate takes your float assignment.")
+                    Text("Float swap: a housemate takes your float assignment.")
                         .font(ShiftFont.sans(13)).foregroundColor(c.sec)
                 }
 
@@ -3174,7 +3437,7 @@ private struct SwapSheetView: View {
                         swapRangeSelector("Hours you want from \(cand.workerName)", takePlan(cand), count: cand.seatIds.count, from: $takeFrom, to: $takeTo, c, "swap_take_range")
                     }
                     if giveOverlaps {
-                        Text("Those hours overlap another swap — pick different hours.")
+                        Text("Those hours overlap another swap, so pick different hours.")
                             .font(ShiftFont.sans(12.5)).foregroundColor(c.floatOut.deep)
                             .accessibilityIdentifier("swap_overlap_warning")
                     }
@@ -3361,8 +3624,8 @@ final class SwapCalendarObservable: ObservableObject {
     private let repo: WorkerShiftsRepository?
     private let userId: String?
 
-    init(giveShift: MyShift, meUserId: String?, repo: WorkerShiftsRepository?, demoSeats: [HouseSeat], pendingGiveAssignmentIds: Set<String> = []) {
-        let model = DemoFactory.shared.swapCalendarViewModel(giveShift: giveShift, meUserId: meUserId ?? "demo", breakProfile: false, pendingGiveAssignmentIds: pendingGiveAssignmentIds)
+    init(giveShift: MyShift, meUserId: String?, repo: WorkerShiftsRepository?, demoSeats: [HouseSeat], pendingGiveAssignmentIds: Set<String> = [], initialPermanent: Bool = false) {
+        let model = DemoFactory.shared.swapCalendarViewModel(giveShift: giveShift, meUserId: meUserId ?? "demo", breakProfile: false, pendingGiveAssignmentIds: pendingGiveAssignmentIds, initialPermanent: initialPermanent)
         self.vm = model
         self.state = model.uiState.value
         self.repo = repo
@@ -3576,15 +3839,15 @@ private struct PendingSwapNoticeSheetView: View {
 /// The calendar swap sheet: a pinned "give" (the tapped shift), a week navigator + Mon–Sun
 /// strip, and the selected day's housemate cards to "take". Cross-week + retroactive fall
 /// out of week paging; the give persists across weeks. Whole-run swaps in v1.
-private struct SwapCalendarSheetView: View {
+private struct SwapCalendarPage: View {
     @StateObject private var obs: SwapCalendarObservable
     let onSubmit: ([SwapProposal]) -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
     @State private var handoffTab = 0 // 0 = My House, 1 = Others (hand-off recipient directory)
 
-    init(giveShift: MyShift, meUserId: String?, repo: WorkerShiftsRepository?, demoSeats: [HouseSeat], pendingGiveAssignmentIds: Set<String> = [], onSubmit: @escaping ([SwapProposal]) -> Void) {
-        _obs = StateObject(wrappedValue: SwapCalendarObservable(giveShift: giveShift, meUserId: meUserId, repo: repo, demoSeats: demoSeats, pendingGiveAssignmentIds: pendingGiveAssignmentIds))
+    init(giveShift: MyShift, meUserId: String?, repo: WorkerShiftsRepository?, demoSeats: [HouseSeat], initialPermanent: Bool = false, pendingGiveAssignmentIds: Set<String> = [], onSubmit: @escaping ([SwapProposal]) -> Void) {
+        _obs = StateObject(wrappedValue: SwapCalendarObservable(giveShift: giveShift, meUserId: meUserId, repo: repo, demoSeats: demoSeats, pendingGiveAssignmentIds: pendingGiveAssignmentIds, initialPermanent: initialPermanent))
         self.onSubmit = onSubmit
     }
 
@@ -3592,8 +3855,7 @@ private struct SwapCalendarSheetView: View {
         let c = ShiftColors.resolve(scheme)
         let s = obs.state
         let legCount = s.legs.count + (s.take != nil ? 1 : 0)
-        ShiftSheet(title: "Propose a swap", onClose: { dismiss() }) {
-            VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 14) {
                 if !s.legs.isEmpty {
                     VStack(spacing: 6) {
                         ForEach(Array(s.legs.enumerated()), id: \.offset) { i, leg in
@@ -3719,9 +3981,8 @@ private struct SwapCalendarSheetView: View {
                             action: { onSubmit(obs.proposals()); dismiss() }, fullWidth: true)
                     .disabled(!s.canPropose)
                     .accessibilityIdentifier("swap_submit_button")
-            }
-            .accessibilityIdentifier("swap_calendar_sheet")
         }
+        .accessibilityIdentifier("swap_calendar_sheet")
     }
 
     /// The give ⇄ take "deal" card at the top of the sheet — the always-visible review of

@@ -20,6 +20,8 @@ final class LoginObservable: ObservableObject {
     @Published var emailError: String?
     @Published var passwordError: String?
     @Published var formError: String?
+    /// DEBUG-only raw diagnostic behind `formError` (network/config detail); never shown in release.
+    @Published var formErrorDetail: String?
     @Published var showPassword = false
     @Published var keepSignedIn = true
     /// Non-nil once authenticated — the host swaps to the shifts screen.
@@ -35,12 +37,25 @@ final class LoginObservable: ObservableObject {
         email = value
         emailError = nil
         formError = nil
+        formErrorDetail = nil
     }
 
     func setPassword(_ value: String) {
         password = value
         passwordError = nil
         formError = nil
+        formErrorDetail = nil
+    }
+
+    /// Maps the gateway's classified `AuthError` to user-facing copy (mirrors Android's
+    /// `AuthError.toMessage()`). The raw `detail` behind it is surfaced separately in DEBUG.
+    private static func message(for error: AuthError) -> String {
+        switch error {
+        case .invalidCredentials: return "Incorrect email or password."
+        case .network: return "Network error. Check your connection and try again."
+        case .unknown: return "Something went wrong. Please try again."
+        @unknown default: return "Something went wrong. Please try again."
+        }
     }
 
     func submit() {
@@ -52,21 +67,27 @@ final class LoginObservable: ObservableObject {
         }
         submitting = true
         formError = nil
+        formErrorDetail = nil
         Task {
             do {
-                // The gateway's AuthOutcome is ignored; success is read back as a live session.
-                _ = try await gateway.signIn(email: email, password: password)
-                let session = try await gateway.currentSession()
+                // Switch on the gateway's classified outcome (like Android's LoginHost) so a
+                // network/config failure is distinguishable from a wrong password. The success
+                // case already carries the session, so no second currentSession() probe/race.
+                let outcome = try await gateway.signIn(email: email, password: password)
                 submitting = false
-                if let session {
+                switch onEnum(of: outcome) {
+                case .success(let ok):
                     WorkerBackend.shared.wireAccessToken()
-                    authedSession = session
-                } else {
-                    formError = "Incorrect email or password."
+                    authedSession = ok.session
+                case .failure(let fail):
+                    formError = Self.message(for: fail.error)
+                    formErrorDetail = fail.detail
                 }
             } catch {
+                // signIn only throws on cancellation; surface it as a transient network issue.
                 submitting = false
                 formError = "Network error. Check your connection and try again."
+                formErrorDetail = "signIn threw: \(error.localizedDescription)"
             }
         }
     }
@@ -88,7 +109,7 @@ struct LoginScreen: View {
                 Text("Shift@PennHousing")
                     .font(ShiftFont.sans(27, .bold)).tracking(-0.5).foregroundColor(c.ink)
                     .padding(.top, 20)
-                Text("Your schedule, floats and open shifts — for Residential Services staff.")
+                Text("Your schedule, floats and open shifts, for Residential Services staff.")
                     .font(ShiftFont.sans(14.5)).foregroundColor(c.sec)
                     .multilineTextAlignment(.center).lineSpacing(3)
                     .padding(.top, 6).frame(maxWidth: 280)
@@ -140,6 +161,23 @@ struct LoginScreen: View {
                     ShiftBanner(title: formError, tone: .error)
                         .padding(.top, 16)
                         .accessibilityIdentifier("login_error")
+                    #if DEBUG
+                    // The raw underlying error (yellow), so a network/config failure is not
+                    // mistaken for a wrong password. DEBUG builds only, truncated to 3 lines.
+                    if let detail = model.formErrorDetail {
+                        Text("debug: \(detail)")
+                            .font(ShiftFont.mono(11.5))
+                            .foregroundColor(Color(red: 0.72, green: 0.53, blue: 0.04))
+                            .lineLimit(3)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 12).padding(.vertical, 8)
+                            .background(Color(red: 0.78, green: 0.57, blue: 0.0).opacity(0.13))
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .padding(.top, 8)
+                            .accessibilityIdentifier("login_error_debug")
+                    }
+                    #endif
                 }
 
                 Spacer().frame(height: 28)

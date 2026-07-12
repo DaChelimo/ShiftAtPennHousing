@@ -4,12 +4,14 @@ import com.pennhousing.shift.shared.auth.AuthError
 import com.pennhousing.shift.shared.auth.AuthGateway
 import com.pennhousing.shift.shared.auth.AuthOutcome
 import com.pennhousing.shift.shared.auth.AuthSession
+import com.pennhousing.shift.shared.platform.AppConfig
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.user.UserSession
 import io.github.jan.supabase.exceptions.RestException
 import io.ktor.client.plugins.HttpRequestTimeoutException
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.toStdlibInstant
 import kotlinx.io.IOException
 
@@ -52,25 +54,33 @@ class SupabaseAuthGateway(
                 AuthOutcome.Success(session.toAuthSession())
             } else {
                 // Authenticated with no readable session is an unexpected backend state.
-                AuthOutcome.Failure(AuthError.UNKNOWN)
+                AuthOutcome.Failure(AuthError.UNKNOWN, "signInWith returned no session (unexpected backend state)")
             }
         } catch (e: HttpRequestTimeoutException) {
-            AuthOutcome.Failure(AuthError.NETWORK)
+            AuthOutcome.Failure(AuthError.NETWORK, "Timeout reaching ${AppConfig.supabaseUrl}: ${e.message}")
         } catch (e: IOException) {
-            AuthOutcome.Failure(AuthError.NETWORK)
+            AuthOutcome.Failure(AuthError.NETWORK, "Cannot reach ${AppConfig.supabaseUrl} (${e::class.simpleName}): ${e.message}")
         } catch (e: RestException) {
-            AuthOutcome.Failure(e.toAuthError())
+            AuthOutcome.Failure(e.toAuthError(), "HTTP ${e.statusCode} from GoTrue: ${e.message}")
         } catch (e: Throwable) {
-            AuthOutcome.Failure(AuthError.UNKNOWN)
+            AuthOutcome.Failure(AuthError.UNKNOWN, "${e::class.simpleName}: ${e.message}")
         }
 
     override suspend fun currentSession(): AuthSession? =
         try {
             // Restore any persisted session, then await Auth init so currentSessionOrNull
             // reflects the loaded state rather than a transient Initializing status.
-            client.auth.loadFromStorage()
-            client.auth.awaitInitialization()
-            client.auth.currentSessionOrNull()?.toAuthSession()
+            //
+            // Bounded: awaitInitialization can trigger a token refresh against the auth
+            // server, which hangs indefinitely when the backend is unreachable and would
+            // otherwise strand the launch spinner. On timeout withTimeoutOrNull returns
+            // null → "no usable session" → caller shows login (safe fallback; the worker
+            // re-authenticates rather than staring at an infinite progress bar).
+            withTimeoutOrNull(BOOT_NETWORK_TIMEOUT) {
+                client.auth.loadFromStorage()
+                client.auth.awaitInitialization()
+                client.auth.currentSessionOrNull()?.toAuthSession()
+            }
         } catch (e: Throwable) {
             // A restore failure simply means "no usable session" → caller shows login.
             null

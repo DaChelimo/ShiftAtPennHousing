@@ -23,7 +23,12 @@ enum class AuthError { INVALID_CREDENTIALS, NETWORK, UNKNOWN }
 sealed interface AuthOutcome {
     data class Success(val session: AuthSession) : AuthOutcome
 
-    data class Failure(val error: AuthError) : AuthOutcome
+    /**
+     * A sign-in failure. [error] is the classified, user-facing bucket; [detail] is
+     * an optional raw diagnostic (HTTP status, exception class + message) that the
+     * gateway captures for DEBUG surfaces only. Never show [detail] to end users.
+     */
+    data class Failure(val error: AuthError, val detail: String? = null) : AuthOutcome
 }
 
 /**

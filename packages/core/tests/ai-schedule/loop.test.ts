@@ -267,6 +267,38 @@ describe('progress events', () => {
   });
 });
 
+describe('finalize option', () => {
+  it('fills days the LLM left empty and guarantees >= 2h runs', async () => {
+    // The LLM only staffs Monday (with a 1h stub); Tue and Wed come back empty.
+    const llm = new ScriptedLlm([
+      { runs: [{ worker: 'W1', start: 0, end: 1 }] }, // Mon: 1h stub
+      { runs: [] }, // Tue: empty
+      { runs: [] }, // Wed: empty
+    ]);
+    const input = smallHouseSnapshot();
+    const result = await runAiSchedule(input, llm, { candidates: 1, finalize: true });
+    const assignments = result.best?.assignments ?? [];
+    // Every day now has coverage (no empty day).
+    for (const prefix of ['b-0-', 'b-1-', 'b-2-']) {
+      expect(assignments.some((a) => a.blockId.startsWith(prefix))).toBe(true);
+    }
+    // No sub-2h shift survives, and the result stays feasible.
+    expect(result.warnings.filter((w) => w.code === 'ONE_HOUR_SHIFT')).toHaveLength(0);
+    expect(validateCandidate(input, assignments).feasible).toBe(true);
+  });
+
+  it('leaves the schedule untouched when finalize is off (default)', async () => {
+    const llm = new ScriptedLlm([
+      { runs: [{ worker: 'W1', start: 0, end: 1 }] },
+      { runs: [] },
+      { runs: [] },
+    ]);
+    const result = await runAiSchedule(smallHouseSnapshot(), llm, { candidates: 1 });
+    // Only Monday's 2 blocks; Tue/Wed stay empty.
+    expect(result.best?.assignments).toHaveLength(2);
+  });
+});
+
 describe('determinism', () => {
   it('two runs with identical mocks produce deep-equal results', async () => {
     const script = [fullDay('W1'), fullDay('W3'), fullDay('W2'), fullDay('W1')];

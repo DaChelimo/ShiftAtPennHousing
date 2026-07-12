@@ -7,6 +7,7 @@
 // violations, so the caller's draft inserts cannot trip the DB headcount
 // or Harnwell triggers outside of concurrent racing edits.
 
+import { finalizeSchedule } from './finalize.js';
 import { buildGrid, type AiGrid, type AiGridDay } from './grid.js';
 import {
   AI_MAX_OUTPUT_TOKENS,
@@ -49,6 +50,7 @@ export const AI_SCHEDULE_DEFAULTS = {
   maxLlmCalls: 100,
   plateauEpsilon: 0.5,
   planningPass: false,
+  finalize: false,
 } as const;
 
 const NO_PROGRESS = (): void => {
@@ -150,6 +152,8 @@ export async function runAiSchedule(
     }
 
     emit({ type: 'finalizing' });
+    // Turn the LLM skeleton into a complete, >= 2h-continuous backbone.
+    if (opts.finalize) acc = finalizeSchedule(input, acc);
     const breakdown = scoreWithGrid(input, grid, acc);
     const finished: AiCandidate = { assignments: acc, score: breakdown.total, breakdown };
     candidates.push(finished);

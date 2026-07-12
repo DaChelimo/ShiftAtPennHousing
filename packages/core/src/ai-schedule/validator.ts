@@ -6,6 +6,7 @@
 // 'warning' (ONE_HOUR_SHIFT) is fed to repair prompts and penalized by the
 // scorer but never blocks a candidate.
 
+import { MIN_RUN_BLOCKS } from './finalize.js';
 import { buildGrid, splitRuns, type AiGrid } from './grid.js';
 import type {
   AiAssignment,
@@ -158,17 +159,19 @@ export function validateWithGrid(
     }
   }
 
-  // Contiguity warnings: runs of one hour or less.
+  // Contiguity warnings: runs shorter than the 2-hour minimum. Advisory here
+  // (fed to the repair prompt); the finalize pass is what guarantees the
+  // output has no sub-2h shift.
   for (const run of splitRuns(grid, valid)) {
     const first = run.blocks[0];
-    if (first === undefined || run.blocks.length > 2) continue;
+    if (first === undefined || run.blocks.length >= MIN_RUN_BLOCKS) continue;
     violations.push({
       code: 'ONE_HOUR_SHIFT',
       severity: 'warning',
       workerId: run.workerId,
       blockId: first.blockId,
       weekday: run.weekday,
-      detail: `${String(run.blocks.length * 0.5)}h run; shifts of 2h to 5h are preferred`,
+      detail: `${String(run.blocks.length * 0.5)}h run; every shift must be at least 2 hours`,
     });
   }
 

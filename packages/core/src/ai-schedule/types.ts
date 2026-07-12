@@ -134,6 +134,11 @@ export type AiScheduleOptions = {
   // how each worker reaches their target hours). Off by default so the pure
   // test harness stays lean; the web layer turns it on.
   planningPass?: boolean;
+  // After the LLM builds its skeleton, run the deterministic finalize pass:
+  // fill every day's open seats and guarantee every shift is >= 2 hours
+  // continuous (no stub shifts). Off by default (loop-mechanics tests assert
+  // the raw LLM output); the web layer turns it on for the real backbone.
+  finalize?: boolean;
   // Observational progress callback (see AiProgressEvent). Optional.
   onProgress?: (event: AiProgressEvent) => void;
 };

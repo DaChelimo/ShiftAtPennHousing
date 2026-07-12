@@ -164,13 +164,20 @@ describe('ONE_HOUR_SHIFT warning', () => {
     expect(warning?.weekday).toBe(0);
   });
 
-  it('a three-block run does not warn', () => {
-    const result = validateCandidate(input, [
+  it('a three-block run (1.5h) still warns; a four-block run (2h) does not', () => {
+    const threeBlock = validateCandidate(input, [
       { blockId: b(0, 960), workerId: 'alice' },
       { blockId: b(0, 990), workerId: 'alice' },
       { blockId: b(0, 1020), workerId: 'alice' },
     ]);
-    expect(result.violations.filter((v) => v.code === 'ONE_HOUR_SHIFT')).toHaveLength(0);
+    expect(threeBlock.violations.filter((v) => v.code === 'ONE_HOUR_SHIFT')).toHaveLength(1);
+    const fourBlock = validateCandidate(input, [
+      { blockId: b(0, 960), workerId: 'alice' },
+      { blockId: b(0, 990), workerId: 'alice' },
+      { blockId: b(0, 1020), workerId: 'alice' },
+      { blockId: b(0, 1050), workerId: 'alice' },
+    ]);
+    expect(fourBlock.violations.filter((v) => v.code === 'ONE_HOUR_SHIFT')).toHaveLength(0);
   });
 
   it('a gap splits a day into separate runs, each judged alone', () => {

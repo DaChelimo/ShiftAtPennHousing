@@ -42,4 +42,5 @@ export {
   parseProposal,
 } from './prompt.js';
 export type { AiPerspective } from './prompt.js';
+export { finalizeSchedule, MIN_RUN_BLOCKS } from './finalize.js';
 export { AI_SCHEDULE_DEFAULTS, pruneToFeasible, runAiSchedule } from './loop.js';

@@ -14,8 +14,10 @@ import {
   type PrefBrush,
   type PrefGrid,
 } from '@shift/core';
+import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { submitPreferencesForWorker } from '../../lib/actions/preferences';
 import { submitPreferences } from '../../lib/actions/worker/preferences';
 import type { WorkerPreferenceBoard } from '../../lib/data/worker/preferences';
 import { Button } from '../ui/Button';
@@ -30,10 +32,30 @@ const BRUSH_LABEL: Record<PrefBrush, string> = {
   cannot: 'Cannot work',
 };
 
-export function PreferenceBoard({ board }: { board: WorkerPreferenceBoard }) {
+// When a schedule builder opens a roster member from /admin/preferences, the same
+// paint grid is reused to author that worker's preferences on their behalf.
+export type AdminPreferenceContext = {
+  targetUserId: string;
+  targetName: string;
+  /** Where the back link returns to (the oversight roster, house-scoped). */
+  backHref: string;
+};
+
+export function PreferenceBoard({
+  board,
+  admin,
+}: {
+  board: WorkerPreferenceBoard;
+  admin?: AdminPreferenceContext;
+}) {
   const { period } = board;
+  const adminMode = admin != null;
   const layout = buildWeekLayout(board.blocks);
-  const readOnly = !board.deadlineOpen;
+  // Managers override the deadline (they may author after the window closes); the
+  // worker's own board stays read-only once the deadline passes.
+  const readOnly = adminMode ? false : !board.deadlineOpen;
+  // The deadline has passed but a manager is still editing (override note).
+  const deadlinePassedOverride = adminMode && !board.deadlineOpen;
 
   const [grid, setGrid] = useState<PrefGrid>(board.initialGrid);
   const [brush, setBrush] = useState<PrefBrush>('preferred');
@@ -97,16 +119,30 @@ export function PreferenceBoard({ board }: { board: WorkerPreferenceBoard }) {
     if (period === null || submitting) return;
     setSubmitting(true);
     setResult(null);
-    const res = await submitPreferences({
-      periodId: period.periodId,
-      preferences: buildSubmitPayload(board.blocks, grid),
-      targetHours,
-      optedOut,
-    });
+    const preferences = buildSubmitPayload(board.blocks, grid);
+    const res = adminMode
+      ? await submitPreferencesForWorker({
+          targetUserId: admin.targetUserId,
+          periodId: period.periodId,
+          preferences,
+          targetHours,
+          optedOut,
+        })
+      : await submitPreferences({
+          periodId: period.periodId,
+          preferences,
+          targetHours,
+          optedOut,
+        });
     setSubmitting(false);
     if (res.ok) {
       setDirty(false);
-      setResult({ kind: 'ok', message: 'Your preferences were submitted.' });
+      setResult({
+        kind: 'ok',
+        message: adminMode
+          ? `Saved ${admin.targetName}'s preferences.`
+          : 'Your preferences were submitted.',
+      });
     } else {
       setResult({ kind: 'error', message: res.error });
     }
@@ -115,10 +151,21 @@ export function PreferenceBoard({ board }: { board: WorkerPreferenceBoard }) {
   if (period === null) {
     return (
       <div className="page">
-        <PageHead eyebrow="Preferences" title="Semester preferences" />
+        <PageHead
+          eyebrow="Preferences"
+          title={adminMode ? admin.targetName : 'Semester preferences'}
+          actions={
+            adminMode ? (
+              <Link className="btn btn-tertiary btn-md" href={admin.backHref} data-testid="pref-back">
+                <span>Back to roster</span>
+              </Link>
+            ) : undefined
+          }
+        />
         <Notification kind="info" title="No preference window open" testId="pref-no-window">
-          There is no scheduling period accepting preferences right now. Check back when your
-          manager opens submissions.
+          {adminMode
+            ? 'There is no scheduling period accepting preferences right now. Create a period to author availability.'
+            : 'There is no scheduling period accepting preferences right now. Check back when your manager opens submissions.'}
         </Notification>
       </div>
     );
@@ -129,24 +176,44 @@ export function PreferenceBoard({ board }: { board: WorkerPreferenceBoard }) {
   return (
     <div className="page" data-testid="preference-board">
       <PageHead
-        eyebrow="Preferences"
-        title={period.periodName}
+        eyebrow={adminMode ? `Preferences · ${period.periodName}` : 'Preferences'}
+        title={adminMode ? admin.targetName : period.periodName}
         sub={
-          period.deadlineLabel
-            ? `Submit by ${period.deadlineLabel}. Your choices repeat every week this season.`
-            : 'Your choices repeat every week this season.'
+          adminMode
+            ? `Editing on behalf of ${admin.targetName}. These choices repeat every week this season.`
+            : period.deadlineLabel
+              ? `Submit by ${period.deadlineLabel}. Your choices repeat every week this season.`
+              : 'Your choices repeat every week this season.'
+        }
+        actions={
+          adminMode ? (
+            <Link className="btn btn-tertiary btn-md" href={admin.backHref} data-testid="pref-back">
+              <span>Back to roster</span>
+            </Link>
+          ) : undefined
         }
       />
 
+      {deadlinePassedOverride && (
+        <Notification kind="info" title="Deadline has passed" testId="pref-override">
+          The submission window for this period is closed. You are editing as a manager, so your
+          changes will still be saved.
+        </Notification>
+      )}
       {readOnly && (
         <Notification kind="warning" title="Submissions are closed" testId="pref-closed">
           The deadline for this period has passed. Your preferences are shown read-only.
         </Notification>
       )}
       {board.submitted && !dirty && !readOnly && result === null && (
-        <Notification kind="success" title="Submitted" testId="pref-submitted">
-          You have already submitted for this period. Adjust and resubmit any time before the
-          deadline.
+        <Notification
+          kind="success"
+          title={adminMode ? 'On file' : 'Submitted'}
+          testId="pref-submitted"
+        >
+          {adminMode
+            ? `${admin.targetName} has preferences on file for this period. Adjust and save any time.`
+            : 'You have already submitted for this period. Adjust and resubmit any time before the deadline.'}
         </Notification>
       )}
       {result && (
@@ -218,15 +285,26 @@ export function PreferenceBoard({ board }: { board: WorkerPreferenceBoard }) {
             onClick={onSubmit}
             iconRight={submitting ? undefined : 'send'}
           >
-            {submitting ? 'Submitting...' : dirty ? 'Submit preferences' : 'Submitted'}
+            {adminMode
+              ? submitting
+                ? 'Saving...'
+                : dirty
+                  ? 'Save preferences'
+                  : 'Saved'
+              : submitting
+                ? 'Submitting...'
+                : dirty
+                  ? 'Submit preferences'
+                  : 'Submitted'}
           </Button>
         </div>
       </div>
 
       {optedOut ? (
         <Notification kind="info" title="Marked as no hours" testId="pref-optout-note">
-          You have opted out of hours this season. Turn off the no-hours toggle to paint your
-          availability.
+          {adminMode
+            ? `${admin.targetName} is marked as no hours this season. Turn off the no-hours toggle to paint availability.`
+            : 'You have opted out of hours this season. Turn off the no-hours toggle to paint your availability.'}
         </Notification>
       ) : (
         <div

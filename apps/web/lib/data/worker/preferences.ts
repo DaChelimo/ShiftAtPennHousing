@@ -11,6 +11,11 @@ import {
 import { nyMidnightIso } from '../../nyTime';
 import { createClient } from '../../supabase/server';
 
+// Either request-scoped client works: the signed-in worker's RLS client (the
+// worker's own board) or a service-role client (a schedule builder reading /
+// authoring another worker's board cross-house — see /admin/preferences/[userId]).
+type PreferenceClient = Awaited<ReturnType<typeof createClient>>;
+
 // ===========================================================================
 // Worker semester-preference board — READ model (the SW's own submission).
 //
@@ -27,6 +32,8 @@ import { createClient } from '../../supabase/server';
 //                        the request's `now` (sim-clock aware).
 //
 // Read as the signed-in worker (RLS-scoped), so it only ever returns their data.
+// A schedule builder authoring on a worker's behalf passes a service-role client
+// (see the `client` param) to read that worker's board across houses.
 // ===========================================================================
 
 const NY = 'America/New_York';
@@ -82,8 +89,9 @@ export async function getWorkerPreferenceBoard(
   userId: string,
   homeHouseId: string,
   now: Date,
+  client?: PreferenceClient,
 ): Promise<WorkerPreferenceBoard> {
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
 
   // 1. Visible periods (RLS narrows to open/published); pick most recent
   //    unpublished, else most recent overall.

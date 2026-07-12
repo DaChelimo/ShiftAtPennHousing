@@ -1,26 +1,33 @@
 'use client';
 
+import { AI_WEEKDAY_LABELS } from '@shift/core';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import {
-  acceptAiSchedule,
-  generateAiSchedule,
-  type AiProposalDto,
-} from '../../lib/actions/aiSchedule';
+import { acceptAiSchedule } from '../../lib/actions/aiSchedule';
+import type { AiProposalDto } from '../../lib/ai/proposal';
+import type { AiStreamEvent } from '../../lib/ai/streamTypes';
 import { Button, Icon, Modal, Notification, Tag } from '../ui';
 
-// AI schedule generator panel (BUILD SPEC deliverable): trigger the agentic
-// loop for this house, preview the proposal (score breakdown, per-day runs,
-// hours vs targets, unfilled seats), then Accept (replace-all draft write)
-// or Discard. Proposals are never persisted; accept round-trips the
-// assignments and the server re-validates them.
+// AI schedule generator panel. Generation streams from a route handler so the
+// SM watches the week build one day at a time in the real grid (the live
+// preview is lifted to the builder via onPreviewChange); this panel carries
+// the status, the score summary, and Accept / Discard. Accepting only writes
+// a draft the SM can still edit before publishing.
 
 type PanelProps = {
   houseId: string;
   periodId: string | null;
   published: boolean;
   deadlineOpen: boolean;
+  // Live proposal painted into the builder grid (blockId -> userIds). {} clears
+  // the grid to build from scratch; null removes the preview entirely. Optional
+  // so the panel is usable without the grid-fill wiring.
+  onPreviewChange?: (preview: Record<string, string[]> | null) => void;
+};
+
+const NO_PREVIEW = (): void => {
+  /* grid-fill wiring not attached */
 };
 
 const BREAKDOWN_LABELS: { key: keyof AiProposalDto['breakdown']; label: string }[] = [
@@ -36,14 +43,28 @@ function hoursLabel(hours: number): string {
   return `${String(hours)}h`;
 }
 
-export function AiSchedulePanel({ houseId, periodId, published, deadlineOpen }: PanelProps) {
+function dayName(weekday: number): string {
+  return AI_WEEKDAY_LABELS[weekday] ?? `Day ${String(weekday + 1)}`;
+}
+
+export function AiSchedulePanel({
+  houseId,
+  periodId,
+  published,
+  deadlineOpen,
+  onPreviewChange,
+}: PanelProps) {
   const router = useRouter();
   const [running, setRunning] = useState(false);
+  const [phaseText, setPhaseText] = useState('');
+  const [progress, setProgress] = useState(0);
   const [proposal, setProposal] = useState<AiProposalDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [accepting, setAccepting] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const onPreview = useRef(onPreviewChange ?? NO_PREVIEW);
+  onPreview.current = onPreviewChange ?? NO_PREVIEW;
 
   useEffect(() => {
     if (!running) return;
@@ -62,22 +83,91 @@ export function AiSchedulePanel({ houseId, periodId, published, deadlineOpen }: 
         ? 'The preference deadline is still open. Generate after it closes.'
         : null;
 
-  const onGenerate = () => {
+  const clearPreview = () => onPreview.current(null);
+
+  const onGenerate = async () => {
     setError(null);
     setProposal(null);
     setElapsed(0);
+    setProgress(0);
+    setPhaseText('Reading everyone’s preferences');
     setRunning(true);
-    void generateAiSchedule({ houseId })
-      .then((res) => {
-        if (res.ok) setProposal(res.data);
-        else setError(res.error);
-      })
-      .catch(() => {
-        setError('Schedule generation failed. Try again.');
-      })
-      .finally(() => {
-        setRunning(false);
+    onPreview.current({}); // clear the grid so the week builds from scratch
+
+    const preview: Record<string, string[]> = {};
+    try {
+      const resp = await fetch('/api/schedule/ai-generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ houseId }),
       });
+      if (!resp.ok || resp.body === null) {
+        throw new Error('The generator could not be reached. Try again.');
+      }
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      let streamError: string | null = null;
+
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let nl = buf.indexOf('\n');
+        while (nl >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          nl = buf.indexOf('\n');
+          if (line.length === 0) continue;
+          const ev = JSON.parse(line) as AiStreamEvent;
+          switch (ev.t) {
+            case 'phase':
+              if (ev.phase === 'planning') setPhaseText('Planning the week');
+              else if (ev.phase === 'planned') setPhaseText('Strategy set. Building the schedule.');
+              else {
+                setPhaseText('Finishing up');
+                setProgress(1);
+              }
+              break;
+            case 'day-start':
+              setPhaseText(`Scheduling ${dayName(ev.weekday)}`);
+              setProgress(ev.dayCount > 0 ? ev.dayIndex / ev.dayCount : 0);
+              break;
+            case 'day-repair':
+              setPhaseText(`Adjusting ${dayName(ev.weekday)} to fit the rules`);
+              break;
+            case 'day-fill':
+              for (const a of ev.assignments) {
+                (preview[a.blockId] ??= []).push(a.workerId);
+              }
+              onPreview.current({ ...preview });
+              break;
+            case 'result': {
+              setProposal(ev.data);
+              const finalPreview: Record<string, string[]> = {};
+              for (const a of ev.data.assignments) {
+                (finalPreview[a.blockId] ??= []).push(a.workerId);
+              }
+              onPreview.current(finalPreview);
+              setPhaseText('');
+              break;
+            }
+            case 'error':
+              streamError = ev.message;
+              break;
+          }
+        }
+      }
+      if (streamError !== null) {
+        setError(streamError);
+        clearPreview();
+      }
+    } catch {
+      setError('Schedule generation failed. Try again.');
+      clearPreview();
+    } finally {
+      setRunning(false);
+    }
   };
 
   const onAccept = () => {
@@ -90,12 +180,12 @@ export function AiSchedulePanel({ houseId, periodId, published, deadlineOpen }: 
       assignments: proposal.assignments,
     })
       .then((res) => {
+        setConfirmOpen(false);
         if (res.ok) {
-          setConfirmOpen(false);
           setProposal(null);
+          clearPreview();
           router.refresh();
         } else {
-          setConfirmOpen(false);
           setError(res.error);
         }
       })
@@ -106,6 +196,12 @@ export function AiSchedulePanel({ houseId, periodId, published, deadlineOpen }: 
       .finally(() => {
         setAccepting(false);
       });
+  };
+
+  const onDiscard = () => {
+    setProposal(null);
+    setError(null);
+    clearPreview();
   };
 
   return (
@@ -122,8 +218,9 @@ export function AiSchedulePanel({ houseId, periodId, published, deadlineOpen }: 
             <Tag kind="blue">Draft assistant</Tag>
           </div>
           <span className="t-helper">
-            Builds a full draft week from submitted preferences. Every hard rule is checked by code;
-            you review and accept before anything is saved.
+            Builds a full draft week from submitted preferences, filling the grid as it goes. Every
+            hard rule is checked by code. You review, edit, and publish; nothing is saved until you
+            accept.
           </span>
         </div>
         <div className="row gap-2">
@@ -132,7 +229,7 @@ export function AiSchedulePanel({ houseId, periodId, published, deadlineOpen }: 
               kind="ghost"
               icon="refresh"
               data-testid="ai-regenerate-button"
-              onClick={onGenerate}
+              onClick={() => void onGenerate()}
             >
               Regenerate
             </Button>
@@ -142,7 +239,7 @@ export function AiSchedulePanel({ houseId, periodId, published, deadlineOpen }: 
               icon="layers"
               data-testid="ai-generate-button"
               disabled={running || blockedHint !== null}
-              onClick={onGenerate}
+              onClick={() => void onGenerate()}
             >
               {running ? 'Generating...' : 'Generate with AI'}
             </Button>
@@ -153,10 +250,31 @@ export function AiSchedulePanel({ houseId, periodId, published, deadlineOpen }: 
       {blockedHint !== null && <span className="t-meta">{blockedHint}</span>}
 
       {running && (
-        <Notification kind="info" title="Working on the schedule">
-          The model drafts one day at a time and a validator checks every rule. This can take a few
-          minutes. Keep this tab open. Elapsed: {elapsed}s
-        </Notification>
+        <div className="col gap-1" data-testid="ai-progress">
+          <div
+            className="row gap-2"
+            style={{ justifyContent: 'space-between', alignItems: 'baseline' }}
+          >
+            <span className="t-body" style={{ fontWeight: 600 }}>
+              {phaseText}
+              <span className="ai-ellipsis" aria-hidden="true" />
+            </span>
+            <span className="t-meta t-mono">{elapsed}s</span>
+          </div>
+          <div
+            className="ai-progress-track"
+            role="progressbar"
+            aria-valuenow={Math.round(progress * 100)}
+          >
+            <div
+              className="ai-progress-fill"
+              style={{ width: `${String(Math.round(progress * 100))}%` }}
+            />
+          </div>
+          <span className="t-meta">
+            The schedule fills in above as each day is built. Keep this tab open.
+          </span>
+        </div>
       )}
 
       {error !== null && (
@@ -169,18 +287,19 @@ export function AiSchedulePanel({ houseId, periodId, published, deadlineOpen }: 
 
       {proposal !== null && (
         <div data-testid="ai-proposal" className="col gap-2">
+          <Notification kind="info" title="Draft ready in the grid above">
+            This is a draft only. Move, add, or remove any shift in the builder, then publish when
+            you are ready. Nothing goes live until you press Publish.
+          </Notification>
+
           <div className="row gap-2" style={{ flexWrap: 'wrap', alignItems: 'baseline' }}>
             <span className="t-h2 t-mono">Score {proposal.score.toFixed(1)}</span>
             {BREAKDOWN_LABELS.map(({ key, label }) => (
-              <Tag key={key} kind="gray">
+              <Tag key={String(key)} kind="gray">
                 {label} {proposal.breakdown[key].toFixed(1)}
               </Tag>
             ))}
-            <span className="t-meta">
-              {proposal.diagnostics.llmCallCount} model calls ·{' '}
-              {proposal.diagnostics.candidateScores.length} candidate
-              {proposal.diagnostics.candidateScores.length === 1 ? '' : 's'}
-            </span>
+            <span className="t-meta">{proposal.diagnostics.llmCallCount} model calls</span>
           </div>
 
           {proposal.unfilledSeats.length > 0 && (
@@ -203,36 +322,9 @@ export function AiSchedulePanel({ houseId, periodId, published, deadlineOpen }: 
             </Notification>
           )}
 
-          {proposal.oneHourShiftCount > 0 && (
-            <span className="t-meta">
-              {proposal.oneHourShiftCount} short shift
-              {proposal.oneHourShiftCount === 1 ? '' : 's'} of an hour or less survived; you can
-              adjust them in the grid after accepting.
-            </span>
-          )}
-
-          <div className="row gap-2" style={{ alignItems: 'flex-start', flexWrap: 'wrap' }}>
-            <div className="col gap-1" style={{ flex: '2 1 320px' }}>
-              <span className="t-label">Proposed week</span>
-              {proposal.days.map((day) => (
-                <div key={day.dayLabel} className="col gap-1">
-                  <span className="t-eyebrow">{day.dayLabel}</span>
-                  {day.runs.length === 0 ? (
-                    <span className="t-meta">No assignments</span>
-                  ) : (
-                    day.runs.map((run, i) => (
-                      <span key={i} className="t-body">
-                        {run.startLabel} to {run.endLabel} · {run.workerName} ·{' '}
-                        {hoursLabel(run.hours)}
-                        {run.preferredBlocks > 0 ? ' · preferred time' : ''}
-                      </span>
-                    ))
-                  )}
-                </div>
-              ))}
-            </div>
-            <div className="col gap-1" style={{ flex: '1 1 220px' }}>
-              <span className="t-label">Hours vs target</span>
+          <div className="col gap-1">
+            <span className="t-label">Hours vs target</span>
+            <div className="row gap-2" style={{ flexWrap: 'wrap' }}>
               {proposal.workers.map((worker) => (
                 <span key={worker.workerId} className="t-body row gap-1">
                   {worker.name}: {hoursLabel(worker.hours)}
@@ -246,22 +338,23 @@ export function AiSchedulePanel({ houseId, periodId, published, deadlineOpen }: 
             </div>
           </div>
 
+          {proposal.oneHourShiftCount > 0 && (
+            <span className="t-meta">
+              {proposal.oneHourShiftCount} short shift
+              {proposal.oneHourShiftCount === 1 ? '' : 's'} of an hour or less survived; adjust them
+              in the grid if you like.
+            </span>
+          )}
+
           <div className="row gap-2">
             <Button
               icon="check"
               data-testid="ai-accept-button"
               onClick={() => setConfirmOpen(true)}
             >
-              Accept and write drafts
+              Accept as draft
             </Button>
-            <Button
-              kind="secondary"
-              data-testid="ai-discard-button"
-              onClick={() => {
-                setProposal(null);
-                setError(null);
-              }}
-            >
+            <Button kind="secondary" data-testid="ai-discard-button" onClick={onDiscard}>
               Discard
             </Button>
           </div>
@@ -272,7 +365,7 @@ export function AiSchedulePanel({ houseId, periodId, published, deadlineOpen }: 
         <Modal
           testId="ai-accept-confirm"
           eyebrow="AI schedule"
-          title="Replace drafts with this schedule?"
+          title="Save this as your draft?"
           onClose={() => setConfirmOpen(false)}
           footer={
             <>
@@ -286,16 +379,16 @@ export function AiSchedulePanel({ houseId, periodId, published, deadlineOpen }: 
                 onClick={onAccept}
                 disabled={accepting}
               >
-                {accepting ? 'Writing drafts...' : 'Accept'}
+                {accepting ? 'Saving draft...' : 'Accept as draft'}
               </Button>
             </>
           }
         >
           <p className="t-body">
-            Accepting replaces {proposal.existingDraftCount} existing draft assignment
-            {proposal.existingDraftCount === 1 ? '' : 's'} for this house with the proposed week (
-            {proposal.assignments.length} assignments). Nothing is published; you can still adjust
-            blocks in the builder and publish when ready.
+            This replaces {proposal.existingDraftCount} existing draft assignment
+            {proposal.existingDraftCount === 1 ? '' : 's'} for this house with the{' '}
+            {proposal.assignments.length} proposed shifts. It stays a draft: you can still change
+            any shift in the builder, and nothing is published until you press Publish.
           </p>
         </Modal>
       )}

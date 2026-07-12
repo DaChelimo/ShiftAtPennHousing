@@ -387,3 +387,73 @@
     transform: rotate(360deg);
   }
 }
+
+/* ---- AI generate: live preview + progress -------------------------------
+   While the generator streams, the grid renders its proposal read-only: runs
+   fill in day by day as ghost-tinted dashed cells, drag/select is inert, and
+   the per-run remove control is hidden (the SM edits after accepting, not
+   mid-build). The proposal stays shown until Accept or Discard. */
+.bld-grid.is-ai-preview .bld-cell {
+  pointer-events: none;
+}
+.bld-grid.is-ai-preview .bld-run {
+  background: color-mix(in srgb, var(--brand) 10%, var(--surface));
+  border: 1px dashed color-mix(in srgb, var(--brand) 55%, var(--surface));
+  animation: bld-ai-in 0.28s ease both;
+}
+.bld-grid.is-ai-preview .bld-run-x {
+  display: none;
+}
+@keyframes bld-ai-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.ai-progress-track {
+  height: 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--brand) 12%, var(--surface));
+  overflow: hidden;
+}
+.ai-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--brand);
+  transition: width 0.4s ease;
+}
+.ai-ellipsis::after {
+  content: '';
+  animation: bld-ellipsis 1.2s steps(4, end) infinite;
+}
+@keyframes bld-ellipsis {
+  0% {
+    content: '';
+  }
+  25% {
+    content: '.';
+  }
+  50% {
+    content: '..';
+  }
+  75% {
+    content: '...';
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bld-grid.is-ai-preview .bld-run {
+    animation: none;
+  }
+  .ai-progress-fill {
+    transition: none;
+  }
+  .ai-ellipsis::after {
+    animation: none;
+    content: '';
+  }
+}

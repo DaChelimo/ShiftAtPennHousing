@@ -4,10 +4,38 @@ import Shared
 /// T2-13 — routes a tapped float push / external `pennshift://float-ack/{id}` deep
 /// link into the full-screen FloatAckSurface. AppDelegate (push tap) and onOpenURL
 /// both write here; ShiftsRootView observes and presents.
+///
+/// Widget tiles add tab routes (`pennshift://my-shifts`, `pennshift://open-shifts`,
+/// `pennshift://updates`); `requestedRoute` carries those and ShiftsRootView reacts.
 @MainActor
 final class DeepLinkRouter: ObservableObject {
     static let shared = DeepLinkRouter()
     @Published var floatAckId: String?
+    @Published var requestedRoute: WidgetRoute?
+}
+
+/// A tab destination a widget tile can open.
+enum WidgetRoute: Equatable {
+    case myShifts
+    case openShifts(WidgetOpenScope)
+    case updates
+}
+
+/// Parses the tab-routing widget deep links (the float-ack link is parsed Kotlin-side by
+/// `parseFloatAckDeepLink`). Returns nil for anything else.
+@MainActor
+func parseWidgetRoute(uri: URL) -> WidgetRoute? {
+    guard uri.scheme?.lowercased() == WidgetDeepLink.scheme else { return nil }
+    switch uri.host?.lowercased() {
+    case "my-shifts": return .myShifts
+    case "updates": return .updates
+    case "open-shifts":
+        let raw = URLComponents(url: uri, resolvingAgainstBaseURL: false)?
+            .queryItems?.first(where: { $0.name == "scope" })?.value
+        let scope = raw.flatMap(WidgetOpenScope.init(rawValue:)) ?? .both
+        return .openShifts(scope)
+    default: return nil
+    }
 }
 
 /// Phase 13a — iOS entry point.
@@ -27,6 +55,9 @@ struct iOSApp: App {
                     // T2-13 — external deep link into the full-screen ack.
                     if let id = parseFloatAckDeepLink(uri: url.absoluteString) {
                         DeepLinkRouter.shared.floatAckId = id
+                    } else if let route = parseWidgetRoute(uri: url) {
+                        // Widget tile → land on the relevant tab.
+                        DeepLinkRouter.shared.requestedRoute = route
                     }
                 }
         }
@@ -74,12 +105,15 @@ struct LiveRootView: View {
             // An in-session sign-in (login.authedSession) takes precedence; otherwise
             // use the launch-restored session once the restore has resolved.
             if let session = login.authedSession ?? restored.flatMap({ $0 }) {
-                ShiftsRootView(onSignOut: {
+                // Staggered-launch gate: a worker whose home house is not live yet sees a
+                // "coming soon" placeholder instead of the portal. GatedShiftsView resolves
+                // the gate (fail-open) before rendering the live shifts tree.
+                GatedShiftsView(userId: session.userId, onSignOut: {
                     Task { try? await WorkerBackend.shared.authGateway.signOut() }
                     login.authedSession = nil
                     // A sign-out forces LOGIN even though a session was restored at launch.
                     restored = .some(nil)
-                }, liveUserId: session.userId)
+                })
                 .id(clockEpoch)
             } else if restored == nil {
                 LaunchRestoreView()
@@ -110,6 +144,40 @@ struct LiveRootView: View {
                 if (try? await WorkerBackend.shared.syncSimClock()) == true {
                     clockEpoch += 1
                 }
+            }
+        }
+    }
+}
+
+/// Staggered-launch gate wrapper: resolve whether the signed-in worker's home house is
+/// live before showing the shifts portal. While the (async) gate check runs a loading
+/// view shows; a not-yet-live house shows the "coming soon" placeholder; a live house
+/// falls through to the normal `ShiftsRootView`. The repo call fails OPEN, so a transient
+/// error resolves to live rather than locking a real worker out.
+struct GatedShiftsView: View {
+    let userId: String
+    var onSignOut: () -> Void
+    /// nil while the gate check runs; .some once resolved.
+    @State private var gate: HomeHouseGate?
+
+    var body: some View {
+        Group {
+            if let gate {
+                if gate.isLive {
+                    ShiftsRootView(onSignOut: onSignOut, liveUserId: userId)
+                } else {
+                    HouseNotLiveView(houseName: gate.houseName, onSignOut: onSignOut)
+                }
+            } else {
+                LaunchRestoreView()
+            }
+        }
+        .task(id: userId) {
+            gate = try? await WorkerBackend.shared.shiftsRepository.fetchHomeHouseGate(userId: userId)
+            // Fail-open at the view layer too: an unreadable gate (nil) resolves to live so a
+            // real worker is never stranded on the loading view by a transient error.
+            if gate == nil {
+                gate = HomeHouseGate(isLive: true, houseName: "your house")
             }
         }
     }

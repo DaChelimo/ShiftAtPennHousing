@@ -7,56 +7,107 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0074D49F18895E55892D6B0A /* WidgetDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05D79BBB989864069C12B06A /* WidgetDeepLink.swift */; };
+		0336BF83F5144E15A7FBEB8B /* FloatCarouselView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E150BAEFEBE013FA7CADF39 /* FloatCarouselView.swift */; };
+		072EC6FFED86D1DB8BF7728C /* BreakCalendarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73EA60230287BEC92AF92580 /* BreakCalendarView.swift */; };
 		0A2006C660EA23D1A6A8CE07 /* ShiftGallery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 594E4FFC431104A3003C2B31 /* ShiftGallery.swift */; };
 		1D4E71E999DAB7A248F33DE9 /* IBMPlexMono-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 625B0080D4E3C3B40F484D6F /* IBMPlexMono-SemiBold.ttf */; };
 		1FC78AB84C2128557CB7EA67 /* IBMPlexSans-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = BB69E5DD1A1A12D4AD674B2A /* IBMPlexSans-Bold.ttf */; };
 		2052DDF421ACDDA32F3A1950 /* IBMPlexSans-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F8D29B33BAB78EF1A3294483 /* IBMPlexSans-Regular.ttf */; };
+		209D0164092C55215C26A9BB /* ShiftWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F80CCBCC21B5C95F4D814B95 /* ShiftWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		24CA3D524DF50756878652F6 /* OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 926CF70D2670C740263F9161 /* OFL.txt */; };
+		260A356E54A5AF48C734F325 /* WidgetStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E55B2FF9068611BC2D6C14CB /* WidgetStyle.swift */; };
+		2AB1E2CEE68CB2ABABA8459E /* WidgetComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26422614A460F4169CC6CD2C /* WidgetComponents.swift */; };
 		307C2654CD5972A25FB7FD87 /* iOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 668CECA83ACC03A83C85A623 /* iOSApp.swift */; };
 		37C1A5D97008BA58C68687EB /* ShiftComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6354406BFA0BB1D5779C9C1 /* ShiftComponents.swift */; };
 		39038B9FCED8E5822BEE26B7 /* ShiftChromeFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = B845EEA4BDF47624BE8BCD36 /* ShiftChromeFeedback.swift */; };
+		3C8B915EF7A2CE2F4E2BF06E /* WidgetDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05D79BBB989864069C12B06A /* WidgetDeepLink.swift */; };
+		454D98A33A085A27F477A72D /* WidgetSampleData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FB0B967449A2C5466958FE2 /* WidgetSampleData.swift */; };
 		499DB39C5F33726A0A0B09E4 /* IBMPlexMono-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F463F963D7A6C3E1B63F7F0F /* IBMPlexMono-Medium.ttf */; };
 		56B0305B5D3847FC6B326502 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE8509E5A49E4A5CAAEB3ADB /* ContentView.swift */; };
 		585A305A37626C285BD4D97E /* FloatAcknowledgmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB03F885E14A777B71EA9DFD /* FloatAcknowledgmentView.swift */; };
-		FACA00010000000000000FC1 /* FloatCarouselView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FACA00020000000000000FC2 /* FloatCarouselView.swift */; };
-		AAB1C2D3E4F5061728394A5B /* BreakCalendarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBC1D2E3F405162738495A6B /* BreakCalendarView.swift */; };
+		6B927F216F451064A2478885 /* OpenShiftsWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A6B470422F3ACEF480E458C /* OpenShiftsWidget.swift */; };
+		6BB5A7B46C107AF7CC10B3A3 /* WidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEEC15AAA9F6FB86F98AC081 /* WidgetSnapshot.swift */; };
+		79D11D05FAA997AC867880FE /* OpenShiftsConfigIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 759989B288B28705A12301DF /* OpenShiftsConfigIntent.swift */; };
+		7E50193CD81184C6BC22D945 /* WidgetSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22393711583D25973C7CFDC0 /* WidgetSync.swift */; };
+		88AB385D3C48E3C0054B2AB7 /* UpcomingShiftsWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A479CCD6F78950F1901D786E /* UpcomingShiftsWidget.swift */; };
 		8ACF8940AE973BEAF8843F3D /* ShiftRowsControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = CED2A8032A88F44B9B3961D1 /* ShiftRowsControls.swift */; };
 		983A85F9E98253907723D163 /* IBMPlexSans-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 7B34AA86864B6EC1606F1447 /* IBMPlexSans-SemiBold.ttf */; };
+		A454074AB6AA023403A1BBD3 /* OpenShiftsConfigIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 759989B288B28705A12301DF /* OpenShiftsConfigIntent.swift */; };
+		A988F27620C078D93E10F424 /* WidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEEC15AAA9F6FB86F98AC081 /* WidgetSnapshot.swift */; };
 		BC176A83C0F9CCC0CA18F75B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E713B16C0AA6DFFD30001358 /* SettingsView.swift */; };
 		C87B4FA04BDA1DA04158D48E /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = A55143988C4C8F291BE72E9A /* GoogleService-Info.plist */; };
 		CA9F960429354879B0D97298 /* IBMPlexMono-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 18E3C5E7EFEEDE87D317FC37 /* IBMPlexMono-Regular.ttf */; };
 		D488747AD197BC7C1635E66B /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF4A054A43ED6B6C286E46F /* LoginView.swift */; };
 		D5606EF92064FABC381494F4 /* IBMPlexSans-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 52C915F23FFB1DD8D6A39ADE /* IBMPlexSans-Medium.ttf */; };
+		D755046C0E0F8B270D122D0B /* ShiftWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4F6AB0E55D52072EAFFF25D /* ShiftWidgetBundle.swift */; };
 		EE57983C854AAA89E7A106E5 /* ShiftTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D8A2FD225457B6AFE246BC0 /* ShiftTheme.swift */; };
 		FDE52B8D57A097A60A4CF366 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B6C1F485E0CF8BB70C9DDD2 /* AppDelegate.swift */; };
 		FFED10F38574A818A51A669E /* PreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E321591A5774BE7504F9E121 /* PreferencesView.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		41ADC3F1BD21FFCB10956CCA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 242FB5348943441C388468CE /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C814CFB477B4C5169BC76293;
+			remoteInfo = ShiftWidgets;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		E99160E501832DB2CECE6CFF /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				209D0164092C55215C26A9BB /* ShiftWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		05D79BBB989864069C12B06A /* WidgetDeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetDeepLink.swift; sourceTree = "<group>"; };
+		1828B1BD6E1D963272A74B5C /* ShiftWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ShiftWidgets.entitlements; sourceTree = "<group>"; };
 		18E3C5E7EFEEDE87D317FC37 /* IBMPlexMono-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "IBMPlexMono-Regular.ttf"; sourceTree = "<group>"; };
+		22393711583D25973C7CFDC0 /* WidgetSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSync.swift; sourceTree = "<group>"; };
+		26422614A460F4169CC6CD2C /* WidgetComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetComponents.swift; sourceTree = "<group>"; };
+		3FB0B967449A2C5466958FE2 /* WidgetSampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSampleData.swift; sourceTree = "<group>"; };
+		4E150BAEFEBE013FA7CADF39 /* FloatCarouselView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatCarouselView.swift; sourceTree = "<group>"; };
 		52C915F23FFB1DD8D6A39ADE /* IBMPlexSans-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "IBMPlexSans-Medium.ttf"; sourceTree = "<group>"; };
 		594E4FFC431104A3003C2B31 /* ShiftGallery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftGallery.swift; sourceTree = "<group>"; };
 		5EF4A054A43ED6B6C286E46F /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		625B0080D4E3C3B40F484D6F /* IBMPlexMono-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "IBMPlexMono-SemiBold.ttf"; sourceTree = "<group>"; };
 		668CECA83ACC03A83C85A623 /* iOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSApp.swift; sourceTree = "<group>"; };
 		719926556306ACCE69D2BB13 /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
+		73EA60230287BEC92AF92580 /* BreakCalendarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BreakCalendarView.swift; sourceTree = "<group>"; };
+		759989B288B28705A12301DF /* OpenShiftsConfigIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenShiftsConfigIntent.swift; sourceTree = "<group>"; };
+		7A6B470422F3ACEF480E458C /* OpenShiftsWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenShiftsWidget.swift; sourceTree = "<group>"; };
 		7B34AA86864B6EC1606F1447 /* IBMPlexSans-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "IBMPlexSans-SemiBold.ttf"; sourceTree = "<group>"; };
 		7D8A2FD225457B6AFE246BC0 /* ShiftTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftTheme.swift; sourceTree = "<group>"; };
-		86038AE1032E284E79B32AD6 /* iosApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = iosApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		86038AE1032E284E79B32AD6 /* Shift PennHousing.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Shift PennHousing.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		8B6C1F485E0CF8BB70C9DDD2 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		926CF70D2670C740263F9161 /* OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = OFL.txt; sourceTree = "<group>"; };
+		A479CCD6F78950F1901D786E /* UpcomingShiftsWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpcomingShiftsWidget.swift; sourceTree = "<group>"; };
+		A4F6AB0E55D52072EAFFF25D /* ShiftWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftWidgetBundle.swift; sourceTree = "<group>"; };
 		A55143988C4C8F291BE72E9A /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
+		AEEC15AAA9F6FB86F98AC081 /* WidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSnapshot.swift; sourceTree = "<group>"; };
 		B845EEA4BDF47624BE8BCD36 /* ShiftChromeFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftChromeFeedback.swift; sourceTree = "<group>"; };
 		BB69E5DD1A1A12D4AD674B2A /* IBMPlexSans-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "IBMPlexSans-Bold.ttf"; sourceTree = "<group>"; };
+		C49B0B02429FBBC9F867DDE1 /* iosApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = iosApp.entitlements; sourceTree = "<group>"; };
 		CB03F885E14A777B71EA9DFD /* FloatAcknowledgmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatAcknowledgmentView.swift; sourceTree = "<group>"; };
-		FACA00020000000000000FC2 /* FloatCarouselView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatCarouselView.swift; sourceTree = "<group>"; };
 		CE8509E5A49E4A5CAAEB3ADB /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		CED2A8032A88F44B9B3961D1 /* ShiftRowsControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftRowsControls.swift; sourceTree = "<group>"; };
 		E321591A5774BE7504F9E121 /* PreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesView.swift; sourceTree = "<group>"; };
-		BBC1D2E3F405162738495A6B /* BreakCalendarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BreakCalendarView.swift; sourceTree = "<group>"; };
+		E55B2FF9068611BC2D6C14CB /* WidgetStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetStyle.swift; sourceTree = "<group>"; };
 		E6354406BFA0BB1D5779C9C1 /* ShiftComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftComponents.swift; sourceTree = "<group>"; };
 		E713B16C0AA6DFFD30001358 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		F463F963D7A6C3E1B63F7F0F /* IBMPlexMono-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "IBMPlexMono-Medium.ttf"; sourceTree = "<group>"; };
+		F80CCBCC21B5C95F4D814B95 /* ShiftWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShiftWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F8D29B33BAB78EF1A3294483 /* IBMPlexSans-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "IBMPlexSans-Regular.ttf"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -65,15 +116,17 @@
 			isa = PBXGroup;
 			children = (
 				8B6C1F485E0CF8BB70C9DDD2 /* AppDelegate.swift */,
-				BBC1D2E3F405162738495A6B /* BreakCalendarView.swift */,
+				73EA60230287BEC92AF92580 /* BreakCalendarView.swift */,
 				CE8509E5A49E4A5CAAEB3ADB /* ContentView.swift */,
 				CB03F885E14A777B71EA9DFD /* FloatAcknowledgmentView.swift */,
-				FACA00020000000000000FC2 /* FloatCarouselView.swift */,
+				4E150BAEFEBE013FA7CADF39 /* FloatCarouselView.swift */,
 				A55143988C4C8F291BE72E9A /* GoogleService-Info.plist */,
+				C49B0B02429FBBC9F867DDE1 /* iosApp.entitlements */,
 				668CECA83ACC03A83C85A623 /* iOSApp.swift */,
 				5EF4A054A43ED6B6C286E46F /* LoginView.swift */,
 				E321591A5774BE7504F9E121 /* PreferencesView.swift */,
 				E713B16C0AA6DFFD30001358 /* SettingsView.swift */,
+				22393711583D25973C7CFDC0 /* WidgetSync.swift */,
 				B3EE582A4C033615D3BAD068 /* Fonts */,
 				A65F7BD09BBDD0A23957807C /* Kit */,
 				4795698A257B423F254DDC14 /* Theme */,
@@ -94,6 +147,8 @@
 			children = (
 				30EEB9A6711302BCF09D714D /* Configuration */,
 				1DB4B685CAEE8BEFEBBAEF94 /* iosApp */,
+				8C20319AA74A7206813B9780 /* ShiftWidgets */,
+				BE812D4F3BD7A6E3E029D946 /* WidgetShared */,
 				94C98B8B3A2BFC1966447269 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -106,10 +161,25 @@
 			path = Theme;
 			sourceTree = "<group>";
 		};
+		8C20319AA74A7206813B9780 /* ShiftWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				7A6B470422F3ACEF480E458C /* OpenShiftsWidget.swift */,
+				A4F6AB0E55D52072EAFFF25D /* ShiftWidgetBundle.swift */,
+				1828B1BD6E1D963272A74B5C /* ShiftWidgets.entitlements */,
+				A479CCD6F78950F1901D786E /* UpcomingShiftsWidget.swift */,
+				26422614A460F4169CC6CD2C /* WidgetComponents.swift */,
+				3FB0B967449A2C5466958FE2 /* WidgetSampleData.swift */,
+				E55B2FF9068611BC2D6C14CB /* WidgetStyle.swift */,
+			);
+			path = ShiftWidgets;
+			sourceTree = "<group>";
+		};
 		94C98B8B3A2BFC1966447269 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				86038AE1032E284E79B32AD6 /* iosApp.app */,
+				86038AE1032E284E79B32AD6 /* Shift PennHousing.app */,
+				F80CCBCC21B5C95F4D814B95 /* ShiftWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -140,6 +210,16 @@
 			path = Fonts;
 			sourceTree = "<group>";
 		};
+		BE812D4F3BD7A6E3E029D946 /* WidgetShared */ = {
+			isa = PBXGroup;
+			children = (
+				759989B288B28705A12301DF /* OpenShiftsConfigIntent.swift */,
+				05D79BBB989864069C12B06A /* WidgetDeepLink.swift */,
+				AEEC15AAA9F6FB86F98AC081 /* WidgetSnapshot.swift */,
+			);
+			path = WidgetShared;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -150,17 +230,36 @@
 				60E2BA6B6AF141F672E065D2 /* Build & embed KMP Shared framework */,
 				297B59D9CE634556D6007C40 /* Sources */,
 				1623B02D10928C8101C1F806 /* Resources */,
+				E99160E501832DB2CECE6CFF /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				66103549E19F50F5CF062289 /* PBXTargetDependency */,
 			);
 			name = iosApp;
 			packageProductDependencies = (
 			);
 			productName = iosApp;
-			productReference = 86038AE1032E284E79B32AD6 /* iosApp.app */;
+			productReference = 86038AE1032E284E79B32AD6 /* Shift PennHousing.app */;
 			productType = "com.apple.product-type.application";
+		};
+		C814CFB477B4C5169BC76293 /* ShiftWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EBACF9C456AFC1517F80D619 /* Build configuration list for PBXNativeTarget "ShiftWidgets" */;
+			buildPhases = (
+				572573CE1BA3CB84E2DDF50A /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ShiftWidgets;
+			packageProductDependencies = (
+			);
+			productName = ShiftWidgets;
+			productReference = F80CCBCC21B5C95F4D814B95 /* ShiftWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -170,8 +269,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
-				TargetAttributes = {
-				};
 			};
 			buildConfigurationList = FF7CA1CA754D017066F1822F /* Build configuration list for PBXProject "iosApp" */;
 			developmentRegion = en;
@@ -187,6 +284,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				C814CFB477B4C5169BC76293 /* ShiftWidgets */,
 				78B53CC79860CBFC2F5543C6 /* iosApp */,
 			);
 		};
@@ -239,11 +337,12 @@
 			buildActionMask = 2147483647;
 			files = (
 				FDE52B8D57A097A60A4CF366 /* AppDelegate.swift in Sources */,
-				AAB1C2D3E4F5061728394A5B /* BreakCalendarView.swift in Sources */,
+				072EC6FFED86D1DB8BF7728C /* BreakCalendarView.swift in Sources */,
 				56B0305B5D3847FC6B326502 /* ContentView.swift in Sources */,
 				585A305A37626C285BD4D97E /* FloatAcknowledgmentView.swift in Sources */,
-				FACA00010000000000000FC1 /* FloatCarouselView.swift in Sources */,
+				0336BF83F5144E15A7FBEB8B /* FloatCarouselView.swift in Sources */,
 				D488747AD197BC7C1635E66B /* LoginView.swift in Sources */,
+				79D11D05FAA997AC867880FE /* OpenShiftsConfigIntent.swift in Sources */,
 				FFED10F38574A818A51A669E /* PreferencesView.swift in Sources */,
 				BC176A83C0F9CCC0CA18F75B /* SettingsView.swift in Sources */,
 				39038B9FCED8E5822BEE26B7 /* ShiftChromeFeedback.swift in Sources */,
@@ -251,13 +350,63 @@
 				0A2006C660EA23D1A6A8CE07 /* ShiftGallery.swift in Sources */,
 				8ACF8940AE973BEAF8843F3D /* ShiftRowsControls.swift in Sources */,
 				EE57983C854AAA89E7A106E5 /* ShiftTheme.swift in Sources */,
+				3C8B915EF7A2CE2F4E2BF06E /* WidgetDeepLink.swift in Sources */,
+				6BB5A7B46C107AF7CC10B3A3 /* WidgetSnapshot.swift in Sources */,
+				7E50193CD81184C6BC22D945 /* WidgetSync.swift in Sources */,
 				307C2654CD5972A25FB7FD87 /* iOSApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		572573CE1BA3CB84E2DDF50A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A454074AB6AA023403A1BBD3 /* OpenShiftsConfigIntent.swift in Sources */,
+				6B927F216F451064A2478885 /* OpenShiftsWidget.swift in Sources */,
+				D755046C0E0F8B270D122D0B /* ShiftWidgetBundle.swift in Sources */,
+				88AB385D3C48E3C0054B2AB7 /* UpcomingShiftsWidget.swift in Sources */,
+				2AB1E2CEE68CB2ABABA8459E /* WidgetComponents.swift in Sources */,
+				0074D49F18895E55892D6B0A /* WidgetDeepLink.swift in Sources */,
+				454D98A33A085A27F477A72D /* WidgetSampleData.swift in Sources */,
+				A988F27620C078D93E10F424 /* WidgetSnapshot.swift in Sources */,
+				260A356E54A5AF48C734F325 /* WidgetStyle.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		66103549E19F50F5CF062289 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C814CFB477B4C5169BC76293 /* ShiftWidgets */;
+			targetProxy = 41ADC3F1BD21FFCB10956CCA /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		0445AC3650650EAB0E9C5E8D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS = NO;
+				CODE_SIGN_ENTITLEMENTS = ShiftWidgets/ShiftWidgets.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 3VC8F74G23;
+				INFOPLIST_FILE = ShiftWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.pennhousing.shift.ShiftWidgets;
+				PRODUCT_NAME = ShiftWidgets;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		11814011E7D6EC822BFBC66D /* Release */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 719926556306ACCE69D2BB13 /* Config.xcconfig */;
@@ -292,17 +441,12 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGNING_REQUIRED = NO;
-				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_IDENTITY = "-";
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)",
-				);
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -314,12 +458,6 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					"-framework",
-					Shared,
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.pennhousing.shift;
 				PRODUCT_NAME = "Shift PennHousing";
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -362,17 +500,12 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGNING_REQUIRED = NO;
-				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_IDENTITY = "-";
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)",
-				);
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -391,12 +524,6 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					"-framework",
-					Shared,
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.pennhousing.shift;
 				PRODUCT_NAME = "Shift PennHousing";
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
@@ -405,18 +532,53 @@
 			};
 			name = Debug;
 		};
+		874B507174253B0F21B4FE94 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS = NO;
+				CODE_SIGN_ENTITLEMENTS = ShiftWidgets/ShiftWidgets.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 3VC8F74G23;
+				INFOPLIST_FILE = ShiftWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.pennhousing.shift.ShiftWidgets;
+				PRODUCT_NAME = ShiftWidgets;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		9221A1FDC06803E8A2FC6E61 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS = NO;
+				CODE_SIGN_ENTITLEMENTS = iosApp/iosApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 3VC8F74G23;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)",
+				);
 				INFOPLIST_FILE = iosApp/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					Shared,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.pennhousing.shift;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -427,13 +589,25 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS = NO;
+				CODE_SIGN_ENTITLEMENTS = iosApp/iosApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 3VC8F74G23;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)",
+				);
 				INFOPLIST_FILE = iosApp/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					Shared,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.pennhousing.shift;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -447,6 +621,15 @@
 			buildConfigurations = (
 				9221A1FDC06803E8A2FC6E61 /* Debug */,
 				AF835BFF1220CA5AB5B867E4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		EBACF9C456AFC1517F80D619 /* Build configuration list for PBXNativeTarget "ShiftWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0445AC3650650EAB0E9C5E8D /* Debug */,
+				874B507174253B0F21B4FE94 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

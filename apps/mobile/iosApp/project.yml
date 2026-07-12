@@ -12,20 +12,14 @@ configFiles:
 settings:
   base:
     PRODUCT_NAME: Shift PennHousing
-    PRODUCT_BUNDLE_IDENTIFIER: com.pennhousing.shift
-    # The KMP :shared framework is built + embedded by the gradle run script below;
-    # link against it from the xcode-frameworks output dir.
-    FRAMEWORK_SEARCH_PATHS:
-      - $(inherited)
-      - $(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)
-    OTHER_LDFLAGS:
-      - $(inherited)
-      - -framework
-      - Shared
-    # Simulator runs need no code signing.
+    # Ad-hoc sign on the simulator. This is REQUIRED for the configurable (AppIntent)
+    # Open Shifts widget: an unsigned build fails AppIntents intent resolution
+    # ("Couldn't communicate with a helper application" / "No AppIntent in
+    # timeline(for:with:)") and the widget is stuck on its placeholder. The static
+    # Upcoming widget works unsigned, but the configurable one does not. Device builds
+    # set a real identity in Xcode (TEAM_ID in Config.xcconfig).
     CODE_SIGNING_REQUIRED: "NO"
-    CODE_SIGNING_ALLOWED: "NO"
-    CODE_SIGN_IDENTITY: ""
+    CODE_SIGN_IDENTITY: "-"
 
 targets:
   iosApp:
@@ -35,17 +29,55 @@ targets:
       - path: iosApp
         excludes:
           - "Info.plist"
+      # The app/widget data contract (App Group snapshot models + deep links).
+      - path: WidgetShared
     resources:
       - iosApp/Fonts
       - iosApp/GoogleService-Info.plist
+    # Embeds the widget extension into the app bundle.
+    dependencies:
+      - target: ShiftWidgets
     settings:
       base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pennhousing.shift
         INFOPLIST_FILE: iosApp/Info.plist
         ENABLE_USER_SCRIPT_SANDBOXING: "NO"
         ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS: "NO"
+        CODE_SIGN_ENTITLEMENTS: iosApp/iosApp.entitlements
+        # The KMP :shared framework is built + embedded by the gradle run script below;
+        # link against it from the xcode-frameworks output dir. Kept on the app target
+        # (not the project base) so the widget extension does NOT try to link Shared.
+        FRAMEWORK_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - -framework
+          - Shared
     preBuildScripts:
       - name: "Build & embed KMP Shared framework"
         basedOnDependencyAnalysis: false
         script: |
           cd "$SRCROOT/.."
           ./gradlew :shared:embedAndSignAppleFrameworkForXcode
+
+  ShiftWidgets:
+    type: app-extension
+    platform: iOS
+    # WidgetKit AppIntent configuration (the Open-shifts scope) needs iOS 17. The app
+    # itself stays on 16; a widget target may target a higher OS than its host app.
+    deploymentTarget: "17.0"
+    sources:
+      - path: ShiftWidgets
+        excludes:
+          - "Info.plist"
+      - path: WidgetShared
+    settings:
+      base:
+        # Distinct from the app's "Shift PennHousing" so the two Swift modules /
+        # product dirs don't collide ("multiple commands produce …swiftmodule").
+        PRODUCT_NAME: ShiftWidgets
+        PRODUCT_BUNDLE_IDENTIFIER: com.pennhousing.shift.ShiftWidgets
+        INFOPLIST_FILE: ShiftWidgets/Info.plist
+        ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS: "NO"
+        CODE_SIGN_ENTITLEMENTS: ShiftWidgets/ShiftWidgets.entitlements

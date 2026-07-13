@@ -8,7 +8,10 @@
 // sign out a cart" is DURABLE knowledge -> RAG. Misclassification degrades to retrieval +
 // defer, never a fabricated contact.
 
-export type DutyTier = 'hmod' | 'rsm' | 'sm' | 'unknown';
+// Duty tiers a contact question can name (reference_duty_hierarchy_roles). 'smod' and
+// 'csmod' are reached via a shared duty phone (the caller surfaces the number, no person
+// resolution); 'ba' is the Building Administrator (resolved as the leave-aware bm).
+export type DutyTier = 'hmod' | 'rsm' | 'ba' | 'smod' | 'csmod' | 'unknown';
 export type QueryIntent = 'duty_contact' | 'durable_knowledge';
 
 export interface QueryClassification {
@@ -28,7 +31,9 @@ const CONTACT_VERB_RE =
 
 const HMOD_RE = /\b(hmod|housing manager on duty|housing manager)\b/i;
 const RSM_RE = /\b(rsm|residential services manager)\b/i;
-const SM_RE = /\b(smod|csmod|student manager|desk manager|\bsm\b)\b/i;
+const BA_RE = /\b(ba|building administrator|building admin)\b/i;
+const CSMOD_RE = /\b(csmod|conferences? manager)\b/i;
+const SMOD_RE = /\b(smod|student manager on duty|student manager|desk manager)\b/i;
 
 const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const DAY_RE = new RegExp(`\\b(${WEEKDAYS.join('|')})\\b`, 'i');
@@ -41,7 +46,9 @@ const MONTH_DATE_RE = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*
 function detectTier(q: string): DutyTier {
   if (HMOD_RE.test(q)) return 'hmod';
   if (RSM_RE.test(q)) return 'rsm';
-  if (SM_RE.test(q)) return 'sm';
+  if (BA_RE.test(q)) return 'ba';
+  if (CSMOD_RE.test(q)) return 'csmod';
+  if (SMOD_RE.test(q)) return 'smod';
   return 'unknown';
 }
 
@@ -137,7 +144,12 @@ export function resolveAsOfDate(question: string, todayIso: string): string | nu
 export function looksLikeFactAssertion(question: string): boolean {
   const q = question.toLowerCase();
   const namesTier =
-    HMOD_RE.test(q) || RSM_RE.test(q) || SM_RE.test(q) || /\b(hm|bm|contact|manager)\b/i.test(q);
+    HMOD_RE.test(q) ||
+    RSM_RE.test(q) ||
+    BA_RE.test(q) ||
+    CSMOD_RE.test(q) ||
+    SMOD_RE.test(q) ||
+    /\b(hm|bm|contact|manager)\b/i.test(q);
   const assertShape = /\b(is|will be|are|=)\b\s+[a-z][a-z'.-]+/i.test(q) && !/\bwho\b/i.test(q);
   return namesTier && assertShape;
 }

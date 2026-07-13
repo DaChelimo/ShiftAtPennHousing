@@ -161,6 +161,9 @@ describe('query classification parity with core', () => {
     'How long can a resident keep a cart?',
     'who is the point of contact today',
     'The HM next Tuesday is Mary',
+    'who is the Building Administrator this week?',
+    'should I call the SMOD about this access issue?',
+    'who handles conference guests, the CSMOD?',
   ];
 
   it('classifyQuery agrees', () => {

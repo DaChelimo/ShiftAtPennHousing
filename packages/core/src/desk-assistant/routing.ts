@@ -9,17 +9,20 @@
 //
 // The student-manager tier is CSMOD (not "ASMOD", which does not exist).
 
-export type RoutingTier = 'desk_sm' | 'csmod' | 'rsm' | 'hmod' | 'project_admin';
+export type RoutingTier = 'desk_sm' | 'csmod' | 'rsm' | 'hmod' | 'ba' | 'project_admin';
 export type DayType = 'weekday' | 'weekend';
 export type Season = 'academic' | 'summer';
 
-// Escalation ladder, lowest to terminal. An unfilled tier falls UP to the next one;
-// project_admin is the terminal contact (mirrors the phase-07 terminal-contact rule).
+// Escalation ladder, lowest to terminal. An unfilled tier falls UP to the next one.
+// The Building Administrator (`ba`) sits ABOVE the HM-on-duty (standing hierarchy
+// SM < RSM < HM < BA; reference_duty_hierarchy_roles), so when the RSM and HM both
+// resolve out on leave, the walk-up lands on the BA before the project_admin terminal.
 export const TIER_LADDER: readonly RoutingTier[] = [
   'desk_sm',
   'csmod',
   'rsm',
   'hmod',
+  'ba',
   'project_admin',
 ];
 
@@ -51,6 +54,7 @@ export interface DutySnapshot {
   csmod: string | null;
   rsm: string | null;
   hmod: string | null;
+  ba: string | null;
   projectAdmin: string | null;
 }
 
@@ -98,6 +102,8 @@ function slotFor(snapshot: DutySnapshot, tier: RoutingTier): string | null {
       return snapshot.rsm;
     case 'hmod':
       return snapshot.hmod;
+    case 'ba':
+      return snapshot.ba;
     case 'project_admin':
       return snapshot.projectAdmin;
     default:

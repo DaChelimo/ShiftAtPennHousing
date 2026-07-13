@@ -145,6 +145,41 @@ Deno.serve(
     // the grounded protocol path.
     const classification = classifyQuery(question);
     if (classification.intent === 'duty_contact' && lifeSafety === null) {
+      // SMOD / CSMOD are reached via a shared duty phone (no person resolution): surface
+      // the tier guidance + the configured duty phone; the desk knows who to call
+      // (reference_duty_hierarchy_roles). No ladder walk for these.
+      if (classification.tier === 'smod' || classification.tier === 'csmod') {
+        const isSmod = classification.tier === 'smod';
+        const { data: cfg } = await supabase
+          .from('system_config')
+          .select('config_value')
+          .eq('config_key', isSmod ? 'smod_duty_phone' : 'csmod_duty_phone')
+          .maybeSingle();
+        const phone = (cfg as { config_value?: string } | null)?.config_value ?? null;
+        const label = isSmod ? tierLabel('desk_sm') : tierLabel('csmod');
+        const guide = isSmod
+          ? `In summer, reach ${label} first for this.`
+          : `For conference and event guests, reach ${label}.`;
+        const content = phone
+          ? `${guide} Call the duty phone: ${phone}.`
+          : `${guide} The duty phone number is on the IC phone list.`;
+        const messageId = await insertMessage('assistant', content, [], false);
+        return jsonResponse({
+          conversationId: convId,
+          messageId,
+          content,
+          citations: [],
+          deferred: false,
+          asOf: asOfDate,
+          safety: {
+            lifeSafety,
+            access,
+            incidentProbe: false,
+            dutyContact: true,
+            tier: classification.tier,
+          },
+        });
+      }
       try {
         // Neutral mid-day ET instant so the rotor's Friday-08:00 boundary resolves on the
         // asked calendar date regardless of DST.
@@ -153,14 +188,34 @@ Deno.serve(
           .from('routing_rules')
           .select('*')
           .eq('active', true);
-        const rules = mapRoutingRules(ruleRows as Array<Record<string, unknown>> | null);
-        const snapshot = await snapshotDutyState(supabase, asOfTs, houseId);
+        const loadedRules = mapRoutingRules(ruleRows as Array<Record<string, unknown>> | null);
         const { dayType, timeHHMM, season } = nyParts(new Date(asOfTs));
-        const route = resolveRoute(
-          { issueType: access ? 'access' : 'general', dayType, timeHHMM, season },
-          rules,
-          snapshot,
-        );
+        const issueType = access ? 'access' : 'general';
+        // If the question NAMES a person tier (hmod/rsm/ba), start the ladder walk there
+        // (walking up only if it is unfilled) instead of the routing-rule default. A
+        // generic "who is the contact" (tier unknown) uses the configured rules, whose
+        // default hmod then walks up to the BA when the HM/RSM are on leave.
+        const named =
+          classification.tier === 'hmod' ||
+          classification.tier === 'rsm' ||
+          classification.tier === 'ba';
+        const rules = named
+          ? [
+              {
+                ruleId: 'q-named-tier',
+                issueType,
+                tier: classification.tier as 'hmod' | 'rsm' | 'ba',
+                dayType: 'any' as const,
+                windowStart: null,
+                windowEnd: null,
+                seasonScope: 'any' as const,
+                priority: -1,
+                active: true,
+              },
+            ]
+          : loadedRules;
+        const snapshot = await snapshotDutyState(supabase, asOfTs, houseId);
+        const route = resolveRoute({ issueType, dayType, timeHHMM, season }, rules, snapshot);
         let personName: string | null = null;
         if (route.userId !== null) {
           const { data: person } = await supabase

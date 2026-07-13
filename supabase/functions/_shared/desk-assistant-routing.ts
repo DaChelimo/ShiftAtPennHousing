@@ -20,7 +20,7 @@ interface QueryClient {
   };
 }
 
-export type RoutingTier = 'desk_sm' | 'csmod' | 'rsm' | 'hmod' | 'project_admin';
+export type RoutingTier = 'desk_sm' | 'csmod' | 'rsm' | 'hmod' | 'ba' | 'project_admin';
 export type DayType = 'weekday' | 'weekend';
 export type Season = 'academic' | 'summer';
 
@@ -29,6 +29,7 @@ export const TIER_LADDER: readonly RoutingTier[] = [
   'csmod',
   'rsm',
   'hmod',
+  'ba',
   'project_admin',
 ];
 
@@ -56,6 +57,7 @@ export interface DutySnapshot {
   csmod: string | null;
   rsm: string | null;
   hmod: string | null;
+  ba: string | null;
   projectAdmin: string | null;
 }
 
@@ -95,6 +97,8 @@ function slotFor(snapshot: DutySnapshot, tier: RoutingTier): string | null {
       return snapshot.rsm;
     case 'hmod':
       return snapshot.hmod;
+    case 'ba':
+      return snapshot.ba;
     case 'project_admin':
       return snapshot.projectAdmin;
     default:
@@ -160,18 +164,21 @@ export function nyParts(at: Date): { dayType: DayType; timeHHMM: string; season:
 }
 
 /**
- * Snapshot the live duty slots. Reuses existing duty SQL; csmod / deskSm are
- * PLACEHOLDER null until the §10.1 student-manager on-duty resolver exists, so the
- * fallback currently walks to the (real) RSM / HMOD / project administrator.
+ * Snapshot the live duty slots. Reuses existing duty SQL; the BA slot resolves the
+ * leave-aware Building Manager for the house (reference_duty_hierarchy_roles), so the
+ * walk-up rsm -> hmod -> ba surfaces the BA when the upper tiers are on leave. csmod /
+ * deskSm stay null here: SMOD / CSMOD are reached via a shared duty phone (routed by the
+ * caller), not resolved to a person.
  */
 export async function snapshotDutyState(
   supabase: QueryClient,
   atISO: string,
   houseId: string,
 ): Promise<DutySnapshot> {
-  const [{ data: hmod }, { data: rsm }, { data: adminCfg }] = await Promise.all([
+  const [{ data: hmod }, { data: rsm }, { data: ba }, { data: adminCfg }] = await Promise.all([
     supabase.rpc('resolve_hmod_on_duty', { p_at: atISO }),
     supabase.rpc('resolve_rsm_for_house', { p_house_id: houseId, p_at: atISO }),
+    supabase.rpc('resolve_ba_for_house', { p_house_id: houseId, p_at: atISO }),
     supabase
       .from('system_config')
       .select('config_value')
@@ -184,20 +191,26 @@ export async function snapshotDutyState(
     csmod: null,
     rsm: (rsm as string | null) ?? null,
     hmod: (hmod as string | null) ?? null,
+    ba: (ba as string | null) ?? null,
     projectAdmin,
   };
 }
 
+// Tier labels (reference_duty_hierarchy_roles). SMOD = Student Manager on Duty (summer
+// first contact for access issues); CSMOD = Conferences Manager on Duty (conference
+// guests) -- NOT a student manager; BA = Building Administrator (above the HM).
 export function tierLabel(tier: RoutingTier): string {
   switch (tier) {
     case 'desk_sm':
-      return 'the desk student manager';
+      return 'the Student Manager on Duty (SMOD)';
     case 'csmod':
-      return 'the student manager on duty (CSMOD)';
+      return 'the Conferences Manager on Duty (CSMOD)';
     case 'rsm':
       return 'the Residential Services Manager';
     case 'hmod':
       return 'the Housing Manager on Duty';
+    case 'ba':
+      return 'the Building Administrator';
     case 'project_admin':
       return 'the project administrator';
     default:

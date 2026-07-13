@@ -44,7 +44,7 @@ struct SectionHeader: View {
     }
 }
 
-/// A My-Shifts–style section that ALWAYS renders (the `section_*` selector contract);
+/// A My-Shifts-style section that ALWAYS renders (the `section_*` selector contract);
 /// shows an inline empty placeholder when `isEmpty`.
 struct ShiftSection<Content: View>: View {
     let title: String

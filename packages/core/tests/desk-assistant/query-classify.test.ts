@@ -26,6 +26,12 @@ describe('classifyQuery', () => {
     expect(classifyQuery('should I reach the RSM for this?').tier).toBe('rsm');
   });
 
+  it('detects the BA, SMOD, and CSMOD tiers distinctly', () => {
+    expect(classifyQuery('who is the Building Administrator this week?').tier).toBe('ba');
+    expect(classifyQuery('should I call the SMOD about this access issue?').tier).toBe('smod');
+    expect(classifyQuery('who do I reach for a conference guest, the CSMOD?').tier).toBe('csmod');
+  });
+
   it('does NOT misroute a procedural who-question to the duty tool', () => {
     // "who can sign out a cart" is a policy question, not a contact question.
     const c = classifyQuery('Who can sign out a cart at Harnwell?');

@@ -13,7 +13,7 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
 
 /**
- * Swap initiation (§8.1–§8.4, D2/D3) — which proposal kinds a card offers, the
+ * Swap initiation (§8.1-§8.4, D2/D3) — which proposal kinds a card offers, the
  * counterparty picker derived from the house grid, and the EF proposal mapping.
  * The server stays authoritative for eligibility; these pin the CLIENT contract.
  */

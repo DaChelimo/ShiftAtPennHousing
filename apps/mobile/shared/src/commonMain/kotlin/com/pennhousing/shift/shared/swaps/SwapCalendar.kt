@@ -41,7 +41,7 @@ data class SwapDayCard(
     val seatIds: List<String>,
     val start: Instant,
     val end: Instant,
-    val timeLabel: String, // "12:00 – 4:00pm"
+    val timeLabel: String, // "12:00 - 4:00pm"
     val durationLabel: String, // "4h"
     val dayLabel: String, // "Sat · Jun 20"
     /** A SCHEDULED own shift outside a break profile → the permanent-swap toggle applies (§8.3). */
@@ -139,7 +139,7 @@ fun buildSwapDayFor(
 ): SwapDay = buildSwapDay(myShifts, seats, meUserId, selectedDayIndex, anchor, breakProfile)
 
 /**
- * The Mon–Sun day indexes of [anchor]'s week that have ANY swappable shift (the
+ * The Mon-Sun day indexes of [anchor]'s week that have ANY swappable shift (the
  * worker's own or a housemate's) — drives the swap calendar's strip dots, so a worker
  * sees at a glance which days hold something to swap.
  */

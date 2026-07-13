@@ -15,14 +15,14 @@ import kotlin.time.Instant
 /*
  * House schedule (§11.4, parity T3b) — PURE presentation logic for the worker's
  * home-house staffing view, rebuilt as an Excel-style WEEK GRID (design
- * `HouseScheduleScreen`): a fixed left time rail plus one column per Mon–Sun day,
+ * `HouseScheduleScreen`): a fixed left time rail plus one column per Mon-Sun day,
  * each block positioned by its minute-of-day so a worker can read the whole week
  * at a glance — the thing SWs use the spreadsheet for: deciding what to drop and,
  * more often, who to swap with.
  *
  * The data is the `house_schedule_grid` read model: ONE ROW PER 30-MIN BLOCK
  * SEAT (invariant #5), RLS-scoped to the caller's home house. This layer places
- * seats on the Mon–Sun strip of a navigable [anchor] week, coalesces contiguous
+ * seats on the Mon-Sun strip of a navigable [anchor] week, coalesces contiguous
  * same-seat runs (same worker — or the same vacancy — across adjacent blocks)
  * into displayed blocks, then assigns lanes so concurrent desks (Harnwell/Quad)
  * sit side by side. No I/O, no clock — `now` is injected (today/active flags).
@@ -73,7 +73,7 @@ data class HouseGridBlock(
     val startMin: Int,
     val endMin: Int,
     val lane: Int,
-    val timeLabel: String, // "14:00 – 18:00" (24:00 rendered for an end-of-day block)
+    val timeLabel: String, // "14:00 - 18:00" (24:00 rendered for an end-of-day block)
     val workerLabel: String, // "You" / "Maya R." / "Open"
     val workerName: String?, // null → an open/vacant run
     val workerPhone: String?,
@@ -84,7 +84,7 @@ data class HouseGridBlock(
     val active: Boolean, // in progress at `now`
 )
 
-/** One day column: the Mon–Sun header + its lane-assigned blocks. */
+/** One day column: the Mon-Sun header + its lane-assigned blocks. */
 data class HouseGridDay(
     val index: Int, // 0=Mon..6=Sun
     val dayLabel: String, // "Mon"
@@ -99,7 +99,7 @@ data class HouseGridDay(
 /**
  * The whole navigable week as a grid. [laneCount] is the week-wide max (so every day
  * column is the same width and the headers line up); [startHour]/[endHour] bound the
- * time rail (default 08:00–24:00, expanded to even hours if the data runs outside it).
+ * time rail (default 08:00-24:00, expanded to even hours if the data runs outside it).
  */
 data class HouseGridWeek(
     val days: List<HouseGridDay>,
@@ -128,7 +128,7 @@ private fun fmtMinOfDay(min: Int): String = pad2(min / 60) + ":" + pad2(min % 60
 private const val MIN_PER_DAY = 24 * 60
 
 /**
- * Build the [anchor] week's house grid: seats placed on the Mon–Sun strip, contiguous
+ * Build the [anchor] week's house grid: seats placed on the Mon-Sun strip, contiguous
  * same-seat runs merged, lanes assigned so concurrent desks don't overlap. [meUserId]
  * (the signed-in worker) marks "You" blocks; placement uses [anchor]'s NY week while
  * today/active flags use [now], so a navigated week renders correctly with no "today".
@@ -181,8 +181,8 @@ fun buildHouseGridWeek(
  * A naive single-pointer merge interleaves those concurrent seats and shatters them into
  * 30-min fragments. So within each occupant group we assign seats to parallel TRACKS (a track
  * extends only when its current end == the next seat's start), yielding one clean contiguous
- * run per concurrent seat — e.g. an all-vacant 08:00–10:00 at Harnwell becomes TWO "Open"
- * blocks of 08:00–10:00, not eight half-hour slivers. Filled groups (a worker can't double-book)
+ * run per concurrent seat — e.g. an all-vacant 08:00-10:00 at Harnwell becomes TWO "Open"
+ * blocks of 08:00-10:00, not eight half-hour slivers. Filled groups (a worker can't double-book)
  * have ≤1 seat per time, so they degenerate to the old contiguous-run behaviour.
  */
 private fun coalesce(

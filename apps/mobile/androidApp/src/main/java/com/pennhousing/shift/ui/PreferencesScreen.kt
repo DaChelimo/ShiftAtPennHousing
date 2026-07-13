@@ -75,7 +75,7 @@ import com.pennhousing.shift.ui.theme.ShiftTheme
 /**
  * Preference submission (the tri-state paint timeline + target weekly hours) — Compose UI
  * over the shared [PreferencesViewModel]. The canonical kit: the context eyebrow, the
- * deadline/unsaved banner, a Mon–Sun strip, the target-hours stepper card, the
+ * deadline/unsaved banner, a Mon-Sun strip, the target-hours stepper card, the
  * Available/Preferred/Cannot brush selector, the day TIMELINE (hours in a left gutter,
  * bare colored segments, one label per painted run — long-press-drag to paint a range,
  * tap for one block), and a Submit/Discard bar that appears only when there are unsaved
@@ -248,7 +248,7 @@ private fun PreferenceBannerView(banner: PreferenceBanner) {
     )
 }
 
-/** Mon–Sun strip: weekday letter, a date pill (selected fill), and a "painted" dot. */
+/** Mon-Sun strip: weekday letter, a date pill (selected fill), and a "painted" dot. */
 @Composable
 private fun PrefWeekStripView(
     strip: PrefWeekStrip,
@@ -643,7 +643,7 @@ private fun PrefSegment(cell: PrefBlockCell) {
     )
 }
 
-/** The single span label centered over a painted run (e.g. "8:00 AM – 12:00 PM"). */
+/** The single span label centered over a painted run (e.g. "8:00 AM - 12:00 PM"). */
 @Composable
 private fun BoxScope.PrefRunPill(run: PrefBlockRun) {
     val c = ShiftTheme.colors

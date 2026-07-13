@@ -232,14 +232,26 @@ the split at review:
   operator is pointed at the existing `hm_leave` submission path so duty resolution honors it;
   it is not indexed as prose.
 
-### 4a.5 Explicit boundary (not built in this pass)
+### 4a.5 Duty tiers, resolved (built 2026-07-12)
 
-Building an SM-on-duty roster + resolver (the section 10.1 seam) and a net-new
-Building-Administrator duty subsystem are out of scope: they are large and touch the core
-staffing model. Consequence: for a `desk_sm` / `csmod` contact question the duty tool returns
-"no on-duty resolver for this tier", and a backup-BA fact is served from the temporal RAG
-(with its expiry window) rather than from a structured resolver. These are documented seams,
-not silent gaps.
+The hierarchy (reference_duty_hierarchy_roles) is SM < RSM < HM < BA, and all tiers are now
+modeled:
+
+- **BA (Building Administrator)** = the existing `bm` role, scoped per house.
+  `resolve_ba_for_house(house, at)` (migration 20260712000010) resolves the leave-aware bm,
+  and the routing ladder gained a `ba` tier ABOVE `hmod`. So when the RSM and HM both resolve
+  out on leave, the walk-up lands on the BA (e.g. Celine). This is the canonical "who is in
+  charge this week" answer, now automatic and as-of-date correct. Live-verified.
+- **SMOD (Student Manager on Duty, summer)** and **CSMOD (Conferences Manager on Duty)** are
+  reached via a SHARED DUTY PHONE (same number for whoever is on duty). The assistant routes
+  to the tier and surfaces the configured phone (`system_config` keys `smod_duty_phone` /
+  `csmod_duty_phone`); it does not resolve a person. da-ask has a dedicated smod/csmod branch,
+  and the classifier detects `ba` / `smod` / `csmod` distinctly.
+- The previously mislabeled CSMOD tier ("student manager on duty") is corrected to
+  "Conferences Manager on Duty (CSMOD)".
+
+Deploy/seed: Celine needs a `bm` `user_roles` row per house she covers (Rodin / Harrison /
+Harnwell); deployers set the two duty-phone config keys.
 
 ---
 
@@ -376,7 +388,7 @@ open item is the live end-to-end run, gated on repairing the pre-existing migrat
 - [x] `propose` core: prompt + `ProposedDoc` schema + strict parser, durable/dated/structured-leave split, temporal extraction
 - [x] Vitest for proposer + temporal + classify + commit
 - [x] Propose step implemented as a Node web action (web-first; no Deno EF needed)
-- [x] `PdfTextExtractor` seam wired in the web layer (returns a clear "configure extractor" state until a Node PDF lib is added)
+- [x] `PdfTextExtractor` seam wired in the web layer with `unpdf` (serverless pdf.js; text layer + page count; scans fall through to the "needs OCR" warning)
 
 ### Phase 3, Intake surface + review queue (9/9) DONE
 
@@ -398,4 +410,12 @@ open item is the live end-to-end run, gated on repairing the pre-existing migrat
 
 - [x] Vitest green (normalize, temporal, propose, classify, commit, mirror parity): 165 core tests
 - [x] pgTAP written (`desk-assistant-intake.sql`); temporal filter + CHECK + RLS shape proven live via rolled-back psql
-- [~] Live end-to-end (upload -> queue -> live -> retrieval): web type-checks clean; blocked on repairing the pre-existing migration drift (`supabase migration repair ...`), then regenerating types and setting VOYAGE/ANTHROPIC keys. PDF path also needs a Node PDF lib in `extractPdf`.
+- [~] Live end-to-end (upload -> queue -> live -> retrieval): web type-checks clean; PDF extraction now wired (`unpdf`). Still blocked on repairing the pre-existing migration drift (`supabase migration repair ...`), then regenerating types and setting VOYAGE/ANTHROPIC keys.
+
+### Duty roles (built 2026-07-12, section 4a.5)
+
+- [x] `resolve_ba_for_house` migration (BA = leave-aware `bm`); validated + live-seeded (Celine resolves)
+- [x] `ba` routing tier above `hmod` (core + mirror); BA walk-up unit-tested
+- [x] Classifier + da-ask recognize `ba` / `smod` / `csmod`; SMOD/CSMOD route to tier + duty phone
+- [x] `unpdf` PDF text extraction wired into the intake `extractPdf`
+- [x] 167 core tests green; core builds; web tsc clean

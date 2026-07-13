@@ -136,7 +136,7 @@ class BreakCalendarTest {
             )
         val plan = planBreakDrag(s, day(s), 0, 2)
         assertEquals(listOf("b0", "b2"), plan.claimableBlockIds)
-        assertEquals(2, plan.claimedSegments.size) // 08:00–08:30 and 09:00–09:30
+        assertEquals(2, plan.claimedSegments.size) // 08:00-08:30 and 09:00-09:30
         assertEquals(1, plan.trimmedSegments.size)
         assertEquals(BreakDragSkip.FULL, plan.trimmedSegments.single().reason)
         assertEquals(

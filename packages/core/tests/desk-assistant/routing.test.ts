@@ -43,6 +43,7 @@ const full: DutySnapshot = {
   csmod: 'csmod-1',
   rsm: 'rsm-1',
   hmod: 'hmod-1',
+  ba: 'ba-1',
   projectAdmin: 'admin-1',
 };
 
@@ -130,18 +131,36 @@ describe('tier fallback (leave / unfilled slots)', () => {
     expect(d.fallbackChain).toEqual(['csmod', 'rsm']);
   });
 
+  it('walks up to the Building Administrator when RSM and HMOD are on leave', () => {
+    // The canonical scenario: this week the RSM and HM are away, so the person in
+    // charge is the BA (Celine). rsm + hmod resolve null; the walk-up lands on ba.
+    const snap: DutySnapshot = {
+      deskSm: null,
+      csmod: null,
+      rsm: null,
+      hmod: null,
+      ba: 'celine',
+      projectAdmin: 'admin-1',
+    };
+    const d = resolveRoute(ctx(), [rule({ tier: 'rsm' })], snap);
+    expect(d.resolvedTier).toBe('ba');
+    expect(d.userId).toBe('celine');
+    expect(d.fallbackChain).toEqual(['rsm', 'hmod', 'ba']);
+  });
+
   it('falls all the way to the terminal project administrator', () => {
     const snap: DutySnapshot = {
       deskSm: null,
       csmod: null,
       rsm: null,
       hmod: null,
+      ba: null,
       projectAdmin: 'admin-1',
     };
     const d = resolveRoute(ctx(), [rule({ tier: 'csmod' })], snap);
     expect(d.resolvedTier).toBe('project_admin');
     expect(d.userId).toBe('admin-1');
-    expect(d.fallbackChain).toEqual(['csmod', 'rsm', 'hmod', 'project_admin']);
+    expect(d.fallbackChain).toEqual(['csmod', 'rsm', 'hmod', 'ba', 'project_admin']);
   });
 
   it('returns userId null when nothing is filled (EF logs a warning)', () => {
@@ -150,6 +169,7 @@ describe('tier fallback (leave / unfilled slots)', () => {
       csmod: null,
       rsm: null,
       hmod: null,
+      ba: null,
       projectAdmin: null,
     };
     const d = resolveRoute(ctx(), [rule({ tier: 'hmod' })], empty);

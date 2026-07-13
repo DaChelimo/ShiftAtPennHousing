@@ -71,7 +71,7 @@ import kotlinx.coroutines.delay
  * regular houses, 2 for Harnwell, 3 for Quad): a vertical time grid where occupied seats
  * are read-only and the remaining capacity is DRAG-CLAIMABLE. Tap a block or long-press +
  * drag a range; the claim fills one open seat per block ("system-assigned lane") and the
- * confirm bar reports the trim ("Claimed 4:00–6:00 · 6:00–8:00 was already full"). After
+ * confirm bar reports the trim ("Claimed 4:00-6:00 · 6:00-8:00 was already full"). After
  * T-1d the calendar is read-only and points to Open Shifts (round 2).
  *
  * Selector ids: see apps/mobile/maestro/README.md.

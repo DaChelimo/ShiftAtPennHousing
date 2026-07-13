@@ -45,11 +45,11 @@ import kotlin.time.Instant
 
 data class SwapCalendarUiState(
     val weekOffset: Int,
-    val weekRange: String, // "Jun 22 – 28"
+    val weekRange: String, // "Jun 22 - 28"
     val weekRelative: String, // "This week" / "Next week" / "Last week" / "In 2 weeks"
     /** The shown week's NY anchor — the host passes it to `fetchHouseScheduleForWeek`. */
     val anchor: Instant,
-    val days: List<WeekDayCell>, // Mon–Sun strip (date + today)
+    val days: List<WeekDayCell>, // Mon-Sun strip (date + today)
     val daysWithShifts: Set<Int>, // strip dots
     val selectedDayIndex: Int,
     val day: SwapDay, // the selected day's give (mine) + take (others) cards
@@ -118,7 +118,7 @@ data class SwapCalendarUiState(
  */
 data class SwapLegSuggestion(
     val workerName: String, // "Dan"
-    val label: String, // "Give 6:00–8:00pm to Dan too"
+    val label: String, // "Give 6:00-8:00pm to Dan too"
 )
 
 /**
@@ -131,18 +131,18 @@ data class SwapLegSuggestion(
  */
 data class SwapDeal(
     val giveTitle: String, // "Sat · Jun 20"
-    val giveDetail: String, // "12:00 – 4:00pm · 4h"
+    val giveDetail: String, // "12:00 - 4:00pm · 4h"
     val takeEyebrow: String, // "You take" (swap) / "Hand off to" (hand-off)
     val takeInitial: String?, // counterparty avatar initial — null until a take is picked
     val takeTitle: String?, // "Ben · Tue · Jun 23" (swap) / "Ben" (hand-off) — null until picked
-    val takeDetail: String?, // "9:00 – 1:00pm · 4h" / "They give nothing back" — null until picked
+    val takeDetail: String?, // "9:00 - 1:00pm · 4h" / "They give nothing back" — null until picked
     val takePlaceholder: String, // muted prompt shown until a take is picked
 )
 
 /** One banked independent leg shown as a chip above the deal card. */
 data class SwapLegChip(
     val workerName: String,
-    val summary: String, // "give 4:00–6:00pm ⇄ take 9:00–11:00am"
+    val summary: String, // "give 4:00-6:00pm ⇄ take 9:00-11:00am"
 )
 
 /**

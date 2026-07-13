@@ -55,10 +55,10 @@ const rules: core.RoutingRule[] = [
 ];
 
 const snapshots: core.DutySnapshot[] = [
-  { deskSm: 'ds', csmod: 'cs', rsm: 'r', hmod: 'h', projectAdmin: 'pa' },
-  { deskSm: null, csmod: null, rsm: 'r', hmod: 'h', projectAdmin: 'pa' },
-  { deskSm: null, csmod: null, rsm: null, hmod: null, projectAdmin: 'pa' },
-  { deskSm: null, csmod: null, rsm: null, hmod: null, projectAdmin: null },
+  { deskSm: 'ds', csmod: 'cs', rsm: 'r', hmod: 'h', ba: 'b', projectAdmin: 'pa' },
+  { deskSm: null, csmod: null, rsm: 'r', hmod: 'h', ba: 'b', projectAdmin: 'pa' },
+  { deskSm: null, csmod: null, rsm: null, hmod: null, ba: 'b', projectAdmin: 'pa' },
+  { deskSm: null, csmod: null, rsm: null, hmod: null, ba: null, projectAdmin: null },
 ];
 
 const contexts: core.RouteContext[] = [

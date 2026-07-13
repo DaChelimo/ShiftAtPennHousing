@@ -65,7 +65,7 @@ data class SwapDecision(
     val title: String, // "Swap request" / "Hand-off request"
     val intro: String, // "Ben wants to swap shifts with you."
     val respondBy: String, // "Respond by Mon, 18:30"
-    val giveLabel: String?, // "Sat · Jun 20 · 14:00 – 18:00 · 4h" — null if you give nothing
+    val giveLabel: String?, // "Sat · Jun 20 · 14:00 - 18:00 · 4h" — null if you give nothing
     val giveHouse: String?, // "Harnwell" — the desk you'd give up (null if you give nothing)
     val getLabel: String?, // the shift you'd gain — null if you get nothing
     /**
@@ -82,7 +82,7 @@ data class SwapDecision(
  * proposed), opened by tapping the flagged My-Shifts card. While the swap is pending the
  * shift is tied up — it can't be dropped or swapped again — so instead of the drop sheet
  * (which the server would reject with a generic error) the worker sees this: the shift
- * itself (day, date, start–end, duration), a plain explanation, and two choices — CANCEL
+ * itself (day, date, start-end, duration), a plain explanation, and two choices — CANCEL
  * the swap (void it, freeing the shift) or KEEP WAITING (just dismiss / minimise the card).
  * A one-sided hand-off reads "hand-off" instead of "swap".
  */
@@ -93,7 +93,7 @@ data class PendingSwapNotice(
     val title: String, // "Swap pending" / "Hand-off pending"
     val houseName: String?, // "Harnwell" — the desk this shift is worked at (float destination, if floated)
     val dayLabel: String, // "Sat · Jun 20" — the shift's day-of-week + date
-    val timeLabel: String, // "14:00 – 18:00" — start–end
+    val timeLabel: String, // "14:00 - 18:00" — start-end
     val durationLabel: String, // "4h"
     val body: String, // why it can't be dropped/swapped + the two options, in plain words
     val waitingOn: String, // "Waiting on Ben · expires Mon · Jun 22, 18:30"

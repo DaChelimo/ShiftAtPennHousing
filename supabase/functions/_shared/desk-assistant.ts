@@ -201,7 +201,7 @@ export function buildCitations(context: readonly RankedChunk[]): Citation[] {
 // resolve any date reference to a NY-local calendar date. Verbatim copy of
 // packages/core/src/desk-assistant/query-classify.ts (Deno cannot import the workspace).
 
-export type DutyTier = 'hmod' | 'rsm' | 'sm' | 'unknown';
+export type DutyTier = 'hmod' | 'rsm' | 'ba' | 'smod' | 'csmod' | 'unknown';
 export type QueryIntent = 'duty_contact' | 'durable_knowledge';
 
 export interface QueryClassification {
@@ -217,7 +217,9 @@ const CONTACT_VERB_RE =
   /\b(contact|call|page|reach|notify|escalate|in charge|responsible|cover(?:ing)?)\b/i;
 const HMOD_RE = /\b(hmod|housing manager on duty|housing manager)\b/i;
 const RSM_RE = /\b(rsm|residential services manager)\b/i;
-const SM_RE = /\b(smod|csmod|student manager|desk manager|\bsm\b)\b/i;
+const BA_RE = /\b(ba|building administrator|building admin)\b/i;
+const CSMOD_RE = /\b(csmod|conferences? manager)\b/i;
+const SMOD_RE = /\b(smod|student manager on duty|student manager|desk manager)\b/i;
 
 const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const DAY_RE = new RegExp(`\\b(${WEEKDAYS.join('|')})\\b`, 'i');
@@ -230,7 +232,9 @@ const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', '
 function detectTier(q: string): DutyTier {
   if (HMOD_RE.test(q)) return 'hmod';
   if (RSM_RE.test(q)) return 'rsm';
-  if (SM_RE.test(q)) return 'sm';
+  if (BA_RE.test(q)) return 'ba';
+  if (CSMOD_RE.test(q)) return 'csmod';
+  if (SMOD_RE.test(q)) return 'smod';
   return 'unknown';
 }
 
@@ -299,7 +303,12 @@ export function resolveAsOfDate(question: string, todayIso: string): string | nu
 export function looksLikeFactAssertion(question: string): boolean {
   const q = question.toLowerCase();
   const namesTier =
-    HMOD_RE.test(q) || RSM_RE.test(q) || SM_RE.test(q) || /\b(hm|bm|contact|manager)\b/i.test(q);
+    HMOD_RE.test(q) ||
+    RSM_RE.test(q) ||
+    BA_RE.test(q) ||
+    CSMOD_RE.test(q) ||
+    SMOD_RE.test(q) ||
+    /\b(hm|bm|contact|manager)\b/i.test(q);
   const assertShape = /\b(is|will be|are|=)\b\s+[a-z][a-z'.-]+/i.test(q) && !/\bwho\b/i.test(q);
   return namesTier && assertShape;
 }

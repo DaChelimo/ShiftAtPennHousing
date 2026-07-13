@@ -71,25 +71,25 @@ fun ComponentGallery(modifier: Modifier = Modifier) {
 
         GroupTitle("Shift cards")
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            ShiftCard(ShiftState.SCHEDULED, "H", "09:00 – 13:00", houseName = "Harnwell", durationLabel = "4h", onClick = {})
+            ShiftCard(ShiftState.SCHEDULED, "H", "09:00 - 13:00", houseName = "Harnwell", durationLabel = "4h", onClick = {})
             ShiftCard(
                 ShiftState.FLOAT_OUT,
                 "Q",
-                "21:00 – 23:00",
+                "21:00 - 23:00",
                 eyebrow = "Today",
                 houseName = "Harnwell",
                 destination = "Quad",
                 durationLabel = "2h",
                 onClick = {},
             )
-            ShiftCard(ShiftState.PENDING_FLOAT, "Q", "21:00 – 23:00", houseName = "Harnwell", destination = "Quad", onClick = {})
-            ShiftCard(ShiftState.PICKUP_HOME, "H", "13:00 – 15:00", houseName = "Harnwell", onClick = {})
-            ShiftCard(ShiftState.FLOAT_IN, "H", "18:00 – 20:00", houseName = "from Quad", onClick = {})
-            ShiftCard(ShiftState.BREAK, "H", "10:00 – 14:00", houseName = "Harnwell", durationLabel = "4h")
-            ShiftCard(ShiftState.ACK, "Q", "21:00 – 23:00", houseName = "Quad")
-            ShiftCard(ShiftState.DROPPED, "H", "15:00 – 17:00", houseName = "Harnwell")
-            ShiftCard(ShiftState.ALLIED, "L", "22:00 – 24:00", houseName = "Lauder")
-            ShiftCard(ShiftState.SCHEDULED, "H", "09:00 – 11:00", houseName = "Harnwell", active = true, onClick = {})
+            ShiftCard(ShiftState.PENDING_FLOAT, "Q", "21:00 - 23:00", houseName = "Harnwell", destination = "Quad", onClick = {})
+            ShiftCard(ShiftState.PICKUP_HOME, "H", "13:00 - 15:00", houseName = "Harnwell", onClick = {})
+            ShiftCard(ShiftState.FLOAT_IN, "H", "18:00 - 20:00", houseName = "from Quad", onClick = {})
+            ShiftCard(ShiftState.BREAK, "H", "10:00 - 14:00", houseName = "Harnwell", durationLabel = "4h")
+            ShiftCard(ShiftState.ACK, "Q", "21:00 - 23:00", houseName = "Quad")
+            ShiftCard(ShiftState.DROPPED, "H", "15:00 - 17:00", houseName = "Harnwell")
+            ShiftCard(ShiftState.ALLIED, "L", "22:00 - 24:00", houseName = "Lauder")
+            ShiftCard(ShiftState.SCHEDULED, "H", "09:00 - 11:00", houseName = "Harnwell", active = true, onClick = {})
         }
 
         GroupTitle("Open shifts")
@@ -97,7 +97,7 @@ fun ComponentGallery(modifier: Modifier = Modifier) {
             OpenShiftCard(
                 ShiftState.OPEN,
                 "H",
-                "16:00 – 18:00",
+                "16:00 - 18:00",
                 eyebrow = "Wed · Jun 3",
                 houseName = "Harnwell",
                 actionLabel = "Claim",
@@ -106,19 +106,19 @@ fun ComponentGallery(modifier: Modifier = Modifier) {
             OpenShiftCard(
                 ShiftState.PERMANENT,
                 "Q",
-                "Every Wed · 18:00 – 20:00",
+                "Every Wed · 18:00 - 20:00",
                 houseName = "Quad",
                 meta = "8 weeks remaining",
                 actionLabel = "Pick up",
                 actionVariant = ButtonVariant.Tonal,
                 onAction = {},
             )
-            OpenShiftCard(ShiftState.UNPICKABLE, "H", "14:00 – 16:00", houseName = "Harnwell", meta = "Locked — within 2h of start")
+            OpenShiftCard(ShiftState.UNPICKABLE, "H", "14:00 - 16:00", houseName = "Harnwell", meta = "Locked — within 2h of start")
         }
 
         GroupTitle("Sections & rows")
         ShiftSection("Picked up", isEmpty = false, count = 1) {
-            ShiftCard(ShiftState.PICKUP_HOME, "H", "13:00 – 15:00", houseName = "Harnwell")
+            ShiftCard(ShiftState.PICKUP_HOME, "H", "13:00 - 15:00", houseName = "Harnwell")
         }
         ShiftSection("Dropped", isEmpty = true) {}
         Column {
@@ -169,7 +169,7 @@ fun ChromeShowcase() {
         topBar = {
             ShiftTopBar(
                 title = "My Shifts",
-                context = "This week · Jun 1 – 7",
+                context = "This week · Jun 1 - 7",
                 avatarInitial = "A",
                 actions = { ShiftIconButton(ShiftIcons.Bell, {}, badgeCount = 2, contentDescription = "Updates") },
             )
@@ -183,8 +183,8 @@ fun ChromeShowcase() {
         },
     ) { padding ->
         Column(Modifier.fillMaxWidth().padding(padding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            ShiftCard(ShiftState.SCHEDULED, "H", "09:00 – 13:00", houseName = "Harnwell", durationLabel = "4h", onClick = {})
-            ShiftCard(ShiftState.FLOAT_OUT, "Q", "21:00 – 23:00", houseName = "Harnwell", destination = "Quad", onClick = {})
+            ShiftCard(ShiftState.SCHEDULED, "H", "09:00 - 13:00", houseName = "Harnwell", durationLabel = "4h", onClick = {})
+            ShiftCard(ShiftState.FLOAT_OUT, "Q", "21:00 - 23:00", houseName = "Harnwell", destination = "Quad", onClick = {})
         }
     }
 }

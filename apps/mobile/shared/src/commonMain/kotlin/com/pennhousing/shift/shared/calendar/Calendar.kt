@@ -25,17 +25,17 @@ import kotlin.time.Instant
  * EXISTING current-week shifts (`MyShift`, the same `worker_my_shifts` snapshot the
  * Shifts screen renders). DATA NOTE: only the current week is exposed (no date-param
  * view) and there is no recurring-template entity, so this builds a single-week
- * agenda — a Mon–Sun strip + a selected-day list with a live "now" line. Arbitrary
+ * agenda — a Mon-Sun strip + a selected-day list with a live "now" line. Arbitrary
  * past/future weeks + the permanent-schedule view are intentionally absent (no data).
  *
  * No I/O, no system clock — `now` is injected. A shift is placed only if it actually
- * falls in [now]'s Mon–Sun week, so cross-week rows (which share a weekday) never
+ * falls in [now]'s Mon-Sun week, so cross-week rows (which share a weekday) never
  * collide on the strip.
  */
 
 const val DAYS_IN_WEEK = 7
 
-/** One Mon–Sun strip cell. [closed] — the worker's home house is closed (§3.4/§11.3). */
+/** One Mon-Sun strip cell. [closed] — the worker's home house is closed (§3.4/§11.3). */
 data class WeekDayCell(
     val index: Int,
     val dayLetter: String,
@@ -99,7 +99,7 @@ private fun mondayOf(
     return date.minus(date.dayOfWeek.ordinal, DateTimeUnit.DAY)
 }
 
-/** The Mon–Sun index of a shift IFF it falls in [monday]'s week, else null (other week). */
+/** The Mon-Sun index of a shift IFF it falls in [monday]'s week, else null (other week). */
 private fun weekDayIndex(
     shift: MyShift,
     monday: LocalDate,
@@ -117,7 +117,7 @@ private fun weekDayIndexOf(
 }
 
 /**
- * The Mon–Sun index (0..6) of [start] IFF it falls in [now]'s NY week, else null —
+ * The Mon-Sun index (0..6) of [start] IFF it falls in [now]'s NY week, else null —
  * the public form the house-schedule builders use to place seats on the strip.
  */
 fun weekDayIndexInWeekOf(
@@ -127,7 +127,7 @@ fun weekDayIndexInWeekOf(
 ): Int? = weekDayIndexOf(start, mondayOf(now, zone), zone)
 
 /**
- * The subset of [shifts] whose start falls in [anchor]'s NY Mon–Sun week — the
+ * The subset of [shifts] whose start falls in [anchor]'s NY Mon-Sun week — the
  * week-scoping the Shifts screen's My-Shifts tab applies so a future-week pickup
  * or drop shows under the week it actually belongs to (and not the current one).
  * DST-safe: the week boundary is derived from [anchor]'s LocalDate, not wall-clock
@@ -144,7 +144,7 @@ fun shiftsInWeekOf(
 }
 
 /**
- * The Mon–Sun strip for [anchor]'s week (default: [now]'s — the current week),
+ * The Mon-Sun strip for [anchor]'s week (default: [now]'s — the current week),
  * with a dot on days that have shifts. [closedDayIndexes] (0=Mon..6=Sun) marks
  * dates the worker's HOME house is closed (§3.4/§11.3 — the backend
  * `house_closure` signal); the cells render the closed treatment. Cross-house
@@ -302,7 +302,7 @@ fun buildCalendarAgenda(
 }
 
 // ===================================================================
-// Week overview — every Mon–Sun day's agenda at once (the DEFAULT calendar view, so
+// Week overview — every Mon-Sun day's agenda at once (the DEFAULT calendar view, so
 // the worker sees the whole week without tapping each day). A vertical list of day
 // sections; the single-day agenda (above) is the per-day drill-in.
 // ===================================================================
@@ -323,7 +323,7 @@ data class CalendarWeekOverview(
 )
 
 /**
- * Build the week overview for [anchor]'s week: each Mon–Sun day's [buildCalendarAgenda]
+ * Build the week overview for [anchor]'s week: each Mon-Sun day's [buildCalendarAgenda]
  * wrapped as a [CalendarDaySection]. The "NOW" line is inserted only in today's section
  * (buildCalendarAgenda already gates it on the date), and only the current week has it at
  * all (a navigated [anchor] has no "today"). Reuses the per-day builder so the agenda
@@ -360,7 +360,7 @@ fun buildCalendarWeekOverview(
 data class WeekOption(
     val offset: Int,
     val label: String, // "This week" / "Next week" / "Last week" / "In N weeks"
-    val rangeLabel: String, // "Jun 8 – Jun 14"
+    val rangeLabel: String, // "Jun 8 - Jun 14"
 )
 
 /** The quick weeks the picker offers (design: last / this / next / +2 / +3). */
@@ -395,7 +395,7 @@ fun weekPickerOptions(
 data class TemplateSlot(
     val dayIndex: Int, // 0=Mon..6=Sun
     val dayLabel: String, // "Mon"
-    val timeLabel: String, // "14:00 – 18:00"
+    val timeLabel: String, // "14:00 - 18:00"
     val durationLabel: String,
     val houseName: String,
     val weeksSeen: Int,

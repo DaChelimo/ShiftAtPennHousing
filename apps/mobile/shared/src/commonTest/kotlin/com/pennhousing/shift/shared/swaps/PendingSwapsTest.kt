@@ -198,7 +198,7 @@ class PendingSwapsTest {
             )
         assertEquals("Swap pending", n.title)
         assertEquals("Shift swap", n.typeLabel)
-        // The shift itself — day + date, start–end time, duration — shown clearly.
+        // The shift itself — day + date, start-end time, duration — shown clearly.
         assertEquals("Sat · Jan 17", n.dayLabel)
         assertEquals("14:00 - 18:00", n.timeLabel)
         assertEquals("4h", n.durationLabel)

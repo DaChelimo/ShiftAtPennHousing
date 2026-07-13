@@ -23,7 +23,7 @@ import kotlin.time.Instant
  * [timeRange]/[dayLabel] are null only for a just-proposed leg whose time isn't known yet.
  */
 data class SwapSide(
-    val timeRange: String?, // "08:00 – 12:00" — the prominent slot
+    val timeRange: String?, // "08:00 - 12:00" — the prominent slot
     val dayLabel: String?, // "Sat · Jun 20" — context (rendered prominently, never squint-small)
     val hours: String, // "4h" / "2h 30m" — computed so the worker never does the math
     /**

@@ -282,7 +282,7 @@ fun roundDownToBlock(instant: Instant): Instant {
 /**
  * §5.2 / decisions #11, #12: a mid-shift drop-from-now floors the gap start to
  * the most recent block boundary ("A drop initiated at 17:51 … produces a gap
- * of 17:30–19:00"); a whole-occurrence drop anchors the gap at the shift start.
+ * of 17:30-19:00"); a whole-occurrence drop anchors the gap at the shift start.
  * `shortNotice` ⇔ the gap starts within 20 minutes of `now` (inclusive).
  */
 fun planTemporaryDrop(
@@ -319,14 +319,14 @@ fun weeklyHours(
 // Open-shift week scoping + past split (UI filter — design, this session).
 //
 // The open feeds are a UI-side week filter: the backend snapshot carries every
-// open shift in the semester, but the worker browses ONE Mon–Sun week at a time
+// open shift in the semester, but the worker browses ONE Mon-Sun week at a time
 // (last week through +4) so they never claim a shift weeks out and forget it. A
 // cross-house pickup is facilitated the same way — the filter is week-only, not
 // house-only, so a Rodin SW can page to next week and claim a DuBois opening.
 // ===================================================================
 
 /**
- * The subset of [openShifts] that belong in [anchor]'s NY Mon–Sun week — the
+ * The subset of [openShifts] that belong in [anchor]'s NY Mon-Sun week — the
  * week-scoping the Open-Shifts tabs apply. WEEKLY (dated) openings are kept only
  * when their start falls in the week; PERMANENT openings recur every week, so they
  * pass through on ANY anchor (they carry their own "weeks remaining" instead). DST-safe
@@ -389,7 +389,7 @@ data class PartialDropPlan(
     val gapEnd: Instant,
     val wholeShift: Boolean,
     val shortNotice: Boolean,
-    val rangeLabel: String, // "17:30 – 19:00"
+    val rangeLabel: String, // "17:30 - 19:00"
     val durationLabel: String, // "1h 30m"
     val gapStartLabel: String, // "17:30"
     val gapEndLabel: String, // "19:00"
@@ -431,7 +431,7 @@ fun planPartialDrop(
 /**
  * The index of the block containing [now] on the shift's own grid, or null when
  * [now] is outside the shift — drives the §5.2 mid-shift "drop from now" quick
- * action ("a drop initiated at 17:51 … produces a gap of 17:30–19:00": index 5 of
+ * action ("a drop initiated at 17:51 … produces a gap of 17:30-19:00": index 5 of
  * a 15:00 shift). Duration arithmetic on instants (invariant #6).
  */
 fun blockIndexAt(
@@ -478,7 +478,7 @@ data class PartialClaimPlan(
     val claimStart: Instant,
     val claimEnd: Instant,
     val wholeShift: Boolean,
-    val rangeLabel: String, // "17:30 – 19:00"
+    val rangeLabel: String, // "17:30 - 19:00"
     val durationLabel: String, // "1h 30m"
     val claimStartLabel: String, // "17:30"
     val claimEndLabel: String, // "19:00"

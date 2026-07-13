@@ -176,7 +176,7 @@ object DemoData {
      */
     fun pendingFloats(now: Instant): List<PendingFloat> {
         // Anchor on a 30-minute boundary so the windows read like real block shifts
-        // (e.g. 18:00 – 20:00), not the wall-clock minute the demo happens to load at.
+        // (e.g. 18:00 - 20:00), not the wall-clock minute the demo happens to load at.
         val base = roundDownToBlock(now)
         return listOf(
             PendingFloat(
@@ -425,7 +425,7 @@ object DemoData {
 
     /**
      * A not-yet-submitted preference period for next week: 7 days × 32 blocks
-     * (08:00–24:00), Wednesday pre-painted (mirrors worker-app.html) so the grid +
+     * (08:00-24:00), Wednesday pre-painted (mirrors worker-app.html) so the grid +
      * the strip "painted" dot show on launch. The period label + deadline are
      * caller-supplied copy — `scheduling_periods` is not worker-readable (flagged).
      */
@@ -438,7 +438,7 @@ object DemoData {
                     PrefBlock(blockId = "d$d-b$i", start = dayStart + (i * 30).minutes)
                 }
             }
-        // Wednesday (index 2): 08:00–10:00 Cannot, 12:00–14:00 + 16:00–19:00 Preferred.
+        // Wednesday (index 2): 08:00-10:00 Cannot, 12:00-14:00 + 16:00-19:00 Preferred.
         val wednesday = mutableMapOf<String, PrefBrush>()
         (0..3).forEach { wednesday["d2-b$it"] = PrefBrush.CANNOT }
         (8..11).forEach { wednesday["d2-b$it"] = PrefBrush.PREFERRED }
@@ -493,7 +493,7 @@ object DemoData {
         }
         for (w in 0 until 3) {
             val mon = week0Mon.plus(w * 7, DateTimeUnit.DAY)
-            seedDay(mon, "w${w}mon", if (w == 0) 4..7 else null) // week 0 Monday: my 10:00–12:00 run
+            seedDay(mon, "w${w}mon", if (w == 0) 4..7 else null) // week 0 Monday: my 10:00-12:00 run
             seedDay(mon.plus(2, DateTimeUnit.DAY), "w${w}wed", null)
         }
         return BreakCalendarSnapshot(
@@ -532,7 +532,7 @@ object DemoData {
 
     /**
      * A deterministic home-house WEEK grid (design `HouseScheduleScreen`): Harnwell, a
-     * two-desk house, with a full Mon–Sun roster — named housemates (with phones — the
+     * two-desk house, with a full Mon-Sun roster — named housemates (with phones — the
      * §11.4 contact lookup), the worker's own "You" blocks, a "You · float-in", a pending
      * floater, and open gaps. Per-30-min seats (the live `house_schedule_grid` shape); the
      * pure builder coalesces them and assigns lanes. The current-week snapshot.
@@ -585,7 +585,7 @@ object DemoData {
                     HEntry(0, 8, 12, "sam"), HEntry(0, 12, 18, "jordan"), HEntry(0, 18, 24, "leo"),
                     HEntry(1, 8, 14, "priya"), HEntry(1, 14, 20, "steve"), HEntry(1, 20, 24, "bob", pending = true),
                 ),
-                // Sat — Harnwell's band is 08:00–24:00 EVERY day (incl. weekends), headcount 2,
+                // Sat — Harnwell's band is 08:00-24:00 EVERY day (incl. weekends), headcount 2,
                 // so the early/late gaps before the first / after the last booked worker are
                 // OPEN seats, not blank — both lanes are filled the whole window.
                 listOf(

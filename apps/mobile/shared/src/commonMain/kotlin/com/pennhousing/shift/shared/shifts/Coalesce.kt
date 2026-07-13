@@ -82,8 +82,8 @@ private fun mergeKey(shift: OpenShift) =
  * when the read model carries CONCURRENT blocks — a multi-staff house (the Quad) has
  * several desks vacant for the same span, so `worker_open_shifts` returns multiple rows
  * with the same start. A sweep treats the second same-start row as an overlap and splits
- * the run, fragmenting 8:00–8:30 + 8:30–9:00 into three cards. Threading instead runs one
- * lane per desk, so two desks open 8:00–9:00 yield two clean 8:00–9:00 lanes (the caller
+ * the run, fragmenting 8:00-8:30 + 8:30-9:00 into three cards. Threading instead runs one
+ * lane per desk, so two desks open 8:00-9:00 yield two clean 8:00-9:00 lanes (the caller
  * then groups them into a single "2 open" card). Non-concurrent input → exactly one lane,
  * identical to the old behaviour. Each lane's items stay in ascending start order.
  *
@@ -138,7 +138,7 @@ fun coalesceMyShifts(blocks: List<MyShift>): List<MyShift> =
  * Permanent openings (§5.1) then get a SECOND collapse: a slot dropped for the rest of the
  * semester is vacant on every remaining week, so `worker_open_shifts` returns one block-run
  * per future occurrence — which the per-span step above renders as N identical "EVERY MON
- * 17:00–18:00 · N weeks remaining" cards (one per week). They describe the SAME recurring
+ * 17:00-18:00 · N weeks remaining" cards (one per week). They describe the SAME recurring
  * slot, and permanent pickup re-derives every week server-side from the slot's house + NY
  * weekday + local HH:MM (see WorkerShiftsRepository.toSlot), so we keep only the earliest
  * occurrence per recurrence identity. Weekly openings carry no recurrence and pass through.

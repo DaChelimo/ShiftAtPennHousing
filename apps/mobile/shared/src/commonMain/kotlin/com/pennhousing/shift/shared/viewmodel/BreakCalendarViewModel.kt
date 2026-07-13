@@ -49,7 +49,7 @@ data class BreakCalendarUiState(
     val optedOut: Boolean,
     /** True on the live build when no break is scheduled — the screen shows the no-break state. */
     val noActiveBreak: Boolean,
-    /** The last drag's human summary ("Claimed 4:00–6:00 · 6:00–8:00 was already full"). */
+    /** The last drag's human summary ("Claimed 4:00-6:00 · 6:00-8:00 was already full"). */
     val lastMessage: String?,
 )
 

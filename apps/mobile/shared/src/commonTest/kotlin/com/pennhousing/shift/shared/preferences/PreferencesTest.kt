@@ -10,7 +10,7 @@ import kotlin.test.assertTrue
 import kotlin.time.Instant
 
 /**
- * Preference-submission presentation (shared) — the Mon–Sun strip, the drag-paint day
+ * Preference-submission presentation (shared) — the Mon-Sun strip, the drag-paint day
  * timeline (bare segments + gutter hours + per-run labels), the target-hours meter, the
  * banner, the submit payload, and the edit-until-deadline + dirty lifecycle, all over an
  * injected period snapshot. Fixtures pin explicit America/New_York offsets (EDT −04:00).
@@ -71,7 +71,7 @@ class PreferencesTest {
         assertEquals(7, strip.cells.size)
         assertEquals(listOf("M", "T", "W", "T", "F", "S", "S"), strip.cells.map { it.dayLetter })
         assertEquals(listOf("8", "9", "10", "11", "12", "13", "14"), strip.cells.map { it.dateLabel })
-        assertEquals("Jun 8 – Jun 14", strip.rangeLabel)
+        assertEquals("Jun 8 - Jun 14", strip.rangeLabel)
         assertTrue(strip.cells[2].selected) // Wed selected
         assertFalse(strip.cells[0].selected)
         assertTrue(strip.cells[2].painted) // Wed has Cannot + Preferred
@@ -97,8 +97,8 @@ class PreferencesTest {
         // 08:00 + 09:00 are on the hour; 08:30 + 09:30 are not.
         assertEquals(listOf(true, false, true, false), day.cells.map { it.isHourStart })
         // The time is accessibility copy, NOT a rendered per-cell label.
-        assertEquals("8:00 AM – 8:30 AM · cannot", day.cells[0].a11yLabel)
-        assertEquals("8:30 AM – 9:00 AM · available", day.cells[1].a11yLabel)
+        assertEquals("8:00 AM - 8:30 AM · cannot", day.cells[0].a11yLabel)
+        assertEquals("8:30 AM - 9:00 AM · available", day.cells[1].a11yLabel)
     }
 
     @Test fun day_view_exposes_hour_marks_aligned_to_hour_boundaries() {
@@ -116,9 +116,9 @@ class PreferencesTest {
         assertEquals(PrefBrush.CANNOT, day.runs[0].brush)
         assertEquals(0, day.runs[0].startBlockIndex)
         assertEquals(1, day.runs[0].blockCount)
-        assertEquals("8:00 – 8:30 AM", day.runs[0].label)
+        assertEquals("8:00 - 8:30 AM", day.runs[0].label)
         assertEquals(PrefBrush.PREFERRED, day.runs[1].brush)
-        assertEquals("9:00 – 9:30 AM", day.runs[1].label)
+        assertEquals("9:00 - 9:30 AM", day.runs[1].label)
     }
 
     @Test fun all_available_day_has_no_runs() {
@@ -137,9 +137,9 @@ class PreferencesTest {
     // ----- range label -----
 
     @Test fun range_label_drops_leading_meridiem_when_shared() {
-        // Same meridiem (AM) → "8:00 – 10:00 AM"; single block → "8:00 – 8:30 AM".
-        assertEquals("8:00 – 10:00 AM", prefRangeLabel(wed, 0, 3))
-        assertEquals("8:00 – 8:30 AM", prefRangeLabel(wed, 0, 0))
+        // Same meridiem (AM) → "8:00 - 10:00 AM"; single block → "8:00 - 8:30 AM".
+        assertEquals("8:00 - 10:00 AM", prefRangeLabel(wed, 0, 3))
+        assertEquals("8:00 - 8:30 AM", prefRangeLabel(wed, 0, 0))
     }
 
     @Test fun range_label_shows_both_meridiems_across_noon() {
@@ -148,7 +148,7 @@ class PreferencesTest {
                 block("x0", "2026-06-10T11:30:00-04:00"),
                 block("x1", "2026-06-10T12:00:00-04:00"),
             )
-        assertEquals("11:30 AM – 12:30 PM", prefRangeLabel(span, 0, 1))
+        assertEquals("11:30 AM - 12:30 PM", prefRangeLabel(span, 0, 1))
     }
 
     // ----- grid painting -----
@@ -258,7 +258,7 @@ class PreferencesTest {
         assertTrue(day.cells.all { it.brush == PrefBrush.PREFERRED })
         assertEquals(4, day.summary.preferred)
         assertEquals(1, day.runs.size)
-        assertEquals("8:00 – 10:00 AM", day.runs[0].label)
+        assertEquals("8:00 - 10:00 AM", day.runs[0].label)
     }
 
     @Test fun viewmodel_paint_range_is_order_independent() {

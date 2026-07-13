@@ -50,17 +50,17 @@ data class ShiftsUiState(
     val otherHouses: OtherHousesTab,
     /** Weeks from the current one (0 = this week) — drives the My-Shifts week header. */
     val weekOffset: Int = 0,
-    /** "Jun 8 – Jun 14" — the shown week's range, for the week header subtitle. */
+    /** "Jun 8 - Jun 14" — the shown week's range, for the week header subtitle. */
     val weekRangeLabel: String = "",
     /** The held hours in the SHOWN week (the "This week — Xh" chip total). */
     val weekHours: Double = 0.0,
     /**
      * Weeks from the current one (0 = this week) — drives the Open-Shifts week header,
      * INDEPENDENT of [weekOffset]. The open feeds ([homeOpen]/[otherHouses]) are scoped to
-     * this week so a worker browses one Mon–Sun at a time (last week through +4).
+     * this week so a worker browses one Mon-Sun at a time (last week through +4).
      */
     val openWeekOffset: Int = 0,
-    /** "Jun 8 – Jun 14" — the Open-Shifts shown week's range, for its week header. */
+    /** "Jun 8 - Jun 14" — the Open-Shifts shown week's range, for its week header. */
     val openWeekRangeLabel: String = "",
 )
 
@@ -104,7 +104,7 @@ class ShiftsScreenViewModel(
         // run into one displayed card carrying its constituent blockIds.
         val anchor = shiftWeekAnchor(now, weekOffset)
         // My Shifts is scoped to its shown week; the open feeds are scoped to THEIR own
-        // (independent) week so a worker browses one Mon–Sun at a time — permanent openings
+        // (independent) week so a worker browses one Mon-Sun at a time — permanent openings
         // recur and pass through every week (see openShiftsInWeekOf).
         val weekShifts = shiftsInWeekOf(workerShifts, anchor)
         val openAnchor = shiftWeekAnchor(now, openWeekOffset)

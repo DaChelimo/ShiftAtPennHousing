@@ -76,7 +76,7 @@ data class FloatAck(
 /**
  * A float assignment awaiting THIS worker's acknowledgment (§7.1) — the source for
  * the My-Shifts float-request carousel AND the ack hero. Unlike [FloatAck] it carries
- * the full destination WINDOW (start AND end) so the card can show "18:00 – 20:00",
+ * the full destination WINDOW (start AND end) so the card can show "18:00 - 20:00",
  * not just a start. Resolved from the bounded `worker_pending_floats` view, so it is
  * immune to the personal-calendar read's 1000-row cap.
  */

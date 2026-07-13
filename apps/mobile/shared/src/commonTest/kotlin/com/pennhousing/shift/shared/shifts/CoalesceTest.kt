@@ -51,7 +51,7 @@ class CoalesceTest {
     // ----- MyShift merging -----
 
     @Test fun contiguous_same_shift_blocks_merge_into_one_card_carrying_all_block_ids() {
-        val eightBlocks = blocks("2026-01-15T12:00:00-05:00", 8) // 12:00–16:00
+        val eightBlocks = blocks("2026-01-15T12:00:00-05:00", 8) // 12:00-16:00
         val merged = coalesceMyShifts(eightBlocks.shuffled())
         assertEquals(1, merged.size)
         val card = merged.single()
@@ -62,8 +62,8 @@ class CoalesceTest {
     }
 
     @Test fun a_gap_splits_the_run_into_separate_cards() {
-        val first = blocks("2026-01-15T12:00:00-05:00", 2, "a") // 12:00–13:00
-        val second = blocks("2026-01-15T14:00:00-05:00", 2, "z") // 14:00–15:00 (13:00–14:00 gap)
+        val first = blocks("2026-01-15T12:00:00-05:00", 2, "a") // 12:00-13:00
+        val second = blocks("2026-01-15T14:00:00-05:00", 2, "z") // 14:00-15:00 (13:00-14:00 gap)
         val merged = coalesceMyShifts(first + second)
         assertEquals(2, merged.size)
         assertEquals(listOf("a-0", "a-1"), merged[0].blockIds)
@@ -100,8 +100,8 @@ class CoalesceTest {
     }
 
     @Test fun spring_forward_gap_is_contiguous_on_instants() {
-        // 2026-03-08: 02:00 EST jumps to 03:00 EDT. Blocks 01:30–02:00 EST and
-        // 03:00–03:30 EDT are adjacent INSTANTS (07:00Z boundary) → one 1h card.
+        // 2026-03-08: 02:00 EST jumps to 03:00 EDT. Blocks 01:30-02:00 EST and
+        // 03:00-03:30 EDT are adjacent INSTANTS (07:00Z boundary) → one 1h card.
         val a = MyShift("dst-a", harnwell, at("2026-03-08T01:30:00-05:00"), at("2026-03-08T03:00:00-04:00"), AssignmentKind.SCHEDULED)
         val b = MyShift("dst-b", harnwell, at("2026-03-08T03:00:00-04:00"), at("2026-03-08T03:30:00-04:00"), AssignmentKind.SCHEDULED)
         val merged = coalesceMyShifts(listOf(a, b))
@@ -179,7 +179,7 @@ class CoalesceTest {
     }
 
     @Test fun concurrent_desks_at_a_multi_staff_house_collapse_into_one_card_with_a_count() {
-        // The Quad has two desks both vacant 10:00–11:00 (two 30-min blocks each). The
+        // The Quad has two desks both vacant 10:00-11:00 (two 30-min blocks each). The
         // read model returns one row per desk-block, so without lane threading these
         // fragment; they must collapse into ONE "2 open" card spanning the full hour,
         // carrying one representative lane's block ids (claiming consumes one desk).
@@ -194,7 +194,7 @@ class CoalesceTest {
     }
 
     @Test fun concurrent_desks_of_different_spans_stay_separate_count_one_cards() {
-        // Desk A open 10:00–11:00, desk B open only 10:00–10:30. Different spans → two
+        // Desk A open 10:00-11:00, desk B open only 10:00-10:30. Different spans → two
         // separate count-1 cards, sorted by start then end (the shorter first).
         val deskA = openBlocks("2026-01-15T10:00:00-05:00", 2, "a", house = quad, homeHouse = false)
         val deskB = openBlocks("2026-01-15T10:00:00-05:00", 1, "b", house = quad, homeHouse = false)
@@ -227,7 +227,7 @@ class CoalesceTest {
         // A slot dropped for the rest of the semester is vacant on every remaining week:
         // worker_open_shifts returns one block-run per future occurrence (same house, same
         // NY weekday, same HH:MM), so the per-span step yields N identical "EVERY MON
-        // 17:00–18:00 · N weeks remaining" cards. They name the SAME recurring slot — collapse
+        // 17:00-18:00 · N weeks remaining" cards. They name the SAME recurring slot — collapse
         // to ONE card, keeping the earliest occurrence (pickup re-derives all weeks).
         val mondays =
             listOf(

@@ -33,7 +33,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlin.time.Instant
 
 /**
- * WEEK = the whole-week overview (the DEFAULT — every Mon–Sun day's agenda at once);
+ * WEEK = the whole-week overview (the DEFAULT — every Mon-Sun day's agenda at once);
  * DAY = a single selected day's agenda (the per-day drill-in); TEMPLATE = the derived
  * recurring typical week (D5).
  */
@@ -44,7 +44,7 @@ data class CalendarUiState(
     val selectedDayIndex: Int,
     /** The selected day's agenda — the DAY view, and the drill-in target from the overview. */
     val agenda: CalendarAgenda,
-    /** Every Mon–Sun day's agenda — populated only in [CalendarMode.WEEK]. */
+    /** Every Mon-Sun day's agenda — populated only in [CalendarMode.WEEK]. */
     val weekOverview: CalendarWeekOverview? = null,
     /** Weeks from the current one (0 = this week) — drives the header label (T3b-4). */
     val weekOffset: Int = 0,

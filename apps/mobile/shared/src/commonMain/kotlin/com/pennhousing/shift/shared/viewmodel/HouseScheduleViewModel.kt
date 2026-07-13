@@ -21,7 +21,7 @@ data class HouseScheduleUiState(
     val houseName: String,
     val deskPhone: String?,
     val weekOffset: Int,
-    val weekRange: String, // "Jun 1 – Jun 7"
+    val weekRange: String, // "Jun 1 - Jun 7"
     val weekRelative: String, // "This week" / "Last week" / "Next week" / "In 2 weeks"
     /** The shown week's NY anchor — the host passes it to `fetchHouseGridForWeek`. */
     val anchor: Instant,
@@ -29,7 +29,7 @@ data class HouseScheduleUiState(
     val canNextWeek: Boolean,
     /** The pickable weeks (last week … +4) for the week-picker sheet. */
     val weekOptions: List<WeekOption>,
-    /** The Excel-style grid for the shown week (time rail + Mon–Sun day columns). */
+    /** The Excel-style grid for the shown week (time rail + Mon-Sun day columns). */
     val grid: HouseGridWeek,
     /** True while the host is (re)fetching this week's grid — the columns are empty until it lands. */
     val loadingWeek: Boolean,

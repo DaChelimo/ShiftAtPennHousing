@@ -49,13 +49,13 @@ class PartialClaimTest {
     }
 
     @Test fun sub_range_selects_the_contiguous_run_with_labels() {
-        val shift = opening("2026-01-15T15:00:00-05:00", 8) // 15:00–19:00
-        val plan = planPartialClaim(shift, 1, 4) // 15:30–17:00
+        val shift = opening("2026-01-15T15:00:00-05:00", 8) // 15:00-19:00
+        val plan = planPartialClaim(shift, 1, 4) // 15:30-17:00
         assertFalse(plan.wholeShift)
         assertEquals(listOf("o-1", "o-2", "o-3"), plan.blockIds)
         assertEquals(at("2026-01-15T15:30:00-05:00"), plan.claimStart)
         assertEquals(at("2026-01-15T17:00:00-05:00"), plan.claimEnd)
-        assertEquals("15:30 – 17:00", plan.rangeLabel)
+        assertEquals("15:30 - 17:00", plan.rangeLabel)
         assertEquals("1h 30m", plan.durationLabel)
         assertEquals("15:30", plan.claimStartLabel)
         assertEquals("17:00", plan.claimEndLabel)

@@ -57,12 +57,12 @@ fun formatBlockTime(
     return pad2(ldt.hour) + ":" + pad2(ldt.minute)
 }
 
-/** "HH:mm – HH:mm" (en dash). */
+/** "HH:mm - HH:mm" (en dash). */
 fun formatTimeRange(
     start: Instant,
     end: Instant,
     zone: TimeZone = NEW_YORK,
-): String = formatBlockTime(start, zone) + " – " + formatBlockTime(end, zone)
+): String = formatBlockTime(start, zone) + " - " + formatBlockTime(end, zone)
 
 /** "Wed · Jun 3" — day-of-week + short month + day, NY-anchored. */
 fun formatDayLabel(

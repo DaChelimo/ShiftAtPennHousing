@@ -79,7 +79,7 @@ class OpenShiftPresentationTest {
         assertEquals(OpenShiftCardState.OPEN, r.state)
         assertEquals("Harnwell", r.houseName)
         assertEquals("H", r.houseInitial)
-        assertEquals("14:00 – 16:00", r.timeLabel)
+        assertEquals("14:00 - 16:00", r.timeLabel)
         assertEquals("Thu · Jan 15", r.dayLabel)
         assertEquals("2h", r.durationLabel)
         assertNull(r.meta)

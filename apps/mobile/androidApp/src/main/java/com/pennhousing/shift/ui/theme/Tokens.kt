@@ -91,7 +91,7 @@ object Elevation {
 /**
  * Motion tokens. Durations in ms; easings reproduce the two named curves from the
  * export: the iOS sheet/dialog curve and the success-pop overshoot. Micro-motion
- * sits in the brief's 120–160ms band.
+ * sits in the brief's 120-160ms band.
  */
 @Immutable
 object Motion {

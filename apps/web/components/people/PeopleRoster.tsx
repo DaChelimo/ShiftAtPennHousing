@@ -11,6 +11,7 @@ const ROLE_META: Record<AppRole, { short: string; full: string; kind: TagKind }>
   hm: { short: 'HM', full: 'Housing Manager', kind: 'purple' },
   rsm: { short: 'RSM', full: 'Residential Services Manager', kind: 'magenta' },
   bm: { short: 'BM', full: 'Building Manager', kind: 'teal' },
+  admin: { short: 'ADM', full: 'Administrator', kind: 'gray' },
 };
 
 const ROLE_ORDER: AppRole[] = ['bm', 'hm', 'rsm', 'sm', 'sw'];

@@ -10,7 +10,7 @@ import kotlin.time.Instant
 
 /**
  * House schedule (§11.4, T3b) — the Excel-style WEEK GRID: per-block seats placed on
- * the Mon–Sun strip, coalesced into positioned blocks, lane-assigned for concurrent
+ * the Mon-Sun strip, coalesced into positioned blocks, lane-assigned for concurrent
  * desks, with the "You" treatment and the contact fields the full-directory ruling
  * unlocked. Fixtures pin EST -05:00; now is Thu 2026-01-15 14:00 ET (week Mon 01-12 ..
  * Sun 01-18; Thu = index 3).
@@ -51,13 +51,13 @@ class HouseScheduleTest {
     // ----- block placement + coalescing -----
 
     @Test fun contiguous_same_worker_seats_coalesce_into_one_block_with_contact() {
-        // 4h Thu run (14:00–18:00) arrives as 8 per-30-min seats → one positioned block.
+        // 4h Thu run (14:00-18:00) arrives as 8 per-30-min seats → one positioned block.
         val grid = buildHouseGridWeek(seats("a", "2026-01-15T14:00:00-05:00", 8), now, me)
         val block = grid.days[3].blocks.single()
         assertEquals("a-0", block.id)
         assertEquals(14 * 60, block.startMin)
         assertEquals(18 * 60, block.endMin)
-        assertEquals("14:00 – 18:00", block.timeLabel)
+        assertEquals("14:00 - 18:00", block.timeLabel)
         assertEquals("Worker a", block.workerLabel)
         assertEquals("+1a", block.workerPhone) // §11.4 contact (full-directory ruling)
         assertTrue(block.active) // 14:00 ≤ now < 18:00
@@ -72,11 +72,11 @@ class HouseScheduleTest {
     }
 
     @Test fun end_of_day_block_renders_as_24_00() {
-        val grid = buildHouseGridWeek(seats("a", "2026-01-15T20:00:00-05:00", 8), now, me) // 20:00–24:00
+        val grid = buildHouseGridWeek(seats("a", "2026-01-15T20:00:00-05:00", 8), now, me) // 20:00-24:00
         val block = grid.days[3].blocks.single()
         assertEquals(20 * 60, block.startMin)
         assertEquals(24 * 60, block.endMin)
-        assertEquals("20:00 – 24:00", block.timeLabel)
+        assertEquals("20:00 - 24:00", block.timeLabel)
     }
 
     @Test fun concurrent_workers_get_separate_lanes() {
@@ -91,8 +91,8 @@ class HouseScheduleTest {
     }
 
     @Test fun sequential_blocks_on_one_desk_share_lane_zero() {
-        val morning = seats("a", "2026-01-15T08:00:00-05:00", 8) // 08:00–12:00
-        val afternoon = seats("b", "2026-01-15T12:00:00-05:00", 8, name = "Two", userId = "u-two") // 12:00–16:00
+        val morning = seats("a", "2026-01-15T08:00:00-05:00", 8) // 08:00-12:00
+        val afternoon = seats("b", "2026-01-15T12:00:00-05:00", 8, name = "Two", userId = "u-two") // 12:00-16:00
         val grid = buildHouseGridWeek(morning + afternoon, now, me)
         assertEquals(1, grid.days[3].laneCount)
         assertTrue(grid.days[3].blocks.all { it.lane == 0 })
@@ -109,9 +109,9 @@ class HouseScheduleTest {
     }
 
     @Test fun concurrent_vacant_seats_coalesce_into_separate_full_open_blocks() {
-        // Harnwell-style under-coverage: two empty desks over the SAME 08:00–10:00 window
+        // Harnwell-style under-coverage: two empty desks over the SAME 08:00-10:00 window
         // arrive as two sets of 4 vacant 30-min seats (all sharing the one "open" key). They
-        // must become TWO clean 08:00–10:00 "Open" blocks (one per lane), NOT eight half-hour
+        // must become TWO clean 08:00-10:00 "Open" blocks (one per lane), NOT eight half-hour
         // fragments — the "aggregate every contiguous empty 30-min chunk" contract.
         val deskA = seats("va", "2026-01-15T08:00:00-05:00", 4, vacant = true)
         val deskB = seats("vb", "2026-01-15T08:00:00-05:00", 4, vacant = true)
@@ -125,8 +125,8 @@ class HouseScheduleTest {
     }
 
     @Test fun a_vacant_seat_concurrent_with_a_worker_stays_its_own_open_block() {
-        // One desk worked, one desk empty, same 14:00–16:00 span → a filled block + a full
-        // 14:00–16:00 Open block side by side (the open half mustn't fragment or merge).
+        // One desk worked, one desk empty, same 14:00-16:00 span → a filled block + a full
+        // 14:00-16:00 Open block side by side (the open half mustn't fragment or merge).
         val worked = seats("a", "2026-01-15T14:00:00-05:00", 4, name = "Maya", userId = "u-maya")
         val empty = seats("v", "2026-01-15T14:00:00-05:00", 4, vacant = true)
         val grid = buildHouseGridWeek(worked + empty, now, me)
@@ -180,7 +180,7 @@ class HouseScheduleTest {
         assertEquals("+1 215 555 0142", s.deskPhone)
         assertEquals(0, s.weekOffset)
         assertEquals("This week", s.weekRelative)
-        assertEquals("Jan 12 – Jan 18", s.weekRange)
+        assertEquals("Jan 12 - Jan 18", s.weekRange)
         assertFalse(s.loadingWeek) // seeded for week 0
         assertEquals(1, s.grid.days[3].blocks.size)
     }

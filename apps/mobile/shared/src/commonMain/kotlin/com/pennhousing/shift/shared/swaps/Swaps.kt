@@ -13,7 +13,7 @@ import kotlinx.datetime.TimeZone
 import kotlin.time.Instant
 
 /*
- * Swap initiation (§8.1–§8.4, D2–D4) — PURE decision/presentation logic for
+ * Swap initiation (§8.1-§8.4, D2-D4) — PURE decision/presentation logic for
  * proposing a swap from a My-Shifts card. The server (`create-swap` EF +
  * `packages/core` eligibility) stays AUTHORITATIVE for §8 eligibility, pending
  * conflicts and expiry; this layer only decides which proposal kinds a card can
@@ -223,7 +223,7 @@ data class SwapSpanSelection(
     val start: Instant,
     val end: Instant,
     val dayLabel: String, // "Thu · Jan 15" — day-of-week + date of the span
-    val rangeLabel: String, // "14:00 – 15:00"
+    val rangeLabel: String, // "14:00 - 15:00"
     val durationLabel: String, // "1h"
     val wholeSpan: Boolean,
 )
@@ -378,7 +378,7 @@ data class SwapSegment(
     val to: Int, // exclusive
     val locked: Boolean,
     val active: Boolean,
-    val rangeLabel: String, // "12:00 – 4:00pm"
+    val rangeLabel: String, // "12:00 - 4:00pm"
     val note: String?, // locked → its [ReservedRun.note]; else null
 )
 

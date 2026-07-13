@@ -16,7 +16,7 @@ import kotlin.time.Instant
  * card stack on My Shifts that lets a worker Accept/Decline each outstanding float
  * without digging through Updates. One card per pending float, SORTED closest-start
  * first (the soonest shift demands the soonest answer). Each card carries the full
- * destination window so it reads "18:00 – 20:00", not the demo-float "starts in 2h"
+ * destination window so it reads "18:00 - 20:00", not the demo-float "starts in 2h"
  * guess that the old worker_my_shifts lookup fell back to.
  *
  * No I/O, no system clock — `now` is injected (the load instant), matching every
@@ -30,7 +30,7 @@ data class FloatRequestCard(
     val destinationName: String,
     /** "Today" or "Thu · Jun 25". */
     val whenLabel: String,
-    /** "18:00 – 20:00" (NY, 24h, en dash). */
+    /** "18:00 - 20:00" (NY, 24h, en dash). */
     val rangeLabel: String,
     /** "2h" / "2h 30m". */
     val durationLabel: String,

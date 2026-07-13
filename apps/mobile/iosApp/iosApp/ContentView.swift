@@ -1730,7 +1730,7 @@ struct ShiftsRootView: View {
     private static let houseColPad: CGFloat = 6
     private static let houseColGap: CGFloat = 6
 
-    /// The home-house schedule as a week grid: a fixed left time rail + Mon–Sun day
+    /// The home-house schedule as a week grid: a fixed left time rail + Mon-Sun day
     /// columns that scroll sideways (the rail stays put), concurrent desks side-by-side.
     /// The week navigator (last week … +4) pages the grid; tapping a staffed block opens
     /// the contact sheet — the "who do I swap with" affordance.
@@ -1963,7 +1963,7 @@ struct ShiftsRootView: View {
         .accessibilityIdentifier("house_time_rail")
     }
 
-    /// One Mon–Sun header cell (day + date), highlighted when it is today.
+    /// One Mon-Sun header cell (day + date), highlighted when it is today.
     private func houseDayHeader(_ day: HouseGridDay, _ colW: CGFloat, _ c: ShiftColors) -> some View {
         VStack(spacing: 0) {
             Text(day.dayLabel).font(ShiftFont.sans(11, .semibold)).foregroundColor(day.isToday ? c.blue : c.ter)
@@ -2179,7 +2179,7 @@ struct ShiftsRootView: View {
             // The whole-week overview is the default; the Day segment drills into a single day.
             calendarViewToggle(st.mode, c)
             if st.mode == .day {
-                // The Mon–Sun day picker only makes sense in Day mode (Week mode already
+                // The Mon-Sun day picker only makes sense in Day mode (Week mode already
                 // shows every day in the overview), so it expands in / out with the mode.
                 weekStrip(st.week, Int(st.selectedDayIndex), c)
                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -2332,7 +2332,7 @@ struct ShiftsRootView: View {
         .buttonStyle(.plain)
     }
 
-    /// The whole-week overview (default calendar view): every Mon–Sun day as a section —
+    /// The whole-week overview (default calendar view): every Mon-Sun day as a section —
     /// its header + agenda rows, empty days shown compactly. The NOW line appears only in
     /// today's section (the shared builder gates it).
     private func calendarWeekOverview(_ overview: CalendarWeekOverview?, _ c: ShiftColors) -> some View {
@@ -3035,7 +3035,7 @@ private struct DropFlowSheet: View {
     }
 
     /// The §5.2 "How much to drop" block-range selector (T2-11): a two-thumb range slider
-    /// over the card's 30-min block boundaries with a live "17:30 – 19:00 · 1h 30m"
+    /// over the card's 30-min block boundaries with a live "17:30 - 19:00 · 1h 30m"
     /// summary, plus the mid-shift "From now" quick action. Defaults to the whole shift.
     private func dropRangeSelector(_ plan: PartialDropPlan, _ c: ShiftColors, showFromNow: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -3082,7 +3082,7 @@ private struct PendingSwapLegUI: Identifiable {
     let takeLabel: String
 }
 
-/// The swap-proposal sheet (§8.1–§8.4 + DESIGN §6): pick the kind, the counterparty, and
+/// The swap-proposal sheet (§8.1-§8.4 + DESIGN §6): pick the kind, the counterparty, and
 /// — for temporary swaps — which contiguous hours to give/take (§8.1 partial). "Add another
 /// person" builds INDEPENDENT legs (decision 2026-06-15). The server (`create-swap`) stays
 /// authoritative; each leg is fired as its own proposal.
@@ -3521,7 +3521,7 @@ private struct SwapDecisionSheetView: View {
 /// The "swap pending" notice for an OUTGOING swap, opened by tapping a flagged My-Shifts
 /// card. The shift is tied up in a swap the worker proposed, so it can't be dropped or
 /// swapped again — instead of the drop sheet (which the server would reject with a generic
-/// error) this shows the shift clearly (day · date, start–end, duration), explains the wait,
+/// error) this shows the shift clearly (day · date, start-end, duration), explains the wait,
 /// and offers Cancel (void the swap) or Keep waiting. The corner ✕ and "Keep waiting" both
 /// just minimise the card.
 private struct PendingSwapNoticeSheetView: View {
@@ -3534,7 +3534,7 @@ private struct PendingSwapNoticeSheetView: View {
         let c = ShiftColors.resolve(scheme)
         ShiftSheet(title: notice.title, onClose: onClose) {
             VStack(alignment: .leading, spacing: 12) {
-                // The shift itself — day · date, the start–end time, the duration.
+                // The shift itself — day · date, the start-end time, the duration.
                 VStack(alignment: .leading, spacing: 4) {
                     Text(notice.dayLabel).font(ShiftFont.sans(13.5, .semibold)).foregroundColor(c.ink)
                     HStack(spacing: 8) {
@@ -3573,7 +3573,7 @@ private struct PendingSwapNoticeSheetView: View {
     }
 }
 
-/// The calendar swap sheet: a pinned "give" (the tapped shift), a week navigator + Mon–Sun
+/// The calendar swap sheet: a pinned "give" (the tapped shift), a week navigator + Mon-Sun
 /// strip, and the selected day's housemate cards to "take". Cross-week + retroactive fall
 /// out of week paging; the give persists across weeks. Whole-run swaps in v1.
 private struct SwapCalendarSheetView: View {
@@ -3781,7 +3781,7 @@ private struct SwapCalendarSheetView: View {
 
     /// A labelled 30-min range slider that reads its position from VM state and writes back
     /// through [set] (computed bindings — the VM stays the single source of truth).
-    /// A prominent give/take duration control: the picked span's live "10:00–12:00 · 2h"
+    /// A prominent give/take duration control: the picked span's live "10:00-12:00 · 2h"
     /// label over a stepped 30-min range slider. Used for the give-shift trim (above the
     /// calendar) and the take-hours trim (under the picked person).
     private func giveRangeCard(_ title: String, card: SwapDayCard, count: Int, from: Int, to: Int,

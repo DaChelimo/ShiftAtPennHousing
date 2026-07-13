@@ -811,7 +811,7 @@ class WorkerShiftsRepository(
         }.getOrDefault(emptyList())
 
     /**
-     * Propose a swap (§8.1–§8.4, D2/D3) → the `create-swap` Edge Function. The
+     * Propose a swap (§8.1-§8.4, D2/D3) → the `create-swap` Edge Function. The
      * SERVER is authoritative for §8 eligibility (the packages/core module),
      * ownership, pending-swap conflicts, break-profile guards and expiry; this
      * just maps the picked proposal to the EF body. A permanent swap names the

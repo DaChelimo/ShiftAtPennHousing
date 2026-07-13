@@ -19,7 +19,7 @@ class FloatCarouselTest {
     private val dubois = House("dubois", "DuBois")
     private val harnwell = House("harnwell", "Harnwell")
 
-    // DuBois 18:00–20:00, Harnwell 15:30–18:00 (both Thu 2026-01-15).
+    // DuBois 18:00-20:00, Harnwell 15:30-18:00 (both Thu 2026-01-15).
     private val later = PendingFloat("f-later", dubois, at("2026-01-15T18:00:00-05:00"), at("2026-01-15T20:00:00-05:00"), 4)
     private val sooner = PendingFloat("f-sooner", harnwell, at("2026-01-15T15:30:00-05:00"), at("2026-01-15T18:00:00-05:00"), 5)
 
@@ -85,7 +85,7 @@ class FloatCarouselTest {
 
     @Test
     fun in_progress_float_reads_starting_now() {
-        // now is inside the Harnwell window (15:30–18:00).
+        // now is inside the Harnwell window (15:30-18:00).
         val now = at("2026-01-15T16:00:00-05:00")
         val c = buildFloatRequestCards(listOf(sooner), now).single()
         assertEquals("Starting now", c.startsInLabel)

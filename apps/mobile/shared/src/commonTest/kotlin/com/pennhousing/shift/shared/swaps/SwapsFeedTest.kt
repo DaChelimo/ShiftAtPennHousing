@@ -79,8 +79,8 @@ class SwapsFeedTest {
         assertEquals("4h", t.give?.hours)
         assertEquals("4h", t.get?.hours)
         // Time slot is the hero — present + computed for both sides.
-        assertEquals("14:00 – 18:00", t.give?.timeRange) // counterparty span (mine)
-        assertEquals("09:00 – 13:00", t.get?.timeRange) // initiator span (theirs)
+        assertEquals("14:00 - 18:00", t.give?.timeRange) // counterparty span (mine)
+        assertEquals("09:00 - 13:00", t.get?.timeRange) // initiator span (theirs)
         assertNotNull(t.give?.dayLabel)
         assertEquals("Needs your response", t.directionLabel)
         assertEquals("Permanent swap", feed.incoming.single { it.swapId == "p" }.typeLabel)

@@ -39,26 +39,26 @@ struct ShiftComponentGallery: View {
 
                 group("Shift cards")
                 VStack(spacing: 8) {
-                    ShiftCard(state: .scheduled, houseInitial: "H", timeLabel: "09:00 – 13:00", houseName: "Harnwell", durationLabel: "4h", onTap: {})
-                    ShiftCard(state: .floatOut, houseInitial: "Q", timeLabel: "21:00 – 23:00", eyebrow: "Today", houseName: "Harnwell", destination: "Quad", durationLabel: "2h", onTap: {})
-                    ShiftCard(state: .pendingFloat, houseInitial: "Q", timeLabel: "21:00 – 23:00", houseName: "Harnwell", destination: "Quad", onTap: {})
-                    ShiftCard(state: .pickupHome, houseInitial: "H", timeLabel: "13:00 – 15:00", houseName: "Harnwell", onTap: {})
-                    ShiftCard(state: .floatIn, houseInitial: "H", timeLabel: "18:00 – 20:00", houseName: "from Quad", onTap: {})
-                    ShiftCard(state: .breakShift, houseInitial: "H", timeLabel: "10:00 – 14:00", houseName: "Harnwell", durationLabel: "4h")
-                    ShiftCard(state: .ack, houseInitial: "Q", timeLabel: "21:00 – 23:00", houseName: "Quad")
-                    ShiftCard(state: .dropped, houseInitial: "H", timeLabel: "15:00 – 17:00", houseName: "Harnwell")
+                    ShiftCard(state: .scheduled, houseInitial: "H", timeLabel: "09:00 - 13:00", houseName: "Harnwell", durationLabel: "4h", onTap: {})
+                    ShiftCard(state: .floatOut, houseInitial: "Q", timeLabel: "21:00 - 23:00", eyebrow: "Today", houseName: "Harnwell", destination: "Quad", durationLabel: "2h", onTap: {})
+                    ShiftCard(state: .pendingFloat, houseInitial: "Q", timeLabel: "21:00 - 23:00", houseName: "Harnwell", destination: "Quad", onTap: {})
+                    ShiftCard(state: .pickupHome, houseInitial: "H", timeLabel: "13:00 - 15:00", houseName: "Harnwell", onTap: {})
+                    ShiftCard(state: .floatIn, houseInitial: "H", timeLabel: "18:00 - 20:00", houseName: "from Quad", onTap: {})
+                    ShiftCard(state: .breakShift, houseInitial: "H", timeLabel: "10:00 - 14:00", houseName: "Harnwell", durationLabel: "4h")
+                    ShiftCard(state: .ack, houseInitial: "Q", timeLabel: "21:00 - 23:00", houseName: "Quad")
+                    ShiftCard(state: .dropped, houseInitial: "H", timeLabel: "15:00 - 17:00", houseName: "Harnwell")
                 }
 
                 group("Open shifts")
                 VStack(spacing: 8) {
-                    OpenShiftCard(state: .open, houseInitial: "H", timeLabel: "16:00 – 18:00", eyebrow: "Wed · Jun 3", houseName: "Harnwell", actionLabel: "Claim", onAction: {})
-                    OpenShiftCard(state: .permanent, houseInitial: "Q", timeLabel: "Every Wed · 18:00 – 20:00", houseName: "Quad", meta: "8 weeks remaining", actionLabel: "Pick up", actionVariant: .tonal, onAction: {})
-                    OpenShiftCard(state: .unpickable, houseInitial: "H", timeLabel: "14:00 – 16:00", houseName: "Harnwell", meta: "Locked — within 2h of start")
+                    OpenShiftCard(state: .open, houseInitial: "H", timeLabel: "16:00 - 18:00", eyebrow: "Wed · Jun 3", houseName: "Harnwell", actionLabel: "Claim", onAction: {})
+                    OpenShiftCard(state: .permanent, houseInitial: "Q", timeLabel: "Every Wed · 18:00 - 20:00", houseName: "Quad", meta: "8 weeks remaining", actionLabel: "Pick up", actionVariant: .tonal, onAction: {})
+                    OpenShiftCard(state: .unpickable, houseInitial: "H", timeLabel: "14:00 - 16:00", houseName: "Harnwell", meta: "Locked — within 2h of start")
                 }
 
                 group("Sections & rows")
                 ShiftSection(title: "Picked up", isEmpty: false, count: 1) {
-                    ShiftCard(state: .pickupHome, houseInitial: "H", timeLabel: "13:00 – 15:00", houseName: "Harnwell")
+                    ShiftCard(state: .pickupHome, houseInitial: "H", timeLabel: "13:00 - 15:00", houseName: "Harnwell")
                 }
                 ShiftSection(title: "Dropped", isEmpty: true) { EmptyView() }
                 VStack(spacing: 0) {
@@ -112,14 +112,14 @@ struct ShiftChromeShowcase: View {
             VStack(spacing: 0) {
                 ShiftLargeHeader(
                     title: "My Shifts",
-                    context: "This week · Jun 1 – 7",
+                    context: "This week · Jun 1 - 7",
                     avatarInitial: "A",
                     trailing: AnyView(ShiftIconButton(systemIcon: ShiftIcons.bell, action: {}, badgeCount: 2))
                 )
                 ScrollView {
                     VStack(spacing: 8) {
-                        ShiftCard(state: .scheduled, houseInitial: "H", timeLabel: "09:00 – 13:00", houseName: "Harnwell", durationLabel: "4h", onTap: {})
-                        ShiftCard(state: .floatOut, houseInitial: "Q", timeLabel: "21:00 – 23:00", houseName: "Harnwell", destination: "Quad", onTap: {})
+                        ShiftCard(state: .scheduled, houseInitial: "H", timeLabel: "09:00 - 13:00", houseName: "Harnwell", durationLabel: "4h", onTap: {})
+                        ShiftCard(state: .floatOut, houseInitial: "Q", timeLabel: "21:00 - 23:00", houseName: "Harnwell", destination: "Quad", onTap: {})
                     }
                     .padding(16)
                 }

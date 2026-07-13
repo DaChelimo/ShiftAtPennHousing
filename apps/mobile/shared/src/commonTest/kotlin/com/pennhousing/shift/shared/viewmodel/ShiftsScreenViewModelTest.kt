@@ -206,7 +206,7 @@ class ShiftsScreenViewModelTest {
 
     @Test
     fun tab3CollapsesConcurrentMultiStaffOpeningsIntoOneCardWithCount() {
-        // Quad (multi-staff) has two desks both vacant 13:00–14:00; the read model returns
+        // Quad (multi-staff) has two desks both vacant 13:00-14:00; the read model returns
         // one row per desk-block. Tab 3 must show ONE "2 open" card, not fragments.
         val s = at("2026-01-15T13:00:00-05:00")
         fun desk(prefix: String) =
@@ -282,7 +282,7 @@ class ShiftsScreenViewModelTest {
 
     @Test
     fun viewModelClaimCapDerivesAddedHoursFromTheShiftSpan() {
-        // A 3h open shift (18:00–21:00) on top of 18h this week → 21h → soft-cap warning.
+        // A 3h open shift (18:00-21:00) on top of 18h this week → 21h → soft-cap warning.
         val threeHour = quadWeekly.copy(start = at("2026-01-15T18:00:00-05:00"), end = at("2026-01-15T21:00:00-05:00"))
         assertEquals(ClaimCapVerdict.SOFT_CAP_WARNING, vm().claimCap(threeHour, currentWeeklyHours = 18.0, breakProfile = false))
     }
@@ -331,7 +331,7 @@ class ShiftsScreenViewModelTest {
 
     @Test
     fun dropFromNowMidShiftRoundsTheGapStartDownToTheBlockBoundary() {
-        // §5.2: a drop-from-now at 17:51 of a 15:00–24:00 shift produces a 17:30–24:00 gap.
+        // §5.2: a drop-from-now at 17:51 of a 15:00-24:00 shift produces a 17:30-24:00 gap.
         val shift = MyShift("mid", harnwell, at("2026-01-15T15:00:00-05:00"), at("2026-01-16T00:00:00-05:00"), AssignmentKind.SCHEDULED)
         val plan = vm(now = at("2026-01-15T17:51:00-05:00")).planDrop(shift, dropFromNow = true)
         assertEquals(at("2026-01-15T17:30:00-05:00"), plan.gapStart)
@@ -440,7 +440,7 @@ class ShiftsScreenViewModelTest {
         // leaves TWO scheduled cards around ONE dropped-still-open card.
         val m = ShiftsScreenViewModel(blockRun("2026-01-15T15:00:00-05:00", 8, "blk"), emptyList(), noon)
         val card = m.uiState.value.myShifts.scheduled.single()
-        val plan = m.planDropRange(card, 3, 5) // 16:30–17:30
+        val plan = m.planDropRange(card, 3, 5) // 16:30-17:30
         m.dropBlocks(plan.blockIds)
         val after = m.uiState.value.myShifts
         assertEquals(listOf("blk-3", "blk-4"), after.dropped.single().blockIds)
@@ -576,10 +576,10 @@ class ShiftsScreenViewModelTest {
     @Test
     fun weekRangeLabelAndOptionsAreExposedForTheHeader() {
         val m = vmWithNextWeek()
-        // Jan 15 2026 is a Thursday → its week is Mon Jan 12 – Sun Jan 18.
-        assertEquals("Jan 12 – Jan 18", m.uiState.value.weekRangeLabel)
+        // Jan 15 2026 is a Thursday → its week is Mon Jan 12 - Sun Jan 18.
+        assertEquals("Jan 12 - Jan 18", m.uiState.value.weekRangeLabel)
         m.nextWeek()
-        assertEquals("Jan 19 – Jan 25", m.uiState.value.weekRangeLabel)
+        assertEquals("Jan 19 - Jan 25", m.uiState.value.weekRangeLabel)
         // the picker offers the quick weeks (last / this / next / +2 / +3).
         assertEquals(listOf(-1, 0, 1, 2, 3), m.weekOptions().map { it.offset })
     }
@@ -653,9 +653,9 @@ class ShiftsScreenViewModelTest {
     @Test
     fun openWeekRangeLabelTracksTheShownOpenWeek() {
         val m = vmWithNextWeekOpen()
-        assertEquals("Jan 12 – Jan 18", m.uiState.value.openWeekRangeLabel)
+        assertEquals("Jan 12 - Jan 18", m.uiState.value.openWeekRangeLabel)
         m.nextOpenWeek()
-        assertEquals("Jan 19 – Jan 25", m.uiState.value.openWeekRangeLabel)
+        assertEquals("Jan 19 - Jan 25", m.uiState.value.openWeekRangeLabel)
     }
 
     @Test
@@ -666,7 +666,7 @@ class ShiftsScreenViewModelTest {
 
     @Test
     fun pastUpcomingSplitsStartedWeeklyOpeningsAndKeepsPermanentUpcoming() {
-        // At noon: hw2 (10:00–12:00) has started → past; hw1 (18:00) → upcoming; the
+        // At noon: hw2 (10:00-12:00) has started → past; hw1 (18:00) → upcoming; the
         // permanent opening hp1 (recurring) is never past even though it starts at 09:00.
         val m = vm()
         val home = m.uiState.value.homeOpen

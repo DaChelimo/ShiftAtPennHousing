@@ -83,7 +83,7 @@ fun SectionHeader(
 }
 
 /**
- * A My-Shifts–style section that ALWAYS renders its container (attach the Maestro
+ * A My-Shifts-style section that ALWAYS renders its container (attach the Maestro
  * `section_*` testTag via [modifier]) and shows an inline empty placeholder when
  * [isEmpty] — satisfying the selector contract (the section nodes must exist even
  * when empty). Non-empty: renders [content].

@@ -254,15 +254,15 @@ fun breakWeeks(
     return weeks
 }
 
-/** "Nov 21 – Nov 25" — the inclusive break window label. */
+/** "Nov 21 - Nov 25" — the inclusive break window label. */
 fun breakWindowLabel(
     windowStart: LocalDate,
     windowEnd: LocalDate,
-): String = "${monthDayOf(windowStart)} – ${monthDayOf(windowEnd)}"
+): String = "${monthDayOf(windowStart)} - ${monthDayOf(windowEnd)}"
 
-/** "Nov 19 – Nov 25" — the Mon–Sun range of the week anchored at [weekMonday]. */
+/** "Nov 19 - Nov 25" — the Mon-Sun range of the week anchored at [weekMonday]. */
 fun breakWeekRangeLabel(weekMonday: LocalDate): String =
-    "${monthDayOf(weekMonday)} – ${monthDayOf(weekMonday.plus(6, DateTimeUnit.DAY))}"
+    "${monthDayOf(weekMonday)} - ${monthDayOf(weekMonday.plus(6, DateTimeUnit.DAY))}"
 
 private fun monthDayOf(date: LocalDate): String = "${MONTH_SHORT[date.month.ordinal]} ${date.day}"
 
@@ -276,7 +276,7 @@ data class BreakWeekCell(
     val isToday: Boolean,
 )
 
-/** The Mon–Sun strip for the week anchored at [weekMonday]. */
+/** The Mon-Sun strip for the week anchored at [weekMonday]. */
 fun breakWeekStrip(
     snapshot: BreakCalendarSnapshot,
     weekMonday: LocalDate,

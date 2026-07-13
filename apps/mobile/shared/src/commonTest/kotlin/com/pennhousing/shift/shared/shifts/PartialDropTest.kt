@@ -42,7 +42,7 @@ class PartialDropTest {
     private val noon = at("2026-01-15T12:00:00-05:00")
 
     @Test fun full_range_plans_the_whole_shift() {
-        val shift = card("2026-01-15T15:00:00-05:00", 4) // 15:00–17:00
+        val shift = card("2026-01-15T15:00:00-05:00", 4) // 15:00-17:00
         val plan = planPartialDrop(shift, 0, 4, noon)
         assertTrue(plan.wholeShift)
         assertEquals(shift.blockIds, plan.blockIds)
@@ -51,14 +51,14 @@ class PartialDropTest {
     }
 
     @Test fun middle_range_selects_the_contiguous_sub_run() {
-        val shift = card("2026-01-15T15:00:00-05:00", 8) // 15:00–19:00
-        val plan = planPartialDrop(shift, 2, 5, noon) // 16:00–17:30
+        val shift = card("2026-01-15T15:00:00-05:00", 8) // 15:00-19:00
+        val plan = planPartialDrop(shift, 2, 5, noon) // 16:00-17:30
         assertFalse(plan.wholeShift)
         assertEquals(listOf("b-2", "b-3", "b-4"), plan.blockIds)
         assertEquals(at("2026-01-15T16:00:00-05:00"), plan.gapStart)
         assertEquals(at("2026-01-15T17:30:00-05:00"), plan.gapEnd)
         // NY-anchored labels precomputed for both front ends.
-        assertEquals("16:00 – 17:30", plan.rangeLabel)
+        assertEquals("16:00 - 17:30", plan.rangeLabel)
         assertEquals("1h 30m", plan.durationLabel)
         assertEquals("16:00", plan.gapStartLabel)
         assertEquals("17:30", plan.gapEndLabel)
@@ -85,9 +85,9 @@ class PartialDropTest {
     }
 
     @Test fun mid_shift_drop_from_now_matches_the_spec_example() {
-        // §5.2: "A drop initiated at 17:51 of a 15:00–24:00 shift produces a gap of
-        // 17:30–24:00" — block index 5, trailing selection to the end.
-        val shift = card("2026-01-15T15:00:00-05:00", 18) // 15:00–24:00
+        // §5.2: "A drop initiated at 17:51 of a 15:00-24:00 shift produces a gap of
+        // 17:30-24:00" — block index 5, trailing selection to the end.
+        val shift = card("2026-01-15T15:00:00-05:00", 18) // 15:00-24:00
         val now = at("2026-01-15T17:51:00-05:00")
         val idx = blockIndexAt(shift, now)
         assertEquals(5, idx)
@@ -99,7 +99,7 @@ class PartialDropTest {
     }
 
     @Test fun block_index_is_null_outside_the_shift() {
-        val shift = card("2026-01-15T15:00:00-05:00", 4) // 15:00–17:00
+        val shift = card("2026-01-15T15:00:00-05:00", 4) // 15:00-17:00
         assertNull(blockIndexAt(shift, at("2026-01-15T14:59:00-05:00")))
         assertEquals(0, blockIndexAt(shift, at("2026-01-15T15:00:00-05:00")))
         assertEquals(3, blockIndexAt(shift, at("2026-01-15T16:59:00-05:00")))

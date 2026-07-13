@@ -151,7 +151,7 @@ val ShiftTypography =
  */
 @Immutable
 data class ShiftTypeExtras(
-    /** The big shift-time hero on a card, e.g. "21:00 – 23:00" (22/600). */
+    /** The big shift-time hero on a card, e.g. "21:00 - 23:00" (22/600). */
     val monoTimeHero: TextStyle =
         TextStyle(
             fontFamily = PlexMono,

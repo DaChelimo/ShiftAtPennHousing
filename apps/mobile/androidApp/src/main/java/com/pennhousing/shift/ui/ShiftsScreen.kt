@@ -872,7 +872,7 @@ private fun OpenShiftsTabContent(
             }
         }
         // The feed fills the space; the open-week navigator is pinned at the BOTTOM
-        // (mirroring My Shifts) and scopes BOTH sub-tabs to one Mon–Sun week.
+        // (mirroring My Shifts) and scopes BOTH sub-tabs to one Mon-Sun week.
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when (sub) {
                 OPEN_SUB_HOME ->
@@ -1196,7 +1196,7 @@ private fun ClaimSheet(
                 } else {
                     ShiftButton(
                         // The duration ("Claim 1h"), not the range — the half-width
-                        // button truncates "Claim 17:30 – 19:00" (emulator-verified);
+                        // button truncates "Claim 17:30 - 19:00" (emulator-verified);
                         // the selected range is already shown in the selector above.
                         when {
                             permanent && !claimPlan.wholeShift -> "Pick up ${claimPlan.durationLabel}"
@@ -1234,7 +1234,7 @@ private fun ClaimSheet(
 
 /**
  * The §5.3 "How much can you cover?" block-range selector (T2-10): a stepped range
- * slider over the opening's 30-min blocks with a live "17:30 – 19:00 · 1h 30m"
+ * slider over the opening's 30-min blocks with a live "17:30 - 19:00 · 1h 30m"
  * summary. Defaults to the whole opening.
  */
 @Composable
@@ -2070,7 +2070,7 @@ private fun SwapCardFrame(
 /**
  * The Personal Calendar (worker-app.html `CalendarScreen`, agenda-first): a static
  * "this week" header (NO week-picker — only the current week is exposed; arbitrary
- * weeks + the permanent template have no data), a Mon–Sun strip, and the selected
+ * weeks + the permanent template have no data), a Mon-Sun strip, and the selected
  * day's agenda with a live NOW line. All from the shared, tested
  * [com.pennhousing.shift.shared.calendar.buildCalendarWeek] / `buildCalendarAgenda`
  * over the same `MyShift` snapshot the Shifts screen renders.
@@ -2197,7 +2197,7 @@ private fun CalendarTabContent(
             onWeek = vm::showWeek,
             onDay = { vm.selectDay(state.selectedDayIndex) },
         )
-        // The Mon–Sun day picker only makes sense in Day mode (in Week mode every day is
+        // The Mon-Sun day picker only makes sense in Day mode (in Week mode every day is
         // already shown in the overview), so it expands in / collapses out with the mode.
         AnimatedVisibility(
             visible = state.mode == CalendarMode.DAY,
@@ -2408,7 +2408,7 @@ private fun SwapDecisionSheet(
  * The "swap pending" notice for a tapped OUTGOING-swap card — shown instead of the drop
  * sheet, since the shift is tied up in a swap the worker proposed (dropping/swapping it
  * would fail server-side with a generic error). Shows the shift clearly (day · date,
- * start–end, duration), explains the wait, and offers Cancel swap / Keep waiting. The
+ * start-end, duration), explains the wait, and offers Cancel swap / Keep waiting. The
  * corner ✕ (from [ShiftBottomSheet]'s header) and "Keep waiting" both just minimise it.
  */
 @Composable
@@ -2424,7 +2424,7 @@ private fun PendingSwapNoticeSheet(
             Modifier.fillMaxWidth().testTag("pending_swap_notice_sheet"),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // The shift itself — day · date on top, the start–end time big, duration chip.
+            // The shift itself — day · date on top, the start-end time big, duration chip.
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -2549,7 +2549,7 @@ private fun CalendarToggleSegment(
 }
 
 /**
- * The whole-week overview (default calendar view): every Mon–Sun day as a section —
+ * The whole-week overview (default calendar view): every Mon-Sun day as a section —
  * its header + agenda rows, empty days shown compactly. The NOW line appears only in
  * today's section (the shared builder gates it).
  */
@@ -2750,7 +2750,7 @@ private fun WeekPickerSheet(
     }
 }
 
-/** One derived recurring slot ("Mon · 14:00 – 18:00 · Harnwell · seen 4 weeks"). */
+/** One derived recurring slot ("Mon · 14:00 - 18:00 · Harnwell · seen 4 weeks"). */
 @Composable
 private fun TemplateSlotRow(slot: TemplateSlot) {
     val c = ShiftTheme.colors
@@ -2778,7 +2778,7 @@ private fun TemplateSlotRow(slot: TemplateSlot) {
     }
 }
 
-/** Mon–Sun day picker: weekday letter, a date pill (selected fill / today ring), a shift dot. */
+/** Mon-Sun day picker: weekday letter, a date pill (selected fill / today ring), a shift dot. */
 @Composable
 private fun WeekStrip(
     week: CalendarWeek,
@@ -2980,7 +2980,7 @@ private fun AgendaShiftCard(
 /**
  * The home-house schedule (§11.4, T3b) as an Excel-style WEEK GRID (design
  * `HouseScheduleScreen`) — the spreadsheet SWs are used to: a fixed left time rail
- * plus one Mon–Sun column per day, each desk block placed by the hour, concurrent
+ * plus one Mon-Sun column per day, each desk block placed by the hour, concurrent
  * desks (Harnwell/Quad) side-by-side. The rail stays put while the days scroll
  * sideways; the week navigator (last week … +4) pages the grid. Tapping a staffed
  * block opens the contact sheet (worker name + phone per the full-directory ruling,
@@ -3230,7 +3230,7 @@ private fun HouseTimeRail(
     }
 }
 
-/** One Mon–Sun header cell (day + date), highlighted when it is today. */
+/** One Mon-Sun header cell (day + date), highlighted when it is today. */
 @Composable
 private fun HouseDayHeader(
     day: HouseGridDay,
@@ -3682,7 +3682,7 @@ private fun DropSheet(
 
 /**
  * The §5.2 "How much to drop" block-range selector (T2-11): a stepped range
- * slider over the card's 30-min blocks with a live "17:30 – 19:00 · 1h 30m"
+ * slider over the card's 30-min blocks with a live "17:30 - 19:00 · 1h 30m"
  * summary, plus the mid-shift "From now" quick action when `now` falls inside
  * the shift. Defaults to the whole shift.
  */
@@ -3743,7 +3743,7 @@ private fun DropRangeSelector(
 }
 
 // ===================================================================
-// Swap proposal (§8.1–§8.4, D2/D3) — initiate a swap from a My-Shifts card.
+// Swap proposal (§8.1-§8.4, D2/D3) — initiate a swap from a My-Shifts card.
 // ===================================================================
 
 /**
@@ -4496,7 +4496,7 @@ private fun HandoffSearchField(
     }
 }
 
-/** A committed leg chip — "→ Ben · give 14:00–15:00 ⇄ take 09:00–10:00" + remove. */
+/** A committed leg chip — "→ Ben · give 14:00-15:00 ⇄ take 09:00-10:00" + remove. */
 @Composable
 private fun CommittedLegRow(
     leg: PendingSwapLeg,
@@ -4533,7 +4533,7 @@ private fun CommittedLegRow(
 
 /**
  * The §8.1 "how much" block-range selector for a swap span — a stepped RangeSlider over
- * the span's 30-min blocks with a live "14:00 – 15:00 · 1h" summary (mirrors the drop /
+ * the span's 30-min blocks with a live "14:00 - 15:00 · 1h" summary (mirrors the drop /
  * claim partial selectors). Defaults to the whole span.
  */
 @Composable

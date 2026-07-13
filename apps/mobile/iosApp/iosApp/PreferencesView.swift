@@ -4,7 +4,7 @@ import Shared
 /// Preference submission (the tri-state paint grid + target weekly hours) in SwiftUI,
 /// over the shared `PreferencesViewModel` (observed — its brush/grid/target mutate).
 /// Rebuilds worker-app.html `PreferenceScreen` with the kit: context eyebrow, deadline
-/// banner, Mon–Sun strip, target stepper card, the Available/Preferred/Cannot brush
+/// banner, Mon-Sun strip, target stepper card, the Available/Preferred/Cannot brush
 /// selector, the 2-column block grid (tap to paint), and the submit button. Read-only
 /// once submitted. Selector `accessibilityIdentifier`s match the Maestro contract.
 

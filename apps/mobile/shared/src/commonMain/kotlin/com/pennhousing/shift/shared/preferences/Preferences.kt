@@ -100,7 +100,7 @@ fun PreferencePeriod.initialGrid(): PreferenceGrid = PreferenceGrid(initialStatu
 
 // ── Week strip ───────────────────────────────────────────────────────────────
 
-/** One Mon–Sun strip cell. [painted] = the day has any non-AVAILABLE block. */
+/** One Mon-Sun strip cell. [painted] = the day has any non-AVAILABLE block. */
 data class PrefWeekCell(
     val dayIndex: Int,
     val dayLetter: String,
@@ -116,7 +116,7 @@ data class PrefWeekStrip(
 
 private const val DAYS_IN_WEEK = 7
 
-/** The Mon–Sun strip; a day is [PrefWeekCell.painted] when it holds a Preferred/Cannot block. */
+/** The Mon-Sun strip; a day is [PrefWeekCell.painted] when it holds a Preferred/Cannot block. */
 fun buildPrefWeekStrip(
     period: PreferencePeriod,
     grid: PreferenceGrid,
@@ -137,7 +137,7 @@ fun buildPrefWeekStrip(
         }
     val sunday = period.weekStart.plus(DAYS_IN_WEEK - 1, DateTimeUnit.DAY)
     val range =
-        "${MONTH_SHORT[period.weekStart.month.ordinal]} ${period.weekStart.day} – " +
+        "${MONTH_SHORT[period.weekStart.month.ordinal]} ${period.weekStart.day} - " +
             "${MONTH_SHORT[sunday.month.ordinal]} ${sunday.day}"
     return PrefWeekStrip(rangeLabel = range, cells = cells)
 }
@@ -146,7 +146,7 @@ fun buildPrefWeekStrip(
 //
 // The picker is a vertical day timeline, NOT a labelled per-cell grid: hours live in a
 // left gutter (on the dividing lines, so a fill *between* the "8 AM" and "9" lines is
-// unambiguously 08:00–09:00), each 30-min block is a bare colored segment (no per-cell
+// unambiguously 08:00-09:00), each 30-min block is a bare colored segment (no per-cell
 // text — that crowds short shifts), and a painted run carries ONE span label. The UI
 // paints by drag (long-press → sweep, current brush) with a single tap = one block.
 
@@ -158,7 +158,7 @@ data class PrefBlockCell(
     val brush: PrefBrush,
     /** This block starts on the hour → a heavier divider above it. */
     val isHourStart: Boolean,
-    /** "8:00 AM – 8:30 AM · preferred" (accessibility only — never rendered as a label). */
+    /** "8:00 AM - 8:30 AM · preferred" (accessibility only — never rendered as a label). */
     val a11yLabel: String,
 )
 
@@ -173,7 +173,7 @@ data class PrefBlockRun(
     val brush: PrefBrush,
     val startBlockIndex: Int,
     val blockCount: Int,
-    /** "8:00 AM – 12:00 PM" — the whole span, shown once on the run. */
+    /** "8:00 AM - 12:00 PM" — the whole span, shown once on the run. */
     val label: String,
 )
 
@@ -219,8 +219,8 @@ fun formatClock12(
 }
 
 /**
- * "8:00 AM – 12:00 PM" for the inclusive block span [lo..hi] (the end is the last block's
- * start + 30 min). The leading meridiem is dropped when both ends share it ("8:00 – 11:00 AM").
+ * "8:00 AM - 12:00 PM" for the inclusive block span [lo..hi] (the end is the last block's
+ * start + 30 min). The leading meridiem is dropped when both ends share it ("8:00 - 11:00 AM").
  */
 fun prefRangeLabel(
     blocks: List<PrefBlock>,
@@ -237,7 +237,7 @@ fun prefRangeLabel(
     val endMer = if (end.toLocalDateTime(zone).hour < 12) "AM" else "PM"
     val startLabel =
         if (startMer == endMer) formatClock12(start, zone).removeSuffix(" $startMer") else formatClock12(start, zone)
-    return "$startLabel – ${formatClock12(end, zone)}"
+    return "$startLabel - ${formatClock12(end, zone)}"
 }
 
 /** The selected day's timeline: header ("Wed · Jun 10"), bare segments, gutter hours, run labels, tally. */
@@ -261,7 +261,7 @@ fun buildPrefDay(
                 blockId = b.blockId,
                 brush = brush,
                 isHourStart = onHour,
-                a11yLabel = "${formatClock12(b.start, zone)} – ${formatClock12(b.start + BLOCK_MINUTES.minutes, zone)} · ${brush.dbStatus}",
+                a11yLabel = "${formatClock12(b.start, zone)} - ${formatClock12(b.start + BLOCK_MINUTES.minutes, zone)} · ${brush.dbStatus}",
             )
         }
     // Gutter marks at every on-the-hour boundary, from the first block's start through the

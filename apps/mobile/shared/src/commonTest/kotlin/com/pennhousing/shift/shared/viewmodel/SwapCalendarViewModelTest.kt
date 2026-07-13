@@ -160,7 +160,7 @@ class SwapCalendarViewModelTest {
         vm.setWeekSeats(0, thuSeats)
         vm.togglePermanent()
         assertTrue(vm.uiState.value.giveSplittable) // a permanent swap can ALSO be trimmed (§8.3 partial)
-        vm.setGiveRange(2, 4) // hand off only my last 2 blocks (15:00–16:00) every week
+        vm.setGiveRange(2, 4) // hand off only my last 2 blocks (15:00-16:00) every week
         vm.pickTake(vm.uiState.value.day.others[0])
         val p = vm.proposals()
         assertEquals(1, p.size)

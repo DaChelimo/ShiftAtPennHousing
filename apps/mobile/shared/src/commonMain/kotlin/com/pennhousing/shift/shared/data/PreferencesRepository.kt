@@ -39,7 +39,7 @@ import kotlin.time.Instant
  *     UNPUBLISHED period.
  *   * `users` (own row) — the worker's `home_house_id`; preferences are availability
  *     for the home-house schedule, so the grid is that house's blocks.
- *   * `shift_blocks` — ONE representative Mon–Sun week (the week containing the period
+ *   * `shift_blocks` — ONE representative Mon-Sun week (the week containing the period
  *     start) of the home house's 30-minute blocks. `preferences.block_id` FKs a
  *     concrete dated block, and the design grid is a single week, so the worker paints
  *     that week and submit() upserts those block_ids.

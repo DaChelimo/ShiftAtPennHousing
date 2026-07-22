@@ -54,6 +54,8 @@ final class PreferencesTourObservable: ObservableObject {
 struct PreferencesTourView: View {
     @Environment(\.colorScheme) private var scheme
     @ObservedObject var model: PreferencesTourObservable
+    /// Fired when the scrim is tapped away on a dismissible step (see `body`'s tap gesture).
+    var onDismissOutside: () -> Void = {}
 
     // Step 1's live brush pick, carried into step 2's sample paint (mirrors
     // PreferencesTour.DEFAULT_BRUSH -> .preferred).
@@ -86,12 +88,16 @@ struct PreferencesTourView: View {
     var body: some View {
         let c = ShiftColors.resolve(scheme)
         return ZStack {
-            // Scrim swallows stray taps: the worker advances via the card's own controls, and
-            // the live controls on each step stay usable without an accidental dismiss.
+            // Tapping the scrim dismisses the tour, except on step 2 (the press-and-drag
+            // paint canvas), where a stray tap mid-drag must not lose the worker's place.
             Color.black.opacity(scheme == .dark ? 0.82 : 0.62)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
-                .onTapGesture {}
+                .onTapGesture {
+                    guard idx != 2 else { return }
+                    model.vm.skip()
+                    onDismissOutside()
+                }
 
             VStack(spacing: 18) {
                 Spacer(minLength: 8)
@@ -101,7 +107,12 @@ struct PreferencesTourView: View {
             }
             .padding(.horizontal, 20)
         }
-        .accessibilityIdentifier("preferences_tour")
+        // A non-wrapping marker, not the container itself — see ContentView.swift's
+        // `shifts_screen` comment for why: an identifier set directly on a wrapping
+        // ZStack leaks onto every descendant element in the XCUITest tree.
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("preferences_tour")
+        }
         .onAppear { syncMotion(to: idx) }
         .onChange(of: idx) { newIdx in syncMotion(to: newIdx) }
     }
@@ -233,6 +244,11 @@ struct PreferencesTourView: View {
         }
         .frame(maxWidth: .infinity, minHeight: blockHeight * CGFloat(blockCount), maxHeight: blockHeight * CGFloat(blockCount), alignment: .topLeading)
         .contentShape(Rectangle())
+        // `.ignore` makes this ZStack itself ONE queryable/draggable AX element instead of a
+        // plain layout container whose identifier leaks onto (and becomes ambiguous with) its
+        // per-block child cells — confirmed empirically (XCUITest found 8 elements all
+        // reporting this identifier, one per block, instead of one for the grid).
+        .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("preferences_tour_paint_grid")
         .overlay(
             PreferencesTourPaintSurface(

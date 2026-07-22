@@ -25,6 +25,8 @@ schemes:
       config: Debug
     test:
       config: Debug
+      targets:
+        - iosAppUITests
     profile:
       config: Release
     analyze:
@@ -54,6 +56,11 @@ targets:
           - "Info.plist"
       # The app/widget data contract (App Group snapshot models + deep links).
       - path: WidgetShared
+    # NOTE: XcodeGen has no target-level `resources` key — this block is inert.
+    # Everything here is actually swept in by `sources: path: iosApp` above,
+    # including iosApp/Assets.xcassets (the app icon + accent colour, generated
+    # by scripts/brand/build-icons.mjs). Do not add an `excludes` entry for the
+    # catalog: that is what silently drops it from the bundle.
     resources:
       - iosApp/Fonts
       - iosApp/GoogleService-Info.plist
@@ -66,6 +73,8 @@ targets:
         INFOPLIST_FILE: iosApp/Info.plist
         ENABLE_USER_SCRIPT_SANDBOXING: "NO"
         ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS: "NO"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         CODE_SIGN_ENTITLEMENTS: iosApp/iosApp.entitlements
         # The KMP :shared framework is built + embedded by the gradle run script below;
         # link against it from the xcode-frameworks output dir. Kept on the app target
@@ -83,6 +92,22 @@ targets:
         script: |
           cd "$SRCROOT/.."
           ./gradlew :shared:embedAndSignAppleFrameworkForXcode
+
+  iosAppUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: iosAppUITests
+    dependencies:
+      - target: iosApp
+    settings:
+      base:
+        # Distinct from the app's "Shift PennHousing" so the two Swift modules / product
+        # dirs don't collide ("multiple commands produce …swiftmodule"), same reasoning as
+        # ShiftWidgets above.
+        PRODUCT_NAME: iosAppUITests
+        TEST_TARGET_NAME: iosApp
+        GENERATE_INFOPLIST_FILE: "YES"
 
   ShiftWidgets:
     type: app-extension

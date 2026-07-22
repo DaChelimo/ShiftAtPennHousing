@@ -55,6 +55,8 @@ final class BreakTourObservable: ObservableObject {
 struct BreakTourView: View {
     @Environment(\.colorScheme) private var scheme
     @ObservedObject var model: BreakTourObservable
+    /// Fired when the scrim is tapped away on a dismissible step (see `body`'s tap gesture).
+    var onDismissOutside: () -> Void = {}
 
     // Shared drag-selection state for the sample grid (steps 2 and 3 both drive it via the
     // same gesture; step 1 attaches no gesture at all, per "no interaction required").
@@ -89,12 +91,17 @@ struct BreakTourView: View {
     var body: some View {
         let c = ShiftColors.resolve(scheme)
         return ZStack {
-            // Scrim swallows stray taps: the worker advances via the card's own controls,
-            // and steps 2/3's grid drag stays usable without an accidental dismiss.
+            // Tapping the scrim dismisses the tour only on step 1 (view-only) -- steps 2
+            // and 3 both carry a real press-and-drag gesture, and a stray tap mid-drag must
+            // not lose the worker's place.
             Color.black.opacity(scheme == .dark ? 0.82 : 0.62)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
-                .onTapGesture {}
+                .onTapGesture {
+                    guard idx == 1 else { return }
+                    model.vm.skip()
+                    onDismissOutside()
+                }
 
             VStack(spacing: 18) {
                 Spacer(minLength: 8)
@@ -104,7 +111,12 @@ struct BreakTourView: View {
             }
             .padding(.horizontal, 20)
         }
-        .accessibilityIdentifier("break_tour")
+        // A non-wrapping marker, not the container itself — see ContentView.swift's
+        // `shifts_screen` comment for why: an identifier set directly on a wrapping
+        // ZStack leaks onto every descendant element in the XCUITest tree.
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("break_tour")
+        }
         .onAppear { syncMotion(to: idx, animate: false) }
         .onChange(of: idx) { newIdx in
             selFrom = -1; selTo = -1; selLane = 0
@@ -207,6 +219,10 @@ struct BreakTourView: View {
                 dragHintBadge(c)
             }
         }
+        // `.ignore` makes this ZStack itself ONE queryable/draggable AX element instead of a
+        // plain layout container whose identifier leaks onto (or becomes ambiguous with) its
+        // per-block child cells.
+        .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("break_tour_grid")
     }
 
@@ -344,7 +360,11 @@ struct BreakTourView: View {
         .padding(12)
         .background(c.surfaceVar)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .accessibilityIdentifier("break_tour_action_bar")
+        // A non-wrapping marker, not the container itself: break_tour_drop_message and
+        // break_tour_drop_button must stay individually queryable.
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("break_tour_action_bar")
+        }
     }
 
     /// A representative bottom-nav strip. The Open item bounces (amber) once a step-3 drop

@@ -55,6 +55,8 @@ final class SwapTourObservable: ObservableObject {
 struct SwapTourView: View {
     @Environment(\.colorScheme) private var scheme
     @ObservedObject var model: SwapTourObservable
+    /// Fired when the scrim is tapped away on a dismissible step (see `body`'s tap gesture).
+    var onDismissOutside: () -> Void = {}
 
     // Step-1 sub-mode choice (reset every time the tour opens, since this view is only
     // mounted while active). Defaults to Swap, matching the composer's own default.
@@ -90,12 +92,16 @@ struct SwapTourView: View {
     var body: some View {
         let c = ShiftColors.resolve(scheme)
         return ZStack {
-            // Scrim swallows stray taps: the worker advances via the card's own controls,
-            // and step 2/3's controls stay usable without an accidental dismiss.
+            // Tapping the scrim dismisses the tour, except on step 2 (the range slider),
+            // where a stray tap while dragging must not lose the worker's place.
             Color.black.opacity(scheme == .dark ? 0.82 : 0.62)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
-                .onTapGesture {}
+                .onTapGesture {
+                    guard idx != 2 else { return }
+                    model.vm.skip()
+                    onDismissOutside()
+                }
 
             VStack(spacing: 18) {
                 Spacer(minLength: 8)
@@ -105,7 +111,12 @@ struct SwapTourView: View {
             }
             .padding(.horizontal, 20)
         }
-        .accessibilityIdentifier("swap_tour")
+        // A non-wrapping marker, not the container itself — see ContentView.swift's
+        // `shifts_screen` comment for why: an identifier set directly on a wrapping
+        // ZStack leaks onto every descendant element in the XCUITest tree.
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("swap_tour")
+        }
         .onAppear { syncMotion(to: idx, animate: false) }
         .onChange(of: idx) { newIdx in syncMotion(to: newIdx, animate: true) }
     }
@@ -321,7 +332,12 @@ struct SwapTourView: View {
             }
         }
         .frame(height: 46)
-        .accessibilityIdentifier("swap_tour_split_timeline")
+        // A non-wrapping marker, not `.accessibilityElement(children: .ignore)`: each
+        // segment's own swap_seg_locked/_active/_free identifier must stay individually
+        // queryable/tappable for tap-to-focus.
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("swap_tour_split_timeline")
+        }
     }
 
     /// Zone treatment matches the real `segmentCell` 1:1: locked = surfaceVar bg + divider

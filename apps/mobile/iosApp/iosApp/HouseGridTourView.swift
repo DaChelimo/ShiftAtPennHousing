@@ -54,6 +54,8 @@ final class HouseGridTourObservable: ObservableObject {
 struct HouseGridTourView: View {
     @Environment(\.colorScheme) private var scheme
     @ObservedObject var model: HouseGridTourObservable
+    /// Fired when the scrim is tapped away (see `body`'s tap gesture).
+    var onDismissOutside: () -> Void = {}
 
     // Step 2 sample controls (reset every time the tour opens, since this view is only
     // mounted while active): the sample house switcher + week nav, both live-tappable
@@ -74,11 +76,15 @@ struct HouseGridTourView: View {
     var body: some View {
         let c = ShiftColors.resolve(scheme)
         return ZStack {
-            // Scrim swallows stray taps: the worker advances via the card's own controls.
+            // None of this tour's three steps carry a drag gesture, so the scrim can
+            // always dismiss the tour.
             Color.black.opacity(scheme == .dark ? 0.82 : 0.62)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
-                .onTapGesture {}
+                .onTapGesture {
+                    model.vm.skip()
+                    onDismissOutside()
+                }
 
             VStack(spacing: 18) {
                 Spacer(minLength: 8)
@@ -88,7 +94,12 @@ struct HouseGridTourView: View {
             }
             .padding(.horizontal, 20)
         }
-        .accessibilityIdentifier("housegrid_tour")
+        // A non-wrapping marker, not the container itself — see ContentView.swift's
+        // `shifts_screen` comment for why: an identifier set directly on a wrapping
+        // ZStack leaks onto every descendant element in the XCUITest tree.
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("housegrid_tour")
+        }
         .onAppear { syncMotion(to: idx, animate: false) }
         .onChange(of: idx) { newIdx in syncMotion(to: newIdx, animate: true) }
     }
@@ -143,6 +154,9 @@ struct HouseGridTourView: View {
                 stageHouseIndex = (stageHouseIndex + 1) % Self.stageHouses.count
             }
         }
+        // `.ignore` makes this HStack itself ONE queryable/tappable AX element instead of a
+        // plain layout container whose identifier leaks onto its child Text/Image.
+        .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("housegrid_tour_stage_house_switcher")
     }
 
@@ -218,6 +232,9 @@ struct HouseGridTourView: View {
         .background(railPulse ? c.blueContainer.opacity(0.6) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .animation(.easeInOut(duration: 0.5), value: railPulse)
+        // `.ignore` makes this VStack itself ONE queryable AX element instead of a plain
+        // layout container whose identifier leaks onto its child time labels.
+        .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("housegrid_tour_stage_rail")
     }
 
@@ -255,6 +272,9 @@ struct HouseGridTourView: View {
                 .scaleEffect(namePulse ? 1.6 : 0.6)
                 .opacity(namePulse ? 0 : 0.9)
         )
+        // `.ignore` makes this VStack itself ONE queryable AX element instead of a plain
+        // layout container whose identifier leaks onto its child time/name labels.
+        .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("housegrid_tour_stage_name_cell")
     }
 

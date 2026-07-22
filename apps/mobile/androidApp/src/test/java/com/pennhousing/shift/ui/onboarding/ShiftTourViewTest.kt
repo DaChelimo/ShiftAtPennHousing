@@ -1,7 +1,9 @@
 package com.pennhousing.shift.ui.onboarding
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
@@ -43,6 +45,28 @@ class ShiftTourViewTest {
             stepCount = ShiftTour.STEP_COUNT,
             canGoBack = true,
             isLastStep = false,
+            seen = emptySet(),
+        )
+
+    private fun manageStepState() =
+        ShiftTourUiState(
+            active = true,
+            step = ShiftTour.STEPS[0], // MANAGE
+            stepIndex = 1,
+            stepCount = ShiftTour.STEP_COUNT,
+            canGoBack = false,
+            isLastStep = false,
+            seen = emptySet(),
+        )
+
+    private fun destinationStepState() =
+        ShiftTourUiState(
+            active = true,
+            step = ShiftTour.STEPS[2], // DESTINATION
+            stepIndex = 3,
+            stepCount = ShiftTour.STEP_COUNT,
+            canGoBack = true,
+            isLastStep = true,
             seen = emptySet(),
         )
 
@@ -93,5 +117,81 @@ class ShiftTourViewTest {
         }
 
         composeRule.onAllNodesWithTag("shift_tour_back", useUnmergedTree = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun `tapping the scrim on a dismissible step fires onDismissOutside`() {
+        var dismissed = false
+        composeRule.setContent {
+            ShiftTheme {
+                ShiftTourOverlay(
+                    state = manageStepState(),
+                    onNext = {},
+                    onBack = {},
+                    onSkip = {},
+                    onDismissOutside = { dismissed = true },
+                )
+            }
+        }
+
+        // Tap the corner, well outside the centered card, so the touch can only land on
+        // the scrim itself and never on card content.
+        composeRule.onNodeWithTag("shift_tour", useUnmergedTree = true).performTouchInput { click(Offset(1f, 1f)) }
+
+        assert(dismissed) { "Tapping the scrim on MANAGE (no drag gesture) should invoke onDismissOutside" }
+    }
+
+    @Test
+    fun `tapping the scrim on the last step also fires onDismissOutside`() {
+        var dismissed = false
+        composeRule.setContent {
+            ShiftTheme {
+                ShiftTourOverlay(
+                    state = destinationStepState(),
+                    onNext = {},
+                    onBack = {},
+                    onSkip = {},
+                    onDismissOutside = { dismissed = true },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("shift_tour", useUnmergedTree = true).performTouchInput { click(Offset(1f, 1f)) }
+
+        assert(dismissed) { "Tapping the scrim on DESTINATION (no drag gesture) should invoke onDismissOutside" }
+    }
+
+    @Test
+    fun `tapping the scrim on the AMOUNT step does not fire onDismissOutside`() {
+        var dismissed = false
+        composeRule.setContent {
+            ShiftTheme {
+                ShiftTourOverlay(
+                    state = amountStepState(),
+                    onNext = {},
+                    onBack = {},
+                    onSkip = {},
+                    onDismissOutside = { dismissed = true },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("shift_tour", useUnmergedTree = true).performTouchInput { click(Offset(1f, 1f)) }
+
+        assert(!dismissed) { "Tapping the scrim on AMOUNT (the range slider step) must not dismiss" }
+    }
+
+    @Test
+    fun `onDismissOutside defaults to onSkip when not provided`() {
+        var skipped = false
+        composeRule.setContent {
+            ShiftTheme {
+                ShiftTourOverlay(state = manageStepState(), onNext = {}, onBack = {}, onSkip = { skipped = true })
+            }
+        }
+
+        composeRule.onNodeWithTag("shift_tour", useUnmergedTree = true).performTouchInput { click(Offset(1f, 1f)) }
+
+        assert(skipped) { "onDismissOutside should default to onSkip when the caller doesn't override it" }
     }
 }

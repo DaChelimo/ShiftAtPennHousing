@@ -52,6 +52,8 @@ final class ShiftTourObservable: ObservableObject {
 struct ShiftTourView: View {
     @Environment(\.colorScheme) private var scheme
     @ObservedObject var model: ShiftTourObservable
+    /// Fired when the scrim is tapped away on a dismissible step (see `body`'s tap gesture).
+    var onDismissOutside: () -> Void = {}
 
     // Step-2 interactive state (reset every time the tour opens, since this view is only
     // mounted while active). Block indices on the sample grid, [from, to). Defaults mirror
@@ -81,12 +83,16 @@ struct ShiftTourView: View {
     var body: some View {
         let c = ShiftColors.resolve(scheme)
         return ZStack {
-            // Scrim swallows stray taps: the worker advances via the card's own controls,
-            // and step 2's slider stays usable without an accidental dismiss.
+            // Tapping the scrim dismisses the tour, except on step 2 (the range slider),
+            // where a stray tap while dragging must not lose the worker's place.
             Color.black.opacity(scheme == .dark ? 0.82 : 0.62)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
-                .onTapGesture {}
+                .onTapGesture {
+                    guard idx != 2 else { return }
+                    model.vm.skip()
+                    onDismissOutside()
+                }
 
             VStack(spacing: 18) {
                 Spacer(minLength: 8)
@@ -96,7 +102,13 @@ struct ShiftTourView: View {
             }
             .padding(.horizontal, 20)
         }
-        .accessibilityIdentifier("shift_tour")
+        // A non-wrapping marker, not the container itself — see ContentView.swift's
+        // `shifts_screen` comment for why: an identifier set directly on a wrapping
+        // ZStack leaks onto every descendant element in the XCUITest tree, shadowing
+        // shift_tour_range/_summary/_next/etc.
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("shift_tour")
+        }
         .onAppear { syncMotion(to: idx, animate: false) }
         .onChange(of: idx) { newIdx in syncMotion(to: newIdx, animate: true) }
     }

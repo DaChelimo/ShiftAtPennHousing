@@ -55,6 +55,8 @@ final class OpenClaimTourObservable: ObservableObject {
 struct OpenClaimTourView: View {
     @Environment(\.colorScheme) private var scheme
     @ObservedObject var model: OpenClaimTourObservable
+    /// Fired when the scrim is tapped away on a dismissible step (see `body`'s tap gesture).
+    var onDismissOutside: () -> Void = {}
 
     // Step 1: which sub-tab the sample stage highlights as selected.
     @State private var subTab = 0
@@ -87,12 +89,16 @@ struct OpenClaimTourView: View {
     var body: some View {
         let c = ShiftColors.resolve(scheme)
         return ZStack {
-            // Scrim swallows stray taps: the worker advances via the card's own controls,
-            // and step 2's slider / step 3's toggle stay usable without an accidental dismiss.
+            // Tapping the scrim dismisses the tour, except on step 2 (the range slider),
+            // where a stray tap while dragging must not lose the worker's place.
             Color.black.opacity(scheme == .dark ? 0.82 : 0.62)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
-                .onTapGesture {}
+                .onTapGesture {
+                    guard idx != 2 else { return }
+                    model.vm.skip()
+                    onDismissOutside()
+                }
 
             VStack(spacing: 18) {
                 Spacer(minLength: 8)
@@ -102,7 +108,12 @@ struct OpenClaimTourView: View {
             }
             .padding(.horizontal, 20)
         }
-        .accessibilityIdentifier("openclaim_tour")
+        // A non-wrapping marker, not the container itself — see ContentView.swift's
+        // `shifts_screen` comment for why: an identifier set directly on a wrapping
+        // ZStack leaks onto every descendant element in the XCUITest tree.
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("openclaim_tour")
+        }
         .onAppear { syncMotion(to: idx, animate: false) }
         .onChange(of: idx) { newIdx in syncMotion(to: newIdx, animate: true) }
     }
@@ -148,6 +159,9 @@ struct OpenClaimTourView: View {
         .padding(4)
         .background(c.surfaceVar)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        // `.ignore` makes this HStack itself ONE queryable AX element instead of a plain
+        // layout container whose identifier leaks onto its two segment buttons.
+        .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("openclaim_tour_subtabs")
     }
 
@@ -285,7 +299,12 @@ struct OpenClaimTourView: View {
                 scopePill("Weekly open shift", selected: !permanent, c) { permanent = false }
                 scopePill("Permanent opening", selected: permanent, c) { permanent = true }
             }
-            .accessibilityIdentifier("openclaim_tour_scope_toggle")
+            // A non-wrapping marker, not `.accessibilityElement(children: .ignore)`: unlike
+            // the pure drag-target grids elsewhere in this file, this toggle's own two pill
+            // buttons must stay individually tappable/queryable by their own labels.
+            .overlay(alignment: .topLeading) {
+                Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("openclaim_tour_scope_toggle")
+            }
             Text(OpenClaimTour.shared.scopeSummary(permanent: permanent))
                 .font(ShiftFont.sans(14, .semibold))
                 .foregroundColor(permanent ? c.permanent.deep : c.blue)

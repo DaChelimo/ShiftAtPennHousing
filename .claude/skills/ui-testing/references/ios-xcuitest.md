@@ -60,8 +60,15 @@ cd apps/mobile/iosApp
 xcodebuild test \
   -project iosApp.xcodeproj \
   -scheme iosApp \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  SHIFT_DATA_SOURCE=demo
 ```
+
+`SHIFT_DATA_SOURCE=demo` is REQUIRED. The suite asserts against the deterministic bundled
+`DemoData`, but a developer's gitignored `Configuration/Config.xcconfig` may pin the app to `live`
+(a real Supabase backend + login screen), which would strand every test on the login screen.
+A command-line build setting outranks any xcconfig, so this pins the run to demo regardless of
+local config. See `apps/mobile/iosApp/README.md` for the demo-vs-live switch.
 
 This is scripted and headless — it boots/uses a simulator instance internally but does not require
 (and must not use) the interactive Simulator control tools. Read the `xcodebuild test` output itself

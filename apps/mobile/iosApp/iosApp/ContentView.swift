@@ -729,6 +729,13 @@ struct ShiftsRootView: View {
                     houseTab
                 } else if tab == .assistant {
                     AssistantTabView(model: assistantModel)
+                } else if tab == .preferences {
+                    // Preferences owns its own bounded scroll window (pinned header + a
+                    // scrolling timeline), so it renders OUTSIDE the shared page ScrollView.
+                    // Nesting it inside was the scroll-vs-paint bug: the paint canvas locks
+                    // the scroll view it sits in, but an OUTER scroll view stayed free to pan,
+                    // so a drag on the grid scrolled the page and never painted.
+                    PreferencesScreen(model: prefsModel, onReplayTour: { preferencesTourModel.replay() })
                 } else {
                     ScrollView {
                         switch tab {
@@ -739,7 +746,7 @@ struct ShiftsRootView: View {
                         case .house: EmptyView() // rendered above, outside the ScrollView
                         case .updates: updates
                         case .swaps: swapsTab
-                        case .preferences: PreferencesScreen(model: prefsModel, onReplayTour: { preferencesTourModel.replay() })
+                        case .preferences: EmptyView() // rendered above, outside the ScrollView
                         case .breakShifts: EmptyView() // rendered above, outside the ScrollView
                         case .assistant: EmptyView() // rendered above, outside the ScrollView
                         case .settings: SettingsScreen(
@@ -791,11 +798,13 @@ struct ShiftsRootView: View {
             // Toasts now sit at the BOTTOM (above the tab bar) — the intuitive place
             // for transient confirmations, and clear of the notch / status bar.
             .overlay(alignment: .bottom) { toastStack }
-            // Persistent "Ask" affordance so the Assistant is reachable from the main tabs,
-            // not only buried in "More" (discoverability decision). Hidden on the Assistant
-            // screen itself. The first-run tour rings this button.
+            // The "Ask" affordance lives on the My-Shifts home screen ONLY. It used to ride
+            // every tab, but a floating button that follows you everywhere is noise rather
+            // than discoverability: it covers content on feeds and grids where the Assistant
+            // isn't what you came to do. The Assistant stays reachable from "More" everywhere.
+            // The first-run tour rings this button (on My Shifts, where the tour runs).
             .overlay(alignment: .bottomTrailing) {
-                if tab != .assistant {
+                if tab == .mine {
                     AskAssistantButtonView { requestTab(.assistant) }
                         .padding(.trailing, 16)
                         .padding(.bottom, 14)
@@ -820,7 +829,17 @@ struct ShiftsRootView: View {
         // falling through to the system default and reading grey/lighter next to the other
         // (content-filled) tabs that appeared black. One root paint keeps every tab identical.
         .background(ShiftColors.resolve(scheme).bg.ignoresSafeArea())
-        .accessibilityIdentifier("shifts_screen")
+        // A dedicated, non-wrapping marker view carries this identifier — NOT the container
+        // itself. Applying `.accessibilityIdentifier` directly to a plain VStack/ZStack that
+        // wraps many interactive descendants causes SwiftUI to leak that identifier onto every
+        // descendant accessibility element in the XCUITest tree (confirmed empirically: every
+        // bottom-nav button reported `identifier == "shifts_screen"` instead of its own
+        // `tab_my_shifts`/`tab_open_shifts`/etc), silently breaking every identifier-based
+        // XCUITest query in the app. A real, independent leaf element (Color.clear) does not
+        // have this problem.
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("shifts_screen")
+        }
         // The spotlight + coach-mark overlay, above the whole screen (tab bar included).
         // Anchors are collected from the tab items + Ask button via onboardingAnchor(_:).
         .overlayPreferenceValue(OnboardingAnchorKey.self) { anchors in
@@ -836,8 +855,19 @@ struct ShiftsRootView: View {
         // whole screen; auto-opens on the first My-Shifts landing (below) and on replay.
         .overlay {
             if shiftTourModel.state.active {
-                ShiftTourView(model: shiftTourModel)
-                    .transition(.opacity)
+                // Tapping away is a quick "not now", not the natural finish the one-time
+                // store gates on below -- always re-point at the header "?" so the worker
+                // still learns where to pick the tour back up, every time this happens.
+                ShiftTourView(
+                    model: shiftTourModel,
+                    onDismissOutside: {
+                        showTourPointer = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3.2) {
+                            showTourPointer = false
+                        }
+                    }
+                )
+                .transition(.opacity)
             }
         }
         // The one-time "look here" pointer at the header "?", positioned from its real
@@ -1397,7 +1427,12 @@ struct ShiftsRootView: View {
         // Slight fade+rise as the overflow menu opens (matches the shared drawers).
         .sheetContentEntrance()
         .background(c.bg)
-        .accessibilityIdentifier("more_sheet")
+        // A non-wrapping marker, not the container itself — an identifier set directly on a
+        // wrapping VStack leaks onto every descendant element in the XCUITest tree, shadowing
+        // tab_updates/tab_preferences/tab_break/tab_settings/tab_assistant.
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("more_sheet")
+        }
         .presentationDetents([.height(368)])
         .presentationDragIndicator(.visible)
     }
@@ -2179,6 +2214,9 @@ struct ShiftsRootView: View {
     private static let houseLaneGap: CGFloat = 4
     private static let houseColPad: CGFloat = 6
     private static let houseColGap: CGFloat = 6
+    /// How far OTHER workers' seats recede so mine is findable at a glance. Mirrors
+    /// Android's `HOUSE_OTHER_OPACITY`; keep the two in step.
+    private static let houseOtherOpacity: Double = 0.5
 
     /// The home-house schedule as a week grid: a fixed left time rail + Mon–Sun day
     /// columns that scroll sideways (the rail stays put), concurrent desks side-by-side.
@@ -2546,6 +2584,12 @@ struct ShiftsRootView: View {
     ///
     /// The "mine" emphasis rides on top of either: my shift TODAY keeps its solid brand
     /// ring so it's still the one block that pops.
+    ///
+    /// 3. **Find-mine dimming** — a grid where every seat wears a saturated colour is
+    ///    pretty but useless for the one question a worker actually asks ("where am I?").
+    ///    So every seat that is NOT mine renders at `houseOtherOpacity`; mine stays at
+    ///    full strength in its own colour. Vacant seats are not anyone's card and are not
+    ///    dimmed (they're the actionable open-seat affordance for a manager).
     private func houseBlockView(_ b: HouseGridBlock, _ colW: CGFloat, _ startMin: Int, _ isToday: Bool, _ c: ShiftColors) -> some View {
         let top = Self.housePxPerHour * CGFloat(Int(b.startMin) - startMin) / 60
         let h = max(Self.housePxPerHour * CGFloat(Int(b.endMin) - Int(b.startMin)) / 60 - 3, 18)
@@ -2602,6 +2646,8 @@ struct ShiftsRootView: View {
                     style: StrokeStyle(lineWidth: b.vacant ? 1.5 : (emphatic ? 1.5 : 1), dash: b.vacant ? [6, 4] : [])
                 )
         )
+        // Everyone else's seats recede so mine is findable at a glance (see doc comment #3).
+        .opacity(b.mine || b.vacant ? 1 : Self.houseOtherOpacity)
         .offset(x: x, y: top)
         .contentShape(Rectangle())
         .onTapGesture {
@@ -2798,7 +2844,12 @@ struct ShiftsRootView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         // Animate the day-strip expand/collapse (and the day↔week content swap) on mode change.
         .animation(.easeInOut(duration: 0.25), value: st.mode)
-        .accessibilityIdentifier("calendar_screen")
+        // See the matching comment on `shifts_screen` above — a non-wrapping marker, not the
+        // container itself, so this identifier doesn't leak onto every descendant (the "?"
+        // help button, the week toggle, etc.) in the XCUITest tree.
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("calendar_screen")
+        }
     }
 
     /// Renders one agenda row: the NOW divider or a shift card (shared by Day + Week
@@ -2926,13 +2977,20 @@ struct ShiftsRootView: View {
         VStack(alignment: .leading, spacing: 4) {
             if let overview, overview.hasCollapsedPast {
                 pastDaysCard(overview.collapsedPastDays, Int(overview.collapsedShiftCount), c)
+                    .padding(.horizontal, 16)
             }
             ForEach(overview?.activeDays ?? [], id: \.dayIndex) { section in
                 calendarDaySection(section, c)
             }
         }
+        .padding(.top, 10)
         .padding(.bottom, 24)
-        .accessibilityIdentifier("calendar_week_overview")
+        // A non-wrapping marker, not the container itself — an identifier set directly on a
+        // wrapping VStack leaks onto every descendant element in the XCUITest tree, shadowing
+        // each shift row's own calendar_shift_card identifier.
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("calendar_week_overview")
+        }
     }
 
     /// One Mon–Sun day in the week overview: header + agenda rows, or the empty-day treatment.
@@ -2959,7 +3017,12 @@ struct ShiftsRootView: View {
                 .padding(.horizontal, 16)
             }
         }
-        .accessibilityIdentifier("calendar_day_section")
+        // A non-wrapping marker, not the container itself — an identifier set directly on a
+        // wrapping container leaks onto every descendant element in the XCUITest tree,
+        // shadowing each row's own calendar_shift_card identifier.
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("calendar_day_section")
+        }
     }
 
     /// The ongoing week's already-passed days, folded into one expandable card pinned at the
@@ -3631,7 +3694,17 @@ private struct PreferencesTourOverlay: ViewModifier {
         content
             .overlay {
                 if model.state.active {
-                    PreferencesTourView(model: model).transition(.opacity)
+                    // Tapping away is a quick "not now", not the natural finish the
+                    // one-time store gates on below -- always re-point at the header "?"
+                    // so the worker still learns where to pick the tour back up.
+                    PreferencesTourView(
+                        model: model,
+                        onDismissOutside: {
+                            showPointer = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 3.2) { showPointer = false }
+                        }
+                    )
+                    .transition(.opacity)
                 }
             }
             .overlayPreferenceValue(PreferencesTourHelpAnchorKey.self) { anchor in
@@ -3661,7 +3734,14 @@ private struct BreakTourOverlay: ViewModifier {
         content
             .overlay {
                 if model.state.active {
-                    BreakTourView(model: model).transition(.opacity)
+                    BreakTourView(
+                        model: model,
+                        onDismissOutside: {
+                            showPointer = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 3.2) { showPointer = false }
+                        }
+                    )
+                    .transition(.opacity)
                 }
             }
             .overlayPreferenceValue(BreakTourHelpAnchorKey.self) { anchor in
@@ -3691,7 +3771,14 @@ private struct HouseGridTourOverlay: ViewModifier {
         content
             .overlay {
                 if model.state.active {
-                    HouseGridTourView(model: model).transition(.opacity)
+                    HouseGridTourView(
+                        model: model,
+                        onDismissOutside: {
+                            showPointer = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 3.2) { showPointer = false }
+                        }
+                    )
+                    .transition(.opacity)
                 }
             }
             .overlayPreferenceValue(HouseGridTourHelpAnchorKey.self) { anchor in
@@ -3721,7 +3808,14 @@ private struct OpenClaimTourOverlay: ViewModifier {
         content
             .overlay {
                 if model.state.active {
-                    OpenClaimTourView(model: model).transition(.opacity)
+                    OpenClaimTourView(
+                        model: model,
+                        onDismissOutside: {
+                            showPointer = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 3.2) { showPointer = false }
+                        }
+                    )
+                    .transition(.opacity)
                 }
             }
             .overlayPreferenceValue(OpenClaimTourHelpAnchorKey.self) { anchor in
@@ -3815,8 +3909,16 @@ private struct ManageShiftSheet: View {
         // actually reaches the swap page, not show over the Drop/Swap manage page.
         .overlay {
             if swapTourModel.state.active, page == .swap {
-                SwapTourView(model: swapTourModel)
-                    .transition(.opacity)
+                SwapTourView(
+                    model: swapTourModel,
+                    onDismissOutside: {
+                        showSwapTourPointer = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3.2) {
+                            showSwapTourPointer = false
+                        }
+                    }
+                )
+                .transition(.opacity)
             }
         }
         .overlayPreferenceValue(SwapTourHelpAnchorKey.self) { anchor in
@@ -3963,7 +4065,12 @@ private struct ManagePageContent: View {
                     .accessibilityIdentifier("drop_confirm_button")
                 }
             }
-            .accessibilityIdentifier("manage_shift_sheet")
+            // A non-wrapping marker, not the container itself — an identifier set directly on
+            // a wrapping VStack leaks onto every descendant element in the XCUITest tree,
+            // shadowing intent_drop/intent_swap/swap_continue_button/drop_confirm_button.
+            .overlay(alignment: .topLeading) {
+                Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("manage_shift_sheet")
+            }
     }
 
     /// One equal-weight intent card (Option C) — "Drop the shift" / "Swap it". A disabled card

@@ -168,25 +168,60 @@ import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
 import com.pennhousing.shift.shared.viewmodel.FloatCarouselUiState
 import com.pennhousing.shift.shared.viewmodel.FloatCarouselViewModel
 import com.pennhousing.shift.shared.breakclaim.BreakPhase
+import com.pennhousing.shift.shared.onboarding.BreakTour
+import com.pennhousing.shift.shared.onboarding.HouseGridTour
 import com.pennhousing.shift.shared.onboarding.Onboarding
 import com.pennhousing.shift.shared.onboarding.OnboardingTarget
+import com.pennhousing.shift.shared.onboarding.OpenClaimTour
+import com.pennhousing.shift.shared.onboarding.PreferencesTour
 import com.pennhousing.shift.shared.onboarding.ShiftTour
+import com.pennhousing.shift.shared.onboarding.SwapTour
 import com.pennhousing.shift.shared.onboarding.TipTrigger
 import com.pennhousing.shift.shared.onboarding.WidgetPrompt
+import com.pennhousing.shift.shared.viewmodel.BreakTourViewModel
+import com.pennhousing.shift.shared.viewmodel.HouseGridTourViewModel
 import com.pennhousing.shift.shared.viewmodel.OnboardingViewModel
+import com.pennhousing.shift.shared.viewmodel.OpenClaimTourViewModel
+import com.pennhousing.shift.shared.viewmodel.PreferencesTourViewModel
 import com.pennhousing.shift.shared.viewmodel.ShiftTourViewModel
+import com.pennhousing.shift.shared.viewmodel.SwapTourViewModel
 import androidx.compose.ui.geometry.Rect
 import com.pennhousing.shift.ui.onboarding.AskAssistantButton
+import com.pennhousing.shift.ui.onboarding.BreakTourHelpButton
+import com.pennhousing.shift.ui.onboarding.BreakTourOverlay
+import com.pennhousing.shift.ui.onboarding.BreakTourPointerCallout
+import com.pennhousing.shift.ui.onboarding.BreakTourPointerStore
+import com.pennhousing.shift.ui.onboarding.BreakTourPrefs
+import com.pennhousing.shift.ui.onboarding.HouseGridTourHelpButton
+import com.pennhousing.shift.ui.onboarding.HouseGridTourOverlay
+import com.pennhousing.shift.ui.onboarding.HouseGridTourPointerCallout
+import com.pennhousing.shift.ui.onboarding.HouseGridTourPointerStore
+import com.pennhousing.shift.ui.onboarding.HouseGridTourPrefs
 import com.pennhousing.shift.ui.onboarding.LocalOnboardingAnchors
 import com.pennhousing.shift.ui.onboarding.OnboardingAnchors
 import com.pennhousing.shift.ui.onboarding.OnboardingOverlay
 import com.pennhousing.shift.ui.onboarding.NotificationPrimingHost
 import com.pennhousing.shift.ui.onboarding.OnboardingPrefs
+import com.pennhousing.shift.ui.onboarding.OpenClaimTourHelpButton
+import com.pennhousing.shift.ui.onboarding.OpenClaimTourOverlay
+import com.pennhousing.shift.ui.onboarding.OpenClaimTourPointerCallout
+import com.pennhousing.shift.ui.onboarding.OpenClaimTourPointerStore
+import com.pennhousing.shift.ui.onboarding.OpenClaimTourPrefs
+import com.pennhousing.shift.ui.onboarding.PreferencesTourHelpButton
+import com.pennhousing.shift.ui.onboarding.PreferencesTourOverlay
+import com.pennhousing.shift.ui.onboarding.PreferencesTourPointerCallout
+import com.pennhousing.shift.ui.onboarding.PreferencesTourPointerStore
+import com.pennhousing.shift.ui.onboarding.PreferencesTourPrefs
 import com.pennhousing.shift.ui.onboarding.ShiftTourHelpButton
 import com.pennhousing.shift.ui.onboarding.ShiftTourOverlay
 import com.pennhousing.shift.ui.onboarding.ShiftTourPointerCallout
 import com.pennhousing.shift.ui.onboarding.ShiftTourPointerStore
 import com.pennhousing.shift.ui.onboarding.ShiftTourPrefs
+import com.pennhousing.shift.ui.onboarding.SwapTourHelpButton
+import com.pennhousing.shift.ui.onboarding.SwapTourOverlay
+import com.pennhousing.shift.ui.onboarding.SwapTourPointerCallout
+import com.pennhousing.shift.ui.onboarding.SwapTourPointerStore
+import com.pennhousing.shift.ui.onboarding.SwapTourPrefs
 import com.pennhousing.shift.ui.onboarding.WidgetPromptCard
 import com.pennhousing.shift.ui.onboarding.WidgetPromptPrefs
 import com.pennhousing.shift.ui.onboarding.onboardingAnchor
@@ -446,14 +481,14 @@ fun ShiftsApp(
         LaunchedEffect(selectedIndex) {
             when (selectedIndex) {
                 TAB_MY -> onboardingVm.triggerTip(TipTrigger.MY_SHIFTS)
-                TAB_OPEN -> onboardingVm.triggerTip(TipTrigger.OPEN_SHIFTS)
-                TAB_HOUSE -> onboardingVm.triggerTip(TipTrigger.HOUSE_GRID)
+                // The Open-Shifts claim tour (openClaimTourVm, below) supersedes this flat
+                // tip — its whole point is teaching one-time vs permanent pickup, which the
+                // tip never covered.
+                // The House-grid tour (houseGridTourVm, below) supersedes this flat tip.
                 TAB_SWAPS -> onboardingVm.triggerTip(TipTrigger.INCOMING_SWAP)
             }
         }
-        LaunchedEffect(breakState.phase) {
-            if (breakState.phase == BreakPhase.CLAIM_WINDOW) onboardingVm.triggerTip(TipTrigger.BREAK_WINDOW)
-        }
+        // The Break tour (breakTourVm, below) supersedes the old flat break-window tip.
         LaunchedEffect(carouselState.total) {
             if (carouselState.total > 0) onboardingVm.triggerTip(TipTrigger.FLOAT_REQUEST)
         }
@@ -489,6 +524,138 @@ fun ShiftsApp(
                 showTourPointer = false
             }
         }
+
+        // Four more interactive tours, same shape as shiftTourVm's block above: own
+        // seen-key store, auto-open on first landing (once the welcome tour is done),
+        // replayable from a header "?" + the Settings row. See
+        // docs/onboarding-android-port-plan.md / ui/onboarding/{Feature}TourView.kt (Compose
+        // ports of iosApp's {Feature}TourView.swift).
+        val preferencesTourVm = remember { PreferencesTourViewModel(PreferencesTourPrefs.read(onboardingContext)) }
+        val preferencesTourState by preferencesTourVm.uiState.collectAsStateWithLifecycle()
+        LaunchedEffect(preferencesTourState.seen) { PreferencesTourPrefs.write(onboardingContext, preferencesTourState.seen) }
+        var preferencesTourHelpRect by remember { mutableStateOf<Rect?>(null) }
+        var showPreferencesTourPointer by remember { mutableStateOf(false) }
+        LaunchedEffect(selectedIndex) {
+            // No prior Tier-2 tip existed for Preferences; this is net-new teaching.
+            if (selectedIndex == TAB_PREFS && Onboarding.WELCOME_DONE_KEY in onboardingState.seen) {
+                preferencesTourVm.autoStart()
+            }
+        }
+        LaunchedEffect(preferencesTourState.active) {
+            if (!preferencesTourState.active &&
+                !PreferencesTour.shouldAutoShow(preferencesTourState.seen) &&
+                !PreferencesTourPointerStore.hasShown(onboardingContext)
+            ) {
+                PreferencesTourPointerStore.markShown(onboardingContext)
+                showPreferencesTourPointer = true
+            }
+        }
+        LaunchedEffect(showPreferencesTourPointer) {
+            if (showPreferencesTourPointer) {
+                kotlinx.coroutines.delay(4000)
+                showPreferencesTourPointer = false
+            }
+        }
+
+        val breakTourVm = remember { BreakTourViewModel(BreakTourPrefs.read(onboardingContext)) }
+        val breakTourState by breakTourVm.uiState.collectAsStateWithLifecycle()
+        LaunchedEffect(breakTourState.seen) { BreakTourPrefs.write(onboardingContext, breakTourState.seen) }
+        var breakTourHelpRect by remember { mutableStateOf<Rect?>(null) }
+        var showBreakTourPointer by remember { mutableStateOf(false) }
+        LaunchedEffect(breakState.phase) {
+            // The interactive Break tour supersedes the old flat break-window tip.
+            if (breakState.phase == BreakPhase.CLAIM_WINDOW && Onboarding.WELCOME_DONE_KEY in onboardingState.seen) {
+                breakTourVm.autoStart()
+            }
+        }
+        LaunchedEffect(breakTourState.active) {
+            if (!breakTourState.active &&
+                !BreakTour.shouldAutoShow(breakTourState.seen) &&
+                !BreakTourPointerStore.hasShown(onboardingContext)
+            ) {
+                BreakTourPointerStore.markShown(onboardingContext)
+                showBreakTourPointer = true
+            }
+        }
+        LaunchedEffect(showBreakTourPointer) {
+            if (showBreakTourPointer) {
+                kotlinx.coroutines.delay(4000)
+                showBreakTourPointer = false
+            }
+        }
+
+        val houseGridTourVm = remember { HouseGridTourViewModel(HouseGridTourPrefs.read(onboardingContext)) }
+        val houseGridTourState by houseGridTourVm.uiState.collectAsStateWithLifecycle()
+        LaunchedEffect(houseGridTourState.seen) { HouseGridTourPrefs.write(onboardingContext, houseGridTourState.seen) }
+        var houseGridTourHelpRect by remember { mutableStateOf<Rect?>(null) }
+        var showHouseGridTourPointer by remember { mutableStateOf(false) }
+        LaunchedEffect(selectedIndex) {
+            // The interactive House-grid tour supersedes the old flat "Call the desk" tip.
+            if (selectedIndex == TAB_HOUSE && Onboarding.WELCOME_DONE_KEY in onboardingState.seen) {
+                houseGridTourVm.autoStart()
+            }
+        }
+        LaunchedEffect(houseGridTourState.active) {
+            if (!houseGridTourState.active &&
+                !HouseGridTour.shouldAutoShow(houseGridTourState.seen) &&
+                !HouseGridTourPointerStore.hasShown(onboardingContext)
+            ) {
+                HouseGridTourPointerStore.markShown(onboardingContext)
+                showHouseGridTourPointer = true
+            }
+        }
+        LaunchedEffect(showHouseGridTourPointer) {
+            if (showHouseGridTourPointer) {
+                kotlinx.coroutines.delay(4000)
+                showHouseGridTourPointer = false
+            }
+        }
+
+        val openClaimTourVm = remember { OpenClaimTourViewModel(OpenClaimTourPrefs.read(onboardingContext)) }
+        val openClaimTourState by openClaimTourVm.uiState.collectAsStateWithLifecycle()
+        LaunchedEffect(openClaimTourState.seen) { OpenClaimTourPrefs.write(onboardingContext, openClaimTourState.seen) }
+        var openClaimTourHelpRect by remember { mutableStateOf<Rect?>(null) }
+        var showOpenClaimTourPointer by remember { mutableStateOf(false) }
+        LaunchedEffect(selectedIndex) {
+            // The interactive Open-Shifts claim tour supersedes the old flat Open-Shifts tip
+            // (its whole point is teaching one-time vs permanent pickup, which the tip never
+            // covered).
+            if (selectedIndex == TAB_OPEN && Onboarding.WELCOME_DONE_KEY in onboardingState.seen) {
+                openClaimTourVm.autoStart()
+            }
+        }
+        LaunchedEffect(openClaimTourState.active) {
+            if (!openClaimTourState.active &&
+                !OpenClaimTour.shouldAutoShow(openClaimTourState.seen) &&
+                !OpenClaimTourPointerStore.hasShown(onboardingContext)
+            ) {
+                OpenClaimTourPointerStore.markShown(onboardingContext)
+                showOpenClaimTourPointer = true
+            }
+        }
+        LaunchedEffect(showOpenClaimTourPointer) {
+            if (showOpenClaimTourPointer) {
+                kotlinx.coroutines.delay(4000)
+                showOpenClaimTourPointer = false
+            }
+        }
+
+        // The swap-composer tour. Unlike the four tours above, this one does NOT auto-open
+        // on a tab landing — it opens the FIRST time the worker reaches the swap PAGE inside
+        // the manage-shift sheet (after already choosing "Swap it" over "Drop the shift" on
+        // the prior page; that Drop-vs-Swap decision is ShiftTour's job, not this tour's),
+        // and is intentionally NOT gated on the welcome tour being done (mirrors iOS's
+        // `ManageShiftSheet.onChange(of: page)`, which carries no such gate either — by the
+        // time a worker reaches this deep into a flow, welcome-tour sequencing no longer
+        // applies). The ViewModel + seen-key store live HERE (shared by the Settings replay
+        // row); the autoStart trigger, overlay, help button, and one-time pointer all render
+        // from INSIDE ManageShiftSheet itself (nested inside CalendarTabContent) since a
+        // root-level overlay would render BEHIND the modal bottom sheet — mirrors iOS's
+        // `showSwapTourPointer` being `@State` local to its `ManageShiftSheet`, not lifted to
+        // the top-level `ContentView`.
+        val swapTourVm = remember { SwapTourViewModel(SwapTourPrefs.read(onboardingContext)) }
+        val swapTourState by swapTourVm.uiState.collectAsStateWithLifecycle()
+        LaunchedEffect(swapTourState.seen) { SwapTourPrefs.write(onboardingContext, swapTourState.seen) }
 
         // Widget-add prompt (behavioral). After the worker has opened My-Shifts enough
         // times and has an upcoming shift to preview, on a return session, nudge them to add
@@ -538,11 +705,13 @@ fun ShiftsApp(
                     onMore = { showMore = true },
                 )
             },
-            // Persistent "Ask" affordance so the Assistant is reachable from the main tabs,
-            // not only buried in "More" (discoverability decision). Hidden on the Assistant
-            // screen itself. The first-run tour rings this button.
+            // The "Ask" affordance lives on the My-Shifts home screen ONLY. It used to ride
+            // every tab, but a floating button that follows you everywhere is noise rather
+            // than discoverability: it covers content on feeds and grids where the Assistant
+            // isn't what you came to do. The Assistant stays reachable from "More" everywhere.
+            // The first-run tour rings this button (on My Shifts, where the tour runs).
             floatingActionButton = {
-                if (selectedIndex != TAB_ASSISTANT) {
+                if (selectedIndex == TAB_MY) {
                     AskAssistantButton(onClick = { navigateTo(TAB_ASSISTANT) })
                 }
             },
@@ -599,6 +768,7 @@ fun ShiftsApp(
                             },
                             onReplayShiftTour = shiftTourVm::replay,
                             onShiftTourHelpPositioned = { shiftTourHelpRect = it },
+                            swapTourVm = swapTourVm,
                         )
                     TAB_OPEN ->
                         OpenShiftsTabContent(
@@ -611,8 +781,16 @@ fun ShiftsApp(
                             onClaimShift = onClaimShift,
                             onPickUpPermanent = onPickUpPermanent,
                             loadPermanentScope = loadPermanentScope,
+                            onReplayOpenClaimTour = openClaimTourVm::replay,
+                            onOpenClaimTourHelpPositioned = { openClaimTourHelpRect = it },
                         )
-                    TAB_HOUSE -> HouseTabContent(houseVm, swapMeUserId)
+                    TAB_HOUSE ->
+                        HouseTabContent(
+                            vm = houseVm,
+                            meUserId = swapMeUserId,
+                            onReplayHouseGridTour = houseGridTourVm::replay,
+                            onHouseGridTourHelpPositioned = { houseGridTourHelpRect = it },
+                        )
                     TAB_UPDATES ->
                         UpdatesTabContent(
                             feed = updatesState.feed,
@@ -653,12 +831,22 @@ fun ShiftsApp(
                         )
                     TAB_PREFS ->
                         Column(Modifier.fillMaxSize().background(ShiftTheme.colors.bg)) {
-                            PageTitle("Preferences")
+                            PageTitle("Preferences") {
+                                PreferencesTourHelpButton(
+                                    onClick = preferencesTourVm::replay,
+                                    onPositioned = { preferencesTourHelpRect = it },
+                                )
+                            }
                             PreferencesTabContent(preferencesVm, onSubmitPreferences, onSetDeadline = onSetDeadline)
                         }
                     TAB_BREAK ->
                         Column(Modifier.fillMaxSize().background(ShiftTheme.colors.bg)) {
-                            PageTitle("Break shifts")
+                            PageTitle("Break shifts") {
+                                BreakTourHelpButton(
+                                    onClick = breakTourVm::replay,
+                                    onPositioned = { breakTourHelpRect = it },
+                                )
+                            }
                             BreakCalendarTabContent(breakCalendarVm, onClaimBreakRange, onDropBreakSeats, onToggleBreakOptOut)
                         }
                     TAB_SETTINGS ->
@@ -672,6 +860,29 @@ fun ShiftsApp(
                                 onReplayShiftTour = {
                                     requestTab(TAB_MY)
                                     shiftTourVm.replay()
+                                },
+                                onReplayPreferencesTour = {
+                                    requestTab(TAB_PREFS)
+                                    preferencesTourVm.replay()
+                                },
+                                onReplayBreakTour = {
+                                    requestTab(TAB_BREAK)
+                                    breakTourVm.replay()
+                                },
+                                // The swap composer lives in a sheet, not a tab — priming it
+                                // here means it fires the next time the worker reaches the
+                                // swap page (see ManageShiftSheet's page == Swap gating).
+                                onReplaySwapTour = {
+                                    requestTab(TAB_MY)
+                                    swapTourVm.replay()
+                                },
+                                onReplayHouseGridTour = {
+                                    requestTab(TAB_HOUSE)
+                                    houseGridTourVm.replay()
+                                },
+                                onReplayOpenClaimTour = {
+                                    requestTab(TAB_OPEN)
+                                    openClaimTourVm.replay()
                                 },
                             )
                         }
@@ -763,6 +974,13 @@ fun ShiftsApp(
                 onNext = shiftTourVm::next,
                 onBack = shiftTourVm::back,
                 onSkip = shiftTourVm::skip,
+                // Tapping away is a quick "not now", not the natural finish the one-time
+                // store gates on -- always re-point at the header "?" so the worker still
+                // learns where to pick the tour back up, every time this happens.
+                onDismissOutside = {
+                    shiftTourVm.skip()
+                    showTourPointer = true
+                },
             )
         }
         // The one-time "look here" pointer at the header "?", positioned from the real
@@ -770,6 +988,70 @@ fun ShiftsApp(
         if (showTourPointer) {
             ShiftTourPointerCallout(targetRect = shiftTourHelpRect)
         }
+        // Four more interactive tours, identical shape to shiftTourVm's block above.
+        if (preferencesTourState.active) {
+            PreferencesTourOverlay(
+                state = preferencesTourState,
+                onNext = preferencesTourVm::next,
+                onBack = preferencesTourVm::back,
+                onSkip = preferencesTourVm::skip,
+                onDismissOutside = {
+                    preferencesTourVm.skip()
+                    showPreferencesTourPointer = true
+                },
+            )
+        }
+        if (showPreferencesTourPointer) {
+            PreferencesTourPointerCallout(targetRect = preferencesTourHelpRect)
+        }
+        if (breakTourState.active) {
+            BreakTourOverlay(
+                state = breakTourState,
+                onNext = breakTourVm::next,
+                onBack = breakTourVm::back,
+                onSkip = breakTourVm::skip,
+                onDismissOutside = {
+                    breakTourVm.skip()
+                    showBreakTourPointer = true
+                },
+            )
+        }
+        if (showBreakTourPointer) {
+            BreakTourPointerCallout(targetRect = breakTourHelpRect)
+        }
+        if (houseGridTourState.active) {
+            HouseGridTourOverlay(
+                state = houseGridTourState,
+                onNext = houseGridTourVm::next,
+                onBack = houseGridTourVm::back,
+                onSkip = houseGridTourVm::skip,
+                onDismissOutside = {
+                    houseGridTourVm.skip()
+                    showHouseGridTourPointer = true
+                },
+            )
+        }
+        if (showHouseGridTourPointer) {
+            HouseGridTourPointerCallout(targetRect = houseGridTourHelpRect)
+        }
+        if (openClaimTourState.active) {
+            OpenClaimTourOverlay(
+                state = openClaimTourState,
+                onNext = openClaimTourVm::next,
+                onBack = openClaimTourVm::back,
+                onSkip = openClaimTourVm::skip,
+                onDismissOutside = {
+                    openClaimTourVm.skip()
+                    showOpenClaimTourPointer = true
+                },
+            )
+        }
+        if (showOpenClaimTourPointer) {
+            OpenClaimTourPointerCallout(targetRect = openClaimTourHelpRect)
+        }
+        // The swap-composer tour overlay + pointer are rendered from INSIDE
+        // ManageShiftSheet (via CalendarTabContent), not here — see the swapTourVm comment
+        // above: a root-level overlay would render BEHIND the modal bottom sheet.
         }
         }
 
@@ -1069,11 +1351,20 @@ private fun OpenShiftsTabContent(
     onClaimShift: (OpenShift) -> Unit = {},
     onPickUpPermanent: (OpenShift) -> Unit = {},
     loadPermanentScope: suspend (OpenShift) -> PermanentPickupScope? = { null },
+    // The header "?" that replays the interactive Open-Shifts claim tour, and its reported
+    // bounds (for the one-time post-tour pointer callout to point at).
+    onReplayOpenClaimTour: () -> Unit = {},
+    onOpenClaimTourHelpPositioned: (Rect) -> Unit = {},
 ) {
     var sub by remember { mutableIntStateOf(OPEN_SUB_HOME) }
     var showWeekPicker by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(ShiftTheme.colors.bg)) {
-        PageTitle("Open Shifts")
+        PageTitle("Open Shifts") {
+            OpenClaimTourHelpButton(
+                onClick = onReplayOpenClaimTour,
+                onPositioned = onOpenClaimTourHelpPositioned,
+            )
+        }
         SecondaryTabRow(selectedTabIndex = sub) {
             SpecTab("My House", "tab_open_home", sub == OPEN_SUB_HOME) {
                 sub = OPEN_SUB_HOME
@@ -2389,6 +2680,10 @@ private fun CalendarTabContent(
     // (for the one-time post-tour pointer callout to point at).
     onReplayShiftTour: () -> Unit = {},
     onShiftTourHelpPositioned: (Rect) -> Unit = {},
+    // The swap-composer tour's ViewModel, threaded down to the manage-shift sheet (its
+    // autoStart trigger, overlay, help button, and pointer all render from inside the
+    // sheet — see the swapTourVm comment where it's created in ShiftsApp).
+    swapTourVm: SwapTourViewModel,
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val c = ShiftTheme.colors
@@ -2578,6 +2873,7 @@ private fun CalendarTabContent(
                     if (allOk) onSwapProposed()
                 }
             },
+            swapTourVm = swapTourVm,
         )
     }
 
@@ -3414,6 +3710,10 @@ private fun AgendaShiftCard(
 private fun HouseTabContent(
     vm: HouseScheduleViewModel,
     meUserId: String?,
+    // The header "?" that replays the interactive House-grid tour, and its reported bounds
+    // (for the one-time post-tour pointer callout to point at).
+    onReplayHouseGridTour: () -> Unit = {},
+    onHouseGridTourHelpPositioned: (Rect) -> Unit = {},
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val c = ShiftTheme.colors
@@ -3534,7 +3834,12 @@ private fun HouseTabContent(
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().background(c.bg).testTag("house_screen")) {
-            PageTitle("House")
+            PageTitle("House") {
+                HouseGridTourHelpButton(
+                    onClick = onReplayHouseGridTour,
+                    onPositioned = onHouseGridTourHelpPositioned,
+                )
+            }
             HouseHeaderCard(
                 houseName = state.houseName,
                 deskPhone = state.deskPhone,
@@ -3707,6 +4012,12 @@ private val HOUSE_LANE_W = 92.dp
 private val HOUSE_LANE_GAP = 4.dp
 private val HOUSE_COL_PAD = 6.dp
 private val HOUSE_COL_GAP = 6.dp
+
+/**
+ * How far OTHER workers' seats recede on the house grid so mine is findable at a glance.
+ * Mirrors iOS's `houseOtherOpacity`; keep the two in step.
+ */
+private const val HOUSE_OTHER_OPACITY = 0.5f
 
 /** The legend strip (design): You / Float-in / Open, plus the swipe-sideways hint. */
 @Composable
@@ -3969,11 +4280,17 @@ private fun HouseGridBlockCell(
     // `color-mix(in srgb, F 75%, C 25%)`); on a state-coloured block it's just `fg`.
     val timeFg = if (wc != null) lerp(fg, wc.color, 0.25f) else fg
     val shape = RoundedCornerShape(8.dp)
+    // Everyone else's seats recede so mine is findable at a glance: a grid where every seat
+    // wears a saturated colour is pretty but useless for the one question a worker actually
+    // asks ("where am I?"). Vacant seats are nobody's card and stay full strength (they're
+    // the actionable open-seat affordance for a manager).
+    val blockAlpha = if (b.mine || b.vacant) 1f else HOUSE_OTHER_OPACITY
     Box(
         Modifier
             .offset(x = x, y = top)
             .width(width)
             .height(height)
+            .alpha(blockAlpha)
             .clip(shape)
             .background(bg)
             .then(
@@ -4490,59 +4807,121 @@ private fun ManageShiftSheet(
     swapDemoSeats: List<HouseSeat>,
     swapPendingGiveIds: Set<String>,
     onSubmitSwap: (List<SwapProposal>) -> Unit,
+    // The swap-composer tour. Auto-opens the FIRST time the worker reaches the swap page
+    // (not the manage page — Drop-vs-Swap is ShiftTour's job, not this tour's). See
+    // ui/onboarding/SwapTourView.kt.
+    swapTourVm: SwapTourViewModel,
 ) {
     var page by remember(shift) { mutableStateOf(ManagePage.Manage) }
     var swapGive by remember(shift) { mutableStateOf<MyShift?>(null) }
     var swapPermanent by remember(shift) { mutableStateOf(false) }
+    val swapTourState by swapTourVm.uiState.collectAsStateWithLifecycle()
+    // One-shot pointer callout on the swap page's help "?" after the tour first finishes.
+    // Local to this sheet (mirrors iOS's `showSwapTourPointer` being `@State` on
+    // `ManageShiftSheet`, not lifted to the top-level screen) — it only ever matters while
+    // the sheet carrying the help button is still open.
+    var swapTourHelpRect by remember { mutableStateOf<Rect?>(null) }
+    var showSwapTourPointer by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    LaunchedEffect(page) {
+        if (page == ManagePage.Swap) swapTourVm.autoStart()
+    }
+    LaunchedEffect(swapTourState.active) {
+        if (!swapTourState.active &&
+            !SwapTour.shouldAutoShow(swapTourState.seen) &&
+            !SwapTourPointerStore.hasShown(context)
+        ) {
+            SwapTourPointerStore.markShown(context)
+            showSwapTourPointer = true
+        }
+    }
+    LaunchedEffect(showSwapTourPointer) {
+        if (showSwapTourPointer) {
+            delay(3200)
+            showSwapTourPointer = false
+        }
+    }
 
     ShiftBottomSheet(
         onDismiss = onDismiss,
         title = if (page == ManagePage.Swap) "Propose a swap" else "Manage shift",
         onBack = if (page == ManagePage.Swap) ({ page = ManagePage.Manage }) else null,
     ) {
-        AnimatedContent(
-            targetState = page,
-            transitionSpec = {
-                // Forward (→ Swap) slides in from the right; Back slides in from the left.
-                if (targetState == ManagePage.Swap) {
-                    (slideInHorizontally { it / 3 } + fadeIn()) togetherWith (slideOutHorizontally { -it / 3 } + fadeOut())
-                } else {
-                    (slideInHorizontally { -it / 3 } + fadeIn()) togetherWith (slideOutHorizontally { it / 3 } + fadeOut())
-                }
-            },
-            label = "manage_page",
-        ) { p ->
-            when (p) {
-                ManagePage.Manage ->
-                    ManagePageContent(
-                        shift = shift,
-                        vm = vm,
-                        breakProfile = breakProfile,
-                        swapKinds = swapKinds,
-                        onDrop = { sub, permanent ->
-                            onDrop(sub, permanent)
-                            onDismiss()
-                        },
-                        onProposeSwap = { sub, permanent ->
-                            swapGive = sub
-                            swapPermanent = permanent
-                            page = ManagePage.Swap
-                        },
-                    )
-                ManagePage.Swap ->
-                    swapGive?.let { give ->
-                        SwapCalendarBody(
-                            giveShift = give,
-                            meUserId = swapMeUserId,
-                            demoSeats = swapDemoSeats,
-                            pendingGiveAssignmentIds = swapPendingGiveIds,
-                            initialPermanent = swapPermanent,
-                            onSubmit = { proposals ->
-                                onSubmitSwap(proposals)
+        Box(Modifier.fillMaxWidth()) {
+            AnimatedContent(
+                targetState = page,
+                transitionSpec = {
+                    // Forward (→ Swap) slides in from the right; Back slides in from the left.
+                    if (targetState == ManagePage.Swap) {
+                        (slideInHorizontally { it / 3 } + fadeIn()) togetherWith (slideOutHorizontally { -it / 3 } + fadeOut())
+                    } else {
+                        (slideInHorizontally { -it / 3 } + fadeIn()) togetherWith (slideOutHorizontally { it / 3 } + fadeOut())
+                    }
+                },
+                label = "manage_page",
+            ) { p ->
+                when (p) {
+                    ManagePage.Manage ->
+                        ManagePageContent(
+                            shift = shift,
+                            vm = vm,
+                            breakProfile = breakProfile,
+                            swapKinds = swapKinds,
+                            onDrop = { sub, permanent ->
+                                onDrop(sub, permanent)
                                 onDismiss()
                             },
+                            onProposeSwap = { sub, permanent ->
+                                swapGive = sub
+                                swapPermanent = permanent
+                                page = ManagePage.Swap
+                            },
                         )
-                    }
+                    ManagePage.Swap ->
+                        swapGive?.let { give ->
+                            SwapCalendarBody(
+                                giveShift = give,
+                                meUserId = swapMeUserId,
+                                demoSeats = swapDemoSeats,
+                                pendingGiveAssignmentIds = swapPendingGiveIds,
+                                initialPermanent = swapPermanent,
+                                onSubmit = { proposals ->
+                                    onSubmitSwap(proposals)
+                                    onDismiss()
+                                },
+                            )
+                        }
+                }
+            }
+            // The composer's own help "?", floating top-end since ShiftBottomSheet's own
+            // header has no trailing accessory slot (its close X already owns that spot).
+            if (page == ManagePage.Swap) {
+                SwapTourHelpButton(
+                    onClick = swapTourVm::replay,
+                    onPositioned = { swapTourHelpRect = it },
+                    modifier = Modifier.align(Alignment.TopEnd).padding(top = 2.dp, end = 2.dp),
+                )
+            }
+            // Gated on page == Swap too: a Settings "Replay swap tour" flips `active` true
+            // immediately (before the sheet may even be open on this page), and it must stay
+            // invisible until the worker actually reaches the swap page, not show over the
+            // Drop/Swap manage page. Rendered as a sibling in this SAME Box (not a separate
+            // Column row) so it overlaps the page content instead of stacking below it.
+            if (swapTourState.active && page == ManagePage.Swap) {
+                SwapTourOverlay(
+                    state = swapTourState,
+                    onNext = swapTourVm::next,
+                    onBack = swapTourVm::back,
+                    onSkip = swapTourVm::skip,
+                    onDismissOutside = {
+                        swapTourVm.skip()
+                        showSwapTourPointer = true
+                    },
+                )
+            }
+            if (showSwapTourPointer) {
+                SwapTourPointerCallout(targetRect = swapTourHelpRect)
             }
         }
     }

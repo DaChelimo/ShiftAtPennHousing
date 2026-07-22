@@ -37,30 +37,35 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.pennhousing.shift.shared.onboarding.ShiftTour
-import com.pennhousing.shift.shared.onboarding.ShiftTourStepId
-import com.pennhousing.shift.shared.viewmodel.ShiftTourUiState
+import com.pennhousing.shift.shared.onboarding.OpenClaimTour
+import com.pennhousing.shift.shared.onboarding.OpenClaimTourStepId
+import com.pennhousing.shift.shared.viewmodel.OpenClaimTourUiState
 import com.pennhousing.shift.ui.kit.ButtonSize
 import com.pennhousing.shift.ui.kit.ButtonVariant
-import com.pennhousing.shift.ui.kit.SegmentedControl
 import com.pennhousing.shift.ui.kit.ShiftButton
 import com.pennhousing.shift.ui.kit.ShiftIcons
 import com.pennhousing.shift.ui.theme.ShiftTheme
 
 /**
- * ShiftTourView (Android) — the Compose port of the interactive "Manage a shift"
- * onboarding tour (see `iosApp/iosApp/ShiftTourView.swift` for the SwiftUI original).
- * The step copy and step-2 summary math live in shared `onboarding/ShiftTour`; the
- * `ShiftTourViewModel` sequences the three steps. This file is rendering only, matching
- * this platform's existing `ui/onboarding/Onboarding.kt` conventions (SharedPreferences
- * for the seen-key store, plain Compose visibility rather than iOS's spring/stagger
- * motion — Android's onboarding overlay is deliberately simpler, and this follows suit).
+ * OpenClaimTourView (Android) — the Compose port of the interactive "Claim what's open"
+ * onboarding tour (see `iosApp/iosApp/OpenClaimTourView.swift` for the SwiftUI original).
+ * Its single most important job: workers do not realize an open shift can be claimed
+ * PERMANENTLY (a standing weekly pickup), not just once for the week shown. Step 3's copy
+ * below uses the real screen's own section-name wording verbatim from the shared
+ * `OpenClaimTour` module ("Weekly open shift" / "Permanent opening", "Claim shift" /
+ * "Pick up permanently") — do not paraphrase it.
+ *
+ * The step copy + the summary math live in shared `onboarding/OpenClaimTour`; the
+ * `OpenClaimTourViewModel` sequences the three steps. This file is rendering only, matching
+ * `ShiftTourView.kt`'s exact shape/conventions (SharedPreferences for the seen-key store,
+ * plain Compose visibility rather than iOS's spring/stagger motion — Android's onboarding
+ * overlay is deliberately simpler, and this follows suit).
  */
 
-/** Its OWN seen-key store, separate from the welcome-tour / tips set (mirrors iOS). */
-object ShiftTourPrefs {
+/** Its OWN seen-key store, separate from every other tour's key (mirrors iOS). */
+object OpenClaimTourPrefs {
     private const val PREFS = "onboarding"
-    private const val KEY = "shift_tour_seen_keys"
+    private const val KEY = "openclaim_tour_seen_keys"
 
     fun read(context: Context): Set<String> =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getStringSet(KEY, emptySet())?.toSet() ?: emptySet()
@@ -74,9 +79,9 @@ object ShiftTourPrefs {
 }
 
 /** Per-device flag: whether the header "?" has already shown its one-time post-tour pointer. */
-object ShiftTourPointerStore {
+object OpenClaimTourPointerStore {
     private const val PREFS = "onboarding"
-    private const val KEY = "shift_tour_pointer_shown"
+    private const val KEY = "openclaim_tour_pointer_shown"
 
     fun hasShown(context: Context): Boolean = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY, false)
 
@@ -86,12 +91,12 @@ object ShiftTourPointerStore {
 }
 
 /**
- * The "?" affordance in the My-Shifts header that replays the tour. Reports its own
+ * The "?" affordance in the Open-Shifts header that replays the tour. Reports its own
  * on-screen bounds via [onPositioned] so the one-time pointer callout can point at the
  * real button without the two composables needing to know each other's layout.
  */
 @Composable
-fun ShiftTourHelpButton(
+fun OpenClaimTourHelpButton(
     onClick: () -> Unit,
     onPositioned: (Rect) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -105,12 +110,12 @@ fun ShiftTourHelpButton(
             // token set); MaterialTheme's own primaryContainer is the closest brand match.
             .background(MaterialTheme.colorScheme.primaryContainer)
             .clickable(onClick = onClick)
-            .testTag("shift_tour_help"),
+            .testTag("openclaim_tour_help"),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             ShiftIcons.QuestionMark,
-            contentDescription = "Replay the shift tour",
+            contentDescription = "Replay the open shifts tour",
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(16.dp),
         )
@@ -121,16 +126,15 @@ fun ShiftTourHelpButton(
  * The one-time "look here" pointer at the header "?", shown once right after the tour
  * first finishes so the worker learns where it went. Non-blocking (no click handling) and
  * fades on its own timer driven by the caller. [targetRect] is the help button's root-space
- * bounds (from [ShiftTourHelpButton]'s [onPositioned]); renders nothing until known.
+ * bounds (from [OpenClaimTourHelpButton]'s [onPositioned]); renders nothing until known.
  */
 @Composable
-fun ShiftTourPointerCallout(
+fun OpenClaimTourPointerCallout(
     targetRect: Rect?,
     modifier: Modifier = Modifier,
 ) {
     if (targetRect == null) return
-    val c = ShiftTheme.colors
-    Box(modifier.fillMaxSize().testTag("shift_tour_pointer")) {
+    Box(modifier.fillMaxSize().testTag("openclaim_tour_pointer")) {
         Column(
             Modifier
                 .padding(top = with(androidx.compose.ui.platform.LocalDensity.current) { (targetRect.bottom + 10f).toDp() })
@@ -148,13 +152,15 @@ fun ShiftTourPointerCallout(
 }
 
 /**
- * The tour overlay — the sample My-Shifts card the worker sees (step 1), does the
- * part-or-all range pick on (step 2), and watches land in Open/Swaps (step 3), paired
- * with a coach card carrying the step copy and Skip/Back/Next controls.
+ * The tour overlay — the sample open-shift card the worker sees (step 1, with the My House /
+ * Others sub-tabs and the Claim button), the part-or-all range pick over the sample shift's
+ * blocks (step 2), and the weekly-vs-permanent scope flip that changes the live summary
+ * wording under it (step 3), paired with a coach card carrying the step copy and
+ * Skip/Back/Next controls.
  */
 @Composable
-fun ShiftTourOverlay(
-    state: ShiftTourUiState,
+fun OpenClaimTourOverlay(
+    state: OpenClaimTourUiState,
     onNext: () -> Unit,
     onBack: () -> Unit,
     onSkip: () -> Unit,
@@ -162,19 +168,22 @@ fun ShiftTourOverlay(
 ) {
     val step = state.step ?: return
     val c = ShiftTheme.colors
-    val scrim = if (c.isDark) Color(0xC4000000) else Color(0x99101622)
+    val scrim = if (c.isDark) Color(0xD1000000) else Color(0x9E101622)
     // Tapping the scrim dismisses the tour, except on the AMOUNT step where the sample
     // range slider needs the full card area to itself -- a stray tap while dragging must
     // not lose the worker's place.
-    val dismissible = step.id != ShiftTourStepId.AMOUNT
+    val dismissible = step.id != OpenClaimTourStepId.AMOUNT
 
-    // Step-2 interactive state. Defaults mirror ShiftTour.DEFAULT_FROM_BLOCK/TO_BLOCK
-    // (18:00 to 20:00). Fresh every time this composable mounts (the overlay is only
-    // composed while the tour is active, matching iOS's per-appearance @State).
-    var from by remember { mutableIntStateOf(ShiftTour.DEFAULT_FROM_BLOCK) }
-    var to by remember { mutableIntStateOf(ShiftTour.DEFAULT_TO_BLOCK) }
-    var permanent by remember { mutableStateOf(false) }
-    val blockCount = ShiftTour.SAMPLE_BLOCK_COUNT
+    // Step-1 sub-tab selection (decorative). Step-2 range state and step-3 scope toggle
+    // (functional; drive the shared live summary lines). Defaults mirror
+    // OpenClaimTour.DEFAULT_FROM_BLOCK/TO_BLOCK/DEFAULT_PERMANENT. Fresh every time this
+    // composable mounts (the overlay is only composed while the tour is active, matching
+    // iOS's per-appearance @State).
+    var subTab by remember { mutableIntStateOf(0) }
+    var from by remember { mutableIntStateOf(OpenClaimTour.DEFAULT_FROM_BLOCK) }
+    var to by remember { mutableIntStateOf(OpenClaimTour.DEFAULT_TO_BLOCK) }
+    var permanent by remember { mutableStateOf(OpenClaimTour.DEFAULT_PERMANENT) }
+    val blockCount = OpenClaimTour.SAMPLE_BLOCK_COUNT
 
     Box(
         Modifier
@@ -185,14 +194,24 @@ fun ShiftTourOverlay(
                 indication = null,
                 onClick = { if (dismissible) onDismissOutside() },
             )
-            .testTag("shift_tour"),
+            .testTag("openclaim_tour"),
         contentAlignment = Alignment.Center,
     ) {
         Column(
             Modifier.widthIn(max = 460.dp).fillMaxWidth().padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            stage(step.id, from, to, permanent, blockCount, onRange = { f, t -> from = f; to = t }, onScope = { permanent = it })
+            stage(
+                stepId = step.id,
+                subTab = subTab,
+                onSubTab = { subTab = it },
+                from = from,
+                to = to,
+                blockCount = blockCount,
+                onRange = { f, t -> from = f; to = t },
+                permanent = permanent,
+                onScope = { permanent = it },
+            )
             coachCard(state, onNext = onNext, onBack = onBack, onSkip = onSkip)
         }
     }
@@ -200,16 +219,17 @@ fun ShiftTourOverlay(
 
 @Composable
 private fun stage(
-    stepId: ShiftTourStepId,
+    stepId: OpenClaimTourStepId,
+    subTab: Int,
+    onSubTab: (Int) -> Unit,
     from: Int,
     to: Int,
-    permanent: Boolean,
     blockCount: Int,
     onRange: (Int, Int) -> Unit,
+    permanent: Boolean,
     onScope: (Boolean) -> Unit,
 ) {
     val c = ShiftTheme.colors
-    val dropped = stepId == ShiftTourStepId.DESTINATION
     Column(
         Modifier
             .fillMaxWidth()
@@ -218,22 +238,70 @@ private fun stage(
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        if (!dropped) {
-            sampleCard(highlighted = stepId == ShiftTourStepId.MANAGE)
-            if (stepId == ShiftTourStepId.MANAGE) chipsRow()
-            if (stepId == ShiftTourStepId.AMOUNT) amountControls(from, to, permanent, blockCount, onRange, onScope)
-        } else {
-            // Step 3: the card has "landed" — dim it to show it left the agenda.
-            Box(Modifier.fillMaxWidth()) { sampleCard(highlighted = false, dimmed = true) }
-        }
-        mockNav(highlightOpen = dropped)
+        if (stepId == OpenClaimTourStepId.CLAIM) subTabsRow(subTab, onSubTab)
+
+        val buttonLabel = if (stepId == OpenClaimTourStepId.SCOPE && permanent) "Pick up" else "Claim"
+        sampleCard(highlighted = stepId == OpenClaimTourStepId.CLAIM, dimmed = false, buttonLabel = buttonLabel)
+
+        if (stepId == OpenClaimTourStepId.AMOUNT) amountControls(from, to, blockCount, onRange)
+        if (stepId == OpenClaimTourStepId.SCOPE) scopeControls(permanent, onScope)
+    }
+}
+
+/**
+ * The real My House / Others sub-tab control, live and tappable, exactly as it renders atop
+ * the real Open Shifts tab. Tap targets exercise local/decorative state only (a standard
+ * segmented control needs no discoverability hint).
+ */
+@Composable
+private fun subTabsRow(
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+) {
+    val c = ShiftTheme.colors
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(c.surfaceVar)
+            .padding(4.dp)
+            .testTag("openclaim_tour_subtabs"),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        subTabSegment("My House", selectedIndex == 0, Modifier.weight(1f)) { onSelect(0) }
+        subTabSegment("Others", selectedIndex == 1, Modifier.weight(1f)) { onSelect(1) }
     }
 }
 
 @Composable
+private fun subTabSegment(
+    label: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val c = ShiftTheme.colors
+    Box(
+        modifier
+            .clip(RoundedCornerShape(9.dp))
+            .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = if (selected) Color.White else c.sec, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+/**
+ * The sample open-shift card. Lifts (blue ring) in step 1 to draw the eye to the tap target
+ * and its Claim button. [buttonLabel] flips to "Pick up" once step 3 has flipped the scope
+ * to permanent, mirroring the real claim sheet's own title change.
+ */
+@Composable
 private fun sampleCard(
     highlighted: Boolean,
-    dimmed: Boolean = false,
+    dimmed: Boolean,
+    buttonLabel: String,
 ) {
     val c = ShiftTheme.colors
     Row(
@@ -243,7 +311,7 @@ private fun sampleCard(
             .background(c.bg)
             .border(if (highlighted) 2.dp else 0.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp))
             .padding(14.dp)
-            .testTag("shift_tour_sample_card"),
+            .testTag("openclaim_tour_sample_card"),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -260,74 +328,33 @@ private fun sampleCard(
                     Text("4h", color = c.sec, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
-            Text(ShiftTour.SAMPLE_HOUSE, color = c.sec, fontSize = 13.5.sp)
+            Text(OpenClaimTour.SAMPLE_HOUSE, color = c.sec, fontSize = 13.5.sp)
         }
-        Icon(ShiftIcons.ChevronRight, contentDescription = null, tint = c.outline, modifier = Modifier.size(14.dp))
+        ShiftButton(
+            text = buttonLabel,
+            onClick = {},
+            variant = ButtonVariant.Filled,
+            size = ButtonSize.Sm,
+            modifier = Modifier.testTag("openclaim_tour_claim_button"),
+        )
     }
 }
 
 /**
- * Step 1 action chips: Drop standalone, then the grouped Swap + Hand off (both open the
- * swap flow in the real sheet). Reuses the icons already used for the real drop/swap
- * affordances elsewhere in the app rather than inventing new ones.
- */
-@Composable
-private fun chipsRow() {
-    val c = ShiftTheme.colors
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        actionChip("Drop", ShiftIcons.FloatOut, c.pending)
-        Row(
-            Modifier
-                .clip(RoundedCornerShape(16.dp))
-                .border(1.dp, c.divider, RoundedCornerShape(16.dp))
-                .padding(6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            actionChip("Swap", ShiftIcons.Refresh, c.success.accent)
-            actionChip("Hand off", ShiftIcons.Send, MaterialTheme.colorScheme.primary)
-        }
-    }
-}
-
-@Composable
-private fun actionChip(
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    tint: Color,
-) {
-    val c = ShiftTheme.colors
-    Row(
-        Modifier
-            .clip(RoundedCornerShape(50))
-            .background(c.surface)
-            .border(1.dp, c.divider, RoundedCornerShape(50))
-            .padding(start = 6.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Box(Modifier.size(22.dp).clip(CircleShape).background(tint), contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
-        }
-        Text(label, color = c.ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-    }
-}
-
-/**
- * Step 2 controls: the real (Material 3) [RangeSlider] over the sample shift's blocks, a
- * One time / Permanent segmented control, and the live summary line recomputed by the
- * shared `ShiftTour.summaryLine`.
+ * Step 2 controls: the real (Material 3) [RangeSlider] over the sample shift's blocks and
+ * the live "Covering Xh · start to end" summary recomputed by the shared
+ * `OpenClaimTour.summaryLine`.
  */
 @Composable
 private fun amountControls(
     from: Int,
     to: Int,
-    permanent: Boolean,
     blockCount: Int,
     onRange: (Int, Int) -> Unit,
-    onScope: (Boolean) -> Unit,
 ) {
     val c = ShiftTheme.colors
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("How much can you cover?", color = c.sec, fontSize = 13.sp, fontWeight = FontWeight.Medium)
         RangeSlider(
             value = from.toFloat()..to.toFloat(),
             onValueChange = { r ->
@@ -337,54 +364,82 @@ private fun amountControls(
             },
             valueRange = 0f..blockCount.toFloat(),
             steps = (blockCount - 1).coerceAtLeast(0),
-            modifier = Modifier.fillMaxWidth().testTag("shift_tour_range"),
-        )
-        SegmentedControl(
-            options = listOf("One time", "Permanent"),
-            selectedIndex = if (permanent) 1 else 0,
-            onSelect = { onScope(it == 1) },
+            modifier = Modifier.fillMaxWidth().testTag("openclaim_tour_range"),
         )
         Text(
-            ShiftTour.summaryLine(fromBlock = from, toBlock = to, permanent = permanent),
+            OpenClaimTour.summaryLine(fromBlock = from, toBlock = to),
             color = MaterialTheme.colorScheme.primary,
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.testTag("shift_tour_summary"),
+            modifier = Modifier.testTag("openclaim_tour_summary"),
         )
     }
 }
 
 /**
- * A representative bottom-nav strip mirroring the real [ShiftBottomNav] icon set, so the
- * "where it goes" step points at the actual Open tab glyph rather than an approximation.
+ * Step 3 controls: a two-state scope toggle using the real claim sheet's own wording
+ * ("Weekly open shift" claims once; "Permanent opening" repeats every week), plus the live
+ * one-line consequence (shared `OpenClaimTour.scopeSummary`, reusing the SAME
+ * "openclaim_tour_summary" tag step 2 uses) so the flip's effect is visible immediately.
+ * The whole toggle is one tap target (tapping either half flips the scope) — Android's
+ * onboarding overlay is deliberately simpler than iOS's two-independently-tappable-pill
+ * layout, per this file's header note.
  */
 @Composable
-private fun mockNav(highlightOpen: Boolean) {
+private fun scopeControls(
+    permanent: Boolean,
+    onScope: (Boolean) -> Unit,
+) {
     val c = ShiftTheme.colors
-    Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-        navItem("My Shifts", ShiftIcons.Calendar, c.ter)
-        navItem("Open", ShiftIcons.Plus, if (highlightOpen) c.pending else c.ter)
-        navItem("House", ShiftIcons.Building, c.ter)
-        navItem("Swaps", ShiftIcons.Refresh, c.ter)
-        navItem("More", ShiftIcons.MoreHorizontal, c.ter)
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(c.surfaceVar)
+                .clickable { onScope(!permanent) }
+                .padding(4.dp)
+                .testTag("openclaim_tour_scope_toggle"),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            scopePill("Weekly open shift", selected = !permanent, isPermanentPill = false, modifier = Modifier.weight(1f))
+            scopePill("Permanent opening", selected = permanent, isPermanentPill = true, modifier = Modifier.weight(1f))
+        }
+        Text(
+            OpenClaimTour.scopeSummary(permanent = permanent),
+            color = if (permanent) c.permanent.deep else MaterialTheme.colorScheme.primary,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.testTag("openclaim_tour_summary"),
+        )
     }
 }
 
 @Composable
-private fun navItem(
+private fun scopePill(
     label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    tint: Color,
+    selected: Boolean,
+    isPermanentPill: Boolean,
+    modifier: Modifier = Modifier,
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
-        Text(label, color = tint, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+    val c = ShiftTheme.colors
+    val bg =
+        when {
+            selected && isPermanentPill -> c.permanent.accent
+            selected -> MaterialTheme.colorScheme.primary
+            else -> Color.Transparent
+        }
+    Box(
+        modifier.clip(RoundedCornerShape(10.dp)).background(bg).padding(vertical = 9.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = if (selected) Color.White else c.sec, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
 @Composable
 private fun coachCard(
-    state: ShiftTourUiState,
+    state: OpenClaimTourUiState,
     onNext: () -> Unit,
     onBack: () -> Unit,
     onSkip: () -> Unit,
@@ -413,7 +468,7 @@ private fun coachCard(
                 onClick = onSkip,
                 variant = ButtonVariant.Text,
                 size = ButtonSize.Sm,
-                modifier = Modifier.testTag("shift_tour_skip"),
+                modifier = Modifier.testTag("openclaim_tour_skip"),
             )
             Text("${state.stepIndex} of ${state.stepCount}", color = c.ter, fontSize = 13.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -423,7 +478,7 @@ private fun coachCard(
                         onClick = onBack,
                         variant = ButtonVariant.Outlined,
                         size = ButtonSize.Sm,
-                        modifier = Modifier.testTag("shift_tour_back"),
+                        modifier = Modifier.testTag("openclaim_tour_back"),
                     )
                 }
                 ShiftButton(
@@ -431,7 +486,7 @@ private fun coachCard(
                     onClick = onNext,
                     variant = ButtonVariant.Filled,
                     size = ButtonSize.Sm,
-                    modifier = Modifier.testTag("shift_tour_next"),
+                    modifier = Modifier.testTag("openclaim_tour_next"),
                 )
             }
         }

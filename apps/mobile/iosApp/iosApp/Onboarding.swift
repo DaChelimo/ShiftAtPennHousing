@@ -208,7 +208,13 @@ struct OnboardingOverlayView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: ring == nil ? .center : .bottom)
                 .padding(.horizontal, 20)
             }
-            .accessibilityIdentifier("onboarding_overlay")
+            // A non-wrapping marker, not the container itself — an identifier set directly on a
+            // wrapping container leaks onto every descendant element in the XCUITest tree,
+            // shadowing that container's own more-specific descendant identifiers (confirmed
+            // empirically; see ContentView.swift's `shifts_screen` fix for the full explanation).
+            .overlay(alignment: .topLeading) {
+                Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("onboarding_overlay")
+            }
         )
     }
 
@@ -315,7 +321,13 @@ struct NotificationPrimingCardView: View {
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .padding(.horizontal, 20)
         }
-        .accessibilityIdentifier("notification_primer")
+        // A non-wrapping marker, not the container itself — an identifier set directly on a
+        // wrapping container leaks onto every descendant element in the XCUITest tree,
+        // shadowing that container's own more-specific descendant identifiers (confirmed
+        // empirically; see ContentView.swift's `shifts_screen` fix for the full explanation).
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("notification_primer")
+        }
     }
 }
 
@@ -450,7 +462,13 @@ struct WidgetPromptCardView: View {
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .padding(.horizontal, 20)
         }
-        .accessibilityIdentifier("widget_prompt")
+        // A non-wrapping marker, not the container itself — an identifier set directly on a
+        // wrapping container leaks onto every descendant element in the XCUITest tree,
+        // shadowing that container's own more-specific descendant identifiers (confirmed
+        // empirically; see ContentView.swift's `shifts_screen` fix for the full explanation).
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("widget_prompt")
+        }
     }
 
     @ViewBuilder

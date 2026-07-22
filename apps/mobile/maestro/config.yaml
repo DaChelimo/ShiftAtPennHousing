@@ -1,7 +1,7 @@
 # Maestro workspace config for the Shift@PennHousing worker-app E2E flows.
 # `maestro test apps/mobile/maestro/` runs every flow in the order below.
 flows:
-  - "0*.yaml"
+  - "[0-9][0-9]-*.yaml"
 executionOrder:
   continueOnFailure: false
   flowsOrder:
@@ -12,3 +12,9 @@ executionOrder:
     - 05-submit-preferences
     - 06-claim-break
     - 07-settings
+    - 08-calendar-week
+    - 09-my-shifts-week
+    - 10-swaps-tab
+    - 11-propose-partial-swap
+    - 12-open-shifts-week
+    - 13-house-grid

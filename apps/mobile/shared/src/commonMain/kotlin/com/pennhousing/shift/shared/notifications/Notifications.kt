@@ -25,7 +25,7 @@ import kotlin.time.Instant
  */
 
 /** Display category — the UI maps each to a kit icon + state colour (never colour alone). */
-enum class NotificationCategory { FLOAT, REMINDER, SHIFT_REMOVED, PERMANENT, PREFERENCES, SWAP, INFO }
+enum class NotificationCategory { FLOAT, REMINDER, SHIFT_REMOVED, PERMANENT, PREFERENCES, SWAP, INFO, ALLIED_PAGE }
 
 /**
  * Best-effort map from a `notifications.type` value to a display category, for the
@@ -36,12 +36,24 @@ fun categoryForType(rawType: String): NotificationCategory =
     when (rawType.lowercase()) {
         "ack_reminder" -> NotificationCategory.REMINDER
         "swap_request" -> NotificationCategory.SWAP
-        "sm_permanent_drop_alert", "sw_permanent_removal_alert" -> NotificationCategory.PERMANENT
+        "sw_permanent_removal_alert" -> NotificationCategory.PERMANENT
+        "allied_page" -> NotificationCategory.ALLIED_PAGE
         else -> NotificationCategory.INFO // broadcast, hm_leave_notice, hmod_urgent, personal_shift, unknown
     }
 
 /** The `payload.kind` the float-lookup / force-trigger RPCs stamp on the float-assigned notification. */
 const val PAYLOAD_KIND_FLOAT_ASSIGNED: String = "float_assigned"
+
+/** The `notifications.type` for an off-hours Allied-page ladder alert (migration 20260713000001). */
+const val TYPE_ALLIED_PAGE: String = "allied_page"
+
+/** Body copy for a ladder alert. No em/en dashes (surfaced text). */
+private fun alliedPageBody(deskPhone: String?): String =
+    if (deskPhone != null) {
+        "Call the desk at $deskPhone to secure Allied coverage, then confirm."
+    } else {
+        "Call the desk to secure Allied coverage, then confirm."
+    }
 
 /**
  * Map ONE `notifications` row (its `type`, `payload.kind`, `payload.float_id`, and any
@@ -69,18 +81,43 @@ fun notificationFromPayload(
     body: String?,
     createdAt: Instant,
     unread: Boolean,
+    alliedPageBlockId: String? = null,
+    deskPhone: String? = null,
 ): NotificationItem {
+    // An off-hours ladder alert (staggered-rollout pilot): a `allied_page` row carrying
+    // `payload.block_id`. It is the actionable "call the desk" entry — urgent, and its
+    // row opens the ack ("I've called the desk") that resolves the ladder.
+    val isAlliedPage = rawType.lowercase() == TYPE_ALLIED_PAGE && alliedPageBlockId != null
     val isFloatAssigned = payloadKind == PAYLOAD_KIND_FLOAT_ASSIGNED
     val openable = isFloatAssigned && floatId != null
     return NotificationItem(
         id = id,
-        category = if (isFloatAssigned) NotificationCategory.FLOAT else categoryForType(rawType),
-        title = title ?: if (isFloatAssigned) "Float assignment" else "Notification",
-        body = body ?: if (openable) "You've been floated. Tap to acknowledge." else "",
+        category =
+            when {
+                isAlliedPage -> NotificationCategory.ALLIED_PAGE
+                isFloatAssigned -> NotificationCategory.FLOAT
+                else -> categoryForType(rawType)
+            },
+        title =
+            title
+                ?: when {
+                    isAlliedPage -> "Call the desk for Allied coverage"
+                    isFloatAssigned -> "Float assignment"
+                    else -> "Notification"
+                },
+        body =
+            body
+                ?: when {
+                    isAlliedPage -> alliedPageBody(deskPhone)
+                    openable -> "You've been floated. Tap to acknowledge."
+                    else -> ""
+                },
         createdAt = createdAt,
         unread = unread,
-        urgent = openable,
+        urgent = openable || isAlliedPage,
         floatId = if (openable) floatId else null,
+        alliedPageBlockId = if (isAlliedPage) alliedPageBlockId else null,
+        deskPhone = if (isAlliedPage) deskPhone else null,
     )
 }
 
@@ -141,6 +178,14 @@ data class NotificationItem(
      * inline — this is just a discoverable pointer, like the pending-float entry.
      */
     val swapId: String? = null,
+    /**
+     * Non-null → an off-hours Allied-page ladder alert (staggered-rollout pilot): the
+     * BLOCK to acknowledge. Its row shows an "I've called the desk" ack that resolves the
+     * ladder (POST acknowledge-allied-page).
+     */
+    val alliedPageBlockId: String? = null,
+    /** The desk phone to call, shown on the ladder-alert row. */
+    val deskPhone: String? = null,
 )
 
 /** A fully-formatted Updates row — the UI renders this directly. */
@@ -160,6 +205,12 @@ data class NotificationRow(
     val swapId: String? = null,
     /** This row is the incoming-swap mirror (carries the `swap_request_notification` selector). */
     val opensSwaps: Boolean = false,
+    /** This row is an off-hours Allied-page ladder alert; shows the "I've called the desk" ack. */
+    val opensAlliedPage: Boolean = false,
+    /** The block to acknowledge when the ladder ack is tapped. */
+    val alliedPageBlockId: String? = null,
+    /** The desk phone to call, shown on the ladder-alert row. */
+    val deskPhone: String? = null,
 )
 
 /**
@@ -212,6 +263,9 @@ fun NotificationItem.toRow(
         ackCountdownLabel = ackCountdownLabel(floatId, floatStart, now, zone),
         swapId = swapId,
         opensSwaps = swapId != null,
+        opensAlliedPage = alliedPageBlockId != null,
+        alliedPageBlockId = alliedPageBlockId,
+        deskPhone = deskPhone,
     )
 
 /**

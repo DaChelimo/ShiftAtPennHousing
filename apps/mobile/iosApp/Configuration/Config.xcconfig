@@ -17,5 +17,5 @@ SLASH = /
 //   curl http://<mac-lan-ip>:54321/auth/v1/health   (must return 200)
 // A hardcoded LAN IP goes stale on every DHCP/network change, which surfaced as a
 // bogus "Incorrect email or password." until the login error handling was fixed.
-SUPABASE_URL = http:$(SLASH)$(SLASH)10.102.97.240:54321
+SUPABASE_URL = http:$(SLASH)$(SLASH)127.0.0.1:54321
 SUPABASE_ANON_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0

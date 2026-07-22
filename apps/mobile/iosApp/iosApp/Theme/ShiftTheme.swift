@@ -373,4 +373,6 @@ enum ShiftIcons {
     static let tune = "slider.horizontal.3"
     static let logout = "rectangle.portrait.and.arrow.right"
     static let more = "ellipsis"
+    static let send = "paperplane.fill"
+    static let sparkles = "sparkles"
 }

@@ -116,6 +116,7 @@ private fun messageForCode(
         "empty_drop" -> "Select a shift to drop first."
         "drop_not_owned" -> "You can only drop a shift you currently hold."
         "drop_not_contiguous" -> "Pick a single continuous stretch of time to drop."
+        "drop_past_block" -> "This shift has already started, so it can't be dropped."
         // ----- Permanent drop -----
         "semester_boundary_not_found" -> "That date falls outside the current semester."
         "permanent_removal_forbidden" -> "You don't have permission to drop this shift permanently."

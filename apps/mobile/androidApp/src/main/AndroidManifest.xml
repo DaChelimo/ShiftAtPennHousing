@@ -34,6 +34,20 @@
             </intent-filter>
         </activity>
 
+        <!-- Upcoming-shifts home-screen widget (Glance). The system delivers the
+             protected APPWIDGET_UPDATE broadcast to this receiver even though it is not
+             exported. Mirrors the iOS ShiftWidgets extension. -->
+        <receiver
+            android:name=".widget.ShiftWidgetReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/shift_widget_info" />
+        </receiver>
+
         <!-- FCM: receives new-token callbacks and push messages (deliverable #6). -->
         <service
             android:name=".push.AppFirebaseMessagingService"

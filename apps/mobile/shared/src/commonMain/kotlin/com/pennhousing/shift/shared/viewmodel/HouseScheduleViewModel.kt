@@ -43,6 +43,13 @@ data class HouseScheduleUiState(
     val homeHouseId: String? = null,
     /** True when the shown house IS the worker's home house (drives the "Your house" marker). */
     val isHomeHouse: Boolean = true,
+    /**
+     * True when the signed-in user holds a schedule-manager role (sm/hm/bm/rsm) AND is
+     * viewing their OWN house. Gates the manager actions on a vacant seat (add a worker,
+     * force-trigger coverage). A plain SM may VIEW any house (like any worker) but may
+     * only MANAGE their home house, so this is false on every other house's grid.
+     */
+    val canManage: Boolean = false,
     /** True once more than one house is known — the header acts as a dropdown. */
     val canSwitchHouse: Boolean = false,
     /** Index (0=Mon..6=Sun) of today within the shown week, or -1 when today is not in it. */
@@ -75,13 +82,16 @@ class HouseScheduleViewModel(
     initialSeats: List<HouseSeat>,
     private val meUserId: String?,
     private val now: Instant,
+    /** The user holds a schedule-manager role (sm/hm/bm/rsm); enables home-house actions. */
+    private val isManager: Boolean = false,
 ) : ViewModel() {
     /** Backward-compatible constructor (current-week snapshot only). */
     constructor(
         snapshot: HouseScheduleSnapshot,
         now: Instant,
         meUserId: String? = null,
-    ) : this(snapshot.houseName, snapshot.deskPhone, snapshot.houseId, snapshot.seats, meUserId, now)
+        isManager: Boolean = false,
+    ) : this(snapshot.houseName, snapshot.deskPhone, snapshot.houseId, snapshot.seats, meUserId, now, isManager)
 
     companion object {
         const val MIN_WEEK_OFFSET = -1
@@ -139,6 +149,7 @@ class HouseScheduleViewModel(
             selectedHouseId = selectedHouseId,
             homeHouseId = homeHouseId,
             isHomeHouse = selectedHouseId == null || selectedHouseId == homeHouseId,
+            canManage = isManager && (selectedHouseId == null || selectedHouseId == homeHouseId),
             canSwitchHouse = houses.size > 1,
             todayIndex = grid.days.indexOfFirst { it.isToday },
             nowMinOfDay = nowMin,

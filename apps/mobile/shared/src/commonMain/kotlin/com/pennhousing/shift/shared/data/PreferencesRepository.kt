@@ -4,6 +4,7 @@ import com.pennhousing.shift.shared.preferences.PrefBlock
 import com.pennhousing.shift.shared.preferences.PrefBrush
 import com.pennhousing.shift.shared.preferences.PreferencePeriod
 import com.pennhousing.shift.shared.preferences.SubmitPreferencesPayload
+import com.pennhousing.shift.shared.preferences.nyEndOfDayIso
 import com.pennhousing.shift.shared.network.EdgeFunctionClient
 import com.pennhousing.shift.shared.platform.SimClock
 import com.pennhousing.shift.shared.shifts.MONTH_SHORT
@@ -167,6 +168,7 @@ class PreferencesRepository(
             initialStatuses = initialStatuses,
             targetHours = target?.targetHours ?: 0,
             optedOut = target?.optedOut ?: false,
+            startDate = startDate,
         )
     }
 
@@ -188,6 +190,40 @@ class PreferencesRepository(
             )
         return edge.invoke("submit-preferences/preferences", body).ok
     }
+
+    /**
+     * Set the preference-submission deadline for [periodId] to end-of-day [deadlineDate]
+     * (NY) -> the `set-preference-deadline` Edge Function (BSpec §4.2). Manager-only:
+     * identity comes from the bearer token and the RPC gates on the sm/hm/bm role, so a
+     * plain worker's call is rejected server-side. The RPC also rejects a deadline after
+     * the period's start date and an already-published period. Best-effort; returns the
+     * 2xx flag (the caller reconciles from a fresh period read).
+     */
+    suspend fun setPreferenceDeadline(
+        periodId: String,
+        deadlineDate: LocalDate,
+    ): Boolean {
+        val body =
+            Json.encodeToString(
+                SetPreferenceDeadlineRequest(
+                    periodId = periodId,
+                    preferenceDeadline = nyEndOfDayIso(deadlineDate),
+                ),
+            )
+        return edge.invoke("set-preference-deadline", body).ok
+    }
+
+    /**
+     * Int-component overload of [setPreferenceDeadline] so SwiftUI (whose DatePicker hands
+     * back a native date) can call without constructing a Kotlin `LocalDate`. [month] is
+     * 1..12, [day] 1..31.
+     */
+    suspend fun setPreferenceDeadline(
+        periodId: String,
+        year: Int,
+        month: Int,
+        day: Int,
+    ): Boolean = setPreferenceDeadline(periodId, LocalDate(year, month, day))
 
     /** DB `preference_status_enum` → brush; `none` (and unknowns) leave the cell default. */
     private fun brushFor(status: String): PrefBrush? =
@@ -254,4 +290,11 @@ private data class SubmitPreferencesRequest(
 private data class SubmitPreferenceEntry(
     @SerialName("block_id") val blockId: String,
     val status: String,
+)
+
+/** `set-preference-deadline` request — the period + its new NY end-of-day deadline. */
+@Serializable
+private data class SetPreferenceDeadlineRequest(
+    @SerialName("period_id") val periodId: String,
+    @SerialName("preference_deadline") val preferenceDeadline: String,
 )

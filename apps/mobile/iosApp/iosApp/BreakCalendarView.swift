@@ -74,6 +74,9 @@ struct BreakCalendarScreen: View {
     var onDropSeats: (([String]) -> Void)? = nil
     /// Live host writes the §4.4 "no break hours" opt-out; demo passes `nil`.
     var onToggleOptOut: ((Bool) -> Void)? = nil
+    // Replays the interactive Break tour (nil in previews / call sites that don't wire it).
+    // See BreakTourView.swift.
+    var onReplayTour: (() -> Void)? = nil
 
     @Environment(\.colorScheme) private var scheme
     @State private var showToast = false
@@ -105,7 +108,11 @@ struct BreakCalendarScreen: View {
             } else {
                 // Fixed header — stays put while the grid scrolls beneath it.
                 VStack(alignment: .leading, spacing: 0) {
-                    PageTitle(title: "Break shifts")
+                    PageTitle(title: "Break shifts") {
+                        if let onReplayTour {
+                            BreakTourHelpButton(action: onReplayTour)
+                        }
+                    }
                     Text("\(st.breakName.uppercased()) · CLAIM-BASED")
                         .font(ShiftFont.sans(11, .semibold)).tracking(0.5).foregroundColor(c.breakShift.deep)
                         .padding(.horizontal, 16).padding(.top, 2).padding(.bottom, 10)

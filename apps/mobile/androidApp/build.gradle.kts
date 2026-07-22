@@ -78,6 +78,10 @@ kotlin {
 dependencies {
     implementation(projects.shared)
 
+    // kotlinx-datetime — used by the Preferences deadline picker (LocalDate / TimeZone).
+    // The shared API exposes kotlin.time.Instant; this compat build interops with it.
+    implementation(libs.kotlinx.datetime)
+
     val composeBom = platform(libs.compose.bom)
     implementation(composeBom)
     androidTestImplementation(composeBom)
@@ -88,6 +92,10 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
+
+    // Glance — home-screen widgets (Upcoming shifts). Mirrors the iOS ShiftWidgets target.
+    implementation(libs.androidx.glance.appwidget)
+
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)
 

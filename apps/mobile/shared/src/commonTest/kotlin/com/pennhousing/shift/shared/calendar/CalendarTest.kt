@@ -295,6 +295,64 @@ class CalendarTest {
         assertTrue(o.days.filter { !it.isToday }.all { sec -> sec.items.none { it.nowLabel != null } })
     }
 
+    // ----- week overview: collapse already-past days on the ongoing week -----
+
+    @Test fun week_overview_folds_days_before_today_on_the_ongoing_week() {
+        // now = Thu (index 3): Mon/Tue/Wed fold into the "Earlier this week" card;
+        // Thu..Sun stay active with today first.
+        val o = buildCalendarWeekOverview(all, now)
+        assertEquals(7, o.days.size) // raw list unchanged
+        assertTrue(o.hasCollapsedPast)
+        assertEquals(listOf(0, 1, 2), o.collapsedPastDays.map { it.dayIndex }) // Mon,Tue,Wed
+        assertEquals(listOf(3, 4, 5, 6), o.activeDays.map { it.dayIndex }) // Thu..Sun
+        assertTrue(o.activeDays.first().isToday) // today anchors the active list
+    }
+
+    @Test fun week_overview_keeps_empty_upcoming_days_in_the_active_list() {
+        // Q2 decision: today..Sunday still render, empties included. Fri (index 4) has
+        // no fixture shift yet is present and empty in the active list.
+        val o = buildCalendarWeekOverview(all, now)
+        val fri = o.activeDays.single { it.dayIndex == 4 }
+        assertTrue(fri.isEmpty)
+    }
+
+    @Test fun week_overview_collapsed_shift_count_counts_only_past_shifts() {
+        // A Tuesday shift (before today) is folded and counted; the Thu/Sat shifts are not.
+        val tuesday = shift("2026-01-13T09:00:00-05:00", "2026-01-13T12:00:00-05:00")
+        val o = buildCalendarWeekOverview(all + tuesday, now)
+        assertEquals(1, o.collapsedShiftCount)
+        assertFalse(o.collapsedPastDays.single { it.dayIndex == 1 }.isEmpty) // Tue holds it
+    }
+
+    @Test fun week_overview_does_not_fold_when_today_is_monday() {
+        val mondayNow = at("2026-01-12T10:00:00-05:00") // Mon of this week — nothing before it
+        val o = buildCalendarWeekOverview(all, mondayNow)
+        assertFalse(o.hasCollapsedPast)
+        assertEquals(o.days, o.activeDays) // all seven render normally
+    }
+
+    @Test fun week_overview_sunday_today_lifts_the_lone_sunday_to_the_top() {
+        // now = Sun (index 6): Mon..Sat fold, so a Sunday shift sits right at the top.
+        val sundayNow = at("2026-01-18T10:00:00-05:00")
+        val sunday = shift("2026-01-18T14:00:00-05:00", "2026-01-18T18:00:00-05:00")
+        val o = buildCalendarWeekOverview(listOf(sunday), sundayNow)
+        assertEquals(6, o.collapsedPastDays.size) // Mon..Sat all folded away
+        assertEquals(listOf(6), o.activeDays.map { it.dayIndex }) // only Sunday active
+        assertTrue(o.activeDays.single().isToday)
+        assertFalse(o.activeDays.single().isEmpty)
+    }
+
+    @Test fun navigated_weeks_never_fold_past_days() {
+        // A future week (no "today") and a fully-past week both render Mon..Sun uncollapsed.
+        val nextO = buildCalendarWeekOverview(all, now, anchor = shiftWeekAnchor(now, 1))
+        assertFalse(nextO.hasCollapsedPast)
+        assertEquals(nextO.days, nextO.activeDays)
+
+        val lastO = buildCalendarWeekOverview(all, now, anchor = shiftWeekAnchor(now, -1))
+        assertFalse(lastO.hasCollapsedPast)
+        assertEquals(lastO.days, lastO.activeDays)
+    }
+
     @Test fun view_model_defaults_to_week_overview() {
         val vm = com.pennhousing.shift.shared.viewmodel.CalendarViewModel(all, now)
         val s = vm.uiState.value

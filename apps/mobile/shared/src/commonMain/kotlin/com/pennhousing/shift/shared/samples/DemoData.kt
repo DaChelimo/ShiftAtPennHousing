@@ -604,7 +604,8 @@ object DemoData {
             entries.forEach { e ->
                 val base = LocalDateTime(date, LocalTime(e.sh, 0)).toInstant(NEW_YORK)
                 val vacant = e.who == "open"
-                val (name, uid, phone) = houseWorker(e.who, meUserId, isHome)
+                val w = houseWorker(e.who, meUserId, isHome)
+                val (name, uid, phone) = Triple(w.name, w.userId, w.phone)
                 val blocks = (e.eh - e.sh) * 2
                 for (i in 0 until blocks) {
                     seats +=
@@ -618,6 +619,9 @@ object DemoData {
                             userId = if (vacant) null else uid,
                             workerName = if (vacant) null else name,
                             workerPhone = if (vacant) null else phone,
+                            workerEmail = if (vacant) null else w.email,
+                            workerHouseName = if (vacant) null else w.houseName,
+                            workerHouseId = if (vacant) null else w.houseId,
                         )
                 }
             }
@@ -688,24 +692,42 @@ private class HEntry(
     val floatIn: Boolean = false,
 )
 
+/** One demo occupant — everything the House grid + contact card need for that seat. */
+private class DemoHouseWorker(
+    val name: String,
+    val userId: String,
+    val phone: String?,
+    val email: String? = null,
+    val houseName: String? = "Harnwell",
+    val houseId: String? = "harnwell",
+)
+
 /**
- * Registry: `who` key → (name, userId, phone). "me" is the signed-in worker — but only
- * in the home house; on another house's demo grid the same slot becomes a regular
- * housemate (no "You" treatment when viewing a house that isn't yours).
+ * Registry: `who` key → the occupant. "me" is the signed-in worker — but only in the
+ * home house; on another house's demo grid the same slot becomes a regular housemate
+ * (no "You" treatment when viewing a house that isn't yours). Emails mirror the real
+ * sign-up shape (`<name>@seas.upenn.edu` / `@upenn.edu`) so the card's mail intent is
+ * exercised in the demo build. Leo is authored as a Quad resident so the card shows a
+ * house that differs from the desk being staffed.
  */
 private fun houseWorker(
     who: String,
     meUserId: String,
     isHome: Boolean = true,
-): Triple<String, String, String?> =
+): DemoHouseWorker =
     when (who) {
-        "me" -> if (isHome) Triple("You", meUserId, null) else Triple("Devon W.", "u-devon", "+1 215 555 0108")
-        "maya" -> Triple("Maya R.", "u-maya", "+1 215 555 0101")
-        "bob" -> Triple("Bob L.", "u-bob", "+1 215 555 0103")
-        "steve" -> Triple("Steve M.", "u-steve", "+1 215 555 0104")
-        "jordan" -> Triple("Jordan K.", "u-jordan", "+1 215 555 0102")
-        "priya" -> Triple("Priya N.", "u-priya", "+1 215 555 0105")
-        "leo" -> Triple("Leo M.", "u-leo", "+1 215 555 0106")
-        "sam" -> Triple("Sam T.", "u-sam", "+1 215 555 0107")
-        else -> Triple(who, "u-$who", null)
+        "me" ->
+            if (isHome) {
+                DemoHouseWorker("You", meUserId, null, "andrewp@upenn.edu")
+            } else {
+                DemoHouseWorker("Devon W.", "u-devon", "+1 215 555 0108", "devonw@upenn.edu")
+            }
+        "maya" -> DemoHouseWorker("Maya R.", "u-maya", "+1 215 555 0101", "mayar@seas.upenn.edu")
+        "bob" -> DemoHouseWorker("Bob L.", "u-bob", "+1 215 555 0103", "bobl@upenn.edu")
+        "steve" -> DemoHouseWorker("Steve M.", "u-steve", "+1 215 555 0104", "stevem@seas.upenn.edu")
+        "jordan" -> DemoHouseWorker("Jordan K.", "u-jordan", "+1 215 555 0102", "jordank@upenn.edu")
+        "priya" -> DemoHouseWorker("Priya N.", "u-priya", "+1 215 555 0105", "priyan@seas.upenn.edu")
+        "leo" -> DemoHouseWorker("Leo M.", "u-leo", "+1 215 555 0106", "leom@upenn.edu", "Upper Quad", "quad")
+        "sam" -> DemoHouseWorker("Sam T.", "u-sam", "+1 215 555 0107", "samt@upenn.edu")
+        else -> DemoHouseWorker(who, "u-$who", null, null)
     }

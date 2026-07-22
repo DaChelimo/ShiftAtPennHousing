@@ -1,13 +1,9 @@
 package com.pennhousing.shift
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -69,6 +65,7 @@ import com.pennhousing.shift.shared.shifts.weeklyHours
 import com.pennhousing.shift.shared.swaps.PendingSwap
 import com.pennhousing.shift.shared.swaps.swapCandidates
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
+import com.pennhousing.shift.shared.viewmodel.AssistantViewModel
 import com.pennhousing.shift.shared.viewmodel.BreakCalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.HouseScheduleViewModel
@@ -79,6 +76,8 @@ import com.pennhousing.shift.shared.viewmodel.SwapsViewModel
 import com.pennhousing.shift.shared.viewmodel.UpdatesViewModel
 import com.pennhousing.shift.ui.HouseNotLiveScreen
 import com.pennhousing.shift.ui.LoginRoute
+import com.pennhousing.shift.ui.onboarding.WidgetPromptPrefs
+import com.pennhousing.shift.widget.WidgetSync
 import com.pennhousing.shift.ui.ShiftsApp
 import com.pennhousing.shift.ui.kit.SkeletonShiftCard
 import com.pennhousing.shift.ui.theme.ShiftTheme
@@ -104,13 +103,16 @@ import kotlinx.coroutines.launch
  * wall clock to supply it.
  */
 class MainActivity : ComponentActivity() {
-    private val requestNotifications =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* best-effort; push is optional */ }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        maybeRequestNotificationPermission()
+        // The POST_NOTIFICATIONS runtime request is no longer fired cold on launch. It is
+        // now primed after the welcome tour finishes (NotificationPrimingHost in
+        // ui/onboarding/Onboarding.kt), so the worker learns WHY alerts matter before the
+        // OS dialog appears — and a decline never burns the one-shot iOS-style prompt.
+
+        // Per-launch counter for the behavioral widget-add prompt (return-session gating).
+        WidgetPromptPrefs.recordLaunch(this)
 
         val backendConfigured = AppConfig.supabaseUrl.isNotBlank()
         // T2-13: a float push tap / external deep link (pennshift://float-ack/{id})
@@ -124,14 +126,6 @@ class MainActivity : ComponentActivity() {
             } else {
                 DemoRoot(launchFloatAckId)
             }
-        }
-    }
-
-    private fun maybeRequestNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 }
@@ -153,6 +147,7 @@ private fun DemoRoot(launchFloatAckId: String? = null) {
     val houseVm = remember { HouseScheduleViewModel(DemoData.houseSchedule(now), now, meUserId = DemoData.DEMO_ME_USER_ID) }
     val preferencesVm = remember { PreferencesViewModel(DemoData.preferencePeriod(now)) }
     val breakCalendarVm = remember { BreakCalendarViewModel(DemoData.breakCalendar(now), now) }
+    val assistantVm = remember { AssistantViewModel() }
     val context = LocalContext.current
     val settingsVm =
         remember {
@@ -169,6 +164,9 @@ private fun DemoRoot(launchFloatAckId: String? = null) {
             claimSuccessMessage = null
         }
     }
+    // Feed the home-screen widget + derive the widget-prompt preview from the demo week.
+    val widgetPreview = remember(now) { WidgetSync.firstUpcomingPreview(snapshot.myShifts, now) }
+    LaunchedEffect(now) { WidgetSync.update(context, snapshot.myShifts, DemoData.pendingFloats(now), now) }
     ShiftsApp(
         shiftsVm = shiftsVm,
         ackVm = ackVm,
@@ -179,8 +177,11 @@ private fun DemoRoot(launchFloatAckId: String? = null) {
         preferencesVm = preferencesVm,
         breakCalendarVm = breakCalendarVm,
         settingsVm = settingsVm,
+        assistantVm = assistantVm,
         currentWeeklyHours = DemoData.DEMO_WEEKLY_HOURS,
         now = now,
+        widgetPreviewHouse = widgetPreview?.house,
+        widgetPreviewWhen = widgetPreview?.let { "${it.dayLabel}, ${it.timeLabel}" },
         // Demo float-request carousel — two floats so the swipe + completion are visible.
         pendingFloats = remember(now) { DemoData.pendingFloats(now) },
         // Demo recent-floats history (accepted / declined / expired) for the section below it.
@@ -391,6 +392,13 @@ private fun LiveShiftsRoot(
                 }
             val livePendingFloat = livePendingFloats.firstOrNull()?.toFloatAck()
             val ackVm = remember(livePendingFloat) { AckDeclineViewModel(livePendingFloat ?: DemoData.pendingFloat(now), now) }
+            // Feed the home-screen widget from the live week + pending floats, and derive the
+            // widget-prompt preview (the worker's real next shift).
+            val widgetContext = LocalContext.current
+            val widgetPreview = remember(snapshot.myShifts, now) { WidgetSync.firstUpcomingPreview(snapshot.myShifts, now) }
+            LaunchedEffect(snapshot.myShifts, livePendingFloats) {
+                WidgetSync.update(widgetContext, snapshot.myShifts, livePendingFloats, now)
+            }
             // Updates: load the worker's real `notifications` rows (RLS-scoped) for the
             // feed; fall back to the demo notifications while the fetch is in flight or
             // if it fails. A `float_assigned` row now maps to the urgent FLOAT entry that
@@ -452,6 +460,16 @@ private fun LiveShiftsRoot(
                 remember(snapshot, closedDays, revertKey, livePendingSwaps) {
                     CalendarViewModel(snapshot.myShifts, now, closedDays, livePendingSwaps)
                 }
+            // The worker's profile (own users / user_roles). Loaded here (above the House
+            // VM) so its resolved role can gate the House-grid manager actions; it also
+            // feeds the Settings screen below. Best-effort: null while in flight / on
+            // failure. `isManager` = holds a schedule-manager role (anything but a plain
+            // `sw`); the House VM combines it with the home-house check for `canManage`.
+            val profileRepo = remember { WorkerBackend.profileRepository }
+            val liveProfile by
+                produceState<ProfileSnapshot?>(initialValue = null, session.userId, revertKey) {
+                    value = runCatching { profileRepo.fetchProfile(session.userId) }.getOrNull()
+                }
             // House schedule (§11.4, T3b): the home house's week grid with contacts
             // (full-directory ruling). Falls back to the demo snapshot while loading.
             val liveHouseSchedule by
@@ -459,8 +477,15 @@ private fun LiveShiftsRoot(
                     value = runCatching { repo.fetchHouseSchedule(session.userId) }.getOrNull()
                 }
             val houseVm =
-                remember(liveHouseSchedule) {
-                    HouseScheduleViewModel(liveHouseSchedule ?: DemoData.houseSchedule(now), now, meUserId = session.userId)
+                remember(liveHouseSchedule, liveProfile) {
+                    HouseScheduleViewModel(
+                        liveHouseSchedule ?: DemoData.houseSchedule(now),
+                        now,
+                        meUserId = session.userId,
+                        // Default false while the profile is loading (null role) so the
+                        // manager actions never flash before the role is known.
+                        isManager = liveProfile?.profile?.role?.let { it != "sw" } ?: false,
+                    )
                 }
             // Preferences: load the worker's real active period (scheduling_periods now
             // worker-readable — migration 20260610000001); fall back to the demo period
@@ -493,12 +518,21 @@ private fun LiveShiftsRoot(
                     }
                 }
             }
+            // Bumped after a manager sets the deadline so the period (and its deadline chip)
+            // refetches. Keyed into the produceState below.
+            var deadlineRefreshKey by remember { mutableIntStateOf(0) }
             val livePeriod by
-                produceState<PreferencePeriod?>(initialValue = null, session.userId) {
+                produceState<PreferencePeriod?>(initialValue = null, session.userId, deadlineRefreshKey) {
                     value = runCatching { prefsRepo.fetchActivePreferencePeriod(session.userId) }.getOrNull()
                 }
             val preferencesVm =
-                remember(livePeriod) { PreferencesViewModel(livePeriod ?: DemoData.preferencePeriod(now)) }
+                remember(livePeriod, liveProfile) {
+                    PreferencesViewModel(
+                        livePeriod ?: DemoData.preferencePeriod(now),
+                        // Manager (sm/hm/bm/rsm) sees the deadline-setter; a plain worker never does.
+                        isManager = liveProfile?.profile?.role?.let { it != "sw" } ?: false,
+                    )
+                }
             // Break-claim: LIVE descriptive context (name + window + "only Harnwell open")
             // from the worker-readable `break_periods` (migration 20260611000002); the
             // claimable POOL itself is still demo-backed (live `worker_open_shifts` break
@@ -539,17 +573,13 @@ private fun LiveShiftsRoot(
                         initialOptedOut = liveBreakOptedOut,
                     )
                 }
-            // Settings: load the worker's real profile + live `broadcast_subscribed` (own
-            // users / user_roles + houses, all RLS-readable); fall back to the demo profile
-            // while the read is in flight. The broadcast toggle PATCHes the
-            // `users-broadcast-subscription` EF (best-effort) — it is the ONLY interactive
-            // notification channel (§10.1: personal float / shift-reminder / schedule-published
-            // notifications are mandatory and non-silenceable, shown always-on/disabled).
-            val profileRepo = remember { WorkerBackend.profileRepository }
-            val liveProfile by
-                produceState<ProfileSnapshot?>(initialValue = null, session.userId, revertKey) {
-                    value = runCatching { profileRepo.fetchProfile(session.userId) }.getOrNull()
-                }
+            val assistantVm = remember { AssistantViewModel() }
+            // Settings reuses `liveProfile` (loaded above the House VM): the worker's real
+            // profile + live `broadcast_subscribed` (own users / user_roles + houses, all
+            // RLS-readable); it falls back to the demo profile while the read is in flight.
+            // The broadcast toggle PATCHes the `users-broadcast-subscription` EF (best-effort),
+            // the ONLY interactive notification channel (§10.1: personal float / shift-reminder
+            // / schedule-published notifications are mandatory, shown always-on/disabled).
             val settingsContext = LocalContext.current
             val settingsVm =
                 remember(liveProfile) {
@@ -570,10 +600,13 @@ private fun LiveShiftsRoot(
                 preferencesVm = preferencesVm,
                 breakCalendarVm = breakCalendarVm,
                 settingsVm = settingsVm,
+                assistantVm = assistantVm,
                 // D8 — the live "This week — Xh" total from the real snapshot (the demo
                 // constant was a placeholder; dropped-still-open blocks don't count).
                 currentWeeklyHours = remember(snapshot) { weeklyHours(snapshot.myShifts, now) },
                 now = now,
+                widgetPreviewHouse = widgetPreview?.house,
+                widgetPreviewWhen = widgetPreview?.let { "${it.dayLabel}, ${it.timeLabel}" },
                 pendingFloats = livePendingFloats,
                 recentFloats = liveRecentFloats,
                 writeError = writeError,
@@ -586,6 +619,25 @@ private fun LiveShiftsRoot(
                     val payload = preferencesVm.submitPayload()
                     launchWriteBool(WriteOp.PREFERENCES, revert = false) { prefsRepo.submitPreferences(payload) }
                     preferencesVm.submit()
+                },
+                onSetDeadline = { year, month, day ->
+                    // Manager-only (BSpec §4.2): set the active period's submission deadline.
+                    // On success, confirm + refetch the period so the chip updates; on
+                    // failure, the classified write toast explains (e.g. after the start date).
+                    val periodId = livePeriod?.periodId
+                    if (periodId != null) {
+                        prefsScope.launch {
+                            val ok =
+                                runCatching { prefsRepo.setPreferenceDeadline(periodId, year, month, day) }
+                                    .getOrDefault(false)
+                            if (ok) {
+                                claimSuccessMessage = "Deadline updated"
+                                deadlineRefreshKey++
+                            } else {
+                                writeError = "That deadline could not be set. It must be on or before the period start."
+                            }
+                        }
+                    }
                 },
                 onDropShift = { shift, permanent ->
                     // POST the real drop while the ViewModel does the optimistic local move.
@@ -655,6 +707,14 @@ private fun LiveShiftsRoot(
                     // DECLINED. Declining reopens the destination gap server-side. On failure
                     // toast + revert (the modal returns to PENDING).
                     launchWrite(WriteOp.DECLINE_FLOAT) { repo.declineFloat(floatId) }
+                },
+                onAcknowledgeAlliedPage = { blockId ->
+                    // POST "I've called the desk" → `acknowledge-allied-page` (best-effort,
+                    // staggered-rollout pilot). The Updates ViewModel already removed the row
+                    // optimistically; the server resolves the ladder so no further rung fires.
+                    // Quiet best-effort: if the POST fails, the next notifications snapshot
+                    // reconciles (the still-unacknowledged alert re-appears).
+                    prefsScope.launch { runCatching { repo.acknowledgeAlliedPage(blockId) } }
                 },
                 onClaimBreakRange = { blockIds ->
                     // POST the dragged block ids → `break-claim` (its claim_break_blocks RPC

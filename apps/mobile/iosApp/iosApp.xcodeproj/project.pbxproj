@@ -8,9 +8,11 @@
 
 /* Begin PBXBuildFile section */
 		0074D49F18895E55892D6B0A /* WidgetDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05D79BBB989864069C12B06A /* WidgetDeepLink.swift */; };
+		00CC194E57EAF831383E5E17 /* OpenClaimTourView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C2D9211C353B55E3968850E /* OpenClaimTourView.swift */; };
 		0336BF83F5144E15A7FBEB8B /* FloatCarouselView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E150BAEFEBE013FA7CADF39 /* FloatCarouselView.swift */; };
 		072EC6FFED86D1DB8BF7728C /* BreakCalendarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73EA60230287BEC92AF92580 /* BreakCalendarView.swift */; };
 		0A2006C660EA23D1A6A8CE07 /* ShiftGallery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 594E4FFC431104A3003C2B31 /* ShiftGallery.swift */; };
+		0AF4CAA71467D55095FFFF00 /* Onboarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 370379A64A9E08A8F842FE4F /* Onboarding.swift */; };
 		1D4E71E999DAB7A248F33DE9 /* IBMPlexMono-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 625B0080D4E3C3B40F484D6F /* IBMPlexMono-SemiBold.ttf */; };
 		1FC78AB84C2128557CB7EA67 /* IBMPlexSans-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = BB69E5DD1A1A12D4AD674B2A /* IBMPlexSans-Bold.ttf */; };
 		2052DDF421ACDDA32F3A1950 /* IBMPlexSans-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F8D29B33BAB78EF1A3294483 /* IBMPlexSans-Regular.ttf */; };
@@ -28,20 +30,28 @@
 		585A305A37626C285BD4D97E /* FloatAcknowledgmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB03F885E14A777B71EA9DFD /* FloatAcknowledgmentView.swift */; };
 		6B927F216F451064A2478885 /* OpenShiftsWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A6B470422F3ACEF480E458C /* OpenShiftsWidget.swift */; };
 		6BB5A7B46C107AF7CC10B3A3 /* WidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEEC15AAA9F6FB86F98AC081 /* WidgetSnapshot.swift */; };
+		6DACDB19F29DEBB53B272B93 /* BreakTourView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3F3BA3C4657043132AA3A15 /* BreakTourView.swift */; };
 		79D11D05FAA997AC867880FE /* OpenShiftsConfigIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 759989B288B28705A12301DF /* OpenShiftsConfigIntent.swift */; };
 		7E50193CD81184C6BC22D945 /* WidgetSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22393711583D25973C7CFDC0 /* WidgetSync.swift */; };
+		7E573DC55A73E5FD7B17899E /* HouseGridTourView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3680B5C84C0DCBAC26110A7 /* HouseGridTourView.swift */; };
+		7EB3AB154BEC76EAAD098A41 /* PreferencesTourView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38CE44FF4D19152F031CB5BD /* PreferencesTourView.swift */; };
 		88AB385D3C48E3C0054B2AB7 /* UpcomingShiftsWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A479CCD6F78950F1901D786E /* UpcomingShiftsWidget.swift */; };
 		8ACF8940AE973BEAF8843F3D /* ShiftRowsControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = CED2A8032A88F44B9B3961D1 /* ShiftRowsControls.swift */; };
 		983A85F9E98253907723D163 /* IBMPlexSans-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 7B34AA86864B6EC1606F1447 /* IBMPlexSans-SemiBold.ttf */; };
 		A454074AB6AA023403A1BBD3 /* OpenShiftsConfigIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 759989B288B28705A12301DF /* OpenShiftsConfigIntent.swift */; };
 		A988F27620C078D93E10F424 /* WidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEEC15AAA9F6FB86F98AC081 /* WidgetSnapshot.swift */; };
 		BC176A83C0F9CCC0CA18F75B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E713B16C0AA6DFFD30001358 /* SettingsView.swift */; };
+		BD6934086D2807A45CE807D2 /* HouseNotLiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48A79C1108FDA55D1F5A6EB5 /* HouseNotLiveView.swift */; };
+		C77FC034EA319A3432FC1E25 /* ShiftTourView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87808FD950C3666EF9495793 /* ShiftTourView.swift */; };
 		C87B4FA04BDA1DA04158D48E /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = A55143988C4C8F291BE72E9A /* GoogleService-Info.plist */; };
 		CA9F960429354879B0D97298 /* IBMPlexMono-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 18E3C5E7EFEEDE87D317FC37 /* IBMPlexMono-Regular.ttf */; };
 		D488747AD197BC7C1635E66B /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF4A054A43ED6B6C286E46F /* LoginView.swift */; };
 		D5606EF92064FABC381494F4 /* IBMPlexSans-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 52C915F23FFB1DD8D6A39ADE /* IBMPlexSans-Medium.ttf */; };
 		D755046C0E0F8B270D122D0B /* ShiftWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4F6AB0E55D52072EAFFF25D /* ShiftWidgetBundle.swift */; };
+		D8A3228BAB55BE393AF94BAD /* AssistantScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41C9BDD7465FE0F27FEE8598 /* AssistantScreen.swift */; };
+		E2F776EA2C085E4562DBF7F1 /* SwapTourView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C744213FDBA755AEE98FD0A0 /* SwapTourView.swift */; };
 		EE57983C854AAA89E7A106E5 /* ShiftTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D8A2FD225457B6AFE246BC0 /* ShiftTheme.swift */; };
+		F0AEDB9DB44EDF1EFD46D800 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 3957085DC97F2122FDAE6F9B /* README.md */; };
 		FDE52B8D57A097A60A4CF366 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B6C1F485E0CF8BB70C9DDD2 /* AppDelegate.swift */; };
 		FFED10F38574A818A51A669E /* PreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E321591A5774BE7504F9E121 /* PreferencesView.swift */; };
 /* End PBXBuildFile section */
@@ -76,7 +86,12 @@
 		18E3C5E7EFEEDE87D317FC37 /* IBMPlexMono-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "IBMPlexMono-Regular.ttf"; sourceTree = "<group>"; };
 		22393711583D25973C7CFDC0 /* WidgetSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSync.swift; sourceTree = "<group>"; };
 		26422614A460F4169CC6CD2C /* WidgetComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetComponents.swift; sourceTree = "<group>"; };
+		370379A64A9E08A8F842FE4F /* Onboarding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Onboarding.swift; sourceTree = "<group>"; };
+		38CE44FF4D19152F031CB5BD /* PreferencesTourView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesTourView.swift; sourceTree = "<group>"; };
+		3957085DC97F2122FDAE6F9B /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		3FB0B967449A2C5466958FE2 /* WidgetSampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSampleData.swift; sourceTree = "<group>"; };
+		41C9BDD7465FE0F27FEE8598 /* AssistantScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantScreen.swift; sourceTree = "<group>"; };
+		48A79C1108FDA55D1F5A6EB5 /* HouseNotLiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HouseNotLiveView.swift; sourceTree = "<group>"; };
 		4E150BAEFEBE013FA7CADF39 /* FloatCarouselView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatCarouselView.swift; sourceTree = "<group>"; };
 		52C915F23FFB1DD8D6A39ADE /* IBMPlexSans-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "IBMPlexSans-Medium.ttf"; sourceTree = "<group>"; };
 		594E4FFC431104A3003C2B31 /* ShiftGallery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftGallery.swift; sourceTree = "<group>"; };
@@ -89,8 +104,10 @@
 		7A6B470422F3ACEF480E458C /* OpenShiftsWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenShiftsWidget.swift; sourceTree = "<group>"; };
 		7B34AA86864B6EC1606F1447 /* IBMPlexSans-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "IBMPlexSans-SemiBold.ttf"; sourceTree = "<group>"; };
 		7D8A2FD225457B6AFE246BC0 /* ShiftTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftTheme.swift; sourceTree = "<group>"; };
-		86038AE1032E284E79B32AD6 /* Shift PennHousing.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Shift PennHousing.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		86038AE1032E284E79B32AD6 /* iosApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = iosApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		87808FD950C3666EF9495793 /* ShiftTourView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftTourView.swift; sourceTree = "<group>"; };
 		8B6C1F485E0CF8BB70C9DDD2 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		8C2D9211C353B55E3968850E /* OpenClaimTourView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenClaimTourView.swift; sourceTree = "<group>"; };
 		926CF70D2670C740263F9161 /* OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = OFL.txt; sourceTree = "<group>"; };
 		A479CCD6F78950F1901D786E /* UpcomingShiftsWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpcomingShiftsWidget.swift; sourceTree = "<group>"; };
 		A4F6AB0E55D52072EAFFF25D /* ShiftWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftWidgetBundle.swift; sourceTree = "<group>"; };
@@ -98,16 +115,19 @@
 		AEEC15AAA9F6FB86F98AC081 /* WidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSnapshot.swift; sourceTree = "<group>"; };
 		B845EEA4BDF47624BE8BCD36 /* ShiftChromeFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftChromeFeedback.swift; sourceTree = "<group>"; };
 		BB69E5DD1A1A12D4AD674B2A /* IBMPlexSans-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "IBMPlexSans-Bold.ttf"; sourceTree = "<group>"; };
+		C3680B5C84C0DCBAC26110A7 /* HouseGridTourView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HouseGridTourView.swift; sourceTree = "<group>"; };
 		C49B0B02429FBBC9F867DDE1 /* iosApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = iosApp.entitlements; sourceTree = "<group>"; };
+		C744213FDBA755AEE98FD0A0 /* SwapTourView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwapTourView.swift; sourceTree = "<group>"; };
 		CB03F885E14A777B71EA9DFD /* FloatAcknowledgmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatAcknowledgmentView.swift; sourceTree = "<group>"; };
 		CE8509E5A49E4A5CAAEB3ADB /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		CED2A8032A88F44B9B3961D1 /* ShiftRowsControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftRowsControls.swift; sourceTree = "<group>"; };
+		D3F3BA3C4657043132AA3A15 /* BreakTourView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BreakTourView.swift; sourceTree = "<group>"; };
 		E321591A5774BE7504F9E121 /* PreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesView.swift; sourceTree = "<group>"; };
 		E55B2FF9068611BC2D6C14CB /* WidgetStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetStyle.swift; sourceTree = "<group>"; };
 		E6354406BFA0BB1D5779C9C1 /* ShiftComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftComponents.swift; sourceTree = "<group>"; };
 		E713B16C0AA6DFFD30001358 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		F463F963D7A6C3E1B63F7F0F /* IBMPlexMono-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "IBMPlexMono-Medium.ttf"; sourceTree = "<group>"; };
-		F80CCBCC21B5C95F4D814B95 /* ShiftWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShiftWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F80CCBCC21B5C95F4D814B95 /* ShiftWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = ShiftWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F8D29B33BAB78EF1A3294483 /* IBMPlexSans-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "IBMPlexSans-Regular.ttf"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -116,16 +136,25 @@
 			isa = PBXGroup;
 			children = (
 				8B6C1F485E0CF8BB70C9DDD2 /* AppDelegate.swift */,
+				41C9BDD7465FE0F27FEE8598 /* AssistantScreen.swift */,
 				73EA60230287BEC92AF92580 /* BreakCalendarView.swift */,
+				D3F3BA3C4657043132AA3A15 /* BreakTourView.swift */,
 				CE8509E5A49E4A5CAAEB3ADB /* ContentView.swift */,
 				CB03F885E14A777B71EA9DFD /* FloatAcknowledgmentView.swift */,
 				4E150BAEFEBE013FA7CADF39 /* FloatCarouselView.swift */,
 				A55143988C4C8F291BE72E9A /* GoogleService-Info.plist */,
+				C3680B5C84C0DCBAC26110A7 /* HouseGridTourView.swift */,
+				48A79C1108FDA55D1F5A6EB5 /* HouseNotLiveView.swift */,
 				C49B0B02429FBBC9F867DDE1 /* iosApp.entitlements */,
 				668CECA83ACC03A83C85A623 /* iOSApp.swift */,
 				5EF4A054A43ED6B6C286E46F /* LoginView.swift */,
+				370379A64A9E08A8F842FE4F /* Onboarding.swift */,
+				8C2D9211C353B55E3968850E /* OpenClaimTourView.swift */,
+				38CE44FF4D19152F031CB5BD /* PreferencesTourView.swift */,
 				E321591A5774BE7504F9E121 /* PreferencesView.swift */,
 				E713B16C0AA6DFFD30001358 /* SettingsView.swift */,
+				87808FD950C3666EF9495793 /* ShiftTourView.swift */,
+				C744213FDBA755AEE98FD0A0 /* SwapTourView.swift */,
 				22393711583D25973C7CFDC0 /* WidgetSync.swift */,
 				B3EE582A4C033615D3BAD068 /* Fonts */,
 				A65F7BD09BBDD0A23957807C /* Kit */,
@@ -165,6 +194,7 @@
 			isa = PBXGroup;
 			children = (
 				7A6B470422F3ACEF480E458C /* OpenShiftsWidget.swift */,
+				3957085DC97F2122FDAE6F9B /* README.md */,
 				A4F6AB0E55D52072EAFFF25D /* ShiftWidgetBundle.swift */,
 				1828B1BD6E1D963272A74B5C /* ShiftWidgets.entitlements */,
 				A479CCD6F78950F1901D786E /* UpcomingShiftsWidget.swift */,
@@ -178,7 +208,7 @@
 		94C98B8B3A2BFC1966447269 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				86038AE1032E284E79B32AD6 /* Shift PennHousing.app */,
+				86038AE1032E284E79B32AD6 /* iosApp.app */,
 				F80CCBCC21B5C95F4D814B95 /* ShiftWidgets.appex */,
 			);
 			name = Products;
@@ -241,7 +271,7 @@
 			packageProductDependencies = (
 			);
 			productName = iosApp;
-			productReference = 86038AE1032E284E79B32AD6 /* Shift PennHousing.app */;
+			productReference = 86038AE1032E284E79B32AD6 /* iosApp.app */;
 			productType = "com.apple.product-type.application";
 		};
 		C814CFB477B4C5169BC76293 /* ShiftWidgets */ = {
@@ -249,6 +279,7 @@
 			buildConfigurationList = EBACF9C456AFC1517F80D619 /* Build configuration list for PBXNativeTarget "ShiftWidgets" */;
 			buildPhases = (
 				572573CE1BA3CB84E2DDF50A /* Sources */,
+				60693E18E9EED16F2D160250 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -269,6 +300,8 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
 			};
 			buildConfigurationList = FF7CA1CA754D017066F1822F /* Build configuration list for PBXProject "iosApp" */;
 			developmentRegion = en;
@@ -307,6 +340,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		60693E18E9EED16F2D160250 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F0AEDB9DB44EDF1EFD46D800 /* README.md in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
@@ -337,12 +378,19 @@
 			buildActionMask = 2147483647;
 			files = (
 				FDE52B8D57A097A60A4CF366 /* AppDelegate.swift in Sources */,
+				D8A3228BAB55BE393AF94BAD /* AssistantScreen.swift in Sources */,
 				072EC6FFED86D1DB8BF7728C /* BreakCalendarView.swift in Sources */,
+				6DACDB19F29DEBB53B272B93 /* BreakTourView.swift in Sources */,
 				56B0305B5D3847FC6B326502 /* ContentView.swift in Sources */,
 				585A305A37626C285BD4D97E /* FloatAcknowledgmentView.swift in Sources */,
 				0336BF83F5144E15A7FBEB8B /* FloatCarouselView.swift in Sources */,
+				7E573DC55A73E5FD7B17899E /* HouseGridTourView.swift in Sources */,
+				BD6934086D2807A45CE807D2 /* HouseNotLiveView.swift in Sources */,
 				D488747AD197BC7C1635E66B /* LoginView.swift in Sources */,
+				0AF4CAA71467D55095FFFF00 /* Onboarding.swift in Sources */,
+				00CC194E57EAF831383E5E17 /* OpenClaimTourView.swift in Sources */,
 				79D11D05FAA997AC867880FE /* OpenShiftsConfigIntent.swift in Sources */,
+				7EB3AB154BEC76EAAD098A41 /* PreferencesTourView.swift in Sources */,
 				FFED10F38574A818A51A669E /* PreferencesView.swift in Sources */,
 				BC176A83C0F9CCC0CA18F75B /* SettingsView.swift in Sources */,
 				39038B9FCED8E5822BEE26B7 /* ShiftChromeFeedback.swift in Sources */,
@@ -350,6 +398,8 @@
 				0A2006C660EA23D1A6A8CE07 /* ShiftGallery.swift in Sources */,
 				8ACF8940AE973BEAF8843F3D /* ShiftRowsControls.swift in Sources */,
 				EE57983C854AAA89E7A106E5 /* ShiftTheme.swift in Sources */,
+				C77FC034EA319A3432FC1E25 /* ShiftTourView.swift in Sources */,
+				E2F776EA2C085E4562DBF7F1 /* SwapTourView.swift in Sources */,
 				3C8B915EF7A2CE2F4E2BF06E /* WidgetDeepLink.swift in Sources */,
 				6BB5A7B46C107AF7CC10B3A3 /* WidgetSnapshot.swift in Sources */,
 				7E50193CD81184C6BC22D945 /* WidgetSync.swift in Sources */,
@@ -389,9 +439,6 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS = NO;
 				CODE_SIGN_ENTITLEMENTS = ShiftWidgets/ShiftWidgets.entitlements;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 3VC8F74G23;
 				INFOPLIST_FILE = ShiftWidgets/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -401,7 +448,6 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.pennhousing.shift.ShiftWidgets;
 				PRODUCT_NAME = ShiftWidgets;
-				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -537,9 +583,6 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS = NO;
 				CODE_SIGN_ENTITLEMENTS = ShiftWidgets/ShiftWidgets.entitlements;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 3VC8F74G23;
 				INFOPLIST_FILE = ShiftWidgets/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -549,7 +592,6 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.pennhousing.shift.ShiftWidgets;
 				PRODUCT_NAME = ShiftWidgets;
-				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -562,7 +604,6 @@
 				ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS = NO;
 				CODE_SIGN_ENTITLEMENTS = iosApp/iosApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = 3VC8F74G23;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -591,7 +632,6 @@
 				ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS = NO;
 				CODE_SIGN_ENTITLEMENTS = iosApp/iosApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = 3VC8F74G23;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",

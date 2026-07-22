@@ -9,6 +9,29 @@ configFiles:
   Debug: Configuration/Config.xcconfig
   Release: Configuration/Config.xcconfig
 
+# Declare an explicit SHARED scheme so `iosApp` is the committed, default run
+# target. Without this, XcodeGen emits no scheme and Xcode auto-creates one per
+# target, including the `ShiftWidgets` app-extension. Selecting/running the
+# extension scheme makes Xcode try to inject the widget into the simulator
+# gallery and fails with "Failed to show Widget 'com.pennhousing.shift.ShiftWidgets'"
+# (SendProcessControlEvent … Code=8). The widget still builds: it is embedded as
+# a dependency of `iosApp`, so building/running this scheme builds it too.
+schemes:
+  iosApp:
+    build:
+      targets:
+        iosApp: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
+
 settings:
   base:
     PRODUCT_NAME: Shift PennHousing

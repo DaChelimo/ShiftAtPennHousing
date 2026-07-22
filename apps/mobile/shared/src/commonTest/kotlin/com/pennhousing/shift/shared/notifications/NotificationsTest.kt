@@ -40,7 +40,6 @@ class NotificationsTest {
         assertEquals(NotificationCategory.REMINDER, categoryForType("ack_reminder"))
         assertEquals(NotificationCategory.SWAP, categoryForType("swap_request"))
         assertEquals(NotificationCategory.PERMANENT, categoryForType("sw_permanent_removal_alert"))
-        assertEquals(NotificationCategory.PERMANENT, categoryForType("sm_permanent_drop_alert"))
     }
 
     @Test fun generic_and_unknown_types_fall_back_to_info() {
@@ -161,6 +160,50 @@ class NotificationsTest {
         assertEquals(NotificationCategory.REMINDER, n.category)
         assertFalse(n.urgent)
         assertFalse(n.toRow(now).opensAck)
+    }
+
+    // ----- allied_page: off-hours ladder alert mapping (staggered-rollout pilot) -----
+
+    @Test fun allied_page_payload_maps_to_urgent_openable_ladder_alert() {
+        val n =
+            notificationFromPayload(
+                id = "ap1",
+                rawType = "allied_page",
+                payloadKind = null,
+                floatId = null,
+                title = null,
+                body = null,
+                createdAt = at("2026-01-15T02:00:00-05:00"),
+                unread = true,
+                alliedPageBlockId = "block-42",
+                deskPhone = "215-555-0100",
+            )
+        assertEquals(NotificationCategory.ALLIED_PAGE, n.category)
+        assertTrue(n.urgent)
+        assertEquals("block-42", n.alliedPageBlockId)
+        assertEquals("215-555-0100", n.deskPhone)
+        assertTrue(n.body.contains("215-555-0100")) // the copy tells them which desk to call
+        val row = n.toRow(now)
+        assertTrue(row.opensAlliedPage) // the row shows the "I've called the desk" ack
+        assertEquals("block-42", row.alliedPageBlockId)
+        assertFalse(row.opensAck) // it is not a float ack
+    }
+
+    @Test fun allied_page_without_block_id_is_not_actionable() {
+        val n =
+            notificationFromPayload(
+                id = "ap2",
+                rawType = "allied_page",
+                payloadKind = null,
+                floatId = null,
+                title = null,
+                body = null,
+                createdAt = at("2026-01-15T02:00:00-05:00"),
+                unread = true,
+                alliedPageBlockId = null,
+            )
+        assertEquals(null, n.alliedPageBlockId)
+        assertFalse(n.toRow(now).opensAlliedPage)
     }
 
     // ----- withPendingFloatEntry: live-pending-float reachability (T1-10) -----

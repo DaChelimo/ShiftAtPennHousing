@@ -60,6 +60,11 @@ fun SettingsTabContent(
     // Live host PATCHes `users-broadcast-subscription` with the NEW desired state; demo
     // defaults to no live write (the VM still flips its optimistic local toggle).
     onToggleBroadcast: (Boolean) -> Unit = {},
+    // Restart the first-run welcome tour on demand — the way back in for a worker who
+    // skipped it or just wants a refresher.
+    onReplayTour: () -> Unit = {},
+    // Restart the interactive "Manage a shift" tour on demand (navigates to My Shifts first).
+    onReplayShiftTour: () -> Unit = {},
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val c = ShiftTheme.colors
@@ -142,6 +147,24 @@ fun SettingsTabContent(
                     Icon(ShiftIcons.ChevronRight, contentDescription = null, tint = c.outline, modifier = Modifier.size(17.dp))
                 }
                 SettingsRow(icon = ShiftIcons.Info, tint = c.ter, title = "Help & policy", onClick = {}) {
+                    Icon(ShiftIcons.ChevronRight, contentDescription = null, tint = c.outline, modifier = Modifier.size(17.dp))
+                }
+                SettingsRow(
+                    icon = ShiftIcons.Refresh,
+                    tint = MaterialTheme.colorScheme.primary,
+                    title = "Replay app tour",
+                    onClick = onReplayTour,
+                    modifier = Modifier.testTag("settings_replay_tour"),
+                ) {
+                    Icon(ShiftIcons.ChevronRight, contentDescription = null, tint = c.outline, modifier = Modifier.size(17.dp))
+                }
+                SettingsRow(
+                    icon = ShiftIcons.QuestionMark,
+                    tint = MaterialTheme.colorScheme.primary,
+                    title = "Replay shift tour",
+                    onClick = onReplayShiftTour,
+                    modifier = Modifier.testTag("settings_replay_shift_tour"),
+                ) {
                     Icon(ShiftIcons.ChevronRight, contentDescription = null, tint = c.outline, modifier = Modifier.size(17.dp))
                 }
                 SettingsRow(

@@ -317,10 +317,29 @@ data class CalendarDaySection(
     val isEmpty: Boolean get() = items.none { it.shift != null }
 }
 
-/** The whole week as stacked day sections (Mon..Sun). */
+/**
+ * The whole week as stacked day sections (Mon..Sun).
+ *
+ * [days] is the full Mon..Sun list (source of truth; unchanged, still feeds any consumer
+ * that wants the raw week). When the shown week CONTAINS today AND today is not Monday,
+ * the days strictly BEFORE today are folded off into [collapsedPastDays] (the UI renders
+ * them under one expandable "Earlier this week" card) and today-onward stays in
+ * [activeDays] (rendered normally, empty "No shifts" days included). A navigated week —
+ * a fully-past or future week with no "today" in it — and the current week whose today is
+ * Monday do NOT collapse: [collapsedPastDays] is empty and [activeDays] == [days]. So only
+ * the ongoing week ever hides anything, and it only ever hides days that already happened.
+ */
 data class CalendarWeekOverview(
     val days: List<CalendarDaySection>,
-)
+    val collapsedPastDays: List<CalendarDaySection>,
+    val activeDays: List<CalendarDaySection>,
+) {
+    val hasCollapsedPast: Boolean get() = collapsedPastDays.isNotEmpty()
+
+    /** Count of collapsed past days that actually hold a shift — for the card summary. */
+    val collapsedShiftCount: Int
+        get() = collapsedPastDays.sumOf { section -> section.items.count { it.shift != null } }
+}
 
 /**
  * Build the week overview for [anchor]'s week: each Mon-Sun day's [buildCalendarAgenda]
@@ -349,7 +368,19 @@ fun buildCalendarWeekOverview(
                 isToday = monday.plus(i, DateTimeUnit.DAY) == today,
             )
         }
-    return CalendarWeekOverview(days = days)
+    // Fold away already-past days ONLY on the ongoing week. `todayIndex >= 1` is the whole
+    // rule: -1 on a navigated (fully-past or future) week — nothing folds; 0 when today is
+    // Monday — nothing before it to fold; 2 (Wed) → Mon+Tue collapse, Wed..Sun stay active;
+    // 6 (Sun) → Mon..Sat collapse so a lone Sunday shift sits right at the top.
+    val todayIndex = days.indexOfFirst { it.isToday }
+    val collapse = todayIndex >= 1
+    val collapsedPastDays = if (collapse) days.subList(0, todayIndex).toList() else emptyList()
+    val activeDays = if (collapse) days.subList(todayIndex, days.size).toList() else days
+    return CalendarWeekOverview(
+        days = days,
+        collapsedPastDays = collapsedPastDays,
+        activeDays = activeDays,
+    )
 }
 
 // ===================================================================

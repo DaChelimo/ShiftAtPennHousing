@@ -20,7 +20,7 @@ final class PreferencesObservable: ObservableObject {
     private(set) var vm: PreferencesViewModel
     @Published var state: PreferencesUiState
     private var task: Task<Void, Never>?
-    private var live: (repo: PreferencesRepository, userId: String)?
+    private var live: (repo: PreferencesRepository, userId: String, isManager: Bool)?
 
     init(vm: PreferencesViewModel) {
         self.vm = vm
@@ -39,14 +39,35 @@ final class PreferencesObservable: ObservableObject {
     }
 
     /// Live host: remember the repo+user, load the real active period, swap the VM.
-    /// Falls back to the demo period (no swap) when nothing is open.
-    func activateLive(repo: PreferencesRepository, userId: String) async {
+    /// Falls back to the demo period (no swap) when nothing is open. [isManager] enables
+    /// the manager deadline-setter (sm/hm/bm/rsm); a plain worker never sees it.
+    func activateLive(repo: PreferencesRepository, userId: String, isManager: Bool) async {
         guard live == nil else { return }
-        live = (repo, userId)
+        live = (repo, userId, isManager)
         guard let period = try? await repo.fetchActivePreferencePeriod(userId: userId) else { return }
-        vm = PreferencesViewModel(period: period)
+        vm = PreferencesViewModel(period: period, isManager: isManager)
         state = vm.uiState.value
         observe()
+    }
+
+    /// Manager-only (BSpec §4.2): set the active period's submission deadline to
+    /// [year]-[month]-[day] (month 1..12). On success, reload the period so the deadline
+    /// chip updates. Returns whether the write succeeded (the caller toasts).
+    func setDeadline(year: Int, month: Int, day: Int) async -> Bool {
+        guard let live else { return false }
+        let ok =
+            (try? await live.repo.setPreferenceDeadline(
+                periodId: state.periodId,
+                year: Int32(year),
+                month: Int32(month),
+                day: Int32(day)
+            ))?.boolValue ?? false
+        if ok, let period = try? await live.repo.fetchActivePreferencePeriod(userId: live.userId) {
+            vm = PreferencesViewModel(period: period, isManager: live.isManager)
+            state = vm.uiState.value
+            observe()
+        }
+        return ok
     }
 
     /// Live → POST the current edits, then the optimistic local flip; demo → flip only
@@ -62,13 +83,23 @@ final class PreferencesObservable: ObservableObject {
 
 struct PreferencesScreen: View {
     @ObservedObject var model: PreferencesObservable
+    // Replays the interactive Preferences tour (nil in previews / call sites that don't
+    // wire it). See PreferencesTourView.swift.
+    var onReplayTour: (() -> Void)? = nil
     @Environment(\.colorScheme) private var scheme
+    @State private var showDeadlinePicker = false
+    @State private var pickedDeadline = Date()
+    @State private var deadlineToast: String?
 
     var body: some View {
         let c = ShiftColors.resolve(scheme)
         let st = model.state
         return VStack(alignment: .leading, spacing: 0) {
-            PageTitle(title: "Preferences")
+            PageTitle(title: "Preferences") {
+                if let onReplayTour {
+                    PreferencesTourHelpButton(action: onReplayTour)
+                }
+            }
 
             // Eyebrow is just the period now — the deadline rides in the status card as a chip.
             Text(st.periodLabel)
@@ -76,7 +107,12 @@ struct PreferencesScreen: View {
                 .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 8)
 
             statusCard(st, c)
-                .padding(.horizontal, 16).padding(.bottom, 14)
+                .padding(.horizontal, 16).padding(.bottom, st.canSetDeadline ? 10 : 14)
+
+            if st.canSetDeadline {
+                deadlineSetterCard(st, c)
+                    .padding(.horizontal, 16).padding(.bottom, 14)
+            }
 
             // Days + brush are grouped right above the timeline they drive, and stay pinned
             // while the timeline scrolls beneath them.
@@ -146,6 +182,95 @@ struct PreferencesScreen: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(c.bg)
         .accessibilityIdentifier("preferences_screen")
+        .sheet(isPresented: $showDeadlinePicker) { deadlinePickerSheet(st, c) }
+        .overlay(alignment: .top) {
+            if let msg = deadlineToast {
+                Text(msg)
+                    .font(ShiftFont.sans(14, .medium)).foregroundColor(.white)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(c.ink).clipShape(Capsule())
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+    }
+
+    // MARK: manager deadline setter (BSpec §4.2)
+
+    /// The latest date the deadline may fall on (the period start), as a Swift `Date`.
+    private var deadlineMaxDate: Date? {
+        guard let d = model.state.deadlineMaxDate else { return nil }
+        return Calendar.current.date(
+            from: DateComponents(year: Int(d.year), month: Int(d.monthNumber), day: Int(d.dayOfMonth))
+        )
+    }
+
+    private func showDeadlineToast(_ message: String) {
+        withAnimation { deadlineToast = message }
+        Task {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            withAnimation { deadlineToast = nil }
+        }
+    }
+
+    /// Manager-only card: the current deadline plus a button to open the date picker.
+    private func deadlineSetterCard(_ st: PreferencesUiState, _ c: ShiftColors) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Submission deadline").font(ShiftFont.sans(14, .semibold)).foregroundColor(c.ink)
+            Text(st.deadlineChip ?? "No deadline set for this period.")
+                .font(ShiftFont.sans(13)).foregroundColor(c.sec)
+            ShiftButton(
+                title: "Set deadline",
+                action: {
+                    pickedDeadline = deadlineMaxDate ?? Date()
+                    showDeadlinePicker = true
+                },
+                variant: .outlined,
+                size: .md
+            )
+            .accessibilityIdentifier("pref_set_deadline")
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(c.divider, lineWidth: 1))
+    }
+
+    private func deadlinePickerSheet(_ st: PreferencesUiState, _ c: ShiftColors) -> some View {
+        VStack(spacing: 16) {
+            Text("Set submission deadline").font(ShiftFont.sans(16, .semibold)).foregroundColor(c.ink)
+            Group {
+                if let maxDate = deadlineMaxDate {
+                    DatePicker("", selection: $pickedDeadline, in: ...maxDate, displayedComponents: .date)
+                } else {
+                    DatePicker("", selection: $pickedDeadline, displayedComponents: .date)
+                }
+            }
+            .datePickerStyle(.graphical)
+            .labelsHidden()
+            HStack(spacing: 10) {
+                ShiftButton(title: "Cancel", action: { showDeadlinePicker = false }, variant: .outlined, size: .md)
+                ShiftButton(
+                    title: "Save",
+                    action: {
+                        let comps = Calendar.current.dateComponents([.year, .month, .day], from: pickedDeadline)
+                        showDeadlinePicker = false
+                        Task {
+                            let ok = await model.setDeadline(
+                                year: comps.year ?? 0, month: comps.month ?? 0, day: comps.day ?? 0
+                            )
+                            showDeadlineToast(
+                                ok ? "Deadline updated"
+                                    : "That deadline could not be set. It must be on or before the period start."
+                            )
+                        }
+                    },
+                    size: .md
+                )
+                .accessibilityIdentifier("pref_deadline_confirm")
+            }
+        }
+        .padding(20)
+        .presentationDetents([.medium, .large])
     }
 
     // MARK: status card

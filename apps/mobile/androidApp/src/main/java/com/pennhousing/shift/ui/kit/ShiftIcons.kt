@@ -266,6 +266,16 @@ object ShiftIcons {
             lineTo(6f, 18f)
         }
 
+    /** Question mark — the shift-tour help/replay affordance. */
+    val QuestionMark: ImageVector =
+        stroked("QuestionMark") {
+            moveTo(8.5f, 9f)
+            arcTo(3.5f, 3.5f, 0f, true, true, 12f, 13.5f)
+            lineTo(12f, 15f)
+            moveTo(12f, 18.4f)
+            lineTo(12.01f, 18.4f)
+        }
+
     /** Warning — triangle + bang. */
     val Warning: ImageVector =
         stroked("Warning") {
@@ -304,6 +314,19 @@ object ShiftIcons {
             arcTo(14.5f, 14.5f, 0f, false, true, 4.5f, 7f)
             arcTo(2.5f, 2.5f, 0f, false, true, 7f, 4.5f)
             close()
+        }
+
+    /** Mail — envelope (the contact card's "Email <worker>" action). */
+    val Mail: ImageVector =
+        stroked("Mail") {
+            moveTo(3.5f, 6.5f)
+            lineTo(20.5f, 6.5f)
+            lineTo(20.5f, 17.5f)
+            lineTo(3.5f, 17.5f)
+            close()
+            moveTo(3.5f, 7f)
+            lineTo(12f, 13f)
+            lineTo(20.5f, 7f)
         }
 
     /** Tune — sliders (settings / hours limits). */
@@ -371,5 +394,30 @@ object ShiftIcons {
             lineTo(9f, 16.5f)
             lineTo(12f, 16.5f)
             lineTo(12f, 20.5f)
+        }
+
+    /** Send — the Assistant input bar's submit action (paper plane). */
+    val Send: ImageVector =
+        stroked("Send") {
+            moveTo(4.5f, 12f)
+            lineTo(19.5f, 5f)
+            lineTo(13.5f, 19.5f)
+            lineTo(11f, 13f)
+            lineTo(4.5f, 12f)
+            close()
+        }
+
+    /** Sparkle — the Assistant's branding glyph (four-point star). */
+    val Sparkle: ImageVector =
+        stroked("Sparkle") {
+            moveTo(12f, 3.5f)
+            lineTo(13.4f, 9.4f)
+            lineTo(19.5f, 12f)
+            lineTo(13.4f, 14.6f)
+            lineTo(12f, 20.5f)
+            lineTo(10.6f, 14.6f)
+            lineTo(4.5f, 12f)
+            lineTo(10.6f, 9.4f)
+            close()
         }
 }

@@ -10,6 +10,7 @@ import com.pennhousing.shift.shared.preferences.PreferencePeriod
 import com.pennhousing.shift.shared.preferences.PREF_TARGET_STEP
 import com.pennhousing.shift.shared.preferences.SubmitPreferencesPayload
 import com.pennhousing.shift.shared.preferences.TargetMeter
+import kotlinx.datetime.LocalDate
 import com.pennhousing.shift.shared.preferences.buildPreferenceBanner
 import com.pennhousing.shift.shared.preferences.buildPrefDay
 import com.pennhousing.shift.shared.preferences.buildPrefWeekStrip
@@ -47,6 +48,17 @@ data class PreferencesUiState(
     val targetMeter: TargetMeter,
     val weekStrip: PrefWeekStrip,
     val day: PrefDayView,
+    /** The active period id, for the manager deadline-setter call. */
+    val periodId: String,
+    /**
+     * The signed-in user may set this period's preference-submission deadline (BSpec §4.2,
+     * sm/hm/bm). Drives a manager-only control; a plain worker never sees it. The server is
+     * authoritative (rejects a non-manager, an already-published period, or a deadline after
+     * the period start).
+     */
+    val canSetDeadline: Boolean,
+    /** The latest date the deadline may fall on (the period start); null when unknown. */
+    val deadlineMaxDate: LocalDate?,
 )
 
 /**
@@ -66,6 +78,8 @@ data class PreferencesUiState(
  */
 class PreferencesViewModel(
     private val period: PreferencePeriod,
+    /** The user holds a schedule-manager role (sm/hm/bm/rsm); enables the deadline-setter. */
+    private val isManager: Boolean = false,
 ) : ViewModel() {
     // The last-saved state — the period's initial rows, advanced on each [submit].
     private var savedGrid: PreferenceGrid = period.initialGrid()
@@ -124,6 +138,9 @@ class PreferencesViewModel(
             targetMeter = buildTargetMeter(target, optedOut, period.capHours),
             weekStrip = buildPrefWeekStrip(period, grid, selectedDay),
             day = buildPrefDay(period, grid, selectedDay),
+            periodId = period.periodId,
+            canSetDeadline = isManager,
+            deadlineMaxDate = period.startDate,
         )
     }
 

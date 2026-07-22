@@ -215,6 +215,13 @@ final class UpdatesObservable: ObservableObject {
         vm.resolveSwap(swapId: swapId)
         feed = vm.uiState.value.feed
     }
+
+    /// Optimistic resolution of an off-hours Allied-page ladder alert (staggered-rollout
+    /// pilot): the worker tapped "I've called the desk", so the row leaves the feed.
+    func acknowledgeAlliedPage(_ blockId: String) {
+        vm.acknowledgeAlliedPage(blockId: blockId)
+        feed = vm.uiState.value.feed
+    }
 }
 
 /// Holds the Swaps-tab `SwapsViewModel` (DESIGN §6) — the dedicated Incoming / Outgoing
@@ -355,7 +362,7 @@ final class FloatCarouselObservable: ObservableObject {
     deinit { task?.cancel() }
 }
 
-private enum Tab: Int { case mine, openShifts, house, updates, preferences, breakShifts, settings, swaps }
+private enum Tab: Int { case mine, openShifts, house, updates, preferences, breakShifts, settings, swaps, assistant }
 
 /// Observes the §11.4 house-schedule `StateFlow` (T3b), now week-paged (last week … +4).
 /// Demo by default; the live host calls `activateLive` to swap in the worker's real
@@ -370,6 +377,10 @@ final class HouseObservable: ObservableObject {
     private var live = false
     private var repo: WorkerShiftsRepository?
     private var userId: String?
+    /// The signed-in user holds a schedule-manager role (sm/hm/bm/rsm). Threaded into the
+    /// live VM so `canManage` gates the House-grid open-seat actions (best-effort; false
+    /// on the demo path and on a failed profile read).
+    private var isManager = false
 
     init(vm: HouseScheduleViewModel) {
         self.vm = vm
@@ -419,13 +430,16 @@ final class HouseObservable: ObservableObject {
     func selectWeek(_ offset: Int) { vm.selectWeek(offset: Int32(offset)) }
     func selectHouse(_ houseId: String) { vm.selectHouse(houseId: houseId) }
 
-    func activateLive(repo: WorkerShiftsRepository, userId: String) async {
+    func activateLive(repo: WorkerShiftsRepository, userId: String, isManager: Bool) async {
         guard !live else { return }
         live = true
         self.repo = repo
         self.userId = userId
+        self.isManager = isManager
         guard let snapshot = try? await repo.fetchHouseSchedule(userId: userId) else { return }
-        vm = DemoFactory.shared.houseScheduleViewModel(snapshot: snapshot, meUserId: userId)
+        // Build the live VM directly (rather than via DemoFactory) so the manager flag can be
+        // threaded; `now` still comes Kotlin-side via DemoFactory to avoid bridging an Instant.
+        vm = HouseScheduleViewModel(snapshot: snapshot, now: DemoFactory.shared.now(), meUserId: userId, isManager: isManager)
         subscribe()
         await loadHouses()
         await loadWeek()
@@ -450,6 +464,30 @@ struct ShiftsRootView: View {
     @StateObject private var ackModel = AckHostObservable()
     @StateObject private var updatesModel = UpdatesObservable(vm: DemoFactory.shared.updatesViewModel())
     @StateObject private var swapsModel = SwapsObservable(vm: DemoFactory.shared.swapsViewModel())
+    @StateObject private var assistantModel = AssistantObservable()
+    // Onboarding — the first-run welcome tour + one-time contextual tips. The shared
+    // OnboardingViewModel sequences everything; this wrapper seeds it from the persisted
+    // seen-keys and persists on change. See Onboarding.swift.
+    @StateObject private var onboardingModel = OnboardingObservable()
+    // The interactive "Manage a shift" tour (replaces the old My-Shifts contextual tip).
+    // Own seen-key store; auto-opens on the first My-Shifts landing after the welcome tour,
+    // re-openable from the header "?" and the Settings row. See ShiftTourView.swift.
+    @StateObject private var shiftTourModel = ShiftTourObservable()
+    // One-shot pointer callout on the header "?" after the tour first finishes (auto-fades).
+    @State private var showTourPointer = false
+    // Five more interactive tours, same shape as shiftTourModel — each with its own
+    // seen-key store, each superseding a plain Tier-2 tip (or, for Swap/House grid, adding
+    // teaching that didn't exist before). See docs/design/interactive-onboarding-pattern.md.
+    @StateObject private var preferencesTourModel = PreferencesTourObservable()
+    @State private var showPreferencesTourPointer = false
+    @StateObject private var breakTourModel = BreakTourObservable()
+    @State private var showBreakTourPointer = false
+    @StateObject private var swapTourModel = SwapTourObservable()
+    @State private var showSwapTourPointer = false
+    @StateObject private var houseGridTourModel = HouseGridTourObservable()
+    @State private var showHouseGridTourPointer = false
+    @StateObject private var openClaimTourModel = OpenClaimTourObservable()
+    @State private var showOpenClaimTourPointer = false
     // §7.1 — the My-Shifts float-request carousel. Demo-seeded (two floats) so the swipe +
     // completion are visible in the login-bypass build; the live host rebuilds it from the
     // worker's real `worker_pending_floats` read in `.task`.
@@ -496,10 +534,24 @@ struct ShiftsRootView: View {
     // Open-Shifts week-picker sheet + the collapsed "Earlier this week" past card.
     @State private var showOpenWeekPicker = false
     @State private var pastOpenExpanded = false
+    // My-Shifts week overview: the collapsed "Earlier this week" card that folds away the
+    // ongoing week's already-passed days (collapsed by default).
+    @State private var pastDaysExpanded = false
     // The bottom-bar "More" overflow sheet (episodic destinations).
     @State private var showMore = false
     // T2-13 — push/deep-link routed full-screen ack (AppDelegate / onOpenURL set it).
     @ObservedObject private var deepLink = DeepLinkRouter.shared
+    // Notification priming — the pre-permission primer shown after the welcome tour.
+    // `notifOsCanPrompt` is resolved asynchronously (UNUserNotificationCenter settings)
+    // once the tour is done; `notifPrimerResponded` is the once-per-install guard.
+    @State private var notifPrimerResponded = NotificationPrimingStore.hasResponded()
+    @State private var notifOsCanPrompt = false
+    // Widget-add prompt (behavioral): counters + the currently-open flag.
+    @State private var widgetCalendarOpens = WidgetPromptStore.calendarOpens()
+    @State private var widgetPromptAccepted = WidgetPromptStore.accepted()
+    @State private var widgetPromptOpen = false
+    @State private var widgetPromptShownThisSession = false
+    @State private var didRecordLaunch = false
 
     /// Run a best-effort live write and surface failure instead of swallowing it. `op`
     /// returns whether the EF accepted the write (`EdgeResult.ok`); on failure the error
@@ -614,7 +666,49 @@ struct ShiftsRootView: View {
                     (try? await repo.setBreakOptOut(userId: uid, breakId: bid, optedOut: optedOut)) != nil
                 }
             },
+            onReplayTour: { breakTourModel.replay() }
         )
+    }
+
+    /// True once the first-run welcome tour has finished or been skipped (the shared
+    /// predicate flips to "no longer show the tour").
+    private var onboardingTourDone: Bool {
+        !Onboarding.shared.shouldShowWelcomeTour(seen: onboardingModel.state.seen)
+    }
+
+    /// If the tour is done and the worker has not responded to the primer yet, ask the OS
+    /// whether a prompt would still surface (never-asked), so the primer can appear.
+    private func refreshNotifPrimerEligibility() {
+        guard onboardingTourDone, !notifPrimerResponded else { return }
+        NotificationAuthorizer.osCanPrompt { notifOsCanPrompt = $0 }
+    }
+
+    /// The worker's next upcoming shift, pre-formatted for the widget-prompt preview tile.
+    private var widgetPreview: WidgetPreview? {
+        WidgetPromptPreview.next(
+            from: model.state.myShifts.inDisplayOrder(),
+            nowMillis: DemoFactory.shared.now().toEpochMilliseconds()
+        )
+    }
+
+    /// Open the widget-add prompt if the behavioral gate is satisfied, recording the show so
+    /// it does not re-open this session (iOS has no reliable installed-widget check pre-18,
+    /// so `alreadyHasWidget` stays false; the accepted / show-count guards prevent nagging).
+    private func evaluateWidgetPrompt() {
+        guard !widgetPromptOpen, !widgetPromptShownThisSession else { return }
+        if WidgetPrompt.shared.eligible(
+            calendarOpens: Int32(widgetCalendarOpens),
+            hasUpcomingShift: widgetPreview != nil,
+            launchCount: Int32(WidgetPromptStore.launchCount()),
+            showCount: Int32(WidgetPromptStore.showCount()),
+            accepted: widgetPromptAccepted,
+            alreadyHasWidget: false,
+            lastShownLaunch: Int32(WidgetPromptStore.lastShownLaunch())
+        ) {
+            widgetPromptOpen = true
+            widgetPromptShownThisSession = true
+            WidgetPromptStore.recordShown()
+        }
     }
 
     var body: some View {
@@ -633,6 +727,8 @@ struct ShiftsRootView: View {
                     breakTab
                 } else if tab == .house {
                     houseTab
+                } else if tab == .assistant {
+                    AssistantTabView(model: assistantModel)
                 } else {
                     ScrollView {
                         switch tab {
@@ -643,8 +739,9 @@ struct ShiftsRootView: View {
                         case .house: EmptyView() // rendered above, outside the ScrollView
                         case .updates: updates
                         case .swaps: swapsTab
-                        case .preferences: PreferencesScreen(model: prefsModel)
+                        case .preferences: PreferencesScreen(model: prefsModel, onReplayTour: { preferencesTourModel.replay() })
                         case .breakShifts: EmptyView() // rendered above, outside the ScrollView
+                        case .assistant: EmptyView() // rendered above, outside the ScrollView
                         case .settings: SettingsScreen(
                             model: settingsModel,
                             onSignOut: onSignOut,
@@ -657,6 +754,34 @@ struct ShiftsRootView: View {
                                 liveWrite(.broadcast, revert: false, onFailure: { settingsModel.vm.toggleBroadcast() }) {
                                     try? await repo.setBroadcastSubscription(userId: uid, subscribed: subscribed)
                                 }
+                            },
+                            onReplayTour: { onboardingModel.replay() },
+                            onReplayShiftTour: {
+                                requestTab(.mine)
+                                shiftTourModel.replay()
+                            },
+                            onReplayPreferencesTour: {
+                                requestTab(.preferences)
+                                preferencesTourModel.replay()
+                            },
+                            onReplayBreakTour: {
+                                requestTab(.breakShifts)
+                                breakTourModel.replay()
+                            },
+                            onReplaySwapTour: {
+                                // The swap composer lives in a sheet, not a tab — priming it
+                                // here means it fires the next time the worker reaches the
+                                // swap page (see ManageShiftSheet's page==.swap gating).
+                                requestTab(.mine)
+                                swapTourModel.replay()
+                            },
+                            onReplayHouseGridTour: {
+                                requestTab(.house)
+                                houseGridTourModel.replay()
+                            },
+                            onReplayOpenClaimTour: {
+                                requestTab(.openShifts)
+                                openClaimTourModel.replay()
                             }
                         )
                         }
@@ -666,6 +791,16 @@ struct ShiftsRootView: View {
             // Toasts now sit at the BOTTOM (above the tab bar) — the intuitive place
             // for transient confirmations, and clear of the notch / status bar.
             .overlay(alignment: .bottom) { toastStack }
+            // Persistent "Ask" affordance so the Assistant is reachable from the main tabs,
+            // not only buried in "More" (discoverability decision). Hidden on the Assistant
+            // screen itself. The first-run tour rings this button.
+            .overlay(alignment: .bottomTrailing) {
+                if tab != .assistant {
+                    AskAssistantButtonView { requestTab(.assistant) }
+                        .padding(.trailing, 16)
+                        .padding(.bottom, 14)
+                }
+            }
 
             // The week navigator lives at the BOTTOM (above the tab bar) on My Shifts.
             if tab == .mine {
@@ -686,6 +821,149 @@ struct ShiftsRootView: View {
         // (content-filled) tabs that appeared black. One root paint keeps every tab identical.
         .background(ShiftColors.resolve(scheme).bg.ignoresSafeArea())
         .accessibilityIdentifier("shifts_screen")
+        // The spotlight + coach-mark overlay, above the whole screen (tab bar included).
+        // Anchors are collected from the tab items + Ask button via onboardingAnchor(_:).
+        .overlayPreferenceValue(OnboardingAnchorKey.self) { anchors in
+            GeometryReader { proxy in
+                OnboardingOverlayView(
+                    model: onboardingModel,
+                    ringRect: { id in anchors[id].map { proxy[$0] } },
+                    fullSize: proxy.size
+                )
+            }
+        }
+        // The interactive "Manage a shift" tour — replaces the plain My-Shifts tip. Above the
+        // whole screen; auto-opens on the first My-Shifts landing (below) and on replay.
+        .overlay {
+            if shiftTourModel.state.active {
+                ShiftTourView(model: shiftTourModel)
+                    .transition(.opacity)
+            }
+        }
+        // The one-time "look here" pointer at the header "?", positioned from its real
+        // anchor (ShiftTourHelpAnchorKey) so it always lands on the actual button. Non-modal:
+        // it floats above the now-fully-interactive My-Shifts screen and fades on its own.
+        .overlayPreferenceValue(ShiftTourHelpAnchorKey.self) { anchor in
+            GeometryReader { proxy in
+                if showTourPointer, let anchor {
+                    ShiftTourPointerCallout(targetRect: proxy[anchor], fullSize: proxy.size)
+                        .transition(.opacity)
+                }
+            }
+            .animation(.easeOut(duration: 0.25), value: showTourPointer)
+        }
+        // After the tour first finishes, point at the header "?" once so the re-entry point
+        // is learned, then auto-fade it a few seconds later. Fires when the tour closes
+        // (active -> false) and it is now done.
+        .onChange(of: shiftTourModel.state.active) { active in
+            if !active, shiftTourModel.isDone, !ShiftTourPointerStore.hasShown() {
+                ShiftTourPointerStore.markShown()
+                showTourPointer = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.2) {
+                    showTourPointer = false
+                }
+            }
+        }
+        // Four more interactive tours, identical shape to shiftTourModel's block above:
+        // overlay the tour when active, a pointer callout at its own help "?" once it first
+        // finishes. House grid / Open-shifts claim / Break supersede a plain Tier-2 tip (see
+        // the .onChange(of: tab) / breakModel.state.phase triggers below); Preferences adds
+        // teaching that had no tip before. Each is its own `ViewModifier` (below) rather than
+        // an inline chain here — chaining all 12 overlay/onChange calls directly on `body`
+        // pushed the Swift type-checker over its complexity limit ("unable to type-check this
+        // expression in reasonable time"); one `.modifier(...)` call per tour keeps `body`'s
+        // own chain short while each tour's own (much smaller) chain type-checks on its own.
+        .modifier(PreferencesTourOverlay(model: preferencesTourModel, showPointer: $showPreferencesTourPointer))
+        .modifier(BreakTourOverlay(model: breakTourModel, showPointer: $showBreakTourPointer))
+        .modifier(HouseGridTourOverlay(model: houseGridTourModel, showPointer: $showHouseGridTourPointer))
+        .modifier(OpenClaimTourOverlay(model: openClaimTourModel, showPointer: $showOpenClaimTourPointer))
+        // Notification priming — once the welcome tour is done, explain WHY alerts matter
+        // and (only on Confirm) fire the real OS permission request. Replaces the cold
+        // launch-time request that used to fire in AppDelegate.
+        .overlay {
+            if NotificationPriming.shared.shouldShowPrimer(
+                tourDone: onboardingTourDone,
+                osCanPrompt: notifOsCanPrompt,
+                alreadyResponded: notifPrimerResponded
+            ) {
+                NotificationPrimingCardView(
+                    onConfirm: {
+                        NotificationAuthorizer.request()
+                        NotificationPrimingStore.markResponded()
+                        notifPrimerResponded = true
+                    },
+                    onDismiss: {
+                        NotificationPrimingStore.markResponded()
+                        notifPrimerResponded = true
+                    }
+                )
+            }
+        }
+        // Widget-add prompt (opened by the behavioral gate): benefit nudge with a live
+        // preview of the real next shift, then a 3-step how-to on "Show me how".
+        .overlay {
+            if widgetPromptOpen {
+                WidgetPromptCardView(
+                    previewHouse: widgetPreview?.house,
+                    previewWhen: widgetPreview?.whenLabel,
+                    onConfirm: {
+                        WidgetPromptStore.markAccepted()
+                        widgetPromptAccepted = true
+                    },
+                    onDismiss: { widgetPromptOpen = false }
+                )
+            }
+        }
+        // Kick off the first-run tour, and raise one-time tips as the worker first reaches
+        // each root-level surface (mirrors the Android LaunchedEffects).
+        .onAppear {
+            onboardingModel.start()
+            refreshNotifPrimerEligibility()
+            // Per-process launch counter for the widget-prompt return-session gate. The
+            // initial landing on My-Shifts is counted here (onChange fires only on CHANGE),
+            // mirroring Android's keyed LaunchedEffect(selectedIndex).
+            if !didRecordLaunch {
+                didRecordLaunch = true
+                WidgetPromptStore.recordLaunch()
+                if tab == .mine { widgetCalendarOpens = WidgetPromptStore.recordCalendarOpen() }
+                evaluateWidgetPrompt()
+            }
+        }
+        // When the tour finishes (or was already done for a returning worker), ask the OS
+        // whether a notification prompt would still surface, so the primer can appear.
+        .onChange(of: onboardingTourDone) { done in
+            if done { refreshNotifPrimerEligibility() }
+        }
+        .onChange(of: tab) { newTab in
+            switch newTab {
+            case .mine:
+                // The interactive shift tour supersedes the old My-Shifts tip. Gate on the
+                // welcome tour being done so orientation and this teaching don't overlap.
+                if onboardingTourDone { shiftTourModel.autoStart() }
+                // Count the My-Shifts open, then re-check the widget-prompt gate.
+                widgetCalendarOpens = WidgetPromptStore.recordCalendarOpen()
+                evaluateWidgetPrompt()
+            case .openShifts:
+                // The claim tour supersedes the old Open-Shifts tip on iOS (its whole point
+                // is teaching one-time vs permanent pickup, which the flat tip never covered).
+                if onboardingTourDone { openClaimTourModel.autoStart() }
+            case .house:
+                // The House-grid tour supersedes the old flat "Call the desk" tip on iOS.
+                if onboardingTourDone { houseGridTourModel.autoStart() }
+            case .swaps: onboardingModel.vm.triggerTip(trigger: .incomingSwap)
+            case .preferences:
+                // No prior Tier-2 tip existed for Preferences; this is net-new teaching.
+                if onboardingTourDone { preferencesTourModel.autoStart() }
+            default: break
+            }
+        }
+        .onChange(of: breakModel.state.phase) { phase in
+            // The Break tour supersedes the old flat break-window tip on iOS.
+            if phase == .claimWindow, onboardingTourDone { breakTourModel.autoStart() }
+        }
+        .onChange(of: floatCarouselModel.state.total) { total in
+            if total > 0 { onboardingModel.vm.triggerTip(trigger: .floatRequest) }
+        }
         .onChange(of: deepLink.requestedRoute) { route in
             // A widget tile asked to land on a specific tab.
             guard let route else { return }
@@ -780,7 +1058,8 @@ struct ShiftsRootView: View {
                         proposals.forEach { swapsModel.addOutgoing($0) }
                         swapProposed = true
                     }
-                }
+                },
+                swapTourModel: swapTourModel
             )
         }
         .sheet(item: $decisionTarget) { wrapped in
@@ -929,7 +1208,13 @@ struct ShiftsRootView: View {
             if let uid = liveUserId {
                 // D8 — live READS for the week + calendar (writes were already live).
                 model.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
-                await prefsModel.activateLive(repo: WorkerBackend.shared.preferencesRepository, userId: uid)
+                // The worker's highest role gates the manager surfaces (House open-seat
+                // actions + the preferences deadline-setter). Best-effort; defaults to worker.
+                let role = (try? await WorkerBackend.shared.profileRepository.fetchProfile(userId: uid))?.profile.role
+                let isManager = (role ?? "sw") != "sw"
+                await prefsModel.activateLive(
+                    repo: WorkerBackend.shared.preferencesRepository, userId: uid, isManager: isManager
+                )
                 await updatesModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
                 await swapsModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
                 await ackModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
@@ -943,8 +1228,9 @@ struct ShiftsRootView: View {
                 await settingsModel.activateLive(repo: WorkerBackend.shared.profileRepository, userId: uid)
                 // Closed-house days + the live week for the calendar (§3.4/§11.3 + D8).
                 calendarModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
-                // The home-house grid + contacts (§11.4, T3b).
-                await houseModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
+                // The home-house grid + contacts (§11.4, T3b). A manager (sm/hm/bm/rsm) also
+                // gets the open-seat actions on the home house (reusing `isManager` above).
+                await houseModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid, isManager: isManager)
                 // Live break CALENDAR (Break redesign): the home-house grid scoped to the
                 // active break window + phase + §4.4 opt-out.
                 await breakModel.activateLive(
@@ -1028,7 +1314,7 @@ struct ShiftsRootView: View {
 
     /// True when the active tab is one of the overflow ("More") destinations.
     private var isSecondary: Bool {
-        tab == .updates || tab == .preferences || tab == .breakShifts || tab == .settings
+        tab == .updates || tab == .preferences || tab == .breakShifts || tab == .settings || tab == .assistant
     }
 
     /// The native-style BOTTOM tab bar (iOS HIG): four frequent destinations plus a
@@ -1039,10 +1325,15 @@ struct ShiftsRootView: View {
         let c = ShiftColors.resolve(scheme)
         return HStack(alignment: .top, spacing: 0) {
             barItem("My Shifts", ShiftIcons.calendar, "tab_my_shifts", selected: tab == .mine) { requestTab(.mine) }
+                .onboardingAnchor(OnboardingAnchorId.myShifts)
             barItem("Open", ShiftIcons.plus, "tab_open_shifts", selected: tab == .openShifts) { requestTab(.openShifts) }
+                .onboardingAnchor(OnboardingAnchorId.open)
             barItem("House", ShiftIcons.building, "tab_house", selected: tab == .house) { requestTab(.house) }
+                .onboardingAnchor(OnboardingAnchorId.house)
             barItem("Swaps", ShiftIcons.refresh, "tab_swaps", selected: tab == .swaps) { requestTab(.swaps) }
+                .onboardingAnchor(OnboardingAnchorId.swaps)
             barItem("More", ShiftIcons.more, "tab_more", selected: isSecondary, badge: updatesModel.hasUnread) { showMore = true }
+                .onboardingAnchor(OnboardingAnchorId.more)
         }
         .padding(.top, 7)
         .padding(.bottom, 2)
@@ -1099,6 +1390,7 @@ struct ShiftsRootView: View {
             moreRow("Preferences", ShiftIcons.heart, "tab_preferences", .preferences)
             moreRow("Break shifts", ShiftIcons.snowflake, "tab_break", .breakShifts)
             moreRow("Settings", ShiftIcons.tune, "tab_settings", .settings)
+            moreRow("Assistant", ShiftIcons.sparkles, "tab_assistant", .assistant)
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1106,7 +1398,7 @@ struct ShiftsRootView: View {
         .sheetContentEntrance()
         .background(c.bg)
         .accessibilityIdentifier("more_sheet")
-        .presentationDetents([.height(312)])
+        .presentationDetents([.height(368)])
         .presentationDragIndicator(.visible)
     }
 
@@ -1136,7 +1428,7 @@ struct ShiftsRootView: View {
         switch which {
         case .mine: model.vm.selectTab(tab: .myShifts)
         case .openShifts: model.vm.selectTab(tab: openSub == 0 ? .openHome : .openOther)
-        case .house, .updates, .swaps, .preferences, .breakShifts, .settings: break
+        case .house, .updates, .swaps, .preferences, .breakShifts, .settings, .assistant: break
         }
     }
 
@@ -1171,7 +1463,9 @@ struct ShiftsRootView: View {
     private var openShiftsTab: some View {
         let c = ShiftColors.resolve(scheme)
         return VStack(spacing: 0) {
-            PageTitle(title: "Open Shifts")
+            PageTitle(title: "Open Shifts") {
+                OpenClaimTourHelpButton { openClaimTourModel.replay() }
+            }
             HStack(spacing: 3) {
                 calendarToggleSegment("My House", openSub == 0, c, fill: true) {
                     openSub = 0
@@ -1497,6 +1791,21 @@ struct ShiftsRootView: View {
                         .foregroundColor(c.blue)
                         .padding(.top, 2)
                 }
+                if row.opensAlliedPage, let blockId = row.alliedPageBlockId {
+                    // Off-hours ladder ack (staggered-rollout pilot): confirm the desk was
+                    // called so the ladder stops escalating (responsible worker -> SM -> desk).
+                    Button(action: { acknowledgeAlliedPage(blockId) }) {
+                        Text("I have called the desk")
+                            .font(ShiftFont.sans(13, .semibold))
+                            .foregroundColor(c.surface)
+                            .padding(.horizontal, 14).padding(.vertical, 9)
+                            .background(c.floatOut.accent)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 6)
+                    .accessibilityIdentifier("allied_page_ack")
+                }
             }
             Text(row.timeLabel).font(ShiftType.monoId).monospacedDigit().foregroundColor(c.ter)
         }
@@ -1507,6 +1816,17 @@ struct ShiftsRootView: View {
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(row.urgent ? Color.clear : c.divider, lineWidth: 1))
         .accessibilityIdentifier(row.swapId != nil ? "swap_request_notification" : "")
+    }
+
+    /// Acknowledge an off-hours Allied-page ladder alert ("I've called the desk",
+    /// staggered-rollout pilot): optimistic local resolve (the row leaves the feed), then
+    /// (live) best-effort POST `acknowledge-allied-page`. The server resolves the ladder so
+    /// no further rung fires; if the POST fails, the next snapshot re-surfaces the alert.
+    private func acknowledgeAlliedPage(_ blockId: String) {
+        updatesModel.acknowledgeAlliedPage(blockId)
+        guard liveUserId != nil else { return }
+        let repo = WorkerBackend.shared.shiftsRepository
+        Task { _ = try? await repo.acknowledgeAlliedPage(blockId: blockId) }
     }
 
     /// Cancel (void) an own outgoing swap leg from the Swaps tab: optimistic resolve +
@@ -1563,6 +1883,7 @@ struct ShiftsRootView: View {
         case .preferences: return (ShiftIcons.checkCircle, c.success.accent)
         case .swap: return (ShiftIcons.refresh, c.floatIn.accent)
         case .info: return (ShiftIcons.bell, c.pickupDot)
+        case .alliedPage: return (ShiftIcons.warning, c.floatOut.accent)
         default: return (ShiftIcons.bell, c.pickupDot)
         }
     }
@@ -1839,6 +2160,12 @@ struct ShiftsRootView: View {
     // MARK: House — §11.4 home-house schedule (Excel-style week grid) + contact lookup (T3b)
 
     @State private var contactTarget: HouseGridBlock?
+    // Manager (sm/hm/bm/rsm on the home house) open-seat actions. `houseActionTarget` is the
+    // vacant block tapped → the action chooser; picking an action routes to the assign sheet
+    // (`assignTarget`) or the "get coverage now" confirm (`coverageTarget`).
+    @State private var houseActionTarget: HouseGridBlock?
+    @State private var assignTarget: HouseGridBlock?
+    @State private var coverageTarget: HouseGridBlock?
     @State private var showHouseWeekPicker = false
     @State private var showHousePicker = false
     /// The day columns' horizontal scroll offset (≤ 0), mirrored to the frozen header row.
@@ -1861,7 +2188,9 @@ struct ShiftsRootView: View {
         let c = ShiftColors.resolve(scheme)
         let st = houseModel.state
         return VStack(alignment: .leading, spacing: 0) {
-            PageTitle(title: "House")
+            PageTitle(title: "House") {
+                HouseGridTourHelpButton { houseGridTourModel.replay() }
+            }
             houseHeaderCard(st, c)
             houseLegend(c)
             houseGrid(st.grid, st, c)
@@ -1876,7 +2205,76 @@ struct ShiftsRootView: View {
         .sheet(isPresented: $showHouseWeekPicker) { houseWeekPickerSheet(st, c) }
         .sheet(isPresented: $showHousePicker) { housePickerSheet(st, c) }
         .sheet(item: $contactTarget) { block in
-            ContactSheetView(block: block, deskPhone: houseModel.state.deskPhone)
+            ContactSheetView(
+                block: block,
+                deskPhone: houseModel.state.deskPhone,
+                deskHouseName: houseModel.state.houseName
+            )
+        }
+        // Manager tap on an OPEN seat (canManage) → choose an action.
+        .confirmationDialog(
+            "Open seat",
+            isPresented: Binding(get: { houseActionTarget != nil }, set: { if !$0 { houseActionTarget = nil } }),
+            titleVisibility: .visible,
+            presenting: houseActionTarget
+        ) { block in
+            Button("Assign a worker") { assignTarget = block }
+            Button("Get coverage now") { coverageTarget = block }
+            Button("Cancel", role: .cancel) { }
+        } message: { block in
+            Text("\(st.houseName) · \(block.timeLabel)")
+        }
+        // "Assign a worker" — roster picker; the sheet owns the assign call + soft-advisory
+        // confirm and reports the terminal result back here for the toast + grid refetch.
+        .sheet(item: $assignTarget) { block in
+            AssignWorkerSheet(
+                houseName: st.houseName,
+                houseId: st.selectedHouseId ?? st.homeHouseId ?? "",
+                block: block,
+                onAssigned: { count in
+                    assignTarget = nil
+                    claimSuccessMessage = count == 1 ? "Worker assigned" : "Worker assigned to \(count) blocks"
+                    Task { await houseModel.loadWeek() }
+                },
+                onRejected: { message in assignTarget = nil; writeError = message },
+                onFailed: { assignTarget = nil; writeError = "That could not be done. Try again." }
+            )
+        }
+        // "Get coverage now" — force-trigger a float lookup for the vacant run.
+        .confirmationDialog(
+            "Get coverage now",
+            isPresented: Binding(get: { coverageTarget != nil }, set: { if !$0 { coverageTarget = nil } }),
+            titleVisibility: .visible,
+            presenting: coverageTarget
+        ) { block in
+            Button("Run float lookup") { triggerCoverage(block) }
+            Button("Cancel", role: .cancel) { }
+        } message: { _ in
+            Text("Run a float lookup to cover this seat now?")
+        }
+    }
+
+    /// Force-trigger a float lookup for the tapped vacant run (BSpec §6.6). Best-effort:
+    /// on success show the confirmation toast + refetch the grid; a server rejection or a
+    /// network failure surfaces the error toast. Own-house is enforced server-side.
+    private func triggerCoverage(_ block: HouseGridBlock) {
+        let houseId = houseModel.state.selectedHouseId ?? houseModel.state.homeHouseId ?? ""
+        let ids = block.assignmentIds
+        Task { @MainActor in
+            do {
+                let outcome = try await WorkerBackend.shared.managerRepository.forceTrigger(houseId: houseId, assignmentIds: ids)
+                switch onEnum(of: outcome) {
+                case .triggered:
+                    claimSuccessMessage = "Coverage requested"
+                    await houseModel.loadWeek()
+                case .rejected(let r):
+                    writeError = r.message
+                case .failed:
+                    writeError = "That could not be done. Try again."
+                }
+            } catch {
+                writeError = "That could not be done. Try again."
+            }
         }
     }
 
@@ -1997,14 +2395,14 @@ struct ShiftsRootView: View {
     private func houseGrid(_ grid: HouseGridWeek, _ st: HouseScheduleUiState, _ c: ShiftColors) -> some View {
         let lanes = max(Int(grid.laneCount), 1)
         let colW = CGFloat(lanes) * Self.houseLaneW + CGFloat(lanes - 1) * Self.houseLaneGap + Self.houseColPad * 2
-        let startHour = Int(grid.startHour)
-        let endHour = Int(grid.endHour)
-        let gridHeight = Self.housePxPerHour * CGFloat(endHour - startHour)
+        let startMin = Int(grid.startMin)
+        let endMin = Int(grid.endMin)
+        let gridHeight = Self.housePxPerHour * CGFloat(endMin - startMin) / 60
         let focusDayIndex = Int(st.todayIndex)
         let nowMin = Int(st.nowMinOfDay)
         // Re-centre the scroll on open / house-switch / week-change (and when seats land and
         // expand the bounds): the today column scrolls into view + the body drops to "now".
-        let scrollTrigger = "\(st.selectedHouseId ?? "")#\(st.weekOffset)#\(startHour)#\(lanes)"
+        let scrollTrigger = "\(st.selectedHouseId ?? "")#\(st.weekOffset)#\(startMin)#\(lanes)"
         return ScrollViewReader { proxy in
             VStack(spacing: 0) {
                 // Frozen day-header row — horizontally synced to the body via houseHOffset.
@@ -2023,11 +2421,11 @@ struct ShiftsRootView: View {
                 // Body: rail (frozen horizontally) + horizontally-scrolling columns.
                 ScrollView(.vertical, showsIndicators: false) {
                     HStack(alignment: .top, spacing: 0) {
-                        houseTimeRail(startHour, endHour, gridHeight, nowMin, c)
+                        houseTimeRail(startMin, endMin, gridHeight, nowMin, c)
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: Self.houseColGap) {
                                 ForEach(grid.days, id: \.index) { day in
-                                    houseDayColumn(day, colW, gridHeight, startHour, endHour, c)
+                                    houseDayColumn(day, colW, gridHeight, startMin, endMin, c)
                                         .id("house-day-\(day.index)")
                                 }
                             }
@@ -2067,18 +2465,36 @@ struct ShiftsRootView: View {
         }
     }
 
-    /// The fixed left time rail (08:00 … 24:00, every 2h) — frozen during sideways scroll.
-    /// Carries a hidden "house-now" anchor at the current time so the body can scroll to it.
-    private func houseTimeRail(_ startHour: Int, _ endHour: Int, _ gridHeight: CGFloat, _ nowMin: Int, _ c: ShiftColors) -> some View {
-        ZStack(alignment: .topTrailing) {
+    /// The 2-hour clock marks (e.g. 06:00, 08:00, …) strictly between `startMin` and `endMin`
+    /// — shared by the rail's labels and each day column's gridlines.
+    private func houseHourMarks(_ startMin: Int, _ endMin: Int) -> [Int] {
+        var marks: [Int] = []
+        var h = (startMin / 120 + 1) * 120
+        while h < endMin {
+            marks.append(h)
+            h += 120
+        }
+        return marks
+    }
+
+    private func fmtHm(_ min: Int) -> String { String(format: "%02d:%02d", min / 60, min % 60) }
+
+    /// The fixed left time rail — frozen during sideways scroll. The top label is the EXACT
+    /// grid origin (e.g. "05:30" when that's the week's earliest actual shift start, not
+    /// rounded to an hour), then a label at every 2-hour clock mark, and a final label at the
+    /// bottom bound. Carries a hidden "house-now" anchor at the current time so the body can
+    /// scroll to it.
+    private func houseTimeRail(_ startMin: Int, _ endMin: Int, _ gridHeight: CGFloat, _ nowMin: Int, _ c: ShiftColors) -> some View {
+        let labels = Array(Set([startMin, endMin] + houseHourMarks(startMin, endMin))).sorted()
+        return ZStack(alignment: .topTrailing) {
             Color.clear.frame(width: Self.houseRailW, height: gridHeight)
             Color.clear.frame(width: Self.houseRailW, height: 1)
-                .offset(y: max(Self.housePxPerHour * CGFloat(nowMin - startHour * 60) / 60, 0))
+                .offset(y: max(Self.housePxPerHour * CGFloat(nowMin - startMin) / 60, 0))
                 .id("house-now")
-            ForEach(Array(stride(from: startHour, through: endHour, by: 2)), id: \.self) { h in
-                Text(String(format: "%02d:00", h))
+            ForEach(labels, id: \.self) { m in
+                Text(fmtHm(m))
                     .font(ShiftFont.mono(10)).monospacedDigit().foregroundColor(c.ter)
-                    .offset(y: max(Self.housePxPerHour * CGFloat(h - startHour) - 5, 0))
+                    .offset(y: max(Self.housePxPerHour * CGFloat(m - startMin) / 60 - 5, 0))
                     .padding(.trailing, 6)
             }
         }
@@ -2100,18 +2516,18 @@ struct ShiftsRootView: View {
 
     /// One day column: the surface card + 2-hour gridlines + the lane-placed blocks.
     private func houseDayColumn(
-        _ day: HouseGridDay, _ colW: CGFloat, _ gridHeight: CGFloat, _ startHour: Int, _ endHour: Int, _ c: ShiftColors
+        _ day: HouseGridDay, _ colW: CGFloat, _ gridHeight: CGFloat, _ startMin: Int, _ endMin: Int, _ c: ShiftColors
     ) -> some View {
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 10, style: .continuous).fill(c.surface)
                 .frame(width: colW, height: gridHeight)
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(c.divider, lineWidth: 1))
-            ForEach(Array(stride(from: startHour + 2, to: endHour, by: 2)), id: \.self) { h in
+            ForEach(houseHourMarks(startMin, endMin), id: \.self) { h in
                 Rectangle().fill(c.divider.opacity(0.6))
                     .frame(width: colW, height: 1)
-                    .offset(y: Self.housePxPerHour * CGFloat(h - startHour))
+                    .offset(y: Self.housePxPerHour * CGFloat(h - startMin) / 60)
             }
-            ForEach(day.blocks, id: \.id) { b in houseBlockView(b, startHour, day.isToday, c) }
+            ForEach(day.blocks, id: \.id) { b in houseBlockView(b, colW, startMin, day.isToday, c) }
         }
         .frame(width: colW, height: gridHeight, alignment: .topLeading)
         .accessibilityIdentifier("house_day_column")
@@ -2119,20 +2535,36 @@ struct ShiftsRootView: View {
 
     /// One positioned desk block, coloured by its state (design `HouseBlock`).
     ///
-    /// Three-tier "mine" emphasis so the grid is scannable (BEH §11.4): someone else's
-    /// shift is gray; my shift on another day is a mild pale blue; my shift TODAY gets the
-    /// full `today` blue + a solid blue ring so it's the one block that pops.
-    private func houseBlockView(_ b: HouseGridBlock, _ startHour: Int, _ isToday: Bool, _ c: ShiftColors) -> some View {
-        let top = Self.housePxPerHour * CGFloat(Int(b.startMin) - startHour * 60) / 60
+    /// Two colour systems, in this order:
+    ///
+    /// 1. **Per-worker colour** (docs/design/worker-colors.md) — a plain SCHEDULED seat
+    ///    wears its occupant's own colour, a pure hash of their `user_id`, so the same
+    ///    person reads the same here and on the web calendars. Fill is that colour at
+    ///    90%, the leading rail and border full strength, the name its contrast foreground.
+    /// 2. **State colour** — float-in, pending and vacant seats KEEP their state colours,
+    ///    because those carry meaning (a float must still read as a float).
+    ///
+    /// The "mine" emphasis rides on top of either: my shift TODAY keeps its solid brand
+    /// ring so it's still the one block that pops.
+    private func houseBlockView(_ b: HouseGridBlock, _ colW: CGFloat, _ startMin: Int, _ isToday: Bool, _ c: ShiftColors) -> some View {
+        let top = Self.housePxPerHour * CGFloat(Int(b.startMin) - startMin) / 60
         let h = max(Self.housePxPerHour * CGFloat(Int(b.endMin) - Int(b.startMin)) / 60 - 3, 18)
-        let x = Self.houseColPad + (Self.houseLaneW + Self.houseLaneGap) * CGFloat(Int(b.lane))
+        // A desk that's never concurrent with another during this run (segmentLanes == 1)
+        // collapses to one full-width column instead of a narrow lane next to empty space.
+        let collapsed = Int(b.segmentLanes) <= 1
+        let width = collapsed ? colW - Self.houseColPad * 2 : Self.houseLaneW
+        let x = collapsed ? Self.houseColPad : Self.houseColPad + (Self.houseLaneW + Self.houseLaneGap) * CGFloat(Int(b.lane))
         let bg: Color
         let accent: Color
         let fg: Color
         // mine + today → solid blue ring (the one block that should pop).
         var emphatic = false
+        let wc = WorkerTint.forBlock(b)
         if b.vacant {
             bg = c.surface; accent = c.outline; fg = c.ter
+        } else if let wc {
+            bg = wc.color.opacity(0.90); accent = wc.color; fg = wc.onColor
+            emphatic = b.mine && isToday
         } else if b.mine && b.floatIn {
             bg = c.floatIn.tint; accent = c.floatIn.accent; fg = c.floatIn.deep
         } else if b.mine && isToday {
@@ -2146,8 +2578,11 @@ struct ShiftsRootView: View {
         } else {
             bg = c.surfaceVar; accent = c.outline; fg = c.ink
         }
+        // The time label keeps a hint of the worker's hue without losing contrast (web:
+        // `color-mix(in srgb, F 75%, C 25%)`); on a state-coloured block it's just `fg`.
+        let timeFg = wc.map { $0.labelColor(0.25) } ?? fg
         return VStack(alignment: .leading, spacing: 1) {
-            Text(b.timeLabel).font(ShiftFont.mono(10.5)).monospacedDigit().foregroundColor(fg).lineLimit(1)
+            Text(b.timeLabel).font(ShiftFont.mono(10.5)).monospacedDigit().foregroundColor(timeFg).lineLimit(1)
             Text(b.workerLabel + (b.mine && b.floatIn ? " ·float" : ""))
                 .font(ShiftFont.sans(12, .semibold)).foregroundColor(fg).lineLimit(1)
             if b.pending {
@@ -2156,20 +2591,28 @@ struct ShiftsRootView: View {
             Spacer(minLength: 0)
         }
         .padding(.leading, 7).padding(.trailing, 5).padding(.top, 4).padding(.bottom, 3)
-        .frame(width: Self.houseLaneW, height: h, alignment: .topLeading)
+        .frame(width: width, height: h, alignment: .topLeading)
         .background(bg)
         .overlay(alignment: .leading) { Rectangle().fill(accent).frame(width: 3) }
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(
-                    b.vacant ? accent : (emphatic ? c.blue : accent.opacity(0.45)),
+                    b.vacant ? accent : (emphatic ? c.blue : (wc != nil ? accent : accent.opacity(0.45))),
                     style: StrokeStyle(lineWidth: b.vacant ? 1.5 : (emphatic ? 1.5 : 1), dash: b.vacant ? [6, 4] : [])
                 )
         )
         .offset(x: x, y: top)
         .contentShape(Rectangle())
-        .onTapGesture { if !b.vacant { contactTarget = b } }
+        .onTapGesture {
+            if b.vacant {
+                // A manager on the home house gets the open-seat actions; everyone else
+                // sees an open seat as passive (view-only).
+                if houseModel.state.canManage { houseActionTarget = b }
+            } else {
+                contactTarget = b
+            }
+        }
         .accessibilityIdentifier("house_grid_block")
     }
 
@@ -2244,6 +2687,12 @@ struct ShiftsRootView: View {
 
     // MARK: Calendar — agenda-first Personal Calendar (current week only)
 
+    /// The My-Shifts header "?" that replays the interactive shift tour (with a one-time
+    /// post-tour "ping" so the worker learns the re-entry point).
+    private var myShiftsHelpButton: some View {
+        ShiftTourHelpButton { shiftTourModel.replay() }
+    }
+
     private var calendarTab: some View {
         let c = ShiftColors.resolve(scheme)
         let st = calendarModel.state
@@ -2251,7 +2700,7 @@ struct ShiftsRootView: View {
             if st.mode == .template {
                 // D5 — the derived recurring typical week (honestly labelled).
                 VStack(alignment: .leading, spacing: 10) {
-                    PageTitle(title: "My Shifts")
+                    PageTitle(title: "My Shifts") { myShiftsHelpButton }
                     ShiftBanner(
                         title: "Viewing the recurring template",
                         bodyText: "Derived from your scheduled weeks. Permanent drops and swaps change every future week.",
@@ -2283,7 +2732,7 @@ struct ShiftsRootView: View {
 
     private func calendarWeekBody(_ st: CalendarUiState, _ c: ShiftColors) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            PageTitle(title: "My Shifts")
+            PageTitle(title: "My Shifts") { myShiftsHelpButton }
             // The "This week — Xh of cap" total, carried over from the old My-Shifts tab
             // and placed directly under the title (the hours follow the shown week).
             WeekTotalChip(currentWeeklyHours: st.weekHours, weekOffset: Int(st.weekOffset))
@@ -2468,29 +2917,123 @@ struct ShiftsRootView: View {
     /// The whole-week overview (default calendar view): every Mon–Sun day as a section —
     /// its header + agenda rows, empty days shown compactly. The NOW line appears only in
     /// today's section (the shared builder gates it).
+    ///
+    /// On the ongoing week the shared builder folds days that already happened into
+    /// `overview.collapsedPastDays`; they render as one expandable card pinned at the top
+    /// (`pastDaysCard`) so today is the first day in view. Navigated and whole-past weeks
+    /// fold nothing, so `overview.activeDays` is the full Mon–Sun list.
     private func calendarWeekOverview(_ overview: CalendarWeekOverview?, _ c: ShiftColors) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(overview?.days ?? [], id: \.dayIndex) { section in
-                VStack(alignment: .leading, spacing: 8) {
-                    dayHeaderRow(section.header, c)
-                    if section.isEmpty {
-                        Text(section.header.closed ? "House closed" : "No shifts")
-                            .font(ShiftFont.sans(13)).foregroundColor(c.ter)
-                            .padding(.leading, 18).padding(.bottom, 4)
-                    } else {
-                        VStack(alignment: .leading, spacing: 10) {
-                            ForEach(Array(section.items.enumerated()), id: \.offset) { _, item in
-                                agendaItemView(item, c)
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                    }
-                }
-                .accessibilityIdentifier("calendar_day_section")
+            if let overview, overview.hasCollapsedPast {
+                pastDaysCard(overview.collapsedPastDays, Int(overview.collapsedShiftCount), c)
+            }
+            ForEach(overview?.activeDays ?? [], id: \.dayIndex) { section in
+                calendarDaySection(section, c)
             }
         }
         .padding(.bottom, 24)
         .accessibilityIdentifier("calendar_week_overview")
+    }
+
+    /// One Mon–Sun day in the week overview: header + agenda rows, or the empty-day treatment.
+    @ViewBuilder
+    private func calendarDaySection(_ section: CalendarDaySection, _ c: ShiftColors) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            dayHeaderRow(section.header, c)
+            if section.isEmpty {
+                Text(section.header.closed ? "House closed" : "No shifts")
+                    .font(ShiftFont.sans(13)).foregroundColor(c.ter)
+                    .padding(.leading, 18).padding(.bottom, 4)
+                // An empty TODAY still gets the NOW line (the shared builder always
+                // inserts one for today), so the live time is visible even on a day
+                // off rather than only appearing once a shift exists.
+                if let nowLabel = section.items.first(where: { $0.nowLabel != nil })?.nowLabel {
+                    nowLine(nowLabel, c).padding(.horizontal, 16)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(section.items.enumerated()), id: \.offset) { _, item in
+                        agendaItemView(item, c)
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+        }
+        .accessibilityIdentifier("calendar_day_section")
+    }
+
+    /// The ongoing week's already-passed days, folded into one expandable card pinned at the
+    /// top of the overview (collapsed by default, so today leads the list). Expanding reveals
+    /// a compact per-day mini row for each folded day — weekday + date + its held-hours
+    /// summary (or "No shifts") — with the day's shift(s) shown inline and read-only. Past
+    /// shifts are not actionable, so the cards carry no tap target.
+    @ViewBuilder
+    private func pastDaysCard(_ days: [CalendarDaySection], _ shiftCount: Int, _ c: ShiftColors) -> some View {
+        let subtitle: String = {
+            var s = "\(days.count) \(days.count == 1 ? "day" : "days")"
+            if shiftCount > 0 { s += " · \(shiftCount) \(shiftCount == 1 ? "shift" : "shifts")" }
+            return s
+        }()
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) { pastDaysExpanded.toggle() }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(c.sec)
+                        .rotationEffect(.degrees(pastDaysExpanded ? 90 : 0))
+                    Text(pastDaysExpanded ? "Earlier this week" : "Show earlier this week")
+                        .font(ShiftFont.sans(14, .semibold)).foregroundColor(c.ink)
+                    Spacer(minLength: 8)
+                    Text(subtitle).font(ShiftFont.sans(12.5)).foregroundColor(c.sec)
+                }
+                .padding(.horizontal, 14).padding(.vertical, 12)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("calendar_past_days_toggle")
+
+            if pastDaysExpanded {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(days, id: \.dayIndex) { section in
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(alignment: .bottom, spacing: 6) {
+                                Text(section.header.title).font(ShiftFont.sans(14, .semibold)).foregroundColor(c.ink)
+                                Text("· \(section.header.dateLabel)").font(ShiftFont.sans(13)).foregroundColor(c.ter)
+                                Spacer(minLength: 8)
+                                if let summary = section.header.summary {
+                                    Text(summary).font(ShiftFont.mono(12.5)).monospacedDigit().foregroundColor(c.sec)
+                                } else {
+                                    Text("No shifts").font(ShiftFont.sans(12.5)).foregroundColor(c.ter)
+                                }
+                            }
+                            ForEach(Array(section.items.filter { $0.shift != nil }.enumerated()), id: \.offset) { _, item in
+                                if let shift = item.shift {
+                                    ShiftCard(
+                                        state: kitState(shift.state),
+                                        houseInitial: shift.houseInitial,
+                                        timeLabel: shift.timeLabel,
+                                        houseName: shift.houseName,
+                                        destination: shift.destination,
+                                        durationLabel: shift.durationLabel,
+                                        active: false,
+                                        onTap: {}
+                                    )
+                                    .opacity(0.55)
+                                    .accessibilityIdentifier("calendar_shift_card")
+                                }
+                            }
+                        }
+                        .accessibilityIdentifier("calendar_past_day_row")
+                    }
+                }
+                .padding(.horizontal, 14).padding(.bottom, 10)
+            }
+        }
+        .background(c.surfaceVar)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .accessibilityIdentifier("calendar_past_days_card")
     }
 
     /// "This week" / "Next week" / … for a week [offset] (0 = current).
@@ -2774,7 +3317,9 @@ private func isPermanentOpen(_ s: OpenShiftCardState) -> Bool {
 /// the thumbs snap on 30-minute boundaries. The selected zone `[from, to)` is app blue;
 /// the rest of the track is a lighter blue. Mirrors Android's Material `RangeSlider` and
 /// drives the same `rangeFrom` / `rangeTo` block indexes the §5.2/§5.3 partial plans use.
-private struct BlockRangeSlider: View {
+// Internal (not private): reused by the interactive onboarding tour (ShiftTourView) so the
+// tour teaches the exact two-handle range gesture the worker will use.
+struct BlockRangeSlider: View {
     let blockCount: Int
     @Binding var from: Int // 0 ..< to
     @Binding var to: Int // from+1 ... blockCount
@@ -3070,6 +3615,134 @@ private struct PermanentRecurringNote: View {
     }
 }
 
+// MARK: - Root-level tour overlays (extracted `ViewModifier`s)
+//
+// Each wraps one tour's overlay + pointer-callout + post-finish-pointer `onChange` — the
+// same three-step shape as shiftTourModel's inline block in `ShiftsRootView.body`. Pulled
+// out to their own `ViewModifier`s (rather than chained inline) purely to keep the Swift
+// type-checker's job on `body` tractable; see the `.modifier(...)` call sites in
+// `ShiftsRootView.body` for why.
+
+private struct PreferencesTourOverlay: ViewModifier {
+    @ObservedObject var model: PreferencesTourObservable
+    @Binding var showPointer: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                if model.state.active {
+                    PreferencesTourView(model: model).transition(.opacity)
+                }
+            }
+            .overlayPreferenceValue(PreferencesTourHelpAnchorKey.self) { anchor in
+                GeometryReader { proxy in
+                    if showPointer, let anchor {
+                        PreferencesTourPointerCallout(targetRect: proxy[anchor], fullSize: proxy.size)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeOut(duration: 0.25), value: showPointer)
+            }
+            .onChange(of: model.state.active) { active in
+                if !active, model.isDone, !PreferencesTourPointerStore.hasShown() {
+                    PreferencesTourPointerStore.markShown()
+                    showPointer = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3.2) { showPointer = false }
+                }
+            }
+    }
+}
+
+private struct BreakTourOverlay: ViewModifier {
+    @ObservedObject var model: BreakTourObservable
+    @Binding var showPointer: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                if model.state.active {
+                    BreakTourView(model: model).transition(.opacity)
+                }
+            }
+            .overlayPreferenceValue(BreakTourHelpAnchorKey.self) { anchor in
+                GeometryReader { proxy in
+                    if showPointer, let anchor {
+                        BreakTourPointerCallout(targetRect: proxy[anchor], fullSize: proxy.size)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeOut(duration: 0.25), value: showPointer)
+            }
+            .onChange(of: model.state.active) { active in
+                if !active, model.isDone, !BreakTourPointerStore.hasShown() {
+                    BreakTourPointerStore.markShown()
+                    showPointer = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3.2) { showPointer = false }
+                }
+            }
+    }
+}
+
+private struct HouseGridTourOverlay: ViewModifier {
+    @ObservedObject var model: HouseGridTourObservable
+    @Binding var showPointer: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                if model.state.active {
+                    HouseGridTourView(model: model).transition(.opacity)
+                }
+            }
+            .overlayPreferenceValue(HouseGridTourHelpAnchorKey.self) { anchor in
+                GeometryReader { proxy in
+                    if showPointer, let anchor {
+                        HouseGridTourPointerCallout(targetRect: proxy[anchor], fullSize: proxy.size)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeOut(duration: 0.25), value: showPointer)
+            }
+            .onChange(of: model.state.active) { active in
+                if !active, model.isDone, !HouseGridTourPointerStore.hasShown() {
+                    HouseGridTourPointerStore.markShown()
+                    showPointer = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3.2) { showPointer = false }
+                }
+            }
+    }
+}
+
+private struct OpenClaimTourOverlay: ViewModifier {
+    @ObservedObject var model: OpenClaimTourObservable
+    @Binding var showPointer: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                if model.state.active {
+                    OpenClaimTourView(model: model).transition(.opacity)
+                }
+            }
+            .overlayPreferenceValue(OpenClaimTourHelpAnchorKey.self) { anchor in
+                GeometryReader { proxy in
+                    if showPointer, let anchor {
+                        OpenClaimTourPointerCallout(targetRect: proxy[anchor], fullSize: proxy.size)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeOut(duration: 0.25), value: showPointer)
+            }
+            .onChange(of: model.state.active) { active in
+                if !active, model.isDone, !OpenClaimTourPointerStore.hasShown() {
+                    OpenClaimTourPointerStore.markShown()
+                    showPointer = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3.2) { showPointer = false }
+                }
+            }
+    }
+}
+
 // MARK: - Drop flow (§5.2)
 
 private enum ManagePageKind { case manage, swap }
@@ -3089,10 +3762,16 @@ private struct ManageShiftSheet: View {
     let demoSeats: [HouseSeat]
     var pendingGiveAssignmentIds: Set<String> = []
     let onSubmitSwap: ([SwapProposal]) -> Void
+    // The swap-composer tour. Auto-opens the FIRST time the worker reaches the swap page
+    // (not the manage page — Drop-vs-Swap is ShiftTour's job, not this tour's). See
+    // SwapTourView.swift.
+    @ObservedObject var swapTourModel: SwapTourObservable
     @Environment(\.dismiss) private var dismiss
     @State private var page: ManagePageKind = .manage
     @State private var swapGive: MyShift?
     @State private var swapPermanent = false
+    // One-shot pointer callout on the swap page's help "?" after the tour first finishes.
+    @State private var showSwapTourPointer = false
 
     var body: some View {
         ShiftSheet(
@@ -3118,6 +3797,46 @@ private struct ManageShiftSheet: View {
                         onSubmit: onSubmitSwap
                     )
                     .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
+            }
+            // The composer's own help "?", floating top-trailing since ShiftSheet's header
+            // has no trailing accessory slot (its close ✕ already owns that spot).
+            .overlay(alignment: .topTrailing) {
+                if page == .swap {
+                    SwapTourHelpButton { swapTourModel.replay() }
+                        .padding(.top, 2).padding(.trailing, 2)
+                }
+            }
+        }
+        // The tour overlay sits ABOVE the sheet's own content (inside the sheet, since a
+        // root-level overlay would render BEHIND this modal `.sheet` presentation). Gated on
+        // `page == .swap` too: a Settings "Replay swap tour" flips `active` true immediately
+        // (before the sheet may even be open), and it must stay invisible until the worker
+        // actually reaches the swap page, not show over the Drop/Swap manage page.
+        .overlay {
+            if swapTourModel.state.active, page == .swap {
+                SwapTourView(model: swapTourModel)
+                    .transition(.opacity)
+            }
+        }
+        .overlayPreferenceValue(SwapTourHelpAnchorKey.self) { anchor in
+            GeometryReader { proxy in
+                if showSwapTourPointer, let anchor {
+                    SwapTourPointerCallout(targetRect: proxy[anchor], fullSize: proxy.size)
+                        .transition(.opacity)
+                }
+            }
+            .animation(.easeOut(duration: 0.25), value: showSwapTourPointer)
+        }
+        .onChange(of: page) { newPage in
+            if newPage == .swap { swapTourModel.autoStart() }
+        }
+        .onChange(of: swapTourModel.state.active) { active in
+            if !active, swapTourModel.isDone, !SwapTourPointerStore.hasShown() {
+                SwapTourPointerStore.markShown()
+                showSwapTourPointer = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.2) {
+                    showSwapTourPointer = false
                 }
             }
         }
@@ -4356,29 +5075,92 @@ private struct DropScopeOption: View {
 
 /// The §11.4 contact sheet (T3b): who covers the run + call affordances — the
 /// worker's phone (full-directory ruling) and the house desk phone.
+/// Tapping someone's shift on the House grid opens THIS: the slot (time + length) plus a
+/// card for the person on it — name, house, phone, email — and the two intents that make
+/// the card actionable, `tel:` (the dialer opens prefilled; it does not auto-call) and
+/// `mailto:` (the mail app opens composing, nothing is sent). The card's avatar wears the
+/// worker's own colour, the same one their blocks carry in the grid.
 private struct ContactSheetView: View {
     let block: HouseGridBlock
     private var row: HouseGridBlock { block }
     let deskPhone: String?
+    let deskHouseName: String?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
 
+    private var name: String { row.workerName ?? "This shift" }
+
+    /// The float-in case: the person's own house is not the desk they're standing at, and
+    /// that is exactly what someone tapping the block needs to know.
+    private var houseLine: String? {
+        guard let home = row.workerHouseName else { return deskHouseName }
+        if let desk = deskHouseName, desk.caseInsensitiveCompare(home) != .orderedSame {
+            return "\(home) (at \(desk))"
+        }
+        return home
+    }
+
+    /// "4h" / "30m" / "1h 30m" — the tapped slot's length, off the grid's own minutes.
+    private var durationLabel: String {
+        let mins = Int(row.endMin) - Int(row.startMin)
+        let (h, m) = (mins / 60, mins % 60)
+        if h == 0 { return "\(m)m" }
+        if m == 0 { return "\(h)h" }
+        return "\(h)h \(m)m"
+    }
+
     var body: some View {
         let c = ShiftColors.resolve(scheme)
-        ShiftSheet(title: row.workerName ?? "Shift", onClose: { dismiss() }) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 12) {
-                    HouseBadge(initial: String((row.workerName ?? "?").prefix(1)), bg: c.surfaceVar, fg: c.ink)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(row.timeLabel).font(ShiftType.monoTime).monospacedDigit().foregroundColor(c.ink)
-                        Text(row.workerPhone ?? "No phone on file")
-                            .font(ShiftFont.sans(13.5)).foregroundColor(c.sec)
-                            .accessibilityIdentifier("contact_phone")
-                    }
+        let tint = WorkerTint.forBlock(row)
+        ShiftSheet(title: "Shift details", onClose: { dismiss() }) {
+            VStack(alignment: .leading, spacing: 14) {
+                // The shift itself: what slot was tapped.
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.timeLabel).font(ShiftType.monoTime).monospacedDigit().foregroundColor(c.ink)
+                        .accessibilityIdentifier("contact_time")
+                    Text(durationLabel).font(ShiftFont.sans(13)).foregroundColor(c.sec)
                 }
+
+                // The person on it, as a card.
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        HouseBadge(
+                            initial: String(name.prefix(1)),
+                            bg: tint?.color ?? c.surfaceVar,
+                            fg: tint?.onColor ?? c.ink
+                        )
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(name).font(ShiftFont.sans(17, .semibold)).foregroundColor(c.ink).lineLimit(1)
+                                .accessibilityIdentifier("contact_name")
+                            if let houseLine {
+                                Text(houseLine).font(ShiftFont.sans(13.5)).foregroundColor(c.sec).lineLimit(1)
+                                    .accessibilityIdentifier("contact_house")
+                            }
+                        }
+                    }
+                    contactDetail("phone.fill", row.workerPhone, "No phone on file", "contact_phone", c)
+                    contactDetail("envelope.fill", row.workerEmail, "No email on file", "contact_email", c)
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(c.surfaceVar)
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(c.divider, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .accessibilityIdentifier("contact_person_card")
+
                 if let phone = row.workerPhone {
-                    ShiftButton(title: "Call \(row.workerName ?? "worker")", action: { dial(phone) }, fullWidth: true)
+                    ShiftButton(title: "Call \(name)", action: { dial(phone) }, systemIcon: "phone.fill", fullWidth: true)
                         .accessibilityIdentifier("contact_call_button")
+                }
+                if let email = row.workerEmail {
+                    ShiftButton(
+                        title: "Email \(name)",
+                        action: { mail(email) },
+                        variant: .outlined,
+                        systemIcon: "envelope.fill",
+                        fullWidth: true
+                    )
+                    .accessibilityIdentifier("contact_email_button")
                 }
                 if let desk = deskPhone {
                     ShiftButton(title: "Call the desk · \(desk)", action: { dial(desk) }, variant: .outlined, fullWidth: true)
@@ -4389,11 +5171,206 @@ private struct ContactSheetView: View {
         }
     }
 
+    private func contactDetail(
+        _ icon: String, _ value: String?, _ placeholder: String, _ id: String, _ c: ShiftColors
+    ) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon).font(.system(size: 13))
+                .foregroundColor(value == nil ? c.ter : c.sec).frame(width: 16)
+            Text(value ?? placeholder)
+                .font(ShiftFont.sans(14)).foregroundColor(value == nil ? c.ter : c.ink).lineLimit(1)
+                .accessibilityIdentifier(id)
+        }
+    }
+
+    /// Opens the dialer with the number prefilled. `tel:` never places the call itself.
     private func dial(_ phone: String) {
-        let digits = phone.filter { !$0.isWhitespace }
+        let digits = phone.filter { !$0.isWhitespace && $0 != "(" && $0 != ")" && $0 != "-" }
         if let url = URL(string: "tel://\(digits)") {
             UIApplication.shared.open(url)
         }
+    }
+
+    /// Opens the mail app composing to this worker, with the tapped shift as the subject
+    /// so the recipient has context. Nothing is sent from here.
+    private func mail(_ email: String) {
+        var comps = URLComponents()
+        comps.scheme = "mailto"
+        comps.path = email
+        comps.queryItems = [URLQueryItem(name: "subject", value: "Shift on \(row.timeLabel)")]
+        if let url = comps.url {
+            UIApplication.shared.open(url)
+        }
+    }
+}
+
+/// SM/HM/BM/RSM "assign a worker" to an open seat (BSpec §2.2 / §4.4) — the mobile
+/// analogue of the web builder's override card. Fetches the house roster, filters it by
+/// name, and on a tap POSTs `admin-assign-worker` via `ManagerRepository`. A soft-advisory
+/// result (over-target / soft-cap / cannot / opted-out) surfaces a confirm dialog that
+/// re-submits with `override = true`; terminal results flow back to the host for the toast
+/// and the grid refetch. The server is authoritative for authorization + the hard cap.
+private struct AssignWorkerSheet: View {
+    let houseName: String
+    let houseId: String
+    let block: HouseGridBlock
+    let onAssigned: (Int) -> Void
+    let onRejected: (String) -> Void
+    let onFailed: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var scheme
+
+    @State private var roster: [RosterWorker] = []
+    @State private var query = ""
+    @State private var loading = true
+    @State private var busy = false
+    // Non-nil when the last attempt tripped soft advisories: the worker to re-submit with
+    // override + the advisory lines to show in the confirm dialog.
+    @State private var confirmWorker: RosterWorker?
+    @State private var advisoryLines: [String] = []
+
+    private var filtered: [RosterWorker] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        return q.isEmpty ? roster : roster.filter { $0.name.lowercased().contains(q) }
+    }
+
+    var body: some View {
+        let c = ShiftColors.resolve(scheme)
+        ShiftSheet(title: "Assign worker", onClose: { dismiss() }) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("\(houseName) · \(block.timeLabel)")
+                    .font(ShiftFont.sans(13.5)).foregroundColor(c.sec)
+                searchField(c)
+                if loading {
+                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
+                } else if filtered.isEmpty {
+                    Text(query.isEmpty ? "No workers in this house." : "No matches.")
+                        .font(ShiftFont.sans(14)).foregroundColor(c.ter)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 12)
+                } else {
+                    ForEach(filtered, id: \.userId) { w in workerRow(w, c) }
+                }
+            }
+            .accessibilityIdentifier("assign_worker_sheet")
+        }
+        .task { await load() }
+        .confirmationDialog(
+            "Assign anyway?",
+            isPresented: Binding(get: { confirmWorker != nil }, set: { if !$0 { confirmWorker = nil } }),
+            titleVisibility: .visible,
+            presenting: confirmWorker
+        ) { w in
+            Button("Assign anyway") { assign(w, override: true) }
+            Button("Cancel", role: .cancel) { }
+        } message: { _ in
+            Text(advisoryLines.joined(separator: "\n"))
+        }
+    }
+
+    private func searchField(_ c: ShiftColors) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundColor(c.ter)
+            TextField("Search this house", text: $query)
+                .font(ShiftFont.sans(14)).foregroundColor(c.ink)
+                .autocorrectionDisabled(true)
+                .textInputAutocapitalization(.never)
+                .accessibilityIdentifier("assign_search_field")
+            if !query.isEmpty {
+                Button(action: { query = "" }) {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 15)).foregroundColor(c.sec)
+                }.buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 11)
+        .background(c.surfaceVar)
+        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(c.divider, lineWidth: 1))
+    }
+
+    private func workerRow(_ w: RosterWorker, _ c: ShiftColors) -> some View {
+        Button(action: { assign(w, override: false) }) {
+            HStack(spacing: 10) {
+                HouseBadge(initial: String(w.name.prefix(1)), bg: c.surfaceVar, fg: c.ink)
+                Text(w.name).font(ShiftFont.sans(14.5, .semibold)).foregroundColor(c.ink)
+                Spacer(minLength: 0)
+                Image(systemName: ShiftIcons.plus).font(.system(size: 13, weight: .semibold)).foregroundColor(c.blue)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 11)
+            .background(c.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(c.divider, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
+        .accessibilityIdentifier("assign_worker_row")
+    }
+
+    private func load() async {
+        roster = (try? await WorkerBackend.shared.managerRepository.fetchHouseRoster(houseId: houseId)) ?? []
+        loading = false
+    }
+
+    private func assign(_ w: RosterWorker, override: Bool) {
+        guard !busy else { return }
+        busy = true
+        Task { @MainActor in
+            defer { busy = false }
+            do {
+                let outcome = try await WorkerBackend.shared.managerRepository.assignWorker(
+                    assignmentIds: block.assignmentIds, userId: w.userId, scope: "this_week", override: override)
+                switch onEnum(of: outcome) {
+                case .assigned(let a):
+                    onAssigned(Int(a.count))
+                case .needsConfirm(let n):
+                    advisoryLines = n.advisories.map { $0.message }
+                    confirmWorker = w
+                case .rejected(let r):
+                    onRejected(r.message)
+                case .failed:
+                    onFailed()
+                }
+            } catch {
+                onFailed()
+            }
+        }
+    }
+}
+
+// MARK: - Per-worker colours (docs/design/worker-colors.md)
+
+/// A worker's full-strength colour plus the legible foreground that sits on it.
+///
+/// The palette and the hash live in the shared KMP module (`WorkerColorsKt`), which is
+/// the Kotlin mirror of `apps/web/lib/workerColor.ts` — so a worker's colour is identical
+/// on the web calendars, Android and here. This type only converts the packed 0xRRGGBB
+/// ints into SwiftUI colours and does the label blend; it must never re-derive the hash.
+struct WorkerTint {
+    let rgb: UInt32
+    let onRgb: UInt32
+
+    var color: Color { Color(hex: rgb) }
+    var onColor: Color { Color(hex: onRgb) }
+
+    /// The occupant's tint, or nil when the block must keep its STATE colour (vacant /
+    /// float-in / pending) or carries no worker.
+    static func forBlock(_ b: HouseGridBlock) -> WorkerTint? {
+        guard let uid = b.userId, b.wearsWorkerColor() else { return nil }
+        return WorkerTint(
+            rgb: UInt32(bitPattern: WorkerColorsKt.workerColor(userId: uid)),
+            onRgb: UInt32(bitPattern: WorkerColorsKt.workerContrastText(userId: uid))
+        )
+    }
+
+    /// `onColor` with a slice of `color` mixed in, so the time label keeps a coloured
+    /// identity without losing contrast. Hand-rolled rather than `Color.mix` (iOS 18+)
+    /// because the app's deployment target is lower.
+    func labelColor(_ amount: Double) -> Color {
+        func ch(_ v: UInt32, _ shift: UInt32) -> Double { Double((v >> shift) & 0xFF) }
+        let r = ch(onRgb, 16) * (1 - amount) + ch(rgb, 16) * amount
+        let g = ch(onRgb, 8) * (1 - amount) + ch(rgb, 8) * amount
+        let b = ch(onRgb, 0) * (1 - amount) + ch(rgb, 0) * amount
+        return Color(.sRGB, red: r / 255, green: g / 255, blue: b / 255, opacity: 1)
     }
 }
 

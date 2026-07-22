@@ -21,15 +21,25 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Instant
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -87,6 +97,8 @@ fun PreferencesTabContent(
     vm: PreferencesViewModel,
     onSubmit: () -> Unit = vm::submit,
     onDiscard: () -> Unit = vm::revert,
+    /** Manager-only (BSpec §4.2): set this period's submission deadline (year, month 1..12, day). */
+    onSetDeadline: ((Int, Int, Int) -> Unit)? = null,
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val c = ShiftTheme.colors
@@ -113,6 +125,14 @@ fun PreferencesTabContent(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (state.canSetDeadline && onSetDeadline != null) {
+                DeadlineSetterCard(
+                    currentDeadline = state.deadlineChip,
+                    maxDate = state.deadlineMaxDate,
+                    onSet = onSetDeadline,
+                )
+            }
+
             TargetCard(
                 meter = state.targetMeter,
                 optedOut = state.optedOut,
@@ -183,6 +203,86 @@ fun PreferencesTabContent(
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * Manager-only (SM/HM/BM/RSM, BSpec §4.2) card to set the preference-submission deadline
+ * for the active period. Shows the current deadline (or a "not set" placeholder) and opens
+ * a date picker bounded to the period start ([maxDate]); the server re-validates. Only
+ * rendered when the ViewModel reports `canSetDeadline`, so a plain worker never sees it.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DeadlineSetterCard(
+    currentDeadline: String?,
+    maxDate: LocalDate?,
+    onSet: (Int, Int, Int) -> Unit,
+) {
+    val c = ShiftTheme.colors
+    var showPicker by remember { mutableStateOf(false) }
+    val maxMillis = maxDate?.atStartOfDayIn(TimeZone.UTC)?.toEpochMilliseconds()
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .border(1.dp, c.divider, RoundedCornerShape(12.dp))
+            .padding(14.dp)
+            .testTag("pref_deadline_card"),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("Submission deadline", color = c.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            currentDeadline ?: "No deadline set for this period.",
+            color = c.sec,
+            fontSize = 13.sp,
+        )
+        ShiftButton(
+            text = "Set deadline",
+            onClick = { showPicker = true },
+            modifier = Modifier.testTag("pref_set_deadline"),
+            variant = ButtonVariant.Outlined,
+            size = ButtonSize.Md,
+        )
+    }
+
+    if (showPicker) {
+        val pickerState =
+            rememberDatePickerState(
+                initialSelectedDateMillis = maxMillis,
+                selectableDates =
+                    object : SelectableDates {
+                        override fun isSelectableDate(utcTimeMillis: Long): Boolean =
+                            maxMillis == null || utcTimeMillis <= maxMillis
+                    },
+            )
+        DatePickerDialog(
+            onDismissRequest = { showPicker = false },
+            confirmButton = {
+                ShiftButton(
+                    text = "Save",
+                    onClick = {
+                        pickerState.selectedDateMillis?.let { millis ->
+                            val date = Instant.fromEpochMilliseconds(millis).toLocalDateTime(TimeZone.UTC).date
+                            onSet(date.year, date.monthNumber, date.dayOfMonth)
+                        }
+                        showPicker = false
+                    },
+                    modifier = Modifier.testTag("pref_deadline_confirm"),
+                    size = ButtonSize.Md,
+                )
+            },
+            dismissButton = {
+                ShiftButton(
+                    text = "Cancel",
+                    onClick = { showPicker = false },
+                    variant = ButtonVariant.Outlined,
+                    size = ButtonSize.Md,
+                )
+            },
+        ) {
+            DatePicker(state = pickerState)
         }
     }
 }

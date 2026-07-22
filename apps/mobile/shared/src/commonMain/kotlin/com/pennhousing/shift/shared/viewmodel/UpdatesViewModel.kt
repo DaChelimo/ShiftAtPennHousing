@@ -72,4 +72,19 @@ class UpdatesViewModel(
         items = remaining
         _uiState.value = UpdatesUiState(buildUpdatesFeed(items, now))
     }
+
+    /**
+     * Optimistic local resolution of an off-hours Allied-page ladder alert (staggered-
+     * rollout pilot): the worker tapped "I've called the desk", so the actionable row
+     * leaves the feed immediately. The live host fires the `acknowledge-allied-page` EF
+     * best-effort; the server stays authoritative (it resolves the ladder so no further
+     * rung fires) and the next snapshot reconciles. Idempotent — an unknown [blockId]
+     * leaves the feed unchanged.
+     */
+    fun acknowledgeAlliedPage(blockId: String) {
+        val remaining = items.filterNot { it.alliedPageBlockId == blockId }
+        if (remaining.size == items.size) return
+        items = remaining
+        _uiState.value = UpdatesUiState(buildUpdatesFeed(items, now))
+    }
 }

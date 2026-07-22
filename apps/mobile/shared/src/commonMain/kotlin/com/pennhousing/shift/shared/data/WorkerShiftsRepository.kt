@@ -386,6 +386,19 @@ class WorkerShiftsRepository(
         edge.invoke("decline-float", Json.encodeToString(FloatActionRequest(floatId = floatId)))
 
     /**
+     * Acknowledge an off-hours Allied-page ladder alert ("I've called the desk") →
+     * the `acknowledge-allied-page` Edge Function (staggered-rollout pilot; migration
+     * 20260713000001). Resolves the ladder so no further rung (SM, then desk) fires. The
+     * EF verifies the caller actually received the alert for this block. Best-effort +
+     * idempotent on terminal state (already acknowledged/resolved).
+     */
+    suspend fun acknowledgeAlliedPage(blockId: String): EdgeResult =
+        edge.invoke(
+            "acknowledge-allied-page",
+            Json.encodeToString(AlliedPageActionRequest(blockId = blockId)),
+        )
+
+    /**
      * The Mon..Sun strip indexes of THIS week's dates on which the worker's home house
      * is closed (§3.4/§11.3) — the mobile analogue of the web calendar's "Closed" cells
      * (T2-12c). Resolution: the worker's own `home_house_id` (own-row `users` RLS), then
@@ -1056,6 +1069,11 @@ internal data class HouseGridRow(
     @SerialName("user_id") val userId: String? = null,
     @SerialName("worker_name") val workerName: String? = null,
     @SerialName("worker_phone") val workerPhone: String? = null,
+    // The contact-card fields (20260722000001). The occupant's HOME house, which is not
+    // the grid's `house_name` (the desk being staffed) whenever they're a float-in.
+    @SerialName("worker_email") val workerEmail: String? = null,
+    @SerialName("worker_home_house_id") val workerHouseId: String? = null,
+    @SerialName("worker_home_house_name") val workerHouseName: String? = null,
 )
 
 internal fun HouseGridRow.toSeat(): HouseSeat =
@@ -1069,6 +1087,9 @@ internal fun HouseGridRow.toSeat(): HouseSeat =
         userId = userId,
         workerName = workerName,
         workerPhone = workerPhone,
+        workerEmail = workerEmail,
+        workerHouseName = workerHouseName,
+        workerHouseId = workerHouseId,
     )
 
 /** A `house_schedule_grid` row for the break calendar (carries block_id + required_headcount). */
@@ -1316,6 +1337,10 @@ private fun NotificationWireRow.toModel(): NotificationItem =
         body = payload["body"]?.jsonPrimitive?.content ?: payload["message"]?.jsonPrimitive?.content,
         createdAt = Instant.parse(createdAt),
         unread = acknowledgedAt == null,
+        // Off-hours ladder alert (staggered-rollout pilot): `allied_page` rows carry the
+        // block to acknowledge + the desk phone to call.
+        alliedPageBlockId = payload["block_id"]?.jsonPrimitive?.content,
+        deskPhone = payload["desk_phone"]?.jsonPrimitive?.content,
     )
 
 // ----- Edge-Function request bodies. -----
@@ -1338,6 +1363,12 @@ private data class ClaimShiftRequest(
 @Serializable
 private data class FloatActionRequest(
     @SerialName("float_id") val floatId: String,
+)
+
+/** `acknowledge-allied-page` request — the coverage-locked block to acknowledge. */
+@Serializable
+private data class AlliedPageActionRequest(
+    @SerialName("block_id") val blockId: String,
 )
 
 /** `accept-swap` / `reject-swap` request — the incoming swap id (T3a minimal slice). */

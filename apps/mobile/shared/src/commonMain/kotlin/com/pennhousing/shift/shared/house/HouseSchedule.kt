@@ -39,6 +39,14 @@ data class HouseSeat(
     val userId: String?,
     val workerName: String?,
     val workerPhone: String?,
+    /** The address the worker signed up with (`users.email`) — the contact card's mail intent. */
+    val workerEmail: String? = null,
+    /**
+     * The occupant's HOME house, which is NOT necessarily the desk they're staffing:
+     * for a float-in the two differ, and that difference is what the contact card shows.
+     */
+    val workerHouseName: String? = null,
+    val workerHouseId: String? = null,
 )
 
 /** The week's grid for one house, plus the contact surface (§11.4). */
@@ -70,13 +78,37 @@ data class HouseOption(
  */
 data class HouseGridBlock(
     val id: String, // first seat's assignment_id (stable)
+    /**
+     * Every constituent 30-minute seat's `assignment_id` in this coalesced run, in time
+     * order (invariant #5). The manager add-a-worker action sends the whole run to
+     * `admin-assign-worker`, which resolves them to block ids (mirrors how a dropped run
+     * carries all its block `assignment_id`s). For a vacant run this is the set of open
+     * seats to fill.
+     */
+    val assignmentIds: List<String>,
     val startMin: Int,
     val endMin: Int,
     val lane: Int,
+    /**
+     * The max number of blocks simultaneously active at any instant during this block's own
+     * span (e.g. 1 while Harnwell is single-staffed, 2 once a second desk opens). A block whose
+     * `segmentLanes == 1` never overlaps another block in time, so the UI renders it full-width
+     * (a single column) instead of splitting the column into lanes for a desk that's only ever
+     * single-staffed during that stretch.
+     */
+    val segmentLanes: Int,
     val timeLabel: String, // "14:00 - 18:00" (24:00 rendered for an end-of-day block)
     val workerLabel: String, // "You" / "Maya R." / "Open"
     val workerName: String?, // null → an open/vacant run
     val workerPhone: String?,
+    /**
+     * The occupant's identity + contact details, carried through so tapping the block can
+     * open their card (name / house / phone / email) without a second fetch. [userId] also
+     * drives the per-worker card color (`workerColor`, docs/design/worker-colors.md).
+     */
+    val userId: String? = null,
+    val workerEmail: String? = null,
+    val workerHouseName: String? = null,
     val vacant: Boolean,
     val pending: Boolean,
     val floatIn: Boolean,
@@ -98,14 +130,17 @@ data class HouseGridDay(
 
 /**
  * The whole navigable week as a grid. [laneCount] is the week-wide max (so every day
- * column is the same width and the headers line up); [startHour]/[endHour] bound the
- * time rail (default 08:00-24:00, expanded to even hours if the data runs outside it).
+ * column is the same width and the headers line up); [startMin]/[endMin] (minutes from NY
+ * midnight) bound the time rail — the origin is the EARLIEST actual block start seen that
+ * week, floored to a 30-min boundary (never later than 08:00), so a 05:30 desk opening shows
+ * 05:30 at the top rather than rounding to a coarser hour. The end defaults to 24:00 and only
+ * expands later if a block runs past midnight.
  */
 data class HouseGridWeek(
     val days: List<HouseGridDay>,
     val laneCount: Int,
-    val startHour: Int,
-    val endHour: Int,
+    val startMin: Int,
+    val endMin: Int,
 ) {
     val isEmpty: Boolean get() = days.all { it.isEmpty }
 }
@@ -126,6 +161,8 @@ private fun pad2(v: Int): String = if (v < 10) "0$v" else "$v"
 private fun fmtMinOfDay(min: Int): String = pad2(min / 60) + ":" + pad2(min % 60)
 
 private const val MIN_PER_DAY = 24 * 60
+private const val DEFAULT_DAY_START_MIN = 8 * 60
+private const val BLOCK_MIN = 30
 
 /**
  * Build the [anchor] week's house grid: seats placed on the Mon-Sun strip, contiguous
@@ -167,11 +204,11 @@ fun buildHouseGridWeek(
 
     val laneCount = days.maxOf { it.laneCount }.coerceAtLeast(1)
     val allBlocks = days.flatMap { it.blocks }
-    val minStartHour = allBlocks.minOfOrNull { it.startMin / 60 } ?: 8
-    val maxEndHour = allBlocks.maxOfOrNull { (it.endMin + 59) / 60 } ?: 24
-    val startHour = evenFloor(minOf(8, minStartHour))
-    val endHour = evenCeil(maxOf(24, maxEndHour))
-    return HouseGridWeek(days = days, laneCount = laneCount, startHour = startHour, endHour = endHour)
+    val minStart = allBlocks.minOfOrNull { it.startMin } ?: DEFAULT_DAY_START_MIN
+    val maxEnd = allBlocks.maxOfOrNull { it.endMin } ?: MIN_PER_DAY
+    val startMin = floorToBlock(minOf(DEFAULT_DAY_START_MIN, minStart))
+    val endMin = ceilToBlock(maxOf(MIN_PER_DAY, maxEnd))
+    return HouseGridWeek(days = days, laneCount = laneCount, startMin = startMin, endMin = endMin)
 }
 
 /**
@@ -218,9 +255,11 @@ private fun coalesce(
                 val mine = meUserId != null && !first.vacant && first.userId == meUserId
                 HouseGridBlock(
                     id = first.id,
+                    assignmentIds = run.map { it.id },
                     startMin = startMin,
                     endMin = endMin,
                     lane = 0,
+                    segmentLanes = 1, // placeholder — assignLanes fills in the real concurrency
                     timeLabel = "${fmtMinOfDay(startMin)} - ${fmtMinOfDay(endMin)}",
                     workerLabel =
                         when {
@@ -230,6 +269,9 @@ private fun coalesce(
                         },
                     workerName = first.workerName,
                     workerPhone = first.workerPhone,
+                    userId = first.userId,
+                    workerEmail = first.workerEmail,
+                    workerHouseName = first.workerHouseName,
                     vacant = first.vacant,
                     pending = first.pending,
                     floatIn = first.floatIn,
@@ -242,15 +284,27 @@ private fun coalesce(
 /**
  * Greedy interval-partition: sort by start, place each block in the first lane whose
  * last block has ended, else open a new lane. Minimal lanes, deterministic — handles
- * variable headcount (single desk, Harnwell ×2, Quad ×3) without hard-coding it.
+ * variable headcount (single desk, Harnwell ×2, Quad ×3) without hard-coding it. Also
+ * stamps each block's [HouseGridBlock.segmentLanes] — the max number of blocks active
+ * at any instant during its own span — so a run that's single-staffed the whole way
+ * through (segmentLanes == 1) can be rendered as one full-width column instead of a
+ * narrow lane next to empty space.
  */
 private fun assignLanes(blocks: List<HouseGridBlock>): List<HouseGridBlock> {
+    if (blocks.isEmpty()) return blocks
     val sorted = blocks.sortedWith(compareBy({ it.startMin }, { it.endMin }, { it.workerName ?: "" }))
     val laneEnds = mutableListOf<Int>() // each lane's current end minute
-    return sorted.map { b ->
-        val lane = laneEnds.indexOfFirst { it <= b.startMin }.let { if (it >= 0) it else laneEnds.size }
-        if (lane < laneEnds.size) laneEnds[lane] = b.endMin else laneEnds.add(b.endMin)
-        b.copy(lane = lane)
+    val placed =
+        sorted.map { b ->
+            val lane = laneEnds.indexOfFirst { it <= b.startMin }.let { if (it >= 0) it else laneEnds.size }
+            if (lane < laneEnds.size) laneEnds[lane] = b.endMin else laneEnds.add(b.endMin)
+            b.copy(lane = lane)
+        }
+    fun concurrencyAt(min: Int) = placed.count { it.startMin <= min && it.endMin > min }
+    val changePoints = (placed.map { it.startMin } + placed.map { it.endMin }).distinct().sorted()
+    return placed.map { b ->
+        val pointsWithin = changePoints.filter { it in b.startMin until b.endMin }.ifEmpty { listOf(b.startMin) }
+        b.copy(segmentLanes = pointsWithin.maxOf(::concurrencyAt).coerceAtLeast(1))
     }
 }
 
@@ -268,6 +322,6 @@ private fun minOfDay(
     return min + dayDiff * MIN_PER_DAY
 }
 
-private fun evenFloor(h: Int): Int = h - (h % 2)
+private fun floorToBlock(m: Int): Int = (m / BLOCK_MIN) * BLOCK_MIN
 
-private fun evenCeil(h: Int): Int = if (h % 2 == 0) h else h + 1
+private fun ceilToBlock(m: Int): Int = if (m % BLOCK_MIN == 0) m else (m / BLOCK_MIN + 1) * BLOCK_MIN

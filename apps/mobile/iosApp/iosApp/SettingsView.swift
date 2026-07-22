@@ -50,6 +50,21 @@ struct SettingsScreen: View {
     /// (nil) keeps the VM's optimistic local toggle only. Only the broadcast / "General
     /// updates" channel is interactive — the three personal-notif rows stay disabled (§10.1).
     var onToggleBroadcast: ((Bool) -> Void)? = nil
+    /// Restart the first-run welcome tour on demand — the way back in for a worker who
+    /// skipped it or just wants a refresher.
+    var onReplayTour: () -> Void = {}
+    /// Replay the interactive "Manage a shift" tour (the My-Shifts drop/swap/hand-off demo).
+    var onReplayShiftTour: () -> Void = {}
+    /// Replay the interactive Preferences (availability paint) tour.
+    var onReplayPreferencesTour: () -> Void = {}
+    /// Replay the interactive Break calendar (claim/drop) tour.
+    var onReplayBreakTour: () -> Void = {}
+    /// Replay the interactive swap-composer tour (fires the next time the swap page opens).
+    var onReplaySwapTour: () -> Void = {}
+    /// Replay the interactive House grid tour.
+    var onReplayHouseGridTour: () -> Void = {}
+    /// Replay the interactive Open-shifts claim tour (one-time vs permanent pickup).
+    var onReplayOpenClaimTour: () -> Void = {}
     @Environment(\.colorScheme) private var scheme
     /// The app-wide appearance override the segmented control drives (and that the root
     /// applies via `.preferredColorScheme`). Persisted, so it is the source of truth for
@@ -110,6 +125,65 @@ struct SettingsScreen: View {
                 settingsRow(icon: ShiftIcons.info, tint: c.ter, title: "Help & policy", c: c) {
                     AnyView(Image(systemName: ShiftIcons.chevronRight).font(.system(size: 15, weight: .semibold)).foregroundColor(c.outline))
                 }
+                divider(c)
+                Button(action: onReplayTour) {
+                    settingsRow(icon: ShiftIcons.refresh, tint: c.blue, title: "Replay app tour", c: c) {
+                        AnyView(Image(systemName: ShiftIcons.chevronRight).font(.system(size: 15, weight: .semibold)).foregroundColor(c.outline))
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("settings_replay_tour")
+                divider(c)
+                Button(action: onReplayShiftTour) {
+                    settingsRow(icon: ShiftIcons.list, tint: c.blue, title: "Replay shift tour", c: c) {
+                        AnyView(Image(systemName: ShiftIcons.chevronRight).font(.system(size: 15, weight: .semibold)).foregroundColor(c.outline))
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("settings_replay_shift_tour")
+                divider(c)
+                // Five more interactive tours, own Settings row each (never merged — a
+                // worker replaying "the shift tour" should not also see an unrelated
+                // break-calendar demo). Same row chrome, same "?" family they replay.
+                Button(action: onReplayPreferencesTour) {
+                    settingsRow(icon: ShiftIcons.tune, tint: c.blue, title: "Replay preferences tour", c: c) {
+                        AnyView(Image(systemName: ShiftIcons.chevronRight).font(.system(size: 15, weight: .semibold)).foregroundColor(c.outline))
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("settings_replay_preferences_tour")
+                divider(c)
+                Button(action: onReplayBreakTour) {
+                    settingsRow(icon: ShiftIcons.snowflake, tint: c.blue, title: "Replay break tour", c: c) {
+                        AnyView(Image(systemName: ShiftIcons.chevronRight).font(.system(size: 15, weight: .semibold)).foregroundColor(c.outline))
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("settings_replay_break_tour")
+                divider(c)
+                Button(action: onReplaySwapTour) {
+                    settingsRow(icon: "arrow.left.arrow.right", tint: c.blue, title: "Replay swap tour", c: c) {
+                        AnyView(Image(systemName: ShiftIcons.chevronRight).font(.system(size: 15, weight: .semibold)).foregroundColor(c.outline))
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("settings_replay_swap_tour")
+                divider(c)
+                Button(action: onReplayHouseGridTour) {
+                    settingsRow(icon: ShiftIcons.building, tint: c.blue, title: "Replay house grid tour", c: c) {
+                        AnyView(Image(systemName: ShiftIcons.chevronRight).font(.system(size: 15, weight: .semibold)).foregroundColor(c.outline))
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("settings_replay_housegrid_tour")
+                divider(c)
+                Button(action: onReplayOpenClaimTour) {
+                    settingsRow(icon: ShiftIcons.plus, tint: c.blue, title: "Replay open-shifts tour", c: c) {
+                        AnyView(Image(systemName: ShiftIcons.chevronRight).font(.system(size: 15, weight: .semibold)).foregroundColor(c.outline))
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("settings_replay_openclaim_tour")
                 divider(c)
                 Button(action: onSignOut) {
                     settingsRow(icon: ShiftIcons.logout, tint: c.danger.accent, title: "Sign out", titleColor: c.danger.accent, c: c) { AnyView(EmptyView()) }

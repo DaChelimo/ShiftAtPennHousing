@@ -78,6 +78,11 @@ data class PreferencePeriod(
     val targetHours: Int,
     val optedOut: Boolean,
     val capHours: Int = PREF_DEFAULT_CAP_HOURS,
+    /**
+     * The period's first day (NY). The manager deadline-setter bounds its date picker to
+     * this (the server rejects a deadline after the period starts); null when unknown.
+     */
+    val startDate: LocalDate? = null,
 )
 
 /** The mutable paint state — block id → chosen brush; unset blocks read AVAILABLE. */

@@ -44,6 +44,9 @@ class HouseScheduleTest {
                 userId = if (vacant) null else userId,
                 workerName = if (vacant) null else name,
                 workerPhone = if (vacant) null else phone,
+                workerEmail = if (vacant) null else "$prefix@seas.upenn.edu",
+                workerHouseName = if (vacant) null else "Harnwell",
+                workerHouseId = if (vacant) null else "harnwell",
             )
         }
     }
@@ -62,6 +65,26 @@ class HouseScheduleTest {
         assertEquals("+1a", block.workerPhone) // §11.4 contact (full-directory ruling)
         assertTrue(block.active) // 14:00 ≤ now < 18:00
         assertFalse(block.mine)
+    }
+
+    @Test fun a_coalesced_block_carries_the_whole_contact_card_for_the_tapped_seat() {
+        // Tapping a block opens the occupant's card, so the run must carry their id +
+        // house + email through the merge, not just the name/phone the grid label uses.
+        val grid = buildHouseGridWeek(seats("a", "2026-01-15T14:00:00-05:00", 8), now, me)
+        val block = grid.days[3].blocks.single()
+        assertEquals("u-a", block.userId)
+        assertEquals("a@seas.upenn.edu", block.workerEmail)
+        assertEquals("Harnwell", block.workerHouseName)
+        assertTrue(block.wearsWorkerColor()) // plain scheduled seat → per-worker tint
+    }
+
+    @Test fun a_vacant_block_carries_no_contact_details() {
+        val grid = buildHouseGridWeek(seats("v", "2026-01-15T09:00:00-05:00", 4, vacant = true), now, me)
+        val block = grid.days[3].blocks.single()
+        assertEquals(null, block.userId)
+        assertEquals(null, block.workerEmail)
+        assertEquals(null, block.workerHouseName)
+        assertFalse(block.wearsWorkerColor())
     }
 
     @Test fun the_signed_in_workers_block_is_flagged_mine_and_labelled_you() {
@@ -158,12 +181,27 @@ class HouseScheduleTest {
     }
 
     @Test fun grid_bounds_default_to_8_to_24_and_expand_for_early_or_late_data() {
-        assertEquals(8, buildHouseGridWeek(emptyList(), now, me).startHour)
-        assertEquals(24, buildHouseGridWeek(emptyList(), now, me).endHour)
-        // A 06:30 start floors to an even 06:00 bound.
+        assertEquals(8 * 60, buildHouseGridWeek(emptyList(), now, me).startMin)
+        assertEquals(24 * 60, buildHouseGridWeek(emptyList(), now, me).endMin)
+        // A 06:30 start is the exact origin (30-min precision, not rounded to a whole hour).
         val early = buildHouseGridWeek(seats("e", "2026-01-15T06:30:00-05:00", 2), now, me)
-        assertEquals(6, early.startHour)
-        assertEquals(24, early.endHour)
+        assertEquals(6 * 60 + 30, early.startMin)
+        assertEquals(24 * 60, early.endMin)
+    }
+
+    @Test fun a_single_staffed_block_reports_segment_lanes_of_one() {
+        // A lone Thu desk 08:00-12:00, no concurrent block at any point → collapses to 1 column.
+        val grid = buildHouseGridWeek(seats("a", "2026-01-15T08:00:00-05:00", 8), now, me)
+        val block = grid.days[3].blocks.single()
+        assertEquals(1, block.segmentLanes)
+    }
+
+    @Test fun a_block_overlapping_another_reports_segment_lanes_of_two() {
+        // Two desks covering the same Thu span — each block's segmentLanes reflects the 2-way overlap.
+        val a = seats("a", "2026-01-15T14:00:00-05:00", 4, name = "Maya", userId = "u-maya")
+        val b = seats("b", "2026-01-15T14:00:00-05:00", 4, name = "Jordan", userId = "u-jordan")
+        val grid = buildHouseGridWeek(a + b, now, me)
+        assertTrue(grid.days[3].blocks.all { it.segmentLanes == 2 })
     }
 
     // ----- view model: week navigation, clamping, per-week seats -----
@@ -273,5 +311,37 @@ class HouseScheduleTest {
         // A late fetch for the home house (the worker already switched to quad) must not paint.
         vm.setWeekSeats("harnwell", 0, seats("a", "2026-01-15T14:00:00-05:00", 2))
         assertTrue(vm.uiState.value.loadingWeek)
+    }
+
+    // ----- manager add-a-worker: run seat ids + home-house-only gating -----
+
+    @Test fun a_block_carries_every_constituent_seat_id_for_the_assign_call() {
+        // The add-a-worker action sends the whole coalesced run to admin-assign-worker,
+        // which resolves the seat ids to block ids — so the block must expose all of them.
+        val open = seats("v", "2026-01-15T16:00:00-05:00", 8, vacant = true) // 16:00-20:00
+        val grid = buildHouseGridWeek(open, now, me)
+        val block = grid.days[3].blocks.single()
+        assertEquals((0 until 8).map { "v-$it" }, block.assignmentIds)
+    }
+
+    @Test fun a_non_manager_can_never_manage_even_on_the_home_house() {
+        val vm = HouseScheduleViewModel(HouseScheduleSnapshot("Harnwell", null, emptyList(), houseId = "harnwell"), now, me)
+        assertFalse(vm.uiState.value.canManage)
+    }
+
+    @Test fun a_manager_can_manage_the_home_house_but_not_another_house() {
+        val vm =
+            HouseScheduleViewModel(
+                HouseScheduleSnapshot("Harnwell", null, emptyList(), houseId = "harnwell"),
+                now,
+                me,
+                isManager = true,
+            )
+        assertTrue(vm.uiState.value.canManage) // home house
+        vm.setHouses(listOf(HouseOption("harnwell", "Harnwell", null), HouseOption("quad", "Quad", null)))
+        vm.selectHouse("quad")
+        assertFalse(vm.uiState.value.canManage) // viewing another house: view-only
+        vm.selectHouse("harnwell")
+        assertTrue(vm.uiState.value.canManage) // back home: manageable again
     }
 }

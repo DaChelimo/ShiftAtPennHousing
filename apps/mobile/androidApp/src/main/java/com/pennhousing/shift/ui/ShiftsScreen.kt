@@ -52,6 +52,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -70,6 +71,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -90,19 +92,28 @@ import com.pennhousing.shift.shared.calendar.AgendaSwapMark
 import com.pennhousing.shift.shared.calendar.CalendarAgenda
 import com.pennhousing.shift.shared.calendar.CalendarAgendaItem
 import com.pennhousing.shift.shared.calendar.CalendarDayHeader
+import com.pennhousing.shift.shared.calendar.CalendarDaySection
 import com.pennhousing.shift.shared.calendar.CalendarWeek
 import com.pennhousing.shift.shared.calendar.CalendarWeekOverview
 import com.pennhousing.shift.shared.calendar.TemplateSlot
 import com.pennhousing.shift.shared.calendar.WeekDayCell
 import com.pennhousing.shift.shared.calendar.WeekOption
+import com.pennhousing.shift.shared.viewmodel.AssistantViewModel
 import com.pennhousing.shift.shared.viewmodel.CalendarMode
 import com.pennhousing.shift.shared.data.PermanentPickupScope
 import com.pennhousing.shift.shared.data.ToastNotification
 import com.pennhousing.shift.shared.data.WorkerBackend
+import com.pennhousing.shift.shared.manager.AssignAdvisory
+import com.pennhousing.shift.shared.manager.AssignOutcome
+import com.pennhousing.shift.shared.manager.ForceTriggerOutcome
+import com.pennhousing.shift.shared.manager.RosterWorker
 import com.pennhousing.shift.shared.house.HouseGridBlock
 import com.pennhousing.shift.shared.house.HouseGridDay
 import com.pennhousing.shift.shared.house.HouseOption
 import com.pennhousing.shift.shared.house.HouseSeat
+import com.pennhousing.shift.shared.house.wearsWorkerColor
+import com.pennhousing.shift.shared.house.workerColor
+import com.pennhousing.shift.shared.house.workerContrastText
 import com.pennhousing.shift.shared.samples.DemoData
 import com.pennhousing.shift.shared.samples.DemoFactory
 import com.pennhousing.shift.shared.model.MyShift
@@ -157,6 +168,29 @@ import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
 import com.pennhousing.shift.shared.viewmodel.FloatCarouselUiState
 import com.pennhousing.shift.shared.viewmodel.FloatCarouselViewModel
 import com.pennhousing.shift.shared.breakclaim.BreakPhase
+import com.pennhousing.shift.shared.onboarding.Onboarding
+import com.pennhousing.shift.shared.onboarding.OnboardingTarget
+import com.pennhousing.shift.shared.onboarding.ShiftTour
+import com.pennhousing.shift.shared.onboarding.TipTrigger
+import com.pennhousing.shift.shared.onboarding.WidgetPrompt
+import com.pennhousing.shift.shared.viewmodel.OnboardingViewModel
+import com.pennhousing.shift.shared.viewmodel.ShiftTourViewModel
+import androidx.compose.ui.geometry.Rect
+import com.pennhousing.shift.ui.onboarding.AskAssistantButton
+import com.pennhousing.shift.ui.onboarding.LocalOnboardingAnchors
+import com.pennhousing.shift.ui.onboarding.OnboardingAnchors
+import com.pennhousing.shift.ui.onboarding.OnboardingOverlay
+import com.pennhousing.shift.ui.onboarding.NotificationPrimingHost
+import com.pennhousing.shift.ui.onboarding.OnboardingPrefs
+import com.pennhousing.shift.ui.onboarding.ShiftTourHelpButton
+import com.pennhousing.shift.ui.onboarding.ShiftTourOverlay
+import com.pennhousing.shift.ui.onboarding.ShiftTourPointerCallout
+import com.pennhousing.shift.ui.onboarding.ShiftTourPointerStore
+import com.pennhousing.shift.ui.onboarding.ShiftTourPrefs
+import com.pennhousing.shift.ui.onboarding.WidgetPromptCard
+import com.pennhousing.shift.ui.onboarding.WidgetPromptPrefs
+import com.pennhousing.shift.ui.onboarding.onboardingAnchor
+import com.pennhousing.shift.widget.WidgetSync
 import com.pennhousing.shift.shared.viewmodel.BreakCalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.HouseScheduleViewModel
@@ -181,6 +215,7 @@ import com.pennhousing.shift.ui.kit.EmptyState
 import com.pennhousing.shift.ui.kit.HouseBadge
 import com.pennhousing.shift.ui.kit.SectionHeader
 import com.pennhousing.shift.ui.kit.SegmentedControl
+import com.pennhousing.shift.ui.kit.ShiftAlertDialog
 import com.pennhousing.shift.ui.kit.ShiftBanner
 import com.pennhousing.shift.ui.kit.ShiftBottomSheet
 import com.pennhousing.shift.ui.kit.ShiftButton
@@ -210,6 +245,7 @@ private const val TAB_PREFS = 4
 private const val TAB_BREAK = 5
 private const val TAB_SETTINGS = 6
 private const val TAB_SWAPS = 7 // dedicated Swaps tab (DESIGN §6) — in the "More" sheet
+private const val TAB_ASSISTANT = 8 // Desk Assistant chat — in the "More" sheet
 
 // Open-Shifts sub-tabs (rendered inside TAB_OPEN).
 private const val OPEN_SUB_HOME = 0 // "My House"
@@ -236,6 +272,7 @@ fun ShiftsApp(
     preferencesVm: PreferencesViewModel,
     breakCalendarVm: BreakCalendarViewModel,
     settingsVm: SettingsViewModel,
+    assistantVm: AssistantViewModel,
     currentWeeklyHours: Double,
     // The worker's load instant (the sim-clock on live) — builds the per-float ack
     // detail VM for the carousel's tap-to-detail. The screen VMs embed their own `now`.
@@ -245,6 +282,11 @@ fun ShiftsApp(
     pendingFloats: List<PendingFloat> = emptyList(),
     // Floats RESOLVED in the last 24h for the collapsible recent section under the carousel.
     recentFloats: List<RecentFloat> = emptyList(),
+    // The worker's next upcoming shift, pre-formatted (house + "day, time"), for the
+    // widget-add prompt's live preview. Null when they have none ahead → the prompt (which
+    // needs a real shift to preview) stays hidden. Both platforms; see shared WidgetPrompt.
+    widgetPreviewHouse: String? = null,
+    widgetPreviewWhen: String? = null,
     breakProfile: Boolean = false,
     toast: ToastNotification? = null,
     // Non-null when a best-effort live write (drop/claim/reclaim/pickup/…) failed to
@@ -256,6 +298,10 @@ fun ShiftsApp(
     // Live host POSTs to `submit-preferences` then flips the optimistic state; demo
     // defaults to the local-only flip (the screen's own ViewModel.submit).
     onSubmitPreferences: () -> Unit = preferencesVm::submit,
+    // Manager-only (BSpec §4.2): set the active period's submission deadline (year, month
+    // 1..12, day). Null in the demo host (no live write); the setter card only renders when
+    // the ViewModel reports `canSetDeadline`.
+    onSetDeadline: ((Int, Int, Int) -> Unit)? = null,
     // Live host POSTs to `drop-shift` / `permanent-drop` on confirm (best-effort) while
     // the ViewModel still does the optimistic local move; demo defaults to no live write.
     onDropShift: (MyShift, Boolean) -> Unit = { _, _ -> },
@@ -307,6 +353,10 @@ fun ShiftsApp(
     // entry optimistically. Demo defaults to local-only. The argument is the swap id.
     onAcceptSwap: (String) -> Unit = {},
     onRejectSwap: (String) -> Unit = {},
+    // Live host POSTs `acknowledge-allied-page` (best-effort) when a worker taps "I've
+    // called the desk" on an off-hours ladder alert (staggered-rollout pilot); the Updates
+    // ViewModel already resolved the entry optimistically. Demo = local-only. Arg = block id.
+    onAcknowledgeAlliedPage: (String) -> Unit = {},
     // T2-13: non-null when the app was opened from the float push notification / a
     // `pennshift://float-ack/{floatId}` deep link → present the FULL-SCREEN ack
     // surface on launch (the ack VM already targets the worker's pending float).
@@ -383,6 +433,93 @@ fun ShiftsApp(
             }
         }
 
+        // Onboarding (the first-run welcome tour + one-time contextual tips). The shared
+        // OnboardingViewModel sequences everything; here we seed it from the persisted
+        // seen-keys, persist on change, kick off the tour once, and raise tips as the
+        // worker first reaches each root-level surface. See ui/onboarding/Onboarding.kt.
+        val onboardingContext = LocalContext.current
+        val onboardingVm = remember { OnboardingViewModel(OnboardingPrefs.read(onboardingContext)) }
+        val onboardingState by onboardingVm.uiState.collectAsStateWithLifecycle()
+        val onboardingAnchors = remember { OnboardingAnchors() }
+        LaunchedEffect(Unit) { onboardingVm.start() }
+        LaunchedEffect(onboardingState.seen) { OnboardingPrefs.write(onboardingContext, onboardingState.seen) }
+        LaunchedEffect(selectedIndex) {
+            when (selectedIndex) {
+                TAB_MY -> onboardingVm.triggerTip(TipTrigger.MY_SHIFTS)
+                TAB_OPEN -> onboardingVm.triggerTip(TipTrigger.OPEN_SHIFTS)
+                TAB_HOUSE -> onboardingVm.triggerTip(TipTrigger.HOUSE_GRID)
+                TAB_SWAPS -> onboardingVm.triggerTip(TipTrigger.INCOMING_SWAP)
+            }
+        }
+        LaunchedEffect(breakState.phase) {
+            if (breakState.phase == BreakPhase.CLAIM_WINDOW) onboardingVm.triggerTip(TipTrigger.BREAK_WINDOW)
+        }
+        LaunchedEffect(carouselState.total) {
+            if (carouselState.total > 0) onboardingVm.triggerTip(TipTrigger.FLOAT_REQUEST)
+        }
+
+        // The interactive "Manage a shift" tour (replaces the old My-Shifts contextual tip).
+        // Own seen-key store; auto-opens on the first My-Shifts landing once the welcome
+        // tour is done, re-openable from the header "?" and the Settings row. See
+        // ui/onboarding/ShiftTourView.kt (Compose port of iosApp's ShiftTourView.swift).
+        val shiftTourVm = remember { ShiftTourViewModel(ShiftTourPrefs.read(onboardingContext)) }
+        val shiftTourState by shiftTourVm.uiState.collectAsStateWithLifecycle()
+        LaunchedEffect(shiftTourState.seen) { ShiftTourPrefs.write(onboardingContext, shiftTourState.seen) }
+        var shiftTourHelpRect by remember { mutableStateOf<Rect?>(null) }
+        var showTourPointer by remember { mutableStateOf(false) }
+        LaunchedEffect(selectedIndex) {
+            if (selectedIndex == TAB_MY && Onboarding.WELCOME_DONE_KEY in onboardingState.seen) {
+                shiftTourVm.autoStart()
+            }
+        }
+        // After the tour first finishes, point at the header "?" once so the re-entry point
+        // is learned, then it auto-fades (LaunchedEffect below).
+        LaunchedEffect(shiftTourState.active) {
+            if (!shiftTourState.active &&
+                !ShiftTour.shouldAutoShow(shiftTourState.seen) &&
+                !ShiftTourPointerStore.hasShown(onboardingContext)
+            ) {
+                ShiftTourPointerStore.markShown(onboardingContext)
+                showTourPointer = true
+            }
+        }
+        LaunchedEffect(showTourPointer) {
+            if (showTourPointer) {
+                kotlinx.coroutines.delay(4000)
+                showTourPointer = false
+            }
+        }
+
+        // Widget-add prompt (behavioral). After the worker has opened My-Shifts enough
+        // times and has an upcoming shift to preview, on a return session, nudge them to add
+        // the home-screen widget. Counters persist per device; see shared WidgetPrompt.
+        var widgetOpens by remember { mutableStateOf(WidgetPromptPrefs.calendarOpens(onboardingContext)) }
+        var widgetAccepted by remember { mutableStateOf(WidgetPromptPrefs.accepted(onboardingContext)) }
+        var widgetPromptOpen by remember { mutableStateOf(false) }
+        var widgetPromptShownThisSession by remember { mutableStateOf(false) }
+        LaunchedEffect(selectedIndex) {
+            if (selectedIndex == TAB_MY) widgetOpens = WidgetPromptPrefs.recordCalendarOpen(onboardingContext)
+        }
+        LaunchedEffect(widgetOpens, widgetPreviewHouse, widgetAccepted) {
+            if (!widgetPromptOpen && !widgetPromptShownThisSession &&
+                WidgetPrompt.eligible(
+                    calendarOpens = widgetOpens,
+                    hasUpcomingShift = widgetPreviewHouse != null,
+                    launchCount = WidgetPromptPrefs.launchCount(onboardingContext),
+                    showCount = WidgetPromptPrefs.showCount(onboardingContext),
+                    accepted = widgetAccepted,
+                    alreadyHasWidget = WidgetSync.hasWidgetInstalled(onboardingContext),
+                    lastShownLaunch = WidgetPromptPrefs.lastShownLaunch(onboardingContext),
+                )
+            ) {
+                widgetPromptOpen = true
+                widgetPromptShownThisSession = true
+                WidgetPromptPrefs.recordShown(onboardingContext)
+            }
+        }
+
+        CompositionLocalProvider(LocalOnboardingAnchors provides onboardingAnchors) {
+        Box(Modifier.fillMaxSize()) {
         Scaffold(
             modifier =
                 Modifier
@@ -400,6 +537,14 @@ fun ShiftsApp(
                     onSelect = { requestTab(it) },
                     onMore = { showMore = true },
                 )
+            },
+            // Persistent "Ask" affordance so the Assistant is reachable from the main tabs,
+            // not only buried in "More" (discoverability decision). Hidden on the Assistant
+            // screen itself. The first-run tour rings this button.
+            floatingActionButton = {
+                if (selectedIndex != TAB_ASSISTANT) {
+                    AskAssistantButton(onClick = { navigateTo(TAB_ASSISTANT) })
+                }
             },
         ) { padding ->
             Box(Modifier.fillMaxSize().padding(padding)) {
@@ -452,6 +597,8 @@ fun ShiftsApp(
                                 swapsVm.cancelOutgoing(swapId)
                                 onVoidSwap(swapId)
                             },
+                            onReplayShiftTour = shiftTourVm::replay,
+                            onShiftTourHelpPositioned = { shiftTourHelpRect = it },
                         )
                     TAB_OPEN ->
                         OpenShiftsTabContent(
@@ -479,6 +626,11 @@ fun ShiftsApp(
                             // DESIGN §6 — an incoming-swap row is a MIRROR: tapping it
                             // deep-links to the Swaps tab (where Accept/Decline live).
                             onOpenSwaps = { navigateTo(TAB_SWAPS) },
+                            // Off-hours ladder ack: optimistic local resolve, then best-effort live POST.
+                            onAcknowledgeAlliedPage = { blockId ->
+                                updatesVm.acknowledgeAlliedPage(blockId)
+                                onAcknowledgeAlliedPage(blockId)
+                            },
                         )
                     TAB_SWAPS ->
                         SwapsTabContent(
@@ -502,7 +654,7 @@ fun ShiftsApp(
                     TAB_PREFS ->
                         Column(Modifier.fillMaxSize().background(ShiftTheme.colors.bg)) {
                             PageTitle("Preferences")
-                            PreferencesTabContent(preferencesVm, onSubmitPreferences)
+                            PreferencesTabContent(preferencesVm, onSubmitPreferences, onSetDeadline = onSetDeadline)
                         }
                     TAB_BREAK ->
                         Column(Modifier.fillMaxSize().background(ShiftTheme.colors.bg)) {
@@ -512,8 +664,18 @@ fun ShiftsApp(
                     TAB_SETTINGS ->
                         Column(Modifier.fillMaxSize().background(ShiftTheme.colors.bg)) {
                             PageTitle("Settings")
-                            SettingsTabContent(settingsVm, onSignOut, onToggleBroadcast)
+                            SettingsTabContent(
+                                settingsVm,
+                                onSignOut,
+                                onToggleBroadcast,
+                                onReplayTour = onboardingVm::replayTour,
+                                onReplayShiftTour = {
+                                    requestTab(TAB_MY)
+                                    shiftTourVm.replay()
+                                },
+                            )
                         }
+                    TAB_ASSISTANT -> AssistantScreen(assistantVm)
                 }
                 }
                 // Toasts now sit at the BOTTOM (above the nav bar) — the intuitive place
@@ -567,6 +729,48 @@ fun ShiftsApp(
                     toast?.let { NotificationToast(it) }
                 }
             }
+        }
+        OnboardingOverlay(
+            state = onboardingState,
+            anchors = onboardingAnchors,
+            onNext = onboardingVm::next,
+            onBack = onboardingVm::back,
+            onSkip = onboardingVm::skipTour,
+            onDismissTip = onboardingVm::dismissTip,
+        )
+        // Notification priming — once the welcome tour is done, explain WHY alerts matter
+        // and (only on Confirm) fire the real OS permission request. Replaces the cold
+        // launch-time prompt that used to fire in MainActivity.onCreate.
+        NotificationPrimingHost(tourDone = Onboarding.WELCOME_DONE_KEY in onboardingState.seen)
+        // Widget-add prompt (opened by the behavioral gate above): benefit nudge with a live
+        // preview of the real next shift, then a 3-step how-to on "Show me how".
+        if (widgetPromptOpen) {
+            WidgetPromptCard(
+                previewHouse = widgetPreviewHouse,
+                previewWhen = widgetPreviewWhen,
+                onConfirm = {
+                    WidgetPromptPrefs.markAccepted(onboardingContext)
+                    widgetAccepted = true
+                },
+                onDismiss = { widgetPromptOpen = false },
+            )
+        }
+        // The interactive "Manage a shift" tour — above the whole screen; auto-opens on the
+        // first My-Shifts landing and on replay (from the header "?" or Settings row).
+        if (shiftTourState.active) {
+            ShiftTourOverlay(
+                state = shiftTourState,
+                onNext = shiftTourVm::next,
+                onBack = shiftTourVm::back,
+                onSkip = shiftTourVm::skip,
+            )
+        }
+        // The one-time "look here" pointer at the header "?", positioned from the real
+        // button's reported bounds so it always lands on the actual control.
+        if (showTourPointer) {
+            ShiftTourPointerCallout(targetRect = shiftTourHelpRect)
+        }
+        }
         }
 
         if (showAckModal) {
@@ -646,6 +850,10 @@ fun ShiftsApp(
                         showMore = false
                         requestTab(TAB_SETTINGS)
                     }
+                    MoreNavRow("Assistant", ShiftIcons.Sparkle, "tab_assistant") {
+                        showMore = false
+                        requestTab(TAB_ASSISTANT)
+                    }
                 }
             }
         }
@@ -697,7 +905,7 @@ private fun ShiftBottomNav(
             icon = { Icon(ShiftIcons.Calendar, contentDescription = null) },
             label = { Text("My Shifts", maxLines = 1) },
             colors = colors,
-            modifier = Modifier.testTag("tab_my_shifts"),
+            modifier = Modifier.testTag("tab_my_shifts").onboardingAnchor(OnboardingTarget.MY_SHIFTS_TAB),
         )
         NavigationBarItem(
             selected = selectedIndex == TAB_OPEN,
@@ -705,7 +913,7 @@ private fun ShiftBottomNav(
             icon = { Icon(ShiftIcons.Plus, contentDescription = null) },
             label = { Text("Open", maxLines = 1) },
             colors = colors,
-            modifier = Modifier.testTag("tab_open_shifts"),
+            modifier = Modifier.testTag("tab_open_shifts").onboardingAnchor(OnboardingTarget.OPEN_TAB),
         )
         NavigationBarItem(
             selected = selectedIndex == TAB_HOUSE,
@@ -713,7 +921,7 @@ private fun ShiftBottomNav(
             icon = { Icon(ShiftIcons.Building, contentDescription = null) },
             label = { Text("House", maxLines = 1) },
             colors = colors,
-            modifier = Modifier.testTag("tab_house"),
+            modifier = Modifier.testTag("tab_house").onboardingAnchor(OnboardingTarget.HOUSE_TAB),
         )
         NavigationBarItem(
             selected = selectedIndex == TAB_SWAPS,
@@ -721,7 +929,7 @@ private fun ShiftBottomNav(
             icon = { Icon(ShiftIcons.Refresh, contentDescription = null) },
             label = { Text("Swaps", maxLines = 1) },
             colors = colors,
-            modifier = Modifier.testTag("tab_swaps"),
+            modifier = Modifier.testTag("tab_swaps").onboardingAnchor(OnboardingTarget.SWAPS_TAB),
         )
         NavigationBarItem(
             // Secondary destinations now in "More": Updates, Preferences, Break, Settings.
@@ -736,7 +944,7 @@ private fun ShiftBottomNav(
             },
             label = { Text("More", maxLines = 1) },
             colors = colors,
-            modifier = Modifier.testTag("tab_more"),
+            modifier = Modifier.testTag("tab_more").onboardingAnchor(OnboardingTarget.MORE_TAB),
         )
     }
 }
@@ -1568,6 +1776,7 @@ private fun UpdatesTabContent(
     onOpenAck: () -> Unit,
     onMarkAllRead: () -> Unit,
     onOpenSwaps: () -> Unit = {},
+    onAcknowledgeAlliedPage: (String) -> Unit = {},
 ) {
     Column(Modifier.fillMaxSize().background(ShiftTheme.colors.bg)) {
         PageTitle("Updates")
@@ -1589,10 +1798,14 @@ private fun UpdatesTabContent(
                     item { MarkAllReadHeader(onMarkAllRead) }
                 }
                 if (feed.today.isNotEmpty()) {
-                    item { NotificationGroup("Today", feed.today, onOpenAck, onOpenSwaps) }
+                    item {
+                        NotificationGroup("Today", feed.today, onOpenAck, onOpenSwaps, onAcknowledgeAlliedPage)
+                    }
                 }
                 if (feed.earlier.isNotEmpty()) {
-                    item { NotificationGroup("Earlier", feed.earlier, onOpenAck, onOpenSwaps) }
+                    item {
+                        NotificationGroup("Earlier", feed.earlier, onOpenAck, onOpenSwaps, onAcknowledgeAlliedPage)
+                    }
                 }
             }
         }
@@ -1633,10 +1846,11 @@ private fun NotificationGroup(
     rows: List<NotificationRow>,
     onOpenAck: () -> Unit,
     onOpenSwaps: () -> Unit = {},
+    onAcknowledgeAlliedPage: (String) -> Unit = {},
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         SectionHeader(title)
-        rows.forEach { NotificationCard(it, onOpenAck, onOpenSwaps) }
+        rows.forEach { NotificationCard(it, onOpenAck, onOpenSwaps, onAcknowledgeAlliedPage) }
     }
 }
 
@@ -1646,6 +1860,7 @@ private fun NotificationCard(
     row: NotificationRow,
     onOpenAck: () -> Unit,
     onOpenSwaps: () -> Unit = {},
+    onAcknowledgeAlliedPage: (String) -> Unit = {},
 ) {
     val c = ShiftTheme.colors
     val (icon, accent) =
@@ -1657,6 +1872,7 @@ private fun NotificationCard(
             NotificationCategory.PREFERENCES -> ShiftIcons.CheckCircle to c.success.accent
             NotificationCategory.SWAP -> ShiftIcons.Refresh to c.floatIn.accent
             NotificationCategory.INFO -> ShiftIcons.Bell to c.pickupDot
+            NotificationCategory.ALLIED_PAGE -> ShiftIcons.Warning to c.floatOut.accent
         }
     val shape = RoundedCornerShape(14.dp)
     var box = Modifier.fillMaxWidth().clip(shape).background(if (row.urgent) c.floatSoft else c.surface)
@@ -1717,6 +1933,27 @@ private fun NotificationCard(
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.padding(top = 2.dp),
                     )
+                }
+                if (row.opensAlliedPage && row.alliedPageBlockId != null) {
+                    // Off-hours ladder ack (staggered-rollout pilot): confirm the desk was
+                    // called so the ladder stops escalating (responsible worker -> SM -> desk).
+                    val blockId = row.alliedPageBlockId!!
+                    Box(
+                        Modifier
+                            .padding(top = 6.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(c.floatOut.accent)
+                            .clickable { onAcknowledgeAlliedPage(blockId) }
+                            .testTag("allied_page_ack")
+                            .padding(horizontal = 14.dp, vertical = 9.dp),
+                    ) {
+                        Text(
+                            "I have called the desk",
+                            color = c.surface,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
                 }
             }
             Text(row.timeLabel, style = ShiftTheme.type.monoId.copy(fontSize = 11.5.sp), color = c.ter)
@@ -2148,6 +2385,10 @@ private fun CalendarTabContent(
     onRejectSwap: (String) -> Unit = {},
     // Cancel (void) an OWN outgoing swap from the "swap pending" card.
     onVoidSwap: (String) -> Unit = {},
+    // The header "?" that replays the interactive shift tour, and its reported bounds
+    // (for the one-time post-tour pointer callout to point at).
+    onReplayShiftTour: () -> Unit = {},
+    onShiftTourHelpPositioned: (Rect) -> Unit = {},
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val c = ShiftTheme.colors
@@ -2185,7 +2426,9 @@ private fun CalendarTabContent(
         // D5 — the derived recurring typical week (honestly labelled; no template
         // entity exists, this is the union of SCHEDULED-kind slots in the snapshot).
         Column(Modifier.fillMaxSize().background(c.bg).testTag("calendar_template")) {
-            PageTitle("My Shifts")
+            PageTitle("My Shifts") {
+                ShiftTourHelpButton(onClick = onReplayShiftTour, onPositioned = onShiftTourHelpPositioned)
+            }
             ShiftBanner(
                 title = "Viewing the recurring template",
                 body = "Derived from your scheduled weeks. Permanent drops and swaps change every future week.",
@@ -2589,6 +2832,11 @@ private fun CalendarToggleSegment(
  * The whole-week overview (default calendar view): every Mon-Sun day as a section —
  * its header + agenda rows, empty days shown compactly. The NOW line appears only in
  * today's section (the shared builder gates it).
+ *
+ * On the ongoing week the shared builder folds days that already happened into
+ * [CalendarWeekOverview.collapsedPastDays]; they render as one expandable card pinned at
+ * the top ([PastDaysCard]) so today is the first day in view. Navigated and whole-past
+ * weeks fold nothing, so [CalendarWeekOverview.activeDays] is the full Mon-Sun list.
  */
 @Composable
 private fun CalendarWeekOverviewList(
@@ -2597,28 +2845,140 @@ private fun CalendarWeekOverviewList(
     onSwapClick: (String) -> Unit = {},
     onPendingSwapClick: (String) -> Unit = {},
 ) {
-    val c = ShiftTheme.colors
     LazyColumn(
         Modifier.fillMaxSize().testTag("calendar_week_overview"),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        overview?.days?.forEach { section ->
+        if (overview?.hasCollapsedPast == true) {
+            item(key = "calendar_past_days_card") {
+                PastDaysCard(days = overview.collapsedPastDays, shiftCount = overview.collapsedShiftCount)
+            }
+        }
+        overview?.activeDays?.forEach { section ->
             item {
-                Column(
-                    Modifier.fillMaxWidth().testTag("calendar_day_section"),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    DayHeaderRow(section.header)
-                    if (section.isEmpty) {
-                        Text(
-                            if (section.header.closed) "House closed" else "No shifts",
-                            color = c.ter,
-                            fontSize = 13.sp,
-                            modifier = Modifier.padding(start = 18.dp, bottom = 4.dp),
-                        )
-                    } else {
-                        section.items.forEach { AgendaItemRow(it, onShiftClick, onSwapClick, onPendingSwapClick) }
+                CalendarDaySectionBlock(section, onShiftClick, onSwapClick, onPendingSwapClick)
+            }
+        }
+    }
+}
+
+/** One Mon-Sun day in the week overview: header + agenda rows, or the empty-day treatment. */
+@Composable
+private fun CalendarDaySectionBlock(
+    section: CalendarDaySection,
+    onShiftClick: (String) -> Unit,
+    onSwapClick: (String) -> Unit,
+    onPendingSwapClick: (String) -> Unit,
+) {
+    val c = ShiftTheme.colors
+    Column(
+        Modifier.fillMaxWidth().testTag("calendar_day_section"),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        DayHeaderRow(section.header)
+        if (section.isEmpty) {
+            Text(
+                if (section.header.closed) "House closed" else "No shifts",
+                color = c.ter,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(start = 18.dp, bottom = 4.dp),
+            )
+            // An empty TODAY still gets the NOW line (the shared builder always inserts one
+            // for today), so the live time is visible even on a day off rather than only
+            // appearing once a shift exists.
+            section.items.firstOrNull { it.nowLabel != null }?.nowLabel?.let { NowLine(it) }
+        } else {
+            section.items.forEach { AgendaItemRow(it, onShiftClick, onSwapClick, onPendingSwapClick) }
+        }
+    }
+}
+
+/**
+ * The ongoing week's already-passed days, folded into one expandable card at the top of
+ * the week overview (collapsed by default, so today leads the list). Expanding reveals a
+ * compact per-day mini row for each folded day: weekday + date + its held-hours summary
+ * (or "No shifts"), with the day's shift(s) shown inline and read-only. Past shifts are
+ * not actionable, so the cards carry no tap target.
+ */
+@Composable
+private fun PastDaysCard(
+    days: List<CalendarDaySection>,
+    shiftCount: Int,
+) {
+    val c = ShiftTheme.colors
+    var expanded by remember { mutableStateOf(false) }
+    val subtitle =
+        buildString {
+            append("${days.size} ${if (days.size == 1) "day" else "days"}")
+            if (shiftCount > 0) append(" · $shiftCount ${if (shiftCount == 1) "shift" else "shifts"}")
+        }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(c.surfaceVar)
+            .testTag("calendar_past_days_card"),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(horizontal = 14.dp, vertical = 12.dp)
+                .testTag("calendar_past_days_toggle"),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                ShiftIcons.ChevronRight,
+                contentDescription = null,
+                tint = c.sec,
+                modifier = Modifier.size(16.dp).rotate(if (expanded) 90f else 0f),
+            )
+            Text(
+                if (expanded) "Earlier this week" else "Show earlier this week",
+                color = c.ink,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            Text(subtitle, color = c.sec, fontSize = 12.5.sp)
+        }
+        AnimatedVisibility(visible = expanded) {
+            Column(
+                Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                days.forEach { section ->
+                    Column(
+                        Modifier.fillMaxWidth().testTag("calendar_past_day_row"),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.Bottom,
+                        ) {
+                            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(section.header.title, color = c.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                Text("· ${section.header.dateLabel}", color = c.ter, fontSize = 13.sp)
+                            }
+                            val summary = section.header.summary
+                            if (summary != null) {
+                                Text(summary, color = c.sec, style = ShiftTheme.type.monoTime.copy(fontSize = 12.5.sp))
+                            } else {
+                                Text("No shifts", color = c.ter, fontSize = 12.5.sp)
+                            }
+                        }
+                        section.items.filter { it.shift != null }.forEach { itemRow ->
+                            AgendaShiftCard(
+                                row = itemRow.shift!!,
+                                active = false,
+                                past = true,
+                                swap = itemRow.swap,
+                                onClick = null,
+                            )
+                        }
                     }
                 }
             }
@@ -2631,14 +2991,27 @@ private fun CalendarWeekOverviewList(
 private fun PageTitle(
     title: String,
     modifier: Modifier = Modifier,
+    // An optional trailing accessory (e.g. the My-Shifts tour help button). Defaults to
+    // null so the other 9 call sites of this composable are unaffected.
+    trailing: (@Composable () -> Unit)? = null,
 ) {
-    Text(
-        title,
-        modifier = modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 8.dp),
-        color = ShiftTheme.colors.ink,
-        fontSize = 26.sp,
-        fontWeight = FontWeight.Bold,
-    )
+    if (trailing == null) {
+        Text(
+            title,
+            modifier = modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 8.dp),
+            color = ShiftTheme.colors.ink,
+            fontSize = 26.sp,
+            fontWeight = FontWeight.Bold,
+        )
+    } else {
+        Row(
+            modifier = modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(title, modifier = Modifier.weight(1f), color = ShiftTheme.colors.ink, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+            trailing()
+        }
+    }
 }
 
 /** "This week" / "Next week" / … for a week [offset] (0 = current). */
@@ -3044,9 +3417,87 @@ private fun HouseTabContent(
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val c = ShiftTheme.colors
+    val scope = rememberCoroutineScope()
     var contactTarget by remember { mutableStateOf<HouseGridBlock?>(null) }
     var showWeekPicker by remember { mutableStateOf(false) }
     var showHousePicker by remember { mutableStateOf(false) }
+
+    // ── SM/HM/BM/RSM manager actions on a VACANT seat (BSpec §2.2 / §6.6). Only shown
+    // when `state.canManage` (a manager on their OWN house). Tapping an open seat opens a
+    // two-option chooser: assign a worker, or get coverage now (force a float lookup). The
+    // async writes run in this composable's scope (the House tab already owns its own I/O),
+    // never in the pure VM; a success refetches the shown week via `refreshKey`. ──
+    var manageChoice by remember { mutableStateOf<HouseGridBlock?>(null) } // the two-option chooser
+    var assignFor by remember { mutableStateOf<HouseGridBlock?>(null) } // the roster picker
+    var forceFor by remember { mutableStateOf<HouseGridBlock?>(null) } // the force-trigger confirm
+    var assignConfirm by remember { mutableStateOf<AssignConfirmState?>(null) } // soft-advisory confirm
+    var roster by remember { mutableStateOf<List<RosterWorker>>(emptyList()) }
+    var rosterLoading by remember { mutableStateOf(false) }
+    var rosterSearch by remember { mutableStateOf("") }
+    var managerToast by remember { mutableStateOf<Pair<String, ToastTone>?>(null) }
+    var refreshKey by remember { mutableIntStateOf(0) }
+    LaunchedEffect(managerToast) {
+        if (managerToast != null) {
+            delay(TOAST_DURATION_MS)
+            managerToast = null
+        }
+    }
+
+    // The shown house id — actions target the VIEWED house (a manager only ever manages
+    // their home house, but this is explicit and matches the read path).
+    val shownHouseId = state.selectedHouseId ?: state.homeHouseId
+
+    fun runAssign(
+        block: HouseGridBlock,
+        worker: RosterWorker,
+        override: Boolean,
+    ) {
+        scope.launch {
+            when (val outcome = WorkerBackend.managerRepository.assignWorker(block.assignmentIds, worker.userId, override = override)) {
+                is AssignOutcome.Assigned -> {
+                    assignFor = null
+                    assignConfirm = null
+                    val n = outcome.count
+                    managerToast = (if (n == 1) "Assigned to 1 block" else "Assigned to $n blocks") to ToastTone.Success
+                    refreshKey++
+                }
+                is AssignOutcome.NeedsConfirm ->
+                    assignConfirm = AssignConfirmState(block, worker, outcome.advisories)
+                is AssignOutcome.Rejected -> {
+                    assignConfirm = null
+                    managerToast = outcome.message to ToastTone.Error
+                }
+                AssignOutcome.Failed -> {
+                    assignConfirm = null
+                    managerToast = "That could not be done. Try again." to ToastTone.Error
+                }
+            }
+        }
+    }
+
+    fun runForce(block: HouseGridBlock) {
+        val houseId = shownHouseId ?: return
+        scope.launch {
+            when (val outcome = WorkerBackend.managerRepository.forceTrigger(houseId, block.assignmentIds)) {
+                is ForceTriggerOutcome.Triggered -> {
+                    managerToast = (if (outcome.floatCount > 0) "Float assigned" else "Coverage started") to ToastTone.Success
+                    refreshKey++
+                }
+                is ForceTriggerOutcome.Rejected -> managerToast = outcome.message to ToastTone.Error
+                ForceTriggerOutcome.Failed -> managerToast = "That could not be done. Try again." to ToastTone.Error
+            }
+        }
+    }
+
+    // Load the shown house's roster whenever the assign picker opens.
+    LaunchedEffect(assignFor?.id) {
+        val target = assignFor
+        if (target == null || shownHouseId == null) return@LaunchedEffect
+        rosterSearch = ""
+        rosterLoading = true
+        roster = WorkerBackend.managerRepository.fetchHouseRoster(shownHouseId)
+        rosterLoading = false
+    }
 
     // The pickable houses (2026-06-23 cross-house ruling): live `fetchHouses`, demo list
     // otherwise. Loaded once; the switcher defaults to the worker's home house.
@@ -3062,9 +3513,10 @@ private fun HouseTabContent(
 
     // Per-(house, week) seats: live fetch on the backend path, deterministic demo week
     // otherwise. Keyed on the selected house + weekOffset so switching house / paging weeks
-    // reloads; setWeekSeats ignores stale fetches (wrong house OR week).
+    // reloads; setWeekSeats ignores stale fetches (wrong house OR week). `refreshKey` re-runs
+    // it after a manager assign / force-trigger so the grid reflects the new state.
     val selectedHouseId = state.selectedHouseId
-    LaunchedEffect(selectedHouseId, state.weekOffset, meUserId) {
+    LaunchedEffect(selectedHouseId, state.weekOffset, meUserId, refreshKey) {
         if (selectedHouseId == null) return@LaunchedEffect
         val seats =
             if (meUserId != null) {
@@ -3080,35 +3532,115 @@ private fun HouseTabContent(
         vm.setWeekSeats(selectedHouseId, state.weekOffset, seats)
     }
 
-    Column(Modifier.fillMaxSize().background(c.bg).testTag("house_screen")) {
-        PageTitle("House")
-        HouseHeaderCard(
-            houseName = state.houseName,
-            deskPhone = state.deskPhone,
-            isHomeHouse = state.isHomeHouse,
-            canSwitchHouse = state.canSwitchHouse,
-            onOpenPicker = { if (state.canSwitchHouse) showHousePicker = true },
-        )
-        HouseLegend()
-        Box(Modifier.weight(1f).fillMaxWidth().testTag("house_grid")) {
-            HouseGrid(
-                grid = state.grid,
-                focusDayIndex = state.todayIndex,
-                nowMinOfDay = state.nowMinOfDay,
-                // Re-centre the scroll whenever the house or shown week changes.
-                focusKey = "${state.selectedHouseId}#${state.weekOffset}",
-                onBlockTap = { if (!it.vacant) contactTarget = it },
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().background(c.bg).testTag("house_screen")) {
+            PageTitle("House")
+            HouseHeaderCard(
+                houseName = state.houseName,
+                deskPhone = state.deskPhone,
+                isHomeHouse = state.isHomeHouse,
+                canSwitchHouse = state.canSwitchHouse,
+                onOpenPicker = { if (state.canSwitchHouse) showHousePicker = true },
+            )
+            HouseLegend()
+            Box(Modifier.weight(1f).fillMaxWidth().testTag("house_grid")) {
+                HouseGrid(
+                    grid = state.grid,
+                    focusDayIndex = state.todayIndex,
+                    nowMinOfDay = state.nowMinOfDay,
+                    // Re-centre the scroll whenever the house or shown week changes.
+                    focusKey = "${state.selectedHouseId}#${state.weekOffset}",
+                    // A manager on their own house may tap an OPEN seat to manage it.
+                    vacantTappable = state.canManage,
+                    onBlockTap = {
+                        if (it.vacant) {
+                            if (state.canManage) manageChoice = it
+                        } else {
+                            contactTarget = it
+                        }
+                    },
+                )
+            }
+            WeekNavBar(
+                title = state.weekRelative,
+                rangeLabel = state.weekRange,
+                onOpenPicker = { showWeekPicker = true },
+                onPreviousWeek = if (state.canPreviousWeek) vm::previousWeek else null,
+                onNextWeek = if (state.canNextWeek) vm::nextWeek else null,
+                pickerTag = "house_week_picker_open",
+                prevTag = "house_prev_week",
+                nextTag = "house_next_week",
             )
         }
-        WeekNavBar(
-            title = state.weekRelative,
-            rangeLabel = state.weekRange,
-            onOpenPicker = { showWeekPicker = true },
-            onPreviousWeek = if (state.canPreviousWeek) vm::previousWeek else null,
-            onNextWeek = if (state.canNextWeek) vm::nextWeek else null,
-            pickerTag = "house_week_picker_open",
-            prevTag = "house_prev_week",
-            nextTag = "house_next_week",
+        // Transient manager-action confirmation / error toast (the House tab owns its own
+        // I/O, so it also owns this toast rather than routing through the host's toast row).
+        managerToast?.let { (msg, tone) ->
+            ShiftToast(
+                message = msg,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .testTag("house_manage_toast"),
+                tone = tone,
+                icon = if (tone == ToastTone.Error) ShiftIcons.Warning else ShiftIcons.Check,
+            )
+        }
+    }
+
+    // The two-option chooser for a vacant seat (assign a worker / get coverage now).
+    manageChoice?.let { block ->
+        ManagerActionSheet(
+            houseName = state.houseName,
+            block = block,
+            onAssign = {
+                manageChoice = null
+                assignFor = block
+            },
+            onForce = {
+                manageChoice = null
+                forceFor = block
+            },
+            onDismiss = { manageChoice = null },
+        )
+    }
+
+    // The roster picker: search + tap a worker to assign.
+    assignFor?.let { block ->
+        AssignWorkerSheet(
+            houseName = state.houseName,
+            block = block,
+            roster = roster,
+            loading = rosterLoading,
+            search = rosterSearch,
+            onSearch = { rosterSearch = it },
+            onPick = { worker -> runAssign(block, worker, override = false) },
+            onDismiss = { assignFor = null },
+        )
+    }
+
+    // Soft-advisory confirm (over-target / soft-cap / cannot / opted-out): re-submit with override.
+    assignConfirm?.let { pending ->
+        ShiftAlertDialog(
+            title = "Assign anyway?",
+            text = pending.advisories.joinToString("\n") { it.message },
+            confirmLabel = "Assign anyway",
+            onConfirm = { runAssign(pending.block, pending.worker, override = true) },
+            onDismiss = { assignConfirm = null },
+        )
+    }
+
+    // Force-trigger confirm.
+    forceFor?.let { block ->
+        ShiftAlertDialog(
+            title = "Get coverage now",
+            text = "Run a float lookup to cover this seat now?",
+            confirmLabel = "Run coverage",
+            onConfirm = {
+                forceFor = null
+                runForce(block)
+            },
+            onDismiss = { forceFor = null },
         )
     }
 
@@ -3140,8 +3672,31 @@ private fun HouseTabContent(
     }
 
     contactTarget?.let { block ->
-        ContactSheet(block = block, deskPhone = state.deskPhone, onDismiss = { contactTarget = null })
+        ContactSheet(
+            block = block,
+            deskPhone = state.deskPhone,
+            deskHouseName = state.houseName,
+            onDismiss = { contactTarget = null },
+        )
     }
+}
+
+// ── Per-worker colours (docs/design/worker-colors.md) ───────────────────────────
+
+/** A worker's full-strength colour plus the legible foreground that sits on it. */
+private data class WorkerTint(val color: Color, val onColor: Color)
+
+private fun rgb(hex: Int): Color = Color(0xFF000000L or hex.toLong())
+
+/**
+ * This block's occupant colour, or null when the block must keep its STATE colour
+ * (vacant / float-in / pending) or carries no worker. The hash + palette live in the
+ * shared module so they match `apps/web/lib/workerColor.ts` exactly.
+ */
+private fun HouseGridBlock.workerColorOrNull(): WorkerTint? {
+    val uid = userId ?: return null
+    if (!wearsWorkerColor()) return null
+    return WorkerTint(rgb(workerColor(uid)), rgb(workerContrastText(uid)))
 }
 
 // ── House grid layout constants (design `HouseScheduleScreen`) ──────────────────
@@ -3205,24 +3760,25 @@ private fun HouseGrid(
     nowMinOfDay: Int,
     focusKey: String,
     onBlockTap: (HouseGridBlock) -> Unit,
+    vacantTappable: Boolean = false,
 ) {
     val hScroll = rememberScrollState()
     val vScroll = rememberScrollState()
     val density = LocalDensity.current
     val laneCount = grid.laneCount
     val colW = HOUSE_LANE_W * laneCount + HOUSE_LANE_GAP * (laneCount - 1) + HOUSE_COL_PAD * 2
-    val gridHeight = HOUSE_PX_PER_HOUR * (grid.endHour - grid.startHour)
+    val gridHeight = HOUSE_PX_PER_HOUR * ((grid.endMin - grid.startMin) / 60f)
 
     // Scroll to "now" when the shown week contains today (on open / house-switch / week
     // change): the today column comes into view (it may sit at the end of the week) and the
     // body scrolls down to the current hour. Other weeks have no "today" → no auto-scroll.
-    LaunchedEffect(focusKey, focusDayIndex, grid.startHour, grid.endHour, grid.laneCount) {
+    LaunchedEffect(focusKey, focusDayIndex, grid.startMin, grid.endMin, grid.laneCount) {
         if (focusDayIndex < 0) return@LaunchedEffect
         val colWpx = with(density) { colW.toPx() }
         val gapPx = with(density) { HOUSE_COL_GAP.toPx() }
         hScroll.animateScrollTo((focusDayIndex * (colWpx + gapPx)).toInt().coerceAtLeast(0))
         val pxPerHour = with(density) { HOUSE_PX_PER_HOUR.toPx() }
-        val y = (pxPerHour * (nowMinOfDay / 60f - grid.startHour) - pxPerHour).toInt().coerceAtLeast(0)
+        val y = (pxPerHour * ((nowMinOfDay - grid.startMin) / 60f) - pxPerHour).toInt().coerceAtLeast(0)
         vScroll.animateScrollTo(y)
     }
 
@@ -3240,13 +3796,13 @@ private fun HouseGrid(
         }
         // Body — rail + columns scroll vertically together; columns also scroll sideways.
         Row(Modifier.weight(1f).fillMaxWidth().verticalScroll(vScroll).padding(start = 12.dp, top = 2.dp, bottom = 8.dp)) {
-            HouseTimeRail(grid.startHour, grid.endHour, gridHeight)
+            HouseTimeRail(grid.startMin, grid.endMin, gridHeight)
             Row(
                 Modifier.horizontalScroll(hScroll),
                 horizontalArrangement = Arrangement.spacedBy(HOUSE_COL_GAP),
             ) {
                 grid.days.forEach { day ->
-                    HouseDayColumn(day, colW, gridHeight, grid.startHour, grid.endHour, onBlockTap)
+                    HouseDayColumn(day, colW, gridHeight, grid.startMin, grid.endMin, onBlockTap, vacantTappable)
                 }
                 Spacer(Modifier.width(8.dp))
             }
@@ -3254,25 +3810,47 @@ private fun HouseGrid(
     }
 }
 
-/** The fixed left time rail (08:00 … 24:00, every 2h) — frozen during sideways scroll. */
+/**
+ * The 2-hour clock marks (e.g. 06:00, 08:00, …) strictly between [startMin] and [endMin] —
+ * shared by the rail's labels and each day column's gridlines.
+ */
+private fun houseHourMarks(
+    startMin: Int,
+    endMin: Int,
+): List<Int> {
+    val marks = mutableListOf<Int>()
+    var h = (startMin / 120 + 1) * 120
+    while (h < endMin) {
+        marks.add(h)
+        h += 120
+    }
+    return marks
+}
+
+private fun fmtHm(min: Int): String = "${(min / 60).toString().padStart(2, '0')}:${(min % 60).toString().padStart(2, '0')}"
+
+/**
+ * The fixed left time rail — frozen during sideways scroll. The top label is the EXACT grid
+ * origin (e.g. "05:30" when that's the week's earliest actual shift start, not rounded to an
+ * hour), then a label at every 2-hour clock mark, and a final label at the bottom bound.
+ */
 @Composable
 private fun HouseTimeRail(
-    startHour: Int,
-    endHour: Int,
+    startMin: Int,
+    endMin: Int,
     gridHeight: Dp,
 ) {
     val c = ShiftTheme.colors
+    val labels = remember(startMin, endMin) { (listOf(startMin) + houseHourMarks(startMin, endMin) + listOf(endMin)).distinct() }
     Box(Modifier.width(HOUSE_RAIL_W).height(gridHeight).testTag("house_time_rail")) {
-        var h = startHour
-        while (h <= endHour) {
-            val y = (HOUSE_PX_PER_HOUR * (h - startHour) - 5.dp).coerceAtLeast(0.dp)
+        labels.forEach { m ->
+            val y = (HOUSE_PX_PER_HOUR * ((m - startMin) / 60f) - 5.dp).coerceAtLeast(0.dp)
             Text(
-                "${h.toString().padStart(2, '0')}:00",
+                fmtHm(m),
                 style = ShiftTheme.type.monoId.copy(fontSize = 10.sp),
                 color = c.ter,
                 modifier = Modifier.align(Alignment.TopEnd).offset(y = y).padding(end = 6.dp),
             )
-            h += 2
         }
     }
 }
@@ -3310,9 +3888,10 @@ private fun HouseDayColumn(
     day: HouseGridDay,
     colW: Dp,
     gridHeight: Dp,
-    startHour: Int,
-    endHour: Int,
+    startMin: Int,
+    endMin: Int,
     onBlockTap: (HouseGridBlock) -> Unit,
+    vacantTappable: Boolean = false,
 ) {
     val c = ShiftTheme.colors
     Box(
@@ -3324,46 +3903,61 @@ private fun HouseDayColumn(
             .border(1.dp, c.divider, RoundedCornerShape(10.dp))
             .testTag("house_day_column"),
     ) {
-        var h = startHour + 2
-        while (h < endHour) {
+        houseHourMarks(startMin, endMin).forEach { h ->
             Box(
                 Modifier
                     .fillMaxWidth()
                     .height(1.dp)
-                    .offset(y = HOUSE_PX_PER_HOUR * (h - startHour))
+                    .offset(y = HOUSE_PX_PER_HOUR * ((h - startMin) / 60f))
                     .background(c.divider.copy(alpha = 0.6f)),
             )
-            h += 2
         }
-        day.blocks.forEach { b -> HouseGridBlockCell(b, startHour, day.isToday, onBlockTap) }
+        day.blocks.forEach { b -> HouseGridBlockCell(b, colW, startMin, day.isToday, onBlockTap, vacantTappable) }
     }
 }
 
 /**
  * One positioned desk block, coloured by its state (design `HouseBlock`).
  *
- * Three-tier "mine" emphasis so the grid is scannable (BEH §11.4): someone else's shift is
- * gray; my shift on another day is a mild pale blue; my shift TODAY gets the full `today`
- * blue + a solid blue ring so it's the one block that pops.
+ * Two colour systems, in this order:
+ *
+ * 1. **Per-worker colour** (docs/design/worker-colors.md) — a plain SCHEDULED seat wears
+ *    its occupant's own colour, a pure hash of their `user_id`, so the same person reads
+ *    the same here and on the web calendars. Fill is that colour at 90%, the leading rail
+ *    and border full strength, the name its precomputed contrast foreground.
+ * 2. **State colour** — float-in, pending and vacant seats KEEP their state colours,
+ *    because those carry meaning (a float must still read as a float).
+ *
+ * The "mine" emphasis rides on top of either: my shift TODAY keeps its solid brand ring
+ * so it's still the one block that pops, exactly like the web card's `.scard-mine`
+ * outline over a worker-tinted fill.
  */
 @Composable
 private fun HouseGridBlockCell(
     b: HouseGridBlock,
-    startHour: Int,
+    colW: Dp,
+    startMin: Int,
     isToday: Boolean,
     onTap: (HouseGridBlock) -> Unit,
+    vacantTappable: Boolean = false,
 ) {
     val c = ShiftTheme.colors
     val primary = MaterialTheme.colorScheme.primary
     val onContainer = MaterialTheme.colorScheme.onPrimaryContainer
-    val top = HOUSE_PX_PER_HOUR * ((b.startMin - startHour * 60) / 60f)
+    val top = HOUSE_PX_PER_HOUR * ((b.startMin - startMin) / 60f)
     val height = (HOUSE_PX_PER_HOUR * ((b.endMin - b.startMin) / 60f) - 3.dp).coerceAtLeast(18.dp)
-    val x = HOUSE_COL_PAD + (HOUSE_LANE_W + HOUSE_LANE_GAP) * b.lane
+    // A desk that's never concurrent with another during this run (segmentLanes == 1) collapses
+    // to one full-width column instead of a narrow lane next to empty space.
+    val collapsed = b.segmentLanes <= 1
+    val width = if (collapsed) colW - HOUSE_COL_PAD * 2 else HOUSE_LANE_W
+    val x = if (collapsed) HOUSE_COL_PAD else HOUSE_COL_PAD + (HOUSE_LANE_W + HOUSE_LANE_GAP) * b.lane
     // mine + today → solid blue ring (the one block that should pop).
     val emphatic = b.mine && isToday && !b.floatIn
+    val wc = b.workerColorOrNull()
     val (bg, accent, fg) =
         when {
             b.vacant -> Triple(c.surface, c.outline, c.ter)
+            wc != null -> Triple(wc.color.copy(alpha = 0.90f), wc.color, wc.onColor)
             b.mine && b.floatIn -> Triple(c.floatIn.tint, c.floatIn.accent, c.floatIn.deep)
             b.mine && isToday -> Triple(c.today, primary, onContainer)
             b.mine -> Triple(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f), primary.copy(alpha = 0.5f), onContainer)
@@ -3371,11 +3965,14 @@ private fun HouseGridBlockCell(
             b.floatIn -> Triple(c.floatIn.tint, c.floatIn.accent, c.floatIn.deep)
             else -> Triple(c.surfaceVar, c.outline, c.ink)
         }
+    // The time label keeps a hint of the worker's hue without losing contrast (web:
+    // `color-mix(in srgb, F 75%, C 25%)`); on a state-coloured block it's just `fg`.
+    val timeFg = if (wc != null) lerp(fg, wc.color, 0.25f) else fg
     val shape = RoundedCornerShape(8.dp)
     Box(
         Modifier
             .offset(x = x, y = top)
-            .width(HOUSE_LANE_W)
+            .width(width)
             .height(height)
             .clip(shape)
             .background(bg)
@@ -3383,16 +3980,17 @@ private fun HouseGridBlockCell(
                 when {
                     b.vacant -> Modifier.dashedBorder(accent, 8.dp)
                     emphatic -> Modifier.border(1.5.dp, primary, shape)
+                    wc != null -> Modifier.border(1.dp, accent, shape)
                     else -> Modifier.border(1.dp, accent.copy(alpha = 0.45f), shape)
                 },
             )
             .drawBehind { drawRect(color = accent, size = Size(3.dp.toPx(), size.height)) }
-            .clickable(enabled = !b.vacant) { onTap(b) }
+            .clickable(enabled = !b.vacant || vacantTappable) { onTap(b) }
             .padding(start = 7.dp, end = 5.dp, top = 4.dp, bottom = 3.dp)
             .testTag("house_grid_block"),
     ) {
         Column {
-            Text(b.timeLabel, style = ShiftTheme.type.monoId.copy(fontSize = 10.5.sp), color = fg, maxLines = 1)
+            Text(b.timeLabel, style = ShiftTheme.type.monoId.copy(fontSize = 10.5.sp), color = timeFg, maxLines = 1)
             Text(
                 b.workerLabel + if (b.mine && b.floatIn) " ·float" else "",
                 color = fg,
@@ -3552,45 +4150,317 @@ private fun HousePickerSheet(
 private fun ContactSheet(
     block: HouseGridBlock,
     deskPhone: String?,
+    deskHouseName: String?,
     onDismiss: () -> Unit,
 ) {
     val row = block
     val c = ShiftTheme.colors
     val context = LocalContext.current
-    ShiftBottomSheet(onDismiss = onDismiss, title = row.workerName ?: "Shift") {
+    val name = row.workerName ?: "This shift"
+    val tint = row.workerColorOrNull()
+    val badgeBg = tint?.color ?: c.surfaceVar
+    val badgeFg = tint?.onColor ?: c.ink
+    // The float-in case: the person's own house is not the desk they're standing at, and
+    // that is exactly what someone tapping the block needs to know.
+    val houseLine =
+        when {
+            row.workerHouseName == null -> deskHouseName
+            deskHouseName != null && !row.workerHouseName.equals(deskHouseName, ignoreCase = true) ->
+                "${row.workerHouseName} (at $deskHouseName)"
+            else -> row.workerHouseName
+        }
+    ShiftBottomSheet(onDismiss = onDismiss, title = "Shift details") {
         Column(
             Modifier.fillMaxWidth().testTag("contact_sheet"),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                HouseBadge((row.workerName ?: "?").take(1), c.surfaceVar, c.ink)
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(row.timeLabel, style = ShiftTheme.type.monoTime, color = c.ink)
-                    Text(
-                        row.workerPhone ?: "No phone on file",
-                        color = c.sec,
-                        fontSize = 13.5.sp,
-                        modifier = Modifier.testTag("contact_phone"),
-                    )
-                }
+            // The shift itself: what slot was tapped.
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    row.timeLabel,
+                    style = ShiftTheme.type.monoTime,
+                    color = c.ink,
+                    modifier = Modifier.testTag("contact_time"),
+                )
+                Text(row.durationLabel(), color = c.sec, fontSize = 13.sp)
             }
+
+            // The person on it, as a card.
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(c.surfaceVar)
+                    .border(1.dp, c.divider, RoundedCornerShape(14.dp))
+                    .padding(14.dp)
+                    .testTag("contact_person_card"),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    HouseBadge(name.take(1), badgeBg, badgeFg)
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            name,
+                            color = c.ink,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.testTag("contact_name"),
+                        )
+                        houseLine?.let {
+                            Text(it, color = c.sec, fontSize = 13.5.sp, modifier = Modifier.testTag("contact_house"))
+                        }
+                    }
+                }
+                ContactDetailRow(
+                    icon = ShiftIcons.Phone,
+                    value = row.workerPhone ?: "No phone on file",
+                    muted = row.workerPhone == null,
+                    tag = "contact_phone",
+                )
+                ContactDetailRow(
+                    icon = ShiftIcons.Mail,
+                    value = row.workerEmail ?: "No email on file",
+                    muted = row.workerEmail == null,
+                    tag = "contact_email",
+                )
+            }
+
             row.workerPhone?.let { phone ->
                 ShiftButton(
-                    "Call ${row.workerName ?: "worker"}",
-                    onClick = { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone"))) },
+                    "Call $name",
+                    onClick = { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${phone.dialable()}"))) },
                     modifier = Modifier.fillMaxWidth().testTag("contact_call_button"),
+                    icon = ShiftIcons.Phone,
+                    fullWidth = true,
+                )
+            }
+            row.workerEmail?.let { email ->
+                ShiftButton(
+                    "Email $name",
+                    onClick = { context.startActivity(emailIntent(email, row.timeLabel)) },
+                    modifier = Modifier.fillMaxWidth().testTag("contact_email_button"),
+                    variant = ButtonVariant.Outlined,
+                    icon = ShiftIcons.Mail,
                     fullWidth = true,
                 )
             }
             deskPhone?.let { phone ->
                 ShiftButton(
                     "Call the desk · $phone",
-                    onClick = { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone"))) },
+                    onClick = { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${phone.dialable()}"))) },
                     modifier = Modifier.fillMaxWidth().testTag("contact_call_desk"),
                     variant = ButtonVariant.Outlined,
                     fullWidth = true,
                 )
             }
+        }
+    }
+}
+
+/** One labelled contact line (phone / email) inside the person card. */
+@Composable
+private fun ContactDetailRow(
+    icon: ImageVector,
+    value: String,
+    muted: Boolean,
+    tag: String,
+) {
+    val c = ShiftTheme.colors
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Icon(icon, contentDescription = null, tint = if (muted) c.ter else c.sec, modifier = Modifier.size(16.dp))
+        Text(
+            value,
+            color = if (muted) c.ter else c.ink,
+            fontSize = 14.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.testTag(tag),
+        )
+    }
+}
+
+/** "4h" / "30m" / "1h 30m" — the tapped slot's length, read off the grid's own minutes. */
+private fun HouseGridBlock.durationLabel(): String {
+    val mins = endMin - startMin
+    val h = mins / 60
+    val m = mins % 60
+    return when {
+        h == 0 -> "${m}m"
+        m == 0 -> "${h}h"
+        else -> "${h}h ${m}m"
+    }
+}
+
+/** Strip spacing so `tel:` gets a clean number for the dialer to prefill. */
+private fun String.dialable(): String = filterNot { it.isWhitespace() || it == '(' || it == ')' || it == '-' }
+
+/**
+ * ACTION_SENDTO on a `mailto:` uri — resolves ONLY to email apps (ACTION_SEND would also
+ * offer every share target), with the tapped shift prefilled as the subject so the
+ * recipient has context. Nothing is sent: the compose window opens for the worker.
+ */
+private fun emailIntent(
+    email: String,
+    timeLabel: String,
+): Intent =
+    Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:")).apply {
+        putExtra(Intent.EXTRA_EMAIL, arrayOf(email))
+        putExtra(Intent.EXTRA_SUBJECT, "Shift on $timeLabel")
+    }
+
+// ===================================================================
+// Manager actions on a vacant seat (BSpec §2.2 add-a-worker / §6.6 force-trigger).
+// Shown only when the signed-in user is a manager on their OWN house (state.canManage).
+// ===================================================================
+
+/** A soft-advisory confirm in flight: re-submit [block] for [worker] with `override = true`. */
+private data class AssignConfirmState(
+    val block: HouseGridBlock,
+    val worker: RosterWorker,
+    val advisories: List<AssignAdvisory>,
+)
+
+/**
+ * The two-option chooser for a tapped OPEN seat: assign a specific worker, or ask the
+ * system to find coverage now (force a float lookup). A thin bottom sheet with the house +
+ * time range as context.
+ */
+@Composable
+private fun ManagerActionSheet(
+    houseName: String,
+    block: HouseGridBlock,
+    onAssign: () -> Unit,
+    onForce: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val c = ShiftTheme.colors
+    ShiftBottomSheet(onDismiss = onDismiss, title = "Open seat") {
+        Column(
+            Modifier.fillMaxWidth().testTag("house_manage_sheet"),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text("$houseName · ${block.timeLabel}", color = c.sec, fontSize = 14.sp)
+            ShiftButton(
+                "Assign a worker",
+                onClick = onAssign,
+                modifier = Modifier.fillMaxWidth().testTag("house_assign_worker_option"),
+                icon = ShiftIcons.Plus,
+                fullWidth = true,
+            )
+            ShiftButton(
+                "Get coverage now",
+                onClick = onForce,
+                modifier = Modifier.fillMaxWidth().testTag("house_force_trigger"),
+                variant = ButtonVariant.Outlined,
+                fullWidth = true,
+            )
+        }
+    }
+}
+
+/**
+ * The add-a-worker roster picker (BSpec §2.2): the house's own workers, name-searchable.
+ * Tapping a worker assigns them to the vacant run; the server owns the hard cap and the
+ * soft-advisory confirm (handled by the caller via [onPick]'s outcome).
+ */
+@Composable
+private fun AssignWorkerSheet(
+    houseName: String,
+    block: HouseGridBlock,
+    roster: List<RosterWorker>,
+    loading: Boolean,
+    search: String,
+    onSearch: (String) -> Unit,
+    onPick: (RosterWorker) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val c = ShiftTheme.colors
+    val filtered =
+        remember(roster, search) {
+            if (search.isBlank()) roster else roster.filter { it.name.contains(search.trim(), ignoreCase = true) }
+        }
+    ShiftBottomSheet(onDismiss = onDismiss, title = "Assign worker") {
+        Column(
+            Modifier.fillMaxWidth().testTag("house_assign_sheet"),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("$houseName · ${block.timeLabel}", color = c.sec, fontSize = 14.sp)
+            RosterSearchField(value = search, onValue = onSearch)
+            when {
+                loading -> Text("Loading workers.", color = c.ter, fontSize = 14.sp)
+                filtered.isEmpty() ->
+                    Text(
+                        if (roster.isEmpty()) "No workers to assign." else "No workers match your search.",
+                        color = c.ter,
+                        fontSize = 14.sp,
+                    )
+                else ->
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        filtered.forEach { worker ->
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(c.surface)
+                                    .border(1.dp, c.divider, RoundedCornerShape(12.dp))
+                                    .clickable { onPick(worker) }
+                                    .padding(horizontal = 13.dp, vertical = 12.dp)
+                                    .testTag("house_assign_worker_row"),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                HouseBadge(worker.name.take(1), c.surfaceVar, c.ink)
+                                Text(worker.name, color = c.ink, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                Icon(ShiftIcons.ChevronRight, contentDescription = null, tint = c.ter, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+            }
+        }
+    }
+}
+
+/** A styled search field for the assign-worker roster picker (filters by worker name). */
+@Composable
+private fun RosterSearchField(
+    value: String,
+    onValue: (String) -> Unit,
+) {
+    val c = ShiftTheme.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(11.dp))
+            .background(c.surfaceVar)
+            .border(BorderStroke(1.dp, c.divider), RoundedCornerShape(11.dp))
+            .padding(horizontal = 12.dp, vertical = 11.dp)
+            .testTag("house_assign_search"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(ShiftIcons.Search, contentDescription = null, tint = c.ter, modifier = Modifier.size(18.dp))
+        Box(Modifier.weight(1f)) {
+            if (value.isEmpty()) {
+                Text("Search workers", color = c.ter, fontSize = 14.sp)
+            }
+            BasicTextField(
+                value = value,
+                onValueChange = onValue,
+                modifier = Modifier.fillMaxWidth().testTag("house_assign_search_field"),
+                singleLine = true,
+                textStyle = TextStyle(color = c.ink, fontSize = 14.sp),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            )
+        }
+        if (value.isNotEmpty()) {
+            Icon(
+                ShiftIcons.Close,
+                contentDescription = "Clear",
+                tint = c.sec,
+                modifier = Modifier.size(18.dp).clip(RoundedCornerShape(50)).clickable { onValue("") },
+            )
         }
     }
 }

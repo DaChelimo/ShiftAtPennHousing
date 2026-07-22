@@ -2,4 +2,5 @@
     <string name="app_name">Shift PennHousing</string>
     <string name="default_notification_channel_id">shift_floats</string>
     <string name="default_notification_channel_name">Shift updates</string>
+    <string name="widget_upcoming_description">See your next shifts at a glance.</string>
 </resources>

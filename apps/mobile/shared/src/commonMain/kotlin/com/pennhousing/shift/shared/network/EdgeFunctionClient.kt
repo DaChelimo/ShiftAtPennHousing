@@ -7,12 +7,17 @@ import io.ktor.client.request.get
 import io.ktor.client.request.headers
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
+import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import io.ktor.utils.io.readUTF8Line
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 
 /** The outcome of an Edge-Function POST. `ok` is true on a 2xx; transport failure → (false, 0, ""). */
 data class EdgeResult(
@@ -116,6 +121,52 @@ class EdgeFunctionClient(
                 authHeaders(bearer)
                 contentType(ContentType.Application.Json)
                 setBody(jsonBody)
+            }
+        }
+
+    /**
+     * POST [jsonBody] to `<supabaseUrl>/functions/v1/<path>` and emit each raw line of a
+     * `text/event-stream` response (e.g. `da-ask`) as it arrives — unlike [invoke], which
+     * waits for [bodyAsText] to have the whole body. Same auth contract: a near-expiry
+     * session is refreshed before connecting, and a `401` on the initial response forces
+     * one refresh + retry before any lines are read (a 401 arrives before the body starts,
+     * so there is nothing to lose by retrying). A blank backend URL or transport failure
+     * throws — unlike [invoke]'s EdgeResult contract, a cold [Flow] has no "never throws"
+     * sentinel value, so the caller (`AssistantRepository.askStream`) catches and surfaces
+     * an error the same way `ask()` does today.
+     */
+    fun stream(
+        path: String,
+        jsonBody: String,
+    ): Flow<String> =
+        flow {
+            require(AppConfig.supabaseUrl.isNotBlank()) { "Supabase URL is not configured" }
+            AppConfig.ensureFreshSession(false)
+            var bearer = AppConfig.accessTokenProvider() ?: AppConfig.supabaseAnonKey
+            var refreshed = false
+            while (true) {
+                val statement =
+                    http.preparePost("${AppConfig.supabaseUrl}/functions/v1/$path") {
+                        authHeaders(bearer)
+                        contentType(ContentType.Application.Json)
+                        setBody(jsonBody)
+                    }
+                var retry = false
+                statement.execute { response ->
+                    if (response.status.value == 401 && !refreshed) {
+                        refreshed = true
+                        retry = true
+                        AppConfig.ensureFreshSession(true)
+                        bearer = AppConfig.accessTokenProvider() ?: AppConfig.supabaseAnonKey
+                    } else {
+                        val channel = response.bodyAsChannel()
+                        while (!channel.isClosedForRead) {
+                            val line = channel.readUTF8Line() ?: break
+                            emit(line)
+                        }
+                    }
+                }
+                if (!retry) break
             }
         }
 }

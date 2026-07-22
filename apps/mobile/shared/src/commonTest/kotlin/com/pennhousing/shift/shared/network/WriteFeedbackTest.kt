@@ -63,6 +63,12 @@ class WriteFeedbackTest {
     }
 
     @Test
+    fun dropPastBlockIsDescriptive() {
+        val msg = edgeErrorMessage(WriteOp.DROP, EdgeResult(false, 400, """{"error":"drop_past_block"}"""))
+        assertEquals("This shift has already started, so it can't be dropped.", msg)
+    }
+
+    @Test
     fun unknownCodeFallsBackToOperationVerb() {
         val msg = edgeErrorMessage(WriteOp.DROP, EdgeResult(false, 400, """{"error":"some_new_code"}"""))
         assertTrue(msg.contains("drop this shift"))

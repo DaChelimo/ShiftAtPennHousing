@@ -70,8 +70,9 @@ struct ShiftLargeHeader: View {
 /// A simple page header — the screen's title, top-left, large and near-black. Every
 /// worker tab shows one so each screen reads clearly. Lighter than `ShiftLargeHeader`
 /// (no avatar / eyebrow / trailing).
-struct PageTitle: View {
+struct PageTitle<Trailing: View>: View {
     let title: String
+    @ViewBuilder var trailing: () -> Trailing
     @Environment(\.colorScheme) private var scheme
     var body: some View {
         HStack {
@@ -79,8 +80,16 @@ struct PageTitle: View {
                 .font(ShiftFont.sans(26, .bold, relativeTo: .largeTitle))
                 .foregroundColor(ShiftColors.resolve(scheme).ink)
             Spacer(minLength: 0)
+            trailing()
         }
         .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 8)
+    }
+}
+
+extension PageTitle where Trailing == EmptyView {
+    /// Title-only, no trailing accessory (the common case; keeps existing call sites intact).
+    init(title: String) {
+        self.init(title: title, trailing: { EmptyView() })
     }
 }
 

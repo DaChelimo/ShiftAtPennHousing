@@ -124,4 +124,26 @@ class UpdatesViewModelTest {
         vm.resolveSwap("nope")
         assertEquals(before, vm.uiState.value)
     }
+
+    // ----- off-hours Allied-page ladder acknowledgment (staggered-rollout pilot) -----
+
+    @Test fun acknowledge_allied_page_removes_the_entry_and_keeps_the_rest() {
+        val ladderEntry =
+            item("n-ladder", "2026-01-15T02:00:00-05:00", unread = true)
+                .copy(alliedPageBlockId = "block-42")
+        val other = item("a", "2026-01-15T17:00:00-05:00", unread = true)
+        val vm = vm(listOf(ladderEntry, other))
+        assertEquals(2, vm.uiState.value.feed.today.size)
+        vm.acknowledgeAlliedPage("block-42")
+        val rows = vm.uiState.value.feed.today
+        assertEquals(listOf("a"), rows.map { it.id })
+        assertTrue(rows.none { it.opensAlliedPage })
+    }
+
+    @Test fun acknowledge_allied_page_is_idempotent_for_unknown_blocks() {
+        val vm = vm(listOf(item("a", "2026-01-15T17:00:00-05:00", unread = false)))
+        val before = vm.uiState.value
+        vm.acknowledgeAlliedPage("nope")
+        assertEquals(before, vm.uiState.value)
+    }
 }

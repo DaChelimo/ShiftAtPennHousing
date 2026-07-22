@@ -56,6 +56,15 @@ critical things is the failure mode to avoid.
 
 ## Conventions
 
+- **API keys: prefer a dedicated key per feature over reusing an existing one.** When a
+  task needs an API key (Anthropic, Voyage, or otherwise) and you anticipate meaningful or
+  recurring usage (not a one-off manual verification), do NOT default to reusing another
+  feature's existing key, even if it is technically the same provider/account. Ask the
+  user to create and provide a dedicated key/env var for the new usage instead. Reason:
+  generic reuse across features makes per-feature cost impossible to attribute, which
+  compromises usage/cost planning. A one-off local test call during development (e.g.
+  verifying a code path works before the real key is configured) is fine to run against an
+  existing key transparently, as long as it is never wired into the shipped code path.
 - **Emulator/simulator verification: iOS only, not Android.** When a mobile build requires
   running/verifying on an emulator, use the iOS Simulator (`xcodebuild` + `simctl`, see
   `apps/mobile/iosApp/README.md`), never the Android emulator. Reason: the user runs a
@@ -91,6 +100,19 @@ critical things is the failure mode to avoid.
   place. The `android` CLI (skill: `android-cli`) is for emulator/device runs
   only — it does NOT scaffold KMP. The iosApp Xcode project / signing is
   maintained in Xcode (see `apps/mobile/iosApp/README.md`).
+- Mobile UI testing: invoke the `ui-testing` skill (`.claude/skills/ui-testing/`)
+  proactively right after any **major UI change** to `apps/mobile` — do not wait
+  to be asked to "add tests." A major UI change is: a new screen; a new
+  user-facing interactive gesture or control (drag, hold-then-drag, multi-touch,
+  a new picker/sheet); a changed multi-step user-facing flow; or removal of
+  user-facing functionality. It is NOT: copy tweaks, color/token/spacing changes,
+  or internal refactors with no change in on-screen behavior. The skill covers
+  Android (Robolectric + Compose UI testing, JVM-only, no emulator) and iOS
+  (XCUITest against a real kept target, run headless via `xcodebuild test`), both
+  asserting only through the existing `testTag`/`accessibilityIdentifier`
+  contract, plus flagging tests orphaned by removed/changed UI so the suite
+  doesn't rot. Reserve real emulator/instrumented tests for cases the skill's
+  default genuinely can't verify, with an explicit justification each time.
 - Commits: one commit per distinct feature/change-set — group only the files that
   ship together (migration + its tests + the code + docs for that feature), and keep
   unrelated features in separate commits. Never bundle multiple distinct features into
@@ -187,15 +209,15 @@ iOS framework and the iosApp.
 - [Phase 06] Partial-coverage fallback is THREE TIERS (pinned decision #16):
   full coverage → leading portion → largest consecutive span (with non-trailing
   filter on the first iteration at each source). Each tier's span must be
-  >= `MIN_FLOAT_CHUNK_BLOCKS`. **UPDATED 2026-06-30: `MIN_FLOAT_CHUNK_BLOCKS`
-  was lowered 2 → 1** (BSpec §6.2 #4 / §14; ARCH §5.2/§5.3), so single-block
-  spans are now absorbed by floats instead of routed to Allied (goal: minimize
-  Allied procurement). A block reaches Allied only when NO eligible worker can
-  cover it, never merely for being 1 block. The tiering structure is unchanged;
-  only the floor moved. `minimum-chunk.test.ts` was rewritten to assert
-  single-block absorption. Document any further change to this tiering/floor in
-  both `tests/PHASE_06/TEST_PLAN.md` and the header comment on
-  `chooseCandidateForCurrentRun`.
+  > = `MIN_FLOAT_CHUNK_BLOCKS`. **UPDATED 2026-06-30: `MIN_FLOAT_CHUNK_BLOCKS`
+  > was lowered 2 → 1** (BSpec §6.2 #4 / §14; ARCH §5.2/§5.3), so single-block
+  > spans are now absorbed by floats instead of routed to Allied (goal: minimize
+  > Allied procurement). A block reaches Allied only when NO eligible worker can
+  > cover it, never merely for being 1 block. The tiering structure is unchanged;
+  > only the floor moved. `minimum-chunk.test.ts` was rewritten to assert
+  > single-block absorption. Document any further change to this tiering/floor in
+  > both `tests/PHASE_06/TEST_PLAN.md` and the header comment on
+  > `chooseCandidateForCurrentRun`.
 - [Allied-cap] **Allied is secured at most 4 hours (8 blocks) per pass**
   (BSpec §5.4 / §14; ARCH §5.2 step 5; stakeholder decision 2026-06-30). The
   pure float algorithm has no gap cap; the ORCHESTRATOR bounds it:
@@ -330,7 +352,7 @@ iOS framework and the iosApp.
   (hm/bm/rsm) and `user_can_build_schedule` (sm/hm/bm/rsm). **NOTE (superseded
   2026-06-27 — see [Cross-house-schedule]):** the original "every write gate is
   STILL scope-matched, so cross-house stays read-only" is NO LONGER true — the
-  elevated tier (hm/bm/rsm) now has cross-house *schedule* write. People admin /
+  elevated tier (hm/bm/rsm) now has cross-house _schedule_ write. People admin /
   leave / cap stay own-house via the unchanged `user_has_house_admin_role`.
   (2) `rsm` is NEVER HMOD-eligible:
   do NOT add it to `hmod_rotor` population (apps/web/lib/data/rotor.ts stays
@@ -394,7 +416,7 @@ iOS framework and the iosApp.
   "cross-house is read-only" invariant — but ONLY for the schedule. Mechanism: a new
   house-agnostic predicate `user_is_schedule_admin(uid)` (hm/bm/rsm anywhere; mirrors
   `user_is_rsm`), and `user_can_build_schedule` redefined to `(user_is_schedule_admin
-  OR sm-scoped-to-house)`. So the gates that already ride `user_can_build_schedule`
+OR sm-scoped-to-house)`. So the gates that already ride `user_can_build_schedule`
   (`publish_schedule` 3-arg, `admin_assign_worker`/`admin_remove_worker`) and the
   draft/preferences/period_targets admin RLS (swapped from `user_has_house_admin_role`
   → `user_is_schedule_admin`) all become cross-house for hm/bm/rsm. **SM is UNCHANGED
@@ -407,15 +429,15 @@ iOS framework and the iosApp.
   admin-only; the hm/bm/rsm scope match is untouched.)** (2) SM must never gain cross-house power: the sm branch
   of `user_can_build_schedule` stays `scope_house_id = house`. (3) Web write paths
   must target the VIEWED house, not the admin's own: use `writeHouseId(user, requested,
-  validHouseIds)` (pages: schedule-builder, preferences) and `canBuildForHouse(user,
-  houseId)` (actions: builder publish, override `authorizeForBlocks`, forceTrigger) in
+validHouseIds)` (pages: schedule-builder, preferences) and `canBuildForHouse(user,
+houseId)` (actions: builder publish, override `authorizeForBlocks`, forceTrigger) in
   `apps/web/lib/auth.ts`; the switcher unlock + `canViewOtherHouses` take an
   `isScheduleAdmin` flag (hm/bm/rsm). The force-trigger EF/validator gained an
   `isScheduleAdmin` initiator flag (`validateForceTrigger`). Mobile is worker-only —
   no admin write surface, unaffected. Tests: `supabase/tests/cross-house-schedule-admin.sql`
   (13) + updated `rsm-role.sql` / `s1-admin-override.sql`; core `force-trigger-validation`
-  + `hmod-context`. Hard invariants (Harnwell training, float direction, no-takeback,
-  block atomicity, NY tz) are assignment-level and hold regardless of the acting admin.
+  - `hmod-context`. Hard invariants (Harnwell training, float direction, no-takeback,
+    block atomicity, NY tz) are assignment-level and hold regardless of the acting admin.
 
 - [Operating-seasons / admin role] **The `admin` role + admin-authored operating seasons
   ship the summer model** (2026-07-02; docs/operating-seasons/PLAN.md). Architecture:
@@ -430,29 +452,29 @@ iOS framework and the iosApp.
   runtime config tables and reconciles FUTURE blocks (`block_start_at > app_now()` only).
   So the orchestrator / generator / publish need NO summer special cases. FIVE things future
   agents must not break: (1) the compiler is pure/deterministic — no DB, no clock; temporal
-  + calendar-collision guards live in the RPC, not the compiler. (2) `apply_compiled_season`
-  dry-run = preview via a rolled-back subtransaction (RAISE SQLSTATE 'PT001' + swallow) so
-  preview and apply share IDENTICAL logic — do not fork them. (3) Voiding a block deletes its
-  vacant seats + sets occupied → `cancelled_config` + `shift_blocks.voided_at`; this makes
-  voided blocks self-excluding on every status-filtered read path. The orchestrator scan +
-  `is_assignment_claimable` + both house-grid views add an explicit `voided_at IS NULL`
-  guard (20260702000007) as defense-in-depth. (4) Headcount decrease CANCELS the excess occupants
-  (revised 2026-07-09, migration 20260702000006 body replaced by 20260709000003 — see
-  the [Operating-seasons / band windows] note below); the OLD grandfather-on-decrease
-  behavior is gone. The `enforce_block_occupied_headcount` TRIGGER (20260702000005) is
-  UNCHANGED and still grandfathering-aware (it only checks writes that INCREASE a block's
-  occupied count) — that tolerance is still needed for swaps/drops on a transiently
-  over-capacity block; do not revert it to the old unconditional check. (5)
-  `scheduling_periods.profile_name` was widened (20260702000006) to admit `s_%` profiles
-  (summer is SM-built and needs a period row); the builder reads staffing per-date via
-  `operating_calendar`, not the period profile. Web: `/admin/operations` (admin-gated,
-  `isAdmin`). Mobile unaffected (worker-only; all filtering is server-side).
+  - calendar-collision guards live in the RPC, not the compiler. (2) `apply_compiled_season`
+    dry-run = preview via a rolled-back subtransaction (RAISE SQLSTATE 'PT001' + swallow) so
+    preview and apply share IDENTICAL logic — do not fork them. (3) Voiding a block deletes its
+    vacant seats + sets occupied → `cancelled_config` + `shift_blocks.voided_at`; this makes
+    voided blocks self-excluding on every status-filtered read path. The orchestrator scan +
+    `is_assignment_claimable` + both house-grid views add an explicit `voided_at IS NULL`
+    guard (20260702000007) as defense-in-depth. (4) Headcount decrease CANCELS the excess occupants
+    (revised 2026-07-09, migration 20260702000006 body replaced by 20260709000003 — see
+    the [Operating-seasons / band windows] note below); the OLD grandfather-on-decrease
+    behavior is gone. The `enforce_block_occupied_headcount` TRIGGER (20260702000005) is
+    UNCHANGED and still grandfathering-aware (it only checks writes that INCREASE a block's
+    occupied count) — that tolerance is still needed for swaps/drops on a transiently
+    over-capacity block; do not revert it to the old unconditional check. (5)
+    `scheduling_periods.profile_name` was widened (20260702000006) to admit `s_%` profiles
+    (summer is SM-built and needs a period row); the builder reads staffing per-date via
+    `operating_calendar`, not the period profile. Web: `/admin/operations` (admin-gated,
+    `isAdmin`). Mobile unaffected (worker-only; all filtering is server-side).
 
 - [Operating-seasons / band windows] **A house window carries per-day-type staffing BANDS,
   and downsizing CANCELS excess workers** (2026-07-09; migrations 20260709000002 +
   20260709000003). Two changes future agents must not undo: (1) `season_house_windows` no
   longer has `headcount`/`shift_start`/`shift_end`/`days` — a window is `(house, date range,
-  weekday_bands jsonb, weekend_bands jsonb)` where each band is
+weekday_bands jsonb, weekend_bands jsonb)` where each band is
   `{block_start, block_end, headcount}` (00:00 end = 24:00) and an empty list = closed that
   day type. This lets one window express intraday-varying staffing (e.g. Harnwell single
   05:30-12:00 then double 12:00-00:00 weekdays, double all weekend) and weekday/weekend
@@ -472,3 +494,62 @@ iOS framework and the iosApp.
   config action, so voiding floats does NOT violate the no-takeback invariant (that governs
   AUTOMATED revocation only). Tests: `packages/core/tests/operating-seasons/compile.test.ts`
   (19), `supabase/tests/apply-compiled-season.sql` (16), schema test bands inserts.
+
+- [House transfers] **House membership is season-scoped; `home_house_id` is a maintained
+  cache** (2026-07-19, migration 20260719000001). A worker belongs to a house for a date
+  span (`user_house_memberships`, one open-ended row per user, non-overlap enforced by the
+  `check_membership_no_overlap` trigger). `users.home_house_id` is the row covering today,
+  so EVERY existing current-season read path (float eligibility, the Harnwell training
+  invariant, live calendar, roster, RLS) is UNCHANGED and keeps reading the scalar. Only the
+  FORWARD-LOOKING surfaces look ahead via `membership_house_for_date(user, date)` /
+  `house_roster_as_of(house, date)`: the preference board (house = membership @ target
+  period start) and the upcoming-season builder rosters (`getBuilderData` + `getAiScheduleContext`
+  use `house_roster_as_of` as-of the build week; the AI payload `homeHouseId` is the built
+  house, correct for pre-building a transfer-in to Harnwell). `transfer_worker(initiator,
+user, dest, effective_date, note)` is the entry point: either the SOURCE or DEST house's
+  HM/BM may transfer (or an admin) — do NOT tighten to own-house-only. `effective_date` NULL =
+  next season boundary (min start_date across operating_seasons + scheduling_periods > today);
+  today = immediate. An immediate move flips `home_house_id` NOW + reopens the worker's future
+  OLD-house seats (recurring via `permanent_drop_slot`, or a direct vacate when outside a
+  school-year semester — summer, where permanent_drop_slot raises `semester_boundary_not_found`;
+  the fallback is REQUIRED, do not remove it) and voids their live floats. A future move only
+  records the membership; the hourly `apply-house-transfers` cron (`apply_due_house_transfers`
+  → `apply_house_transfer`) applies it on the day. `apply_house_transfer` sets a LOCAL
+  `app.house_transfer='1'` flag so the amended `prevent_home_house_update_without_admin_override`
+  trigger permits the `home_house_id` write even from cron (auth.role() is not service_role
+  there). Transfer OUT of Harnwell vacates their Harnwell seats here, so the training invariant
+  (#1) holds with no new enforcement; transfer IN makes them a resident. Voiding floats on
+  transfer is a sanctioned manual admin action (like fire_worker), NOT an automated revocation,
+  so no-takeback (#3) is not violated. Web: per-row "Transfer" control on `/admin/people`
+  (`TransferWorkerControl` + `transferWorker` action, 'now' sentinel → sim-clock NY date).
+  Mobile is worker-only, unaffected. `hire_worker` (migration 20260719000002) also seeds a
+  real, already-applied membership row dated the true hire date — before this, a fresh hire
+  had zero membership rows until `transfer_worker`'s self-heal backdated one to a 2000-01-01
+  sentinel; the self-heal stays as the fallback for workers hired before this migration.
+  Tests: `supabase/tests/house-transfers.sql` (19).
+
+- [Contact card / worker colors] **Tapping a shift on the mobile House grid opens the
+  occupant's CONTACT CARD, and every scheduled block wears its worker's colour**
+  (2026-07-22; migration 20260722000001). Two things future agents must keep straight:
+  (1) `worker_directory` now exposes `email` — a deliberate widening of the 2026-06-12
+  parity T3b projection ("no email"), because the card's mail intent needs the sign-up
+  address. The view is still owner-rights, SELECT-only, active-workers-only, and still
+  exposes nothing else (no auth linkage, no broadcast flag); people-admin over
+  `users`/`user_roles` is untouched and stays hm/bm-only. Both house grids also gained
+  `worker_email` / `worker_home_house_id` / `worker_home_house_name` — the occupant's HOME
+  house, which is NOT the grid's `house_name` (the desk being staffed); they differ on a
+  float-in and the card shows both. New columns are APPENDED to each projection because
+  CREATE OR REPLACE VIEW may only add at the end; every client selects by name.
+  (2) Per-worker colours are the cross-platform spec `docs/design/worker-colors.md`. The
+  palette + hash now exist TWICE: `apps/web/lib/workerColor.ts` and the Kotlin mirror
+  `apps/mobile/shared/.../house/WorkerColors.kt`. They must stay bit-identical — a worker's
+  colour is a pure hash of their `user_id` with no storage anywhere, so any drift silently
+  recolours people on one platform only. `WorkerColorsTest` pins the Kotlin copy against
+  reference vectors generated from the TS one; if you change either, change the doc and
+  both copies. The colour applies ONLY to the default scheduled look
+  (`wearsWorkerColor()`); float-in / pending / vacant keep their state colours because
+  those carry meaning, and the "mine" ring composes on top rather than replacing the tint.
+  Mobile: `HouseGridBlock` carries `userId` / `workerEmail` / `workerHouseName` through the
+  coalescer. Tests: `WorkerColorsTest` (10) + 2 in `HouseScheduleTest`; pgTAP
+  `t3b-directory-grid.sql` (20, plan raised from 15; its fixtures moved to 2029 because the
+  seeded real-Harnwell schedule collided with the old 2026-07-01 blocks).

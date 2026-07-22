@@ -9,6 +9,12 @@ plugins {
 }
 
 kotlin {
+    // Must match :androidApp's jvmToolchain(17): without this, :shared compiles with
+    // whatever JDK the Gradle daemon defaults to (observed: 21), and :androidApp's
+    // Robolectric unit tests (pinned to 17) fail with UnsupportedClassVersionError the
+    // first time they load a :shared class at test runtime.
+    jvmToolchain(17)
+
     compilerOptions {
         freeCompilerArgs.add("-Xexpect-actual-classes")
     }

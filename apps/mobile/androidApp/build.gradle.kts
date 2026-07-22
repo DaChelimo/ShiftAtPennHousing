@@ -64,6 +64,12 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+    testOptions {
+        unitTests {
+            // Robolectric needs resources/manifest on the JVM classpath.
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 kotlin {
@@ -105,6 +111,10 @@ dependencies {
     implementation(libs.firebase.messaging)
 
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.ext.junit)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.test.runner)

@@ -83,17 +83,26 @@ function addDaysUtc(date: string, days: number): string {
 // `isScheduleAdmin` flag supersedes the narrower `isRsm` for the elevated tier;
 // `isRsm` is retained for callers that only know the RSM bit. People admin /
 // leave / cap remain scope-matched at the action/RPC layer regardless.
+//
+// 2026-07-13 ruling: a plain Student Manager (`isStudentManager`) also unlocks the
+// switcher for READ-ONLY cross-house VIEW of the live schedule/calendar, just like
+// a worker can. This flag ONLY widens view/switcher gating — every SM write path
+// (override, schedule build/publish, force-trigger) stays pinned to the SM's home
+// house via the separate `isScheduleAdmin`/`adminHouseId` gates and the DB's
+// `user_can_build_schedule` backstop, so it cannot leak cross-house write access.
 export function canViewOtherHouses(opts: {
   isOnDutyHmod: boolean;
   isProjectAdmin: boolean;
   isRsm?: boolean;
   isScheduleAdmin?: boolean;
+  isStudentManager?: boolean;
 }): boolean {
   return (
     opts.isOnDutyHmod ||
     opts.isProjectAdmin ||
     opts.isRsm === true ||
-    opts.isScheduleAdmin === true
+    opts.isScheduleAdmin === true ||
+    opts.isStudentManager === true
   );
 }
 

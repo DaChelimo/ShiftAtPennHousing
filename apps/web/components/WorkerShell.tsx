@@ -9,6 +9,7 @@ import { createClient } from '../lib/supabase/client';
 import { DevClockCard } from './DevClockCard';
 import { Avatar } from './ui/Avatar';
 import { Icon, type IconName } from './ui/Icon';
+import { LogoMark, Wordmark } from './ui/Logo';
 
 export type WorkerNavItem = {
   href: string;
@@ -121,7 +122,8 @@ export function WorkerShell({
           <Icon name="menu" size={18} />
         </button>
         <Link href="/home" className="hdr-brand">
-          Shift<span className="hdr-at">@</span>PennHousing
+          <LogoMark size={24} variant="reversed" />
+          <Wordmark />
         </Link>
 
         <div className="grow" />

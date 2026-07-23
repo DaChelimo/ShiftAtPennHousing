@@ -5,6 +5,10 @@ const LOOKAHEAD_MINUTES = 3 * 60 + 5;
 const DEFAULT_NO_ACK_LOOKAHEAD_MINUTES = 15;
 const DEFAULT_BLOCK_MINUTES = 30;
 const DEFAULT_FLOAT_RETENTION_DAYS = 14;
+// Off-hours Allied-page ladder (staggered-rollout pilot): minutes a rung waits for an
+// acknowledgment before the ladder advances (responsible worker -> SM -> desk).
+// Customizable via system_config('allied_page_rung_timeout_minutes').
+const DEFAULT_LADDER_TIMEOUT_MINUTES = 10;
 // Maximum coverage secured in a single pass (BEHAVIORAL_SPECIFICATION §5.4).
 // A single contiguous vacant gap is only ever handled 8 blocks (4 hours) at a
 // time — both for the float lookup and, transitively, for the Allied-coverage
@@ -42,6 +46,7 @@ type RuntimeConfig = {
   blockMinutes: number;
   floatRetentionDays: number;
   noAckLookaheadMinutes: number;
+  ladderTimeoutMinutes: number;
 };
 type TickSummary = {
   tickedAt: string;
@@ -49,6 +54,7 @@ type TickSummary = {
   stepsFired: number;
   floatsVoided: number;
   swapsExpired: number;
+  laddersAdvanced: number;
   errors: string[];
 };
 type StepStatus = 'fired' | 'completed_via_force_trigger' | 'rolled_back';
@@ -136,6 +142,7 @@ async function loadRuntimeConfig(supabase: Supabase): Promise<RuntimeConfig> {
       'float_retention_days',
       'ack_deadline_offset_minutes',
       'no_ack_trigger_offset_minutes',
+      'allied_page_rung_timeout_minutes',
     ]);
   if (error !== null) throw error;
 
@@ -150,6 +157,10 @@ async function loadRuntimeConfig(supabase: Supabase): Promise<RuntimeConfig> {
     ),
     noAckLookaheadMinutes:
       ackDeadlineMinutes + noAckTriggerMinutes || DEFAULT_NO_ACK_LOOKAHEAD_MINUTES,
+    ladderTimeoutMinutes: parsePositiveInteger(
+      values.get('allied_page_rung_timeout_minutes'),
+      DEFAULT_LADDER_TIMEOUT_MINUTES,
+    ),
   };
 }
 
@@ -1144,6 +1155,26 @@ async function processNoAckFloats(
   return processed;
 }
 
+// Off-hours Allied-page ladder advance pass (staggered-rollout pilot). Resolves gaps
+// that started or got covered and advances any unacknowledged rung whose timeout
+// elapsed to the next rung (responsible worker -> SM -> desk). All logic — recipient
+// resolution, cleanup, the SKIP LOCKED advance — lives in the RPC; this is a thin
+// wrapper. Inert when the master switch is off: no ladder rows exist, so it no-ops.
+async function processOffhoursLadder(
+  supabase: Supabase,
+  now: Date,
+  config: RuntimeConfig,
+): Promise<number> {
+  const { data, error } = await supabase.rpc('advance_offhours_allied_ladder', {
+    p_now: now.toISOString(),
+    p_timeout_minutes: config.ladderTimeoutMinutes,
+  });
+  if (error !== null) {
+    throw error;
+  }
+  return typeof data === 'number' ? data : 0;
+}
+
 async function expirePendingSwaps(supabase: Supabase, now: Date): Promise<number> {
   const { data, error } = await supabase
     .from('swap_requests')
@@ -1236,6 +1267,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     stepsFired: 0,
     floatsVoided: 0,
     swapsExpired: 0,
+    laddersAdvanced: 0,
     errors: [],
   };
 
@@ -1243,6 +1275,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     blockMinutes: DEFAULT_BLOCK_MINUTES,
     floatRetentionDays: DEFAULT_FLOAT_RETENTION_DAYS,
     noAckLookaheadMinutes: DEFAULT_NO_ACK_LOOKAHEAD_MINUTES,
+    ladderTimeoutMinutes: DEFAULT_LADDER_TIMEOUT_MINUTES,
   };
   try {
     runtimeConfig = await loadRuntimeConfig(supabase);
@@ -1270,6 +1303,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const [noAckResult] = await Promise.allSettled([
     processNoAckFloats(supabase, now, runtimeConfig),
   ]);
+  // The ladder advance runs AFTER the vacant + no-ack passes: both may START a ladder
+  // this tick (the off-hours hmod terminal / no-ack void), and advancing after them
+  // lets a just-covered gap resolve. A ladder started this tick is never advanced now —
+  // its rung_fired_at == now, so the timeout has not elapsed.
+  const [ladderResult] = await Promise.allSettled([
+    processOffhoursLadder(supabase, now, runtimeConfig),
+  ]);
   if (vacantResult.status === 'fulfilled') {
     summary.blocksScanned = vacantResult.value.blocksScanned;
     summary.stepsFired = vacantResult.value.stepsFired;
@@ -1285,6 +1325,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
     summary.swapsExpired = swapsResult.value;
   } else {
     summary.errors.push(`pending_swaps: ${errorMessage(swapsResult.reason)}`);
+  }
+  if (ladderResult.status === 'fulfilled') {
+    summary.laddersAdvanced = ladderResult.value;
+  } else {
+    summary.errors.push(`offhours_ladder: ${errorMessage(ladderResult.reason)}`);
   }
 
   try {

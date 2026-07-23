@@ -580,15 +580,47 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   const {
     destination_house_id: destinationHouseId,
-    block_ids: blockIds,
+    block_ids: bodyBlockIds,
+    assignment_ids: assignmentIds,
     initiator_user_id: initiatorUserId,
-  } = body as { destination_house_id?: unknown; block_ids?: unknown; initiator_user_id?: unknown };
+  } = body as {
+    destination_house_id?: unknown;
+    block_ids?: unknown;
+    assignment_ids?: unknown;
+    initiator_user_id?: unknown;
+  };
 
   if (typeof destinationHouseId !== 'string' || destinationHouseId.length === 0) {
     return jsonResponse({ error: 'destination_house_id must be a non-empty string' }, 400);
   }
-  if (!Array.isArray(blockIds) || blockIds.length === 0 || !blockIds.every(isUuid)) {
-    return jsonResponse({ error: 'block_ids must be a non-empty array of UUIDs' }, 400);
+
+  // The web sends block_ids (it has them from the builder/inbox). The house grid on
+  // mobile only exposes seat assignment_ids, so accept those as an alternative and
+  // resolve them to distinct block ids here. block_ids wins if both are present.
+  let blockIds: string[];
+  if (Array.isArray(bodyBlockIds) && bodyBlockIds.length > 0 && bodyBlockIds.every(isUuid)) {
+    blockIds = bodyBlockIds as string[];
+  } else if (
+    Array.isArray(assignmentIds) &&
+    assignmentIds.length > 0 &&
+    assignmentIds.every(isUuid)
+  ) {
+    const { data: seatRows, error: seatError } = await supabase
+      .from('shift_block_assignments')
+      .select('block_id')
+      .in('assignment_id', assignmentIds);
+    if (seatError !== null) {
+      return jsonResponse({ error: seatError.message }, 400);
+    }
+    blockIds = [...new Set((seatRows ?? []).map((r) => r.block_id as string))];
+    if (blockIds.length === 0) {
+      return jsonResponse({ error: 'force_trigger_rejected', reason: 'empty_block_set' }, 409);
+    }
+  } else {
+    return jsonResponse(
+      { error: 'block_ids or assignment_ids must be a non-empty array of UUIDs' },
+      400,
+    );
   }
   // The initiator is the authenticated caller; a body initiator_user_id, if
   // present, must agree (no acting on another user's behalf).

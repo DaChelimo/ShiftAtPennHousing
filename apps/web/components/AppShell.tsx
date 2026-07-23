@@ -9,6 +9,7 @@ import { createClient } from '../lib/supabase/client';
 import { DevClockCard } from './DevClockCard';
 import { Avatar } from './ui/Avatar';
 import { Icon, type IconName } from './ui/Icon';
+import { LogoMark, Wordmark } from './ui/Logo';
 import { Tag } from './ui/Tag';
 
 export type ShellHouse = { id: string; name: string; restricted: boolean };
@@ -256,7 +257,8 @@ export function AppShell({
           <Icon name="menu" size={18} />
         </button>
         <Link href="/" className="hdr-brand">
-          Shift<span className="hdr-at">@</span>PennHousing
+          <LogoMark size={24} variant="reversed" />
+          <Wordmark />
         </Link>
         <div className="hdr-sep hdr-nonessential" />
         <div className="hdr-nonessential">

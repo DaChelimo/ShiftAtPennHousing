@@ -1,16 +1,11 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+import { fetchAppNow } from '../_shared/clock.ts';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-const errorStatus: Record<string, number> = {
-  empty_drop: 400,
-  drop_not_owned: 403,
-  drop_not_contiguous: 400,
-  drop_past_block: 400,
 };
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -34,6 +29,17 @@ function errorCode(message: string): string {
   return message.trim().split(/\s+/)[0] ?? message;
 }
 
+// acknowledge-allied-page: thin worker-authenticated wrapper around the service-role-only
+// `acknowledge_allied_page` RPC (migration 20260713000001). Mirrors acknowledge-float.
+//
+// During the staggered pilot, an off-hours coverage-lock event routes through the
+// Allied-page ladder (responsible worker -> SM -> desk). "I've called the desk" is the
+// one legitimate manual action that resolves the ladder so no further rung fires. The
+// RPC verifies the caller actually received an allied_page alert for the block, so a
+// user cannot resolve a ladder they were never paged for.
+//
+// Idempotent on terminal state: a ladder already acknowledged/resolved returns
+// { acknowledged: false, reason: 'already_resolved' }, passed through as a 200.
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders });
@@ -44,7 +50,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   const pathname = new URL(req.url).pathname;
-  if (!/^(?:\/drop-shift)?\/drop-shift$/.test(pathname)) {
+  if (!/^(?:\/acknowledge-allied-page)?\/acknowledge-allied-page$/.test(pathname)) {
     return jsonResponse({ error: 'Not found' }, 404);
   }
 
@@ -87,36 +93,21 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return jsonResponse({ error: 'Request body must be an object' }, 400);
   }
 
-  const { assignment_ids: assignmentIds, drop_type: dropType } = body as {
-    assignment_ids?: unknown;
-    drop_type?: unknown;
-  };
+  const { block_id: blockId } = body as { block_id?: unknown };
 
-  if (!Array.isArray(assignmentIds) || assignmentIds.length === 0 || !assignmentIds.every(isUuid)) {
-    return jsonResponse({ error: 'assignment_ids must be a non-empty UUID array' }, 400);
+  if (!isUuid(blockId)) {
+    return jsonResponse({ error: 'block_id must be a UUID' }, 400);
   }
 
-  if (dropType !== 'temporary') {
-    return jsonResponse({ error: "drop_type must be 'temporary'" }, 400);
-  }
-
-  const { data, error } = await supabase
-    .rpc('drop_shift', {
-      p_assignment_ids: assignmentIds,
-      p_user_id: user.id,
-      p_as_of: new Date().toISOString(),
-    })
-    .single();
+  const { data, error } = await supabase.rpc('acknowledge_allied_page', {
+    p_block_id: blockId,
+    p_user_id: user.id,
+    p_now: (await fetchAppNow(supabase)).toISOString(),
+  });
 
   if (error !== null) {
-    const code = errorCode(error.message);
-    return jsonResponse({ error: code }, errorStatus[code] ?? 400);
+    return jsonResponse({ error: errorCode(error.message) }, 400);
   }
 
-  return jsonResponse({
-    assignment_ids: data.dropped_assignment_ids,
-    drop_type: dropType,
-    shortNoticeWarning: data.short_notice_warning,
-    directHmodNotification: data.direct_hmod_notification,
-  });
+  return jsonResponse(data ?? { acknowledged: false, reason: 'not_found' });
 });

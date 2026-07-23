@@ -2,20 +2,20 @@
 //
 // `permanent_drop_slot(user, house, dow, block_start_locals, drop_initiated_at, operator?)` vacates
 // the worker's recurring slot (every matching DOW+local-time in the regular school year, after the
-// drop instant, through the semester end) to vacant/permanent_drop, and alerts the house SM. When
-// an operator (not the worker) initiates it, the worker is also alerted.
+// drop instant, through the semester end) to vacant/permanent_drop. The passive SM alert was retired
+// (2026-07-13). When an operator (not the worker) initiates it, the worker is alerted.
 
 import { describe, expect, it } from 'vitest';
 
 import { inTx } from './client';
 import { anchors, expectAll, getAssignments, notificationsFor, workerWithRun } from './helpers';
-import { BUILDER, PERIOD_ID, SM } from './roster';
+import { BUILDER, PERIOD_ID } from './roster';
 
 const PERM_DROP = `SELECT permanent_drop_slot($1::uuid, $2::text, $3::int, $4::text[],
   $5::timestamptz, $6::uuid) AS r`;
 
 describe('04 drop (permanent)', () => {
-  it('vacates the recurring slot to permanent_drop and alerts the SM', async () => {
+  it('vacates the recurring slot to permanent_drop', async () => {
     await inTx(async (db) => {
       const run = await workerWithRun(db, 'gregory', '2026-03-04');
       const t = await anchors(db, run.firstStartAt);
@@ -41,12 +41,6 @@ describe('04 drop (permanent)', () => {
       const after = await getAssignments(db, run.assignmentIds);
       expectAll(after, 'vacant', 'permanent_drop');
       for (const a of after) expect(a.user_id).toBeNull();
-
-      // Exactly one SM alert (the e… all-house SM is the only SM scoped to gregory).
-      const alerts = await notificationsFor(db, SM.userId, 'sm_permanent_drop_alert');
-      expect(alerts).toHaveLength(1);
-      expect(alerts[0].payload.house_id).toBe('gregory');
-      expect(alerts[0].payload.dropping_user_id).toBe(run.userId);
     });
   });
 

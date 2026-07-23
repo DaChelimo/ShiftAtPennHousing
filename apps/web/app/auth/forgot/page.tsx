@@ -4,7 +4,7 @@ import { useState } from 'react';
 
 import { Button } from '../../../components/ui/Button';
 import { Field, TextInput } from '../../../components/ui/Field';
-import { Icon } from '../../../components/ui/Icon';
+import { LogoMark, Wordmark } from '../../../components/ui/Logo';
 import { createClient } from '../../../lib/supabase/client';
 import '../../login/login.css';
 
@@ -34,12 +34,8 @@ export default function ForgotPasswordPage() {
       <section className="login-form-side" style={{ margin: '0 auto' }}>
         <div className="login-form col gap-6">
           <div className="login-form-lockup">
-            <span className="login-mark">
-              <Icon name="calendar" size={20} />
-            </span>
-            <span className="login-wordmark">
-              Shift<span className="at">@</span>PennHousing
-            </span>
+            <LogoMark size={32} className="login-mark" />
+            <Wordmark className="login-wordmark" />
           </div>
 
           <div className="login-heading">

@@ -9,6 +9,7 @@ import {
   getSessionUser,
   isRsm,
   isScheduleAdmin,
+  isStudentManager,
 } from '../../../lib/auth';
 import {
   defaultCalendarWeek,
@@ -60,6 +61,7 @@ export default async function CalendarPage({
     isProjectAdmin: await isProjectAdministrator(user.userId),
     isRsm: isRsm(user),
     isScheduleAdmin: isScheduleAdmin(user),
+    isStudentManager: isStudentManager(user),
   });
   const validHouseIds = (await getShellHouses()).map((h) => h.id);
   const viewHouse = resolveCalendarHouse({

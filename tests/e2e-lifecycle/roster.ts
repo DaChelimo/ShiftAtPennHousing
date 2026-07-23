@@ -151,11 +151,10 @@ export const HMS: Admin[] = [
 ];
 
 // A single Site Manager scoped to EVERY house (mirrors BUILDER's all-house pattern; user_roles'
-// PK is (user_id, role, scope_house_id), so one SM may hold 13 scope rows). SMs are the
-// recipients of `sm_permanent_drop_alert` (scenario 4) and, in S4, see inbound floats + the live
-// house schedule for their house (PLAN §2.6 #7). Added by S3 — S2's roster was HM/BM only. The
-// seeded a… `sm.quad` fixture is left untouched; SM-notification scenarios use a non-quad house so
-// this e… SM is the sole recipient there.
+// PK is (user_id, role, scope_house_id), so one SM may hold 13 scope rows). In S4 the SM sees
+// inbound floats + the live house schedule for their house (PLAN §2.6 #7). (The `sm_permanent_drop_alert`
+// the SM formerly received on a permanent drop was retired 2026-07-13.) Added by S3 — S2's roster
+// was HM/BM only. The seeded a… `sm.quad` fixture is left untouched.
 export const SM: Admin = {
   userId: eid(5, 0xaaaa),
   name: 'E2E Site Manager',

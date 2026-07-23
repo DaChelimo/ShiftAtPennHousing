@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
-import { markRead, setAlliedResolved } from '../../lib/actions/inbox';
+import { acknowledgeAlliedPage, markRead, setAlliedResolved } from '../../lib/actions/inbox';
 import type { InboxData, InboxItem as InboxItemT } from '../../lib/data/inbox';
 import { createClient } from '../../lib/supabase/client';
 import { Button, EmptyState, Icon, PageHead, Tabs, Tag, type IconName } from '../ui';
@@ -31,7 +31,6 @@ function useInboxRealtime() {
 
 const ICON_FOR: Record<string, IconName> = {
   hmod_urgent: 'shield',
-  sm_permanent_drop_alert: 'warn',
   sw_permanent_removal_alert: 'warn',
   hm_leave_notice: 'power',
   swap_request: 'swap',
@@ -121,6 +120,70 @@ function CoverageCard({ item }: { item: InboxItemT }) {
             <span>Resolved</span>
           </label>
         )}
+      </div>
+
+      {error !== null && <div className="cov-error">{error}</div>}
+    </div>
+  );
+}
+
+// An off-hours ladder "call the desk" page (staggered-rollout pilot). Unlike a
+// coverage card (a status the manager resolves), this is a direct instruction: call the
+// desk to secure Allied coverage, then acknowledge so the ladder stops escalating.
+function AlliedPageCard({ item }: { item: InboxItemT }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onAck() {
+    if (item.alliedPageBlockId === null) return;
+    setBusy(true);
+    setError(null);
+    const res = await acknowledgeAlliedPage({ blockId: item.alliedPageBlockId });
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    router.refresh();
+  }
+
+  return (
+    <div className="cov-card is-urgent" data-testid="inbox-allied-page-card">
+      <div className="cov-card-top">
+        <span className="cov-house">
+          <span className="cov-house-icon">
+            <Icon name="shield" size={15} />
+          </span>
+          <b className="cov-house-name">{item.houseName ?? 'House'}</b>
+        </span>
+        <Tag kind="red" icon="warnFill">
+          Call the desk
+        </Tag>
+      </div>
+
+      <div className="cov-when">
+        <span className="cov-date">{item.dateLabel ?? '-'}</span>
+        {item.windowLabel && <span className="cov-window t-mono">{item.windowLabel}</span>}
+      </div>
+
+      {item.reason && <div className="cov-reason">{item.reason}</div>}
+
+      <div className="cov-foot" style={{ gap: 12 }}>
+        {item.deskPhone && (
+          <a className="t-mono" href={`tel:${item.deskPhone}`}>
+            {item.deskPhone}
+          </a>
+        )}
+        <Button
+          kind="primary"
+          size="sm"
+          data-testid="inbox-allied-page-ack"
+          disabled={busy}
+          onClick={onAck}
+        >
+          I have called the desk
+        </Button>
       </div>
 
       {error !== null && <div className="cov-error">{error}</div>}
@@ -220,15 +283,26 @@ export function ActionInbox({ data }: { data: InboxData }) {
 
       <div style={{ marginTop: 16 }}>
         {tab === 'coverage' &&
-          (data.alliedActive.length === 0 ? (
+          (data.alliedPages.length === 0 && data.alliedActive.length === 0 ? (
             <div className="card">
               <EmptyState
-                title="All clear — no coverage needed"
+                title="All clear. No coverage needed"
                 desc="Allied-coverage requests appear here, soonest first, in real time."
               />
             </div>
           ) : (
-            <CoverageGrid items={data.alliedActive} testId="inbox-active-grid" />
+            <>
+              {data.alliedPages.length > 0 && (
+                <div className="cov-grid" data-testid="inbox-allied-page-grid">
+                  {data.alliedPages.map((n) => (
+                    <AlliedPageCard key={n.id} item={n} />
+                  ))}
+                </div>
+              )}
+              {data.alliedActive.length > 0 && (
+                <CoverageGrid items={data.alliedActive} testId="inbox-active-grid" />
+              )}
+            </>
           ))}
 
         {tab === 'archive' &&
@@ -247,7 +321,11 @@ export function ActionInbox({ data }: { data: InboxData }) {
         {tab === 'other' &&
           (data.other.length === 0 ? (
             <div className="card">
-              <EmptyState title="No notifications" desc="Swaps, leave and reminders show up here." tone="neutral" />
+              <EmptyState
+                title="No notifications"
+                desc="Swaps, leave and reminders show up here."
+                tone="neutral"
+              />
             </div>
           ) : (
             <div className="inbox-list">

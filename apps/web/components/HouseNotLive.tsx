@@ -1,4 +1,5 @@
 import { Card } from './ui/Card';
+import { LogoMark, Wordmark } from './ui/Logo';
 
 // Staggered-launch placeholder. Shown to a worker whose home house has not gone
 // live yet: they can sign in, but the portal itself is held back until their house
@@ -10,8 +11,9 @@ export function HouseNotLive({ houseName, email }: { houseName: string; email: s
       style={{ minHeight: '100dvh', alignItems: 'center', justifyContent: 'center', padding: 24 }}
     >
       <Card pad className="col gap-2" style={{ maxWidth: 440, textAlign: 'center' }}>
-        <div className="login-wordmark" style={{ justifyContent: 'center' }}>
-          Shift<span className="at">@</span>PennHousing
+        <div className="login-form-lockup" style={{ display: 'flex', justifyContent: 'center' }}>
+          <LogoMark size={28} className="login-mark" />
+          <Wordmark className="login-wordmark" />
         </div>
         <div className="t-h2" data-testid="house-not-live-title">
           Shift isn&apos;t live at {houseName} yet

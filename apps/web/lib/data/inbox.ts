@@ -47,21 +47,24 @@ export type InboxItem = {
   agoLabel: string | null; // "Ended 2h ago" — archived cards only
   reason: string | null;
   timeLabel: string; // when the notification arrived (the Notifications list)
+  alliedPageBlockId: string | null; // off-hours ladder alert: block to acknowledge
+  deskPhone: string | null; // off-hours ladder alert: the desk to call
 };
 
 export type InboxData = {
+  alliedPages: InboxItem[]; // off-hours ladder "call the desk" alerts — ack, not resolve
   alliedActive: InboxItem[]; // window not yet ended — sorted soonest first
   alliedArchived: InboxItem[]; // window ended < 24h ago — sorted most-recent first
   other: InboxItem[]; // non-Allied notifications, due — sorted newest first
-  actionRequiredCount: number; // active Allied alerts that are still unresolved
-  activeCount: number; // alliedActive.length (the Coverage tab badge)
+  actionRequiredCount: number; // active Allied alerts / ladder pages still open
+  activeCount: number; // Coverage tab badge (ladder pages + active Allied)
   archivedCount: number; // alliedArchived.length (the Archive tab badge)
   otherUnreadCount: number; // unread non-Allied notifications (the Notifications badge)
 };
 
 const TITLE: Record<string, string> = {
   hmod_urgent: 'Allied coverage needed',
-  sm_permanent_drop_alert: 'A worker permanently dropped a slot',
+  allied_page: 'Call the desk for Allied coverage',
   sw_permanent_removal_alert: 'You were removed from a recurring slot',
   hm_leave_notice: 'Leave / coverage change',
   swap_request: 'Swap request',
@@ -74,6 +77,8 @@ const REASON: Record<string, string> = {
   float_no_acknowledgment: 'No floater found or the floater did not acknowledge in time.',
   no_floater_found: 'No floater found in the eligible source houses.',
   floater_declined: 'The assigned floater declined.',
+  escalation_chain: 'The desk will be empty and no one picked up the shift.',
+  ladder_no_acknowledgment: 'The prior contact did not confirm. Please call the desk now.',
 };
 
 function prettifyHouse(id: string): string {
@@ -143,6 +148,8 @@ function payloadOf(row: NotificationRow): {
   blockStart: string | null;
   blockEnd: string | null;
   reason: string | null;
+  blockId: string | null;
+  deskPhone: string | null;
 } {
   const p = (row.payload ?? {}) as Record<string, unknown>;
   return {
@@ -150,6 +157,8 @@ function payloadOf(row: NotificationRow): {
     blockStart: typeof p.block_start_at === 'string' ? p.block_start_at : null,
     blockEnd: typeof p.block_end_at === 'string' ? p.block_end_at : null,
     reason: typeof p.reason === 'string' ? p.reason : null,
+    blockId: typeof p.block_id === 'string' ? p.block_id : null,
+    deskPhone: typeof p.desk_phone === 'string' ? p.desk_phone : null,
   };
 }
 
@@ -168,6 +177,7 @@ function enrich(row: NotificationRow, lifecycle: AlliedLifecycle | null, now: Da
   const p = payloadOf(row);
   const resolved = isResolvedAllied(filterInput(row));
   const endIso = alliedWindowEndIso(filterInput(row));
+  const isAlliedPage = row.type === 'allied_page';
   return {
     id: row.notification_id,
     type: row.type,
@@ -178,11 +188,21 @@ function enrich(row: NotificationRow, lifecycle: AlliedLifecycle | null, now: Da
     title: TITLE[row.type] ?? 'Notification',
     houseName: p.houseId ? prettifyHouse(p.houseId) : null,
     dateLabel: p.blockStart ? dayDateLabel(p.blockStart) : null,
-    windowLabel: p.blockStart && endIso ? `${hm(p.blockStart)}-${hm(endIso)}` : null,
+    // Allied-page alerts carry only a block START (a 30-min block), so the label is the
+    // start time alone; hmod_urgent alerts carry a full coverage window.
+    windowLabel: isAlliedPage
+      ? p.blockStart
+        ? hm(p.blockStart)
+        : null
+      : p.blockStart && endIso
+        ? `${hm(p.blockStart)}-${hm(endIso)}`
+        : null,
     windowStartIso: p.blockStart,
     agoLabel: lifecycle === 'archived' && endIso ? agoLabel(endIso, now) : null,
     reason: p.reason ? (REASON[p.reason] ?? p.reason.replace(/_/g, ' ')) : null,
     timeLabel: timeLabel(row.created_at, now),
+    alliedPageBlockId: isAlliedPage ? p.blockId : null,
+    deskPhone: isAlliedPage ? p.deskPhone : null,
   };
 }
 
@@ -202,6 +222,7 @@ export async function getInboxData(now: Date = new Date()): Promise<InboxData> {
     data: { user },
   } = await supabase.auth.getUser();
   const empty: InboxData = {
+    alliedPages: [],
     alliedActive: [],
     alliedArchived: [],
     other: [],
@@ -223,7 +244,19 @@ export async function getInboxData(now: Date = new Date()): Promise<InboxData> {
     .order('created_at', { ascending: false })
     .limit(200);
 
-  const due = ((rows ?? []) as NotificationRow[]).filter((r) => isDue(filterInput(r), nowIso));
+  const allRows = (rows ?? []) as NotificationRow[];
+
+  // Off-hours ladder "call the desk" pages: surfaced immediately while unacknowledged,
+  // independent of the Allied-window lifecycle (they carry no coverage-window end).
+  const alliedPageRows = allRows.filter(
+    (r) => r.type === 'allied_page' && r.acknowledged_at === null,
+  );
+  alliedPageRows.sort((a, b) => startMs(a) - startMs(b));
+  const alliedPages = alliedPageRows.map((r) => enrich(r, null, now));
+
+  const due = allRows
+    .filter((r) => r.type !== 'allied_page')
+    .filter((r) => isDue(filterInput(r), nowIso));
 
   const activeRows: NotificationRow[] = [];
   const archivedRows: NotificationRow[] = [];
@@ -255,11 +288,13 @@ export async function getInboxData(now: Date = new Date()): Promise<InboxData> {
   const other = otherRows.map((r) => enrich(r, null, now));
 
   return {
+    alliedPages,
     alliedActive,
     alliedArchived,
     other,
-    actionRequiredCount: alliedActive.filter((i) => i.urgent).length,
-    activeCount: alliedActive.length,
+    // Ladder pages always need attention (an unacknowledged call-the-desk request).
+    actionRequiredCount: alliedPages.length + alliedActive.filter((i) => i.urgent).length,
+    activeCount: alliedPages.length + alliedActive.length,
     archivedCount: alliedArchived.length,
     otherUnreadCount: other.filter((i) => i.unread).length,
   };

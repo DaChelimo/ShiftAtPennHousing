@@ -10,6 +10,7 @@ import {
   isHouseAdmin,
   isRsm,
   isScheduleAdmin,
+  isStudentManager,
   isWorker,
 } from '../../lib/auth';
 import { isProjectAdministrator } from '../../lib/data/config';
@@ -78,6 +79,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       icon: 'hours',
       group: 'Operate',
     });
+    nav.push({
+      href: '/assistant',
+      label: 'Assistant',
+      testId: 'nav-assistant',
+      icon: 'chat',
+      group: 'Operate',
+    });
   }
   if (isHouseAdmin(user)) {
     nav.push({
@@ -106,6 +114,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       label: 'Weekly cap',
       testId: 'nav-admin-cap',
       icon: 'hours',
+      group: 'Manage',
+    });
+    nav.push({
+      href: '/admin/knowledge',
+      label: 'Knowledge base',
+      testId: 'nav-admin-knowledge',
+      icon: 'doc',
       group: 'Manage',
     });
     nav.push({
@@ -177,6 +192,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     isProjectAdmin,
     isRsm: isRsm(user),
     isScheduleAdmin: isScheduleAdmin(user),
+    isStudentManager: isStudentManager(user),
   });
   const houses = canSwitchHouse
     ? await getShellHouses()

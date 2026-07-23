@@ -85,6 +85,14 @@ export function isRsm(user: SessionUser | null): boolean {
   return !!user && user.roles.some((r) => r.role === 'rsm');
 }
 
+// 2026-07-13 ruling: a plain Student Manager gets read-only cross-house VIEW of the
+// live schedule/calendar (like a worker can), so the house switcher unlocks for
+// them. This is a VIEW-only widening: every SM write stays pinned to their home
+// house via isScheduleAdmin / adminHouseId (SM is excluded from isScheduleAdmin).
+export function isStudentManager(user: SessionUser | null): boolean {
+  return !!user && user.roles.some((r) => r.role === 'sm');
+}
+
 // §2.1: does this user hold the Student Worker role? Workers get the /home
 // worker experience (their own shifts, open pickups, break claims, preferences).
 export function isWorker(user: SessionUser | null): boolean {

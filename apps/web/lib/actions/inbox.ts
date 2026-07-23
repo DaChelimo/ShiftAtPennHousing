@@ -60,6 +60,35 @@ export async function setAlliedResolved(input: {
   return { ok: true, data: undefined };
 }
 
+// "I've called the desk" — acknowledge an off-hours Allied-page ladder alert. Resolves
+// the ladder so no further rung (SM, then desk) fires. Reuses the same service-client +
+// signed-in-user pattern; the acknowledge_allied_page RPC (migration 20260713000001)
+// verifies the caller actually received an allied_page alert for the block, so a manager
+// cannot resolve a ladder they were never paged for.
+export async function acknowledgeAlliedPage(input: {
+  blockId: string;
+}): Promise<ActionResult<undefined>> {
+  const me = await getSessionUser();
+  if (me === null) {
+    return { ok: false, error: 'Your session has expired. Sign in again.' };
+  }
+
+  const service = createServiceClient();
+  const { data, error } = await service.rpc('acknowledge_allied_page', {
+    p_block_id: input.blockId,
+    p_user_id: me.userId,
+    p_now: (await simNow()).toISOString(),
+  });
+  if (error !== null) return { ok: false, error: friendlyMessage(error.message) };
+  const result = (data ?? null) as { acknowledged?: boolean; reason?: string } | null;
+  if (result?.acknowledged === false && result.reason === 'not_a_recipient') {
+    return { ok: false, error: 'This alert was not sent to you.' };
+  }
+
+  revalidatePath('/inbox');
+  return { ok: true, data: undefined };
+}
+
 // Mark a (non-urgent) notification read — reuses the existing mark_notification_read
 // RPC (migration 20260601000001). Any signed-in user may mark their own read; the
 // RPC's spoof guard + recipient scope enforce ownership.
@@ -68,7 +97,7 @@ export async function markRead(input: {
 }): Promise<ActionResult<undefined>> {
   const me = await getSessionUser();
   if (me === null) {
-    return { ok: false, error: 'Your session has expired — sign in again.' };
+    return { ok: false, error: 'Your session has expired. Sign in again.' };
   }
 
   const service = createServiceClient();

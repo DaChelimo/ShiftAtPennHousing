@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { getSessionUser, isHouseAdmin } from '../auth';
+import { getSessionUser, isHouseAdmin, isRsm } from '../auth';
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from '../env';
 import { createClient, createServiceClient } from '../supabase/server';
 import { simNow } from '../time/simClock';
@@ -53,6 +53,14 @@ export async function submitLeave(input: {
 }): Promise<ActionResult<{ leaveId: string; mailtoUrl: string | null }>> {
   const me = await getSessionUser();
   if (!isHouseAdmin(me)) return { ok: false, error: 'Only an HM, RSM or BM may submit leave.' };
+
+  // Pilot policy (Option 1, 2026-07-13): while the off-hours Allied-page ladder is the
+  // escalation path, an RSM's on-hours coverage notifications resolve strictly to the
+  // replacement they name. A null replacement would fall through to the HMOD terminal,
+  // which the pilot deliberately avoids, so require an explicit replacement for an RSM.
+  if (isRsm(me) && input.replacementUserId === null) {
+    return { ok: false, error: 'An RSM must name a replacement when submitting leave.' };
+  }
 
   const svc = createServiceClient();
   const { data, error } = await svc.rpc('submit_hm_leave', {

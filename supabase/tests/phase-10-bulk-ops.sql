@@ -54,7 +54,7 @@
 
 BEGIN;
 
-SELECT plan(47);
+SELECT plan(46);
 
 -- ============================================================
 -- 0. Fixtures: users, the SM-of-harrison role, the recurring-slot blocks, the
@@ -91,7 +91,8 @@ VALUES
   ('0a000001-0000-0000-0000-000000000004', 'SM (harrison)',      'p10-sm05@test.local',    'harrison', true),
   ('0a000001-0000-0000-0000-000000000005', 'Worker2 (harrison)', 'p10-worker2@test.local', 'harrison', true);
 
--- SM of harrison — the recipient of the sm_permanent_drop_alert (§10 / §8.4.1).
+-- SM of harrison — the operator in the SM-initiated removal case C (§8.4.2). (The
+-- passive sm_permanent_drop_alert this SM formerly received was retired 2026-07-13.)
 INSERT INTO public.user_roles (user_id, role, scope_house_id)
 VALUES ('0a000001-0000-0000-0000-000000000004', 'sm', 'harrison')
 ON CONFLICT DO NOTHING;
@@ -337,14 +338,7 @@ SELECT is(
   'drop: a next-semester occurrence is excluded (semester_end_date boundary)'
 );
 
--- SM of harrison notified; the self-dropping worker is NOT sent a removal alert.
-SELECT is(
-  (SELECT count(*)::integer FROM public.notifications
-   WHERE recipient_user_id = '0a000001-0000-0000-0000-000000000004'
-     AND type = 'sm_permanent_drop_alert'),
-  1,
-  'drop: the SM of the affected house receives one sm_permanent_drop_alert (§8.4.1 / §10)'
-);
+-- The self-dropping worker is NOT sent a removal alert (SM alert retired 2026-07-13).
 SELECT is(
   (SELECT count(*)::integer FROM public.notifications
    WHERE recipient_user_id = '0a000001-0000-0000-0000-000000000001'

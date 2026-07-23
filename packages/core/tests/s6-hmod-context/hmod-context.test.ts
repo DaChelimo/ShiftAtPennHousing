@@ -170,7 +170,8 @@ describe('canViewOtherHouses — the cross-house gate (D5)', () => {
   });
 
   it('should be false for a non-admin with no cross-house flag set', () => {
-    // D2c: a plain worker (sw / own-house sm) is house-scoped — no flag set → false.
+    // D2c: a plain worker (sw) is house-scoped — no flag set → false. The function
+    // is pure: gating comes from the flags the caller passes, not the role itself.
     expect(canViewOtherHouses({ isOnDutyHmod: false, isProjectAdmin: false })).toBe(false);
   });
 
@@ -185,6 +186,14 @@ describe('canViewOtherHouses — the cross-house gate (D5)', () => {
     // for them even off-duty. `isScheduleAdmin` supersedes the narrower `isRsm`.
     expect(
       canViewOtherHouses({ isOnDutyHmod: false, isProjectAdmin: false, isScheduleAdmin: true }),
+    ).toBe(true);
+  });
+
+  it('should be true for a plain Student Manager (2026-07-13 read-only cross-house view)', () => {
+    // A plain SM gets read-only cross-house VIEW of the live schedule/calendar; the
+    // switcher unlocks. SM writes stay home-house (isScheduleAdmin excludes sm).
+    expect(
+      canViewOtherHouses({ isOnDutyHmod: false, isProjectAdmin: false, isStudentManager: true }),
     ).toBe(true);
   });
 });

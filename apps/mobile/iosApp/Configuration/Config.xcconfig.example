@@ -15,7 +15,7 @@ SHIFT_DATA_SOURCE = live
 // jwt_secret in supabase/config.toml) or read it back with `supabase status` -> ANON_KEY.
 SUPABASE_SCHEME = http
 SUPABASE_HOST = 127.0.0.1:54321
-SUPABASE_ANON_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
+SUPABASE_ANON_KEY = <supabase status -> ANON_KEY>
 
 SLASH = /
 SUPABASE_URL = $(SUPABASE_SCHEME):$(SLASH)$(SLASH)$(SUPABASE_HOST)

@@ -506,6 +506,11 @@ struct ShiftsRootView: View {
     // §4 save-safety — a tab switch requested while Preferences has unsaved edits is
     // deferred here until the guard dialog resolves it.
     @State private var pendingTab: Tab?
+    // The Assistant has no bottom-bar item of its own (it opens from the My-Shifts FAB or
+    // the More sheet, from whichever tab the worker was on), so its back button needs
+    // somewhere to return to. Captured in `openAssistant()`, not derived from `tab` later,
+    // since `tab` is already `.assistant` by the time the Assistant's own header renders.
+    @State private var previousBeforeAssistant: Tab = .mine
     @State private var dropTarget: MyShift?
     @State private var claimTarget: OpenShift?
     @State private var showAck = false
@@ -709,7 +714,7 @@ struct ShiftsRootView: View {
                 } else if tab == .house {
                     houseTab
                 } else if tab == .assistant {
-                    AssistantTabView(model: assistantModel)
+                    AssistantTabView(model: assistantModel, onBack: { requestTab(previousBeforeAssistant) })
                 } else if tab == .preferences {
                     // Preferences owns its own bounded scroll window (pinned header + a
                     // scrolling timeline), so it renders OUTSIDE the shared page ScrollView.
@@ -786,7 +791,7 @@ struct ShiftsRootView: View {
             // The first-run tour rings this button (on My Shifts, where the tour runs).
             .overlay(alignment: .bottomTrailing) {
                 if tab == .mine {
-                    AskAssistantButtonView { requestTab(.assistant) }
+                    AskAssistantButtonView { openAssistant() }
                         .padding(.trailing, 16)
                         .padding(.bottom, 14)
                 }
@@ -1402,7 +1407,7 @@ struct ShiftsRootView: View {
         let c = ShiftColors.resolve(scheme)
         return Button(action: {
             showMore = false
-            requestTab(which)
+            if which == .assistant { openAssistant() } else { requestTab(which) }
         }) {
             HStack(spacing: 14) {
                 Image(systemName: icon).font(.system(size: 18)).foregroundColor(c.sec)
@@ -1435,6 +1440,13 @@ struct ShiftsRootView: View {
         } else {
             navigateTo(which)
         }
+    }
+
+    /// Opens the Assistant, capturing wherever the worker was so its back button can return
+    /// there — see `previousBeforeAssistant`.
+    private func openAssistant() {
+        previousBeforeAssistant = tab
+        requestTab(.assistant)
     }
 
     private func kitState(_ s: MyShiftCardState) -> ShiftState {

@@ -50,7 +50,7 @@ final class AssistantObservable: ObservableObject {
                     }
                 }
             } catch {
-                self.vm.onError(message: "Couldn't reach the assistant. Try again.")
+                self.vm.onError(message: "Couldn't reach Snoopy. Try again.")
             }
         }
     }
@@ -64,13 +64,33 @@ final class AssistantObservable: ObservableObject {
 /// the answer routed to a duty contact.
 struct AssistantTabView: View {
     @ObservedObject var model: AssistantObservable
+    /// The Assistant has no bottom-bar item of its own — it opens from the My-Shifts FAB or
+    /// the More sheet, from whichever tab the worker was on — so closing it needs somewhere
+    /// to return to that isn't hardcoded to My Shifts.
+    let onBack: () -> Void
     @State private var input: String = ""
     @Environment(\.colorScheme) private var scheme
     private var c: ShiftColors { .resolve(scheme) }
 
     var body: some View {
         VStack(spacing: 0) {
-            PageTitle(title: "Assistant")
+            HStack(spacing: 6) {
+                Button(action: onBack) {
+                    Image(systemName: ShiftIcons.chevronLeft)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(c.sec)
+                        .frame(width: 30, height: 30)
+                        .background(c.surfaceVar)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("assistant_back")
+                Text("Ask Snoopy")
+                    .font(ShiftFont.sans(26, .bold, relativeTo: .largeTitle))
+                    .foregroundColor(c.ink)
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, 10).padding(.trailing, 16).padding(.top, 10).padding(.bottom, 8)
             if model.state.messages.isEmpty {
                 emptyState
             } else {

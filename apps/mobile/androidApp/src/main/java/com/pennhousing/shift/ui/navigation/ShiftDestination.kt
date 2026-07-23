@@ -55,12 +55,11 @@ sealed interface ShiftDestination : NavKey {
         val BOTTOM_BAR: List<ShiftDestination> = listOf(MyShifts, OpenShifts, House, Swaps)
 
         /**
-         * Destinations that light the "More" item up as selected. Deliberately excludes
-         * [Assistant], which is reachable from the More sheet but does not highlight it.
-         * This preserves exactly what the old `selectedIndex in TAB_UPDATES..TAB_SETTINGS`
-         * range evaluated to, now stated rather than implied by constant ordering.
+         * Destinations that light the "More" item up as selected: the episodic ones plus
+         * [Assistant], since the Assistant is only reachable from the My-Shifts FAB or the
+         * More sheet and has no bottom-bar item of its own.
          */
-        val MORE_SELECTS: Set<ShiftDestination> = setOf(Updates, Preferences, BreakShifts, Settings)
+        val MORE_SELECTS: Set<ShiftDestination> = setOf(Updates, Preferences, BreakShifts, Settings, Assistant)
 
         /** Every destination, each of which owns its own back stack. */
         val ALL: Set<ShiftDestination> =

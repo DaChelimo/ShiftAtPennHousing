@@ -17,13 +17,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -77,6 +77,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun AssistantScreen(
     vm: AssistantViewModel,
+    onBack: () -> Unit,
     repository: AssistantRepository = WorkerBackend.assistantRepository,
 ) {
     val c = ShiftTheme.colors
@@ -103,7 +104,7 @@ fun AssistantScreen(
                         is AssistantStreamEvent.Failed -> vm.onError(event.message)
                     }
                 }
-            }.onFailure { vm.onError(it.message ?: "Couldn't reach the assistant. Try again.") }
+            }.onFailure { vm.onError(it.message ?: "Couldn't reach Snoopy. Try again.") }
         }
     }
 
@@ -113,13 +114,24 @@ fun AssistantScreen(
     }
 
     Column(Modifier.fillMaxSize().background(c.bg)) {
-        Text(
-            "Assistant",
-            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 8.dp),
-            color = c.ink,
-            fontSize = 26.sp,
-            fontWeight = FontWeight.Bold,
-        )
+        Row(
+            Modifier.fillMaxWidth().padding(start = 10.dp, end = 16.dp, top = 10.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Box(
+                Modifier
+                    .size(30.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(c.surfaceVar)
+                    .clickable(onClick = onBack)
+                    .testTag("assistant_back"),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(ShiftIcons.ChevronLeft, contentDescription = "Back", tint = c.sec, modifier = Modifier.size(16.dp))
+            }
+            Text("Ask Snoopy", color = c.ink, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+        }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             if (state.isEmpty) {
                 AssistantEmptyState(onPrompt = ::submit)

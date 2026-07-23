@@ -24,7 +24,10 @@ final class SwapTourUITests: XCTestCase {
         XCTAssertTrue(replayRow.waitForExistence(timeout: 5))
         replayRow.tap() // primes swapTourModel + navigates back to My Shifts
 
-        let shiftCard = app.buttons["calendar_shift_card"]
+        // `calendar_shift_card` is the same identifier on every row (by design; see
+        // ContentView.swift), so more than one demo shift on My Shifts means more than one
+        // match. Any of them opens the manage sheet, so the first is fine here.
+        let shiftCard = app.buttons["calendar_shift_card"].firstMatch
         XCTAssertTrue(shiftCard.waitForExistence(timeout: 5), "Need at least one demo shift on My Shifts to open the manage sheet")
         shiftCard.tap()
 

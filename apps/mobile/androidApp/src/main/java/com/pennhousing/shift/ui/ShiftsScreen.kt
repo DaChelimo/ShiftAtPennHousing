@@ -77,6 +77,7 @@ import com.pennhousing.shift.ui.manage.ManageShiftSheet
 import com.pennhousing.shift.ui.navigation.MoreNavRow
 import com.pennhousing.shift.ui.navigation.ShiftBottomNav
 import com.pennhousing.shift.ui.navigation.ShiftDestination
+import com.pennhousing.shift.ui.navigation.rememberAssistantReturnState
 import com.pennhousing.shift.ui.navigation.rememberShiftNavigationState
 import com.pennhousing.shift.ui.navigation.rememberShiftNavigator
 import com.pennhousing.shift.ui.onboarding.AskAssistantButton
@@ -247,6 +248,8 @@ internal fun ShiftsApp(
                 onBlocked = { pendingTab = it },
             )
         val current = nav.current
+        // See ui/navigation/AssistantReturn.kt — where the Assistant's back button returns to.
+        val assistantReturn = rememberAssistantReturnState(nav)
 
         // Onboarding (the first-run welcome tour + one-time contextual tips). The shared
         // OnboardingViewModel sequences everything; here we seed it from the persisted
@@ -526,7 +529,7 @@ internal fun ShiftsApp(
                         )
                     }
                 }
-                entry<ShiftDestination.Assistant> { AssistantScreen(assistantVm) }
+                entry<ShiftDestination.Assistant> { AssistantScreen(assistantVm, onBack = assistantReturn::returnToPrevious) }
             }
 
         CompositionLocalProvider(LocalOnboardingAnchors provides onboardingAnchors) {
@@ -556,7 +559,7 @@ internal fun ShiftsApp(
                     // The first-run tour rings this button (on My Shifts, where the tour runs).
                     floatingActionButton = {
                         if (current == ShiftDestination.MyShifts) {
-                            AskAssistantButton(onClick = { nav.navigate(ShiftDestination.Assistant) })
+                            AskAssistantButton(onClick = assistantReturn::open)
                         }
                     },
                 ) { padding ->
@@ -804,7 +807,7 @@ internal fun ShiftsApp(
                     }
                     MoreNavRow("Ask Snoopy", ShiftIcons.Sparkle, "tab_assistant") {
                         showMore = false
-                        nav.navigate(ShiftDestination.Assistant)
+                        assistantReturn.open()
                     }
                 }
             }

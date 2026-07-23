@@ -35,16 +35,31 @@ class AssistantScreenTest {
     val composeRule = createComposeRule()
 
     @Test
+    fun `tapping the back button invokes onBack`() {
+        var backCount = 0
+        composeRule.setContent {
+            ShiftTheme {
+                AssistantScreen(vm = AssistantViewModel(), onBack = { backCount++ }, repository = AssistantRepository())
+            }
+        }
+
+        composeRule.onNodeWithTag("assistant_back").performClick()
+
+        assert(backCount == 1) { "expected onBack to fire once, got $backCount" }
+    }
+
+    @Test
     fun `empty state renders exactly the current starter prompt set, not a stale count`() {
         // AssistantPrompts.starters was trimmed from 7 to 4; assert against the shared
         // source of truth rather than a literal so this can't itself drift stale.
         composeRule.setContent {
             ShiftTheme {
-                AssistantScreen(vm = AssistantViewModel(), repository = AssistantRepository())
+                AssistantScreen(vm = AssistantViewModel(), onBack = {}, repository = AssistantRepository())
             }
         }
 
-        composeRule.onAllNodesWithTag("assistant_starter_prompt")
+        composeRule
+            .onAllNodesWithTag("assistant_starter_prompt")
             .assertCountEquals(AssistantPrompts.starters.size)
     }
 
@@ -53,7 +68,7 @@ class AssistantScreenTest {
         val vm = AssistantViewModel()
         composeRule.setContent {
             ShiftTheme {
-                AssistantScreen(vm = vm, repository = AssistantRepository())
+                AssistantScreen(vm = vm, onBack = {}, repository = AssistantRepository())
             }
         }
 
@@ -75,7 +90,7 @@ class AssistantScreenTest {
         val vm = AssistantViewModel()
         composeRule.setContent {
             ShiftTheme {
-                AssistantScreen(vm = vm, repository = AssistantRepository())
+                AssistantScreen(vm = vm, onBack = {}, repository = AssistantRepository())
             }
         }
 
@@ -95,7 +110,8 @@ class AssistantScreenTest {
         assert(messages.size == 10) { "expected 10 messages, got ${messages.size}" }
 
         val newestTag = "assistant_bubble_${messages.last().id}"
-        composeRule.onNodeWithTag("assistant_message_list")
+        composeRule
+            .onNodeWithTag("assistant_message_list")
             .performScrollToNode(hasTestTag(newestTag))
         composeRule.onNodeWithTag(newestTag, useUnmergedTree = true).assertIsDisplayed()
     }

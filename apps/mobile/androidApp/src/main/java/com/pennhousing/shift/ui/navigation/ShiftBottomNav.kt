@@ -27,15 +27,26 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pennhousing.shift.shared.onboarding.OnboardingTarget
-import com.pennhousing.shift.ui.TAB_HOUSE
-import com.pennhousing.shift.ui.TAB_MY
-import com.pennhousing.shift.ui.TAB_OPEN
-import com.pennhousing.shift.ui.TAB_SETTINGS
-import com.pennhousing.shift.ui.TAB_SWAPS
-import com.pennhousing.shift.ui.TAB_UPDATES
 import com.pennhousing.shift.ui.kit.ShiftIcons
 import com.pennhousing.shift.ui.onboarding.onboardingAnchor
 import com.pennhousing.shift.ui.theme.ShiftTheme
+
+/** A bottom-bar item: which destination it selects and how it is labelled and found. */
+private data class BarItem(
+    val destination: ShiftDestination,
+    val icon: ImageVector,
+    val label: String,
+    val tag: String,
+    val anchor: OnboardingTarget,
+)
+
+private val BAR_ITEMS =
+    listOf(
+        BarItem(ShiftDestination.MyShifts, ShiftIcons.Calendar, "My Shifts", "tab_my_shifts", OnboardingTarget.MY_SHIFTS_TAB),
+        BarItem(ShiftDestination.OpenShifts, ShiftIcons.Plus, "Open", "tab_open_shifts", OnboardingTarget.OPEN_TAB),
+        BarItem(ShiftDestination.House, ShiftIcons.Building, "House", "tab_house", OnboardingTarget.HOUSE_TAB),
+        BarItem(ShiftDestination.Swaps, ShiftIcons.Refresh, "Swaps", "tab_swaps", OnboardingTarget.SWAPS_TAB),
+    )
 
 /**
  * The Material 3 bottom navigation bar (BEHAVIORAL_SPECIFICATION §5.6). Four frequent
@@ -46,9 +57,9 @@ import com.pennhousing.shift.ui.theme.ShiftTheme
  */
 @Composable
 internal fun ShiftBottomNav(
-    selectedIndex: Int,
+    current: ShiftDestination,
     hasUnread: Boolean,
-    onSelect: (Int) -> Unit,
+    onSelect: (ShiftDestination) -> Unit,
     onMore: () -> Unit,
 ) {
     val c = ShiftTheme.colors
@@ -61,41 +72,20 @@ internal fun ShiftBottomNav(
             unselectedTextColor = c.ter,
         )
     NavigationBar(containerColor = c.surface, tonalElevation = 0.dp) {
+        BAR_ITEMS.forEach { item ->
+            NavigationBarItem(
+                selected = current == item.destination,
+                onClick = { onSelect(item.destination) },
+                icon = { Icon(item.icon, contentDescription = null) },
+                label = { Text(item.label, maxLines = 1) },
+                colors = colors,
+                modifier = Modifier.testTag(item.tag).onboardingAnchor(item.anchor),
+            )
+        }
         NavigationBarItem(
-            selected = selectedIndex == TAB_MY,
-            onClick = { onSelect(TAB_MY) },
-            icon = { Icon(ShiftIcons.Calendar, contentDescription = null) },
-            label = { Text("My Shifts", maxLines = 1) },
-            colors = colors,
-            modifier = Modifier.testTag("tab_my_shifts").onboardingAnchor(OnboardingTarget.MY_SHIFTS_TAB),
-        )
-        NavigationBarItem(
-            selected = selectedIndex == TAB_OPEN,
-            onClick = { onSelect(TAB_OPEN) },
-            icon = { Icon(ShiftIcons.Plus, contentDescription = null) },
-            label = { Text("Open", maxLines = 1) },
-            colors = colors,
-            modifier = Modifier.testTag("tab_open_shifts").onboardingAnchor(OnboardingTarget.OPEN_TAB),
-        )
-        NavigationBarItem(
-            selected = selectedIndex == TAB_HOUSE,
-            onClick = { onSelect(TAB_HOUSE) },
-            icon = { Icon(ShiftIcons.Building, contentDescription = null) },
-            label = { Text("House", maxLines = 1) },
-            colors = colors,
-            modifier = Modifier.testTag("tab_house").onboardingAnchor(OnboardingTarget.HOUSE_TAB),
-        )
-        NavigationBarItem(
-            selected = selectedIndex == TAB_SWAPS,
-            onClick = { onSelect(TAB_SWAPS) },
-            icon = { Icon(ShiftIcons.Refresh, contentDescription = null) },
-            label = { Text("Swaps", maxLines = 1) },
-            colors = colors,
-            modifier = Modifier.testTag("tab_swaps").onboardingAnchor(OnboardingTarget.SWAPS_TAB),
-        )
-        NavigationBarItem(
-            // Secondary destinations now in "More": Updates, Preferences, Break, Settings.
-            selected = selectedIndex in TAB_UPDATES..TAB_SETTINGS,
+            // Lit for the episodic destinations that live behind the sheet. Assistant is
+            // reachable from the sheet but deliberately does not light this up.
+            selected = current in ShiftDestination.MORE_SELECTS,
             onClick = onMore,
             icon = {
                 if (hasUnread) {

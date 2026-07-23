@@ -27,6 +27,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation3.runtime.NavKey
+import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.ui.NavDisplay
 import com.pennhousing.shift.shared.breakclaim.BreakPhase
 import com.pennhousing.shift.shared.data.PermanentPickupScope
 import com.pennhousing.shift.shared.data.ToastNotification
@@ -73,6 +76,9 @@ import com.pennhousing.shift.ui.kit.ToastTone
 import com.pennhousing.shift.ui.manage.ManageShiftSheet
 import com.pennhousing.shift.ui.navigation.MoreNavRow
 import com.pennhousing.shift.ui.navigation.ShiftBottomNav
+import com.pennhousing.shift.ui.navigation.ShiftDestination
+import com.pennhousing.shift.ui.navigation.rememberShiftNavigationState
+import com.pennhousing.shift.ui.navigation.rememberShiftNavigator
 import com.pennhousing.shift.ui.onboarding.AskAssistantButton
 import com.pennhousing.shift.ui.onboarding.BreakTourHelpButton
 import com.pennhousing.shift.ui.onboarding.BreakTourOverlay
@@ -114,23 +120,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.time.Instant
 
-// The constants MUST match each tab's render position in the PrimaryScrollableTabRow —
-// selectedTabIndex positions the indicator by row position (a mismatched constant
-// underlines the wrong tab; caught on the T3b emulator spot-check).
-//
-// "My Shifts" is now the Personal Calendar (the old picked-up/dropped/scheduled bucket
-// tab was removed — a single chronological view reads clearer). It stays first.
-internal const val TAB_MY = 0 // chronological "My Shifts" (the Personal Calendar)
-internal const val TAB_OPEN = 1 // "Open Shifts" — My House / Others sub-tabs (§5.6 Tabs 2+3)
-internal const val TAB_HOUSE = 2 // §11.4 house schedule (T3b)
-internal const val TAB_UPDATES = 3
-internal const val TAB_PREFS = 4
-internal const val TAB_BREAK = 5
-internal const val TAB_SETTINGS = 6
-internal const val TAB_SWAPS = 7 // dedicated Swaps tab (DESIGN §6) — in the "More" sheet
-internal const val TAB_ASSISTANT = 8 // Desk Assistant chat — in the "More" sheet
-
-// Open-Shifts sub-tabs (rendered inside TAB_OPEN).
+// Open-Shifts sub-tabs (rendered inside ShiftDestination.OpenShifts).
 internal const val OPEN_SUB_HOME = 0 // "My House"
 internal const val OPEN_SUB_OTHER = 1 // "Others"
 
@@ -257,14 +247,13 @@ fun ShiftsApp(
         val updatesState by updatesVm.uiState.collectAsStateWithLifecycle()
         val swapsState by swapsVm.uiState.collectAsStateWithLifecycle()
         val breakState by breakCalendarVm.uiState.collectAsStateWithLifecycle()
-        var selectedIndex by remember { mutableIntStateOf(TAB_MY) }
         var showAckModal by remember { mutableStateOf(false) }
         var swapProposed by remember { mutableStateOf(false) }
         // T2-13 — full-screen ack on push/deep-link launch (once per launch id).
         var showFullScreenAck by remember(launchFloatAckId) { mutableStateOf(launchFloatAckId != null) }
         // Preferences save-safety (§4): a tab switch requested while the Preferences tab
         // has unsaved edits is deferred here until the guard sheet resolves it.
-        var pendingTab by remember { mutableStateOf<Int?>(null) }
+        var pendingTab by remember { mutableStateOf<ShiftDestination?>(null) }
         // Overflow ("More") bottom sheet — the episodic destinations.
         var showMore by remember { mutableStateOf(false) }
 
@@ -296,20 +285,21 @@ fun ShiftsApp(
             }
         }
 
-        // TAB_MY (calendar) and TAB_OPEN read the same snapshot regardless of the
-        // ShiftsScreenViewModel's selected tab; the Open-Shifts sub-tabs set it themselves.
-        fun navigateTo(target: Int) {
-            selectedIndex = target
-        }
-
-        // Leaving Preferences with unsaved edits → defer the move + raise the guard sheet.
-        fun requestTab(target: Int) {
-            if (selectedIndex == TAB_PREFS && target != TAB_PREFS && preferencesVm.uiState.value.isDirty) {
-                pendingTab = target
-            } else {
-                navigateTo(target)
-            }
-        }
+        // Navigation 3 owns the back stack (see ui/navigation/). `current` replaces the old
+        // `selectedIndex` Int, and every move — including the system back button — routes
+        // through ShiftNavigator, so the unsaved-Preferences guard sits in exactly one place
+        // instead of hanging off the forward-navigation helper only. The Calendar and
+        // Open-Shifts destinations still read the same snapshot regardless of the
+        // ShiftsScreenViewModel's own tab; the Open-Shifts sub-tabs set that themselves.
+        val navState = rememberShiftNavigationState()
+        val nav =
+            rememberShiftNavigator(
+                state = navState,
+                // §4 save-safety: Preferences refuses to be left while it holds unsaved edits.
+                canLeave = { from, _ -> from != ShiftDestination.Preferences || !preferencesVm.uiState.value.isDirty },
+                onBlocked = { pendingTab = it },
+            )
+        val current = nav.current
 
         // Onboarding (the first-run welcome tour + one-time contextual tips). The shared
         // OnboardingViewModel sequences everything; here we seed it from the persisted
@@ -321,14 +311,15 @@ fun ShiftsApp(
         val onboardingAnchors = remember { OnboardingAnchors() }
         LaunchedEffect(Unit) { onboardingVm.start() }
         LaunchedEffect(onboardingState.seen) { OnboardingPrefs.write(onboardingContext, onboardingState.seen) }
-        LaunchedEffect(selectedIndex) {
-            when (selectedIndex) {
-                TAB_MY -> onboardingVm.triggerTip(TipTrigger.MY_SHIFTS)
+        LaunchedEffect(current) {
+            when (current) {
+                ShiftDestination.MyShifts -> onboardingVm.triggerTip(TipTrigger.MY_SHIFTS)
                 // The Open-Shifts claim tour (openClaimTourVm, below) supersedes this flat
                 // tip — its whole point is teaching one-time vs permanent pickup, which the
                 // tip never covered.
                 // The House-grid tour (houseGridTourVm, below) supersedes this flat tip.
-                TAB_SWAPS -> onboardingVm.triggerTip(TipTrigger.INCOMING_SWAP)
+                ShiftDestination.Swaps -> onboardingVm.triggerTip(TipTrigger.INCOMING_SWAP)
+                else -> Unit
             }
         }
         // The Break tour (breakTourVm, below) supersedes the old flat break-window tip.
@@ -350,7 +341,7 @@ fun ShiftsApp(
                 wiring = TourWirings.Shift,
                 seen = shiftTourState.seen,
                 active = shiftTourState.active,
-                autoStartWhen = selectedIndex == TAB_MY && welcomeDone,
+                autoStartWhen = current == ShiftDestination.MyShifts && welcomeDone,
                 onAutoStart = shiftTourVm::autoStart,
             )
 
@@ -362,7 +353,7 @@ fun ShiftsApp(
                 wiring = TourWirings.Preferences,
                 seen = preferencesTourState.seen,
                 active = preferencesTourState.active,
-                autoStartWhen = selectedIndex == TAB_PREFS && welcomeDone,
+                autoStartWhen = current == ShiftDestination.Preferences && welcomeDone,
                 onAutoStart = preferencesTourVm::autoStart,
             )
 
@@ -385,7 +376,7 @@ fun ShiftsApp(
                 wiring = TourWirings.HouseGrid,
                 seen = houseGridTourState.seen,
                 active = houseGridTourState.active,
-                autoStartWhen = selectedIndex == TAB_HOUSE && welcomeDone,
+                autoStartWhen = current == ShiftDestination.House && welcomeDone,
                 onAutoStart = houseGridTourVm::autoStart,
             )
 
@@ -396,7 +387,7 @@ fun ShiftsApp(
                 wiring = TourWirings.OpenClaim,
                 seen = openClaimTourState.seen,
                 active = openClaimTourState.active,
-                autoStartWhen = selectedIndex == TAB_OPEN && welcomeDone,
+                autoStartWhen = current == ShiftDestination.OpenShifts && welcomeDone,
                 onAutoStart = openClaimTourVm::autoStart,
             )
 
@@ -413,6 +404,184 @@ fun ShiftsApp(
         val swapTourState by swapTourVm.uiState.collectAsStateWithLifecycle()
         rememberTourSeenWriter(TourWirings.Swap, swapTourState.seen)
 
+        // Destination -> screen. Navigation 3 resolves whichever key is on the back stack
+        // through this, so the routing table is one readable block instead of a `when` on an
+        // Int buried in the Scaffold body.
+        val shiftEntryProvider =
+            entryProvider<NavKey> {
+                // "My Shifts" is the chronological Personal Calendar now (the old
+                // picked-up/dropped/scheduled bucket tab was removed). Drop/swap are
+                // wired onto the agenda cards; a dropped shift leaves the agenda and
+                // surfaces in the Open-Shifts tabs (no reclaim).
+                entry<ShiftDestination.MyShifts> {
+                    CalendarTabContent(
+                        vm = calendarVm,
+                        shiftsVm = shiftsVm,
+                        breakProfile = breakProfile,
+                        // §7.1 float-request carousel under the hours chip. Accept/Decline
+                        // POST the EF and advance the stack; tapping a card opens the hero.
+                        floatCarousel = carouselState,
+                        onFloatAccept = { id ->
+                            onAcknowledgeFloat(id)
+                            carouselVm.acknowledge(id)
+                        },
+                        onFloatDecline = { id ->
+                            onDeclineFloat(id)
+                            carouselVm.decline(id)
+                        },
+                        onFloatDetail = { id -> floatDetail = pendingFloats.firstOrNull { it.floatId == id } },
+                        onDropShift = onDropShift,
+                        swapMeUserId = swapMeUserId,
+                        swapDemoSeats = swapDemoSeats,
+                        onCreateSwap = onCreateSwap,
+                        onSwapProposed = { swapProposed = true },
+                        // Incoming-swap accept/decline tapped from a flagged agenda card —
+                        // same host POSTs as the Swaps tab; the Swaps list resolves too.
+                        onAcceptSwap = { swapId ->
+                            swapsVm.resolveIncoming(swapId)
+                            onAcceptSwap(swapId)
+                        },
+                        onRejectSwap = { swapId ->
+                            swapsVm.resolveIncoming(swapId)
+                            onRejectSwap(swapId)
+                        },
+                        // Cancel an OWN outgoing swap from the "swap pending" card tapped on
+                        // a flagged agenda shift — same host POST as the Swaps tab's Cancel.
+                        onVoidSwap = { swapId ->
+                            swapsVm.cancelOutgoing(swapId)
+                            onVoidSwap(swapId)
+                        },
+                        onReplayShiftTour = shiftTourVm::replay,
+                        onShiftTourHelpPositioned = { shiftTour.helpRect = it },
+                        swapTourVm = swapTourVm,
+                    )
+                }
+                entry<ShiftDestination.OpenShifts> {
+                    OpenShiftsTabContent(
+                        state = state,
+                        vm = shiftsVm,
+                        calendarVm = calendarVm,
+                        currentWeeklyHours = currentWeeklyHours,
+                        breakProfile = breakProfile,
+                        onClaimed = { msg -> onClaimSuccessMessage(msg) },
+                        onClaimShift = onClaimShift,
+                        onPickUpPermanent = onPickUpPermanent,
+                        loadPermanentScope = loadPermanentScope,
+                        onReplayOpenClaimTour = openClaimTourVm::replay,
+                        onOpenClaimTourHelpPositioned = { openClaimTour.helpRect = it },
+                    )
+                }
+                entry<ShiftDestination.House> {
+                    HouseTabContent(
+                        vm = houseVm,
+                        meUserId = swapMeUserId,
+                        onReplayHouseGridTour = houseGridTourVm::replay,
+                        onHouseGridTourHelpPositioned = { houseGridTour.helpRect = it },
+                    )
+                }
+                entry<ShiftDestination.Updates> {
+                    UpdatesTabContent(
+                        feed = updatesState.feed,
+                        hasUnread = updatesState.hasUnread,
+                        onOpenAck = { showAckModal = true },
+                        onMarkAllRead = {
+                            // Optimistic local clear (returns the ids that were unread),
+                            // then best-effort live persist via the host callback.
+                            onMarkAllRead(updatesVm.markAllRead())
+                        },
+                        // DESIGN §6 — an incoming-swap row is a MIRROR: tapping it
+                        // deep-links to the Swaps tab (where Accept/Decline live).
+                        onOpenSwaps = { nav.navigate(ShiftDestination.Swaps) },
+                        // Off-hours ladder ack: optimistic local resolve, then best-effort live POST.
+                        onAcknowledgeAlliedPage = { blockId ->
+                            updatesVm.acknowledgeAlliedPage(blockId)
+                            onAcknowledgeAlliedPage(blockId)
+                        },
+                    )
+                }
+                entry<ShiftDestination.Swaps> {
+                    SwapsTabContent(
+                        state = swapsState,
+                        onSelectTab = swapsVm::selectTab,
+                        // Incoming Accept/Decline + outgoing Cancel: optimistic local
+                        // resolve (the row leaves its list), then best-effort live POST.
+                        onAcceptSwap = { swapId ->
+                            swapsVm.resolveIncoming(swapId)
+                            onAcceptSwap(swapId)
+                        },
+                        onRejectSwap = { swapId ->
+                            swapsVm.resolveIncoming(swapId)
+                            onRejectSwap(swapId)
+                        },
+                        onVoidSwap = { swapId ->
+                            swapsVm.cancelOutgoing(swapId)
+                            onVoidSwap(swapId)
+                        },
+                    )
+                }
+                entry<ShiftDestination.Preferences> {
+                    Column(Modifier.fillMaxSize().background(ShiftTheme.colors.bg)) {
+                        PageTitle("Preferences") {
+                            PreferencesTourHelpButton(
+                                onClick = preferencesTourVm::replay,
+                                onPositioned = { preferencesTour.helpRect = it },
+                            )
+                        }
+                        PreferencesTabContent(preferencesVm, onSubmitPreferences, onSetDeadline = onSetDeadline)
+                    }
+                }
+                entry<ShiftDestination.BreakShifts> {
+                    Column(Modifier.fillMaxSize().background(ShiftTheme.colors.bg)) {
+                        PageTitle("Break shifts") {
+                            BreakTourHelpButton(
+                                onClick = breakTourVm::replay,
+                                onPositioned = { breakTour.helpRect = it },
+                            )
+                        }
+                        BreakCalendarTabContent(breakCalendarVm, onClaimBreakRange, onDropBreakSeats, onToggleBreakOptOut)
+                    }
+                }
+                entry<ShiftDestination.Settings> {
+                    Column(Modifier.fillMaxSize().background(ShiftTheme.colors.bg)) {
+                        PageTitle("Settings")
+                        SettingsTabContent(
+                            settingsVm,
+                            onSignOut,
+                            onToggleBroadcast,
+                            onReplayTour = onboardingVm::replayTour,
+                            onReplayShiftTour = {
+                                nav.navigate(ShiftDestination.MyShifts)
+                                shiftTourVm.replay()
+                            },
+                            onReplayPreferencesTour = {
+                                nav.navigate(ShiftDestination.Preferences)
+                                preferencesTourVm.replay()
+                            },
+                            onReplayBreakTour = {
+                                nav.navigate(ShiftDestination.BreakShifts)
+                                breakTourVm.replay()
+                            },
+                            // The swap composer lives in a sheet, not a tab — priming it
+                            // here means it fires the next time the worker reaches the
+                            // swap page (see ManageShiftSheet's page == Swap gating).
+                            onReplaySwapTour = {
+                                nav.navigate(ShiftDestination.MyShifts)
+                                swapTourVm.replay()
+                            },
+                            onReplayHouseGridTour = {
+                                nav.navigate(ShiftDestination.House)
+                                houseGridTourVm.replay()
+                            },
+                            onReplayOpenClaimTour = {
+                                nav.navigate(ShiftDestination.OpenShifts)
+                                openClaimTourVm.replay()
+                            },
+                        )
+                    }
+                }
+                entry<ShiftDestination.Assistant> { AssistantScreen(assistantVm) }
+            }
+
         CompositionLocalProvider(LocalOnboardingAnchors provides onboardingAnchors) {
             Box(Modifier.fillMaxSize()) {
                 Scaffold(
@@ -427,9 +596,9 @@ fun ShiftsApp(
                     // sheet for the episodic ones (Preferences / Break shifts / Settings).
                     bottomBar = {
                         ShiftBottomNav(
-                            selectedIndex = selectedIndex,
+                            current = current,
                             hasUnread = updatesState.hasUnread,
-                            onSelect = { requestTab(it) },
+                            onSelect = nav::navigate,
                             onMore = { showMore = true },
                         )
                     },
@@ -439,8 +608,8 @@ fun ShiftsApp(
                     // isn't what you came to do. The Assistant stays reachable from "More" everywhere.
                     // The first-run tour rings this button (on My Shifts, where the tour runs).
                     floatingActionButton = {
-                        if (selectedIndex == TAB_MY) {
-                            AskAssistantButton(onClick = { navigateTo(TAB_ASSISTANT) })
+                        if (current == ShiftDestination.MyShifts) {
+                            AskAssistantButton(onClick = { nav.navigate(ShiftDestination.Assistant) })
                         }
                     },
                 ) { padding ->
@@ -448,174 +617,13 @@ fun ShiftsApp(
                         Column(Modifier.fillMaxSize()) {
                             // §4.4 — while a break's claim window is open, promote the Break calendar
                             // with a visible banner from every other tab (it otherwise lives in More).
-                            if (selectedIndex != TAB_BREAK && breakState.phase == BreakPhase.CLAIM_WINDOW) {
-                                BreakOpenBanner(breakState.breakName) { navigateTo(TAB_BREAK) }
+                            if (current != ShiftDestination.BreakShifts && breakState.phase == BreakPhase.CLAIM_WINDOW) {
+                                BreakOpenBanner(breakState.breakName) { nav.navigate(ShiftDestination.BreakShifts) }
                             }
-                            when (selectedIndex) {
-                                // "My Shifts" is the chronological Personal Calendar now (the old
-                                // picked-up/dropped/scheduled bucket tab was removed). Drop/swap are
-                                // wired onto the agenda cards; a dropped shift leaves the agenda and
-                                // surfaces in the Open-Shifts tabs (no reclaim).
-                                TAB_MY ->
-                                    CalendarTabContent(
-                                        vm = calendarVm,
-                                        shiftsVm = shiftsVm,
-                                        breakProfile = breakProfile,
-                                        // §7.1 float-request carousel under the hours chip. Accept/Decline
-                                        // POST the EF and advance the stack; tapping a card opens the hero.
-                                        floatCarousel = carouselState,
-                                        onFloatAccept = { id ->
-                                            onAcknowledgeFloat(id)
-                                            carouselVm.acknowledge(id)
-                                        },
-                                        onFloatDecline = { id ->
-                                            onDeclineFloat(id)
-                                            carouselVm.decline(id)
-                                        },
-                                        onFloatDetail = { id -> floatDetail = pendingFloats.firstOrNull { it.floatId == id } },
-                                        onDropShift = onDropShift,
-                                        swapMeUserId = swapMeUserId,
-                                        swapDemoSeats = swapDemoSeats,
-                                        onCreateSwap = onCreateSwap,
-                                        onSwapProposed = { swapProposed = true },
-                                        // Incoming-swap accept/decline tapped from a flagged agenda card —
-                                        // same host POSTs as the Swaps tab; the Swaps list resolves too.
-                                        onAcceptSwap = { swapId ->
-                                            swapsVm.resolveIncoming(swapId)
-                                            onAcceptSwap(swapId)
-                                        },
-                                        onRejectSwap = { swapId ->
-                                            swapsVm.resolveIncoming(swapId)
-                                            onRejectSwap(swapId)
-                                        },
-                                        // Cancel an OWN outgoing swap from the "swap pending" card tapped on
-                                        // a flagged agenda shift — same host POST as the Swaps tab's Cancel.
-                                        onVoidSwap = { swapId ->
-                                            swapsVm.cancelOutgoing(swapId)
-                                            onVoidSwap(swapId)
-                                        },
-                                        onReplayShiftTour = shiftTourVm::replay,
-                                        onShiftTourHelpPositioned = { shiftTour.helpRect = it },
-                                        swapTourVm = swapTourVm,
-                                    )
-                                TAB_OPEN ->
-                                    OpenShiftsTabContent(
-                                        state = state,
-                                        vm = shiftsVm,
-                                        calendarVm = calendarVm,
-                                        currentWeeklyHours = currentWeeklyHours,
-                                        breakProfile = breakProfile,
-                                        onClaimed = { msg -> onClaimSuccessMessage(msg) },
-                                        onClaimShift = onClaimShift,
-                                        onPickUpPermanent = onPickUpPermanent,
-                                        loadPermanentScope = loadPermanentScope,
-                                        onReplayOpenClaimTour = openClaimTourVm::replay,
-                                        onOpenClaimTourHelpPositioned = { openClaimTour.helpRect = it },
-                                    )
-                                TAB_HOUSE ->
-                                    HouseTabContent(
-                                        vm = houseVm,
-                                        meUserId = swapMeUserId,
-                                        onReplayHouseGridTour = houseGridTourVm::replay,
-                                        onHouseGridTourHelpPositioned = { houseGridTour.helpRect = it },
-                                    )
-                                TAB_UPDATES ->
-                                    UpdatesTabContent(
-                                        feed = updatesState.feed,
-                                        hasUnread = updatesState.hasUnread,
-                                        onOpenAck = { showAckModal = true },
-                                        onMarkAllRead = {
-                                            // Optimistic local clear (returns the ids that were unread),
-                                            // then best-effort live persist via the host callback.
-                                            onMarkAllRead(updatesVm.markAllRead())
-                                        },
-                                        // DESIGN §6 — an incoming-swap row is a MIRROR: tapping it
-                                        // deep-links to the Swaps tab (where Accept/Decline live).
-                                        onOpenSwaps = { navigateTo(TAB_SWAPS) },
-                                        // Off-hours ladder ack: optimistic local resolve, then best-effort live POST.
-                                        onAcknowledgeAlliedPage = { blockId ->
-                                            updatesVm.acknowledgeAlliedPage(blockId)
-                                            onAcknowledgeAlliedPage(blockId)
-                                        },
-                                    )
-                                TAB_SWAPS ->
-                                    SwapsTabContent(
-                                        state = swapsState,
-                                        onSelectTab = swapsVm::selectTab,
-                                        // Incoming Accept/Decline + outgoing Cancel: optimistic local
-                                        // resolve (the row leaves its list), then best-effort live POST.
-                                        onAcceptSwap = { swapId ->
-                                            swapsVm.resolveIncoming(swapId)
-                                            onAcceptSwap(swapId)
-                                        },
-                                        onRejectSwap = { swapId ->
-                                            swapsVm.resolveIncoming(swapId)
-                                            onRejectSwap(swapId)
-                                        },
-                                        onVoidSwap = { swapId ->
-                                            swapsVm.cancelOutgoing(swapId)
-                                            onVoidSwap(swapId)
-                                        },
-                                    )
-                                TAB_PREFS ->
-                                    Column(Modifier.fillMaxSize().background(ShiftTheme.colors.bg)) {
-                                        PageTitle("Preferences") {
-                                            PreferencesTourHelpButton(
-                                                onClick = preferencesTourVm::replay,
-                                                onPositioned = { preferencesTour.helpRect = it },
-                                            )
-                                        }
-                                        PreferencesTabContent(preferencesVm, onSubmitPreferences, onSetDeadline = onSetDeadline)
-                                    }
-                                TAB_BREAK ->
-                                    Column(Modifier.fillMaxSize().background(ShiftTheme.colors.bg)) {
-                                        PageTitle("Break shifts") {
-                                            BreakTourHelpButton(
-                                                onClick = breakTourVm::replay,
-                                                onPositioned = { breakTour.helpRect = it },
-                                            )
-                                        }
-                                        BreakCalendarTabContent(breakCalendarVm, onClaimBreakRange, onDropBreakSeats, onToggleBreakOptOut)
-                                    }
-                                TAB_SETTINGS ->
-                                    Column(Modifier.fillMaxSize().background(ShiftTheme.colors.bg)) {
-                                        PageTitle("Settings")
-                                        SettingsTabContent(
-                                            settingsVm,
-                                            onSignOut,
-                                            onToggleBroadcast,
-                                            onReplayTour = onboardingVm::replayTour,
-                                            onReplayShiftTour = {
-                                                requestTab(TAB_MY)
-                                                shiftTourVm.replay()
-                                            },
-                                            onReplayPreferencesTour = {
-                                                requestTab(TAB_PREFS)
-                                                preferencesTourVm.replay()
-                                            },
-                                            onReplayBreakTour = {
-                                                requestTab(TAB_BREAK)
-                                                breakTourVm.replay()
-                                            },
-                                            // The swap composer lives in a sheet, not a tab — priming it
-                                            // here means it fires the next time the worker reaches the
-                                            // swap page (see ManageShiftSheet's page == Swap gating).
-                                            onReplaySwapTour = {
-                                                requestTab(TAB_MY)
-                                                swapTourVm.replay()
-                                            },
-                                            onReplayHouseGridTour = {
-                                                requestTab(TAB_HOUSE)
-                                                houseGridTourVm.replay()
-                                            },
-                                            onReplayOpenClaimTour = {
-                                                requestTab(TAB_OPEN)
-                                                openClaimTourVm.replay()
-                                            },
-                                        )
-                                    }
-                                TAB_ASSISTANT -> AssistantScreen(assistantVm)
-                            }
+                            NavDisplay(
+                                entries = navState.decoratedEntries(shiftEntryProvider),
+                                onBack = { nav.goBack() },
+                            )
                         }
                         // Toasts now sit at the BOTTOM (above the nav bar) — the intuitive place
                         // for transient confirmations; a swallowed write failure no longer hides.
@@ -814,12 +822,12 @@ fun ShiftsApp(
                 onSubmitAndLeave = {
                     onSubmitPreferences()
                     pendingTab = null
-                    navigateTo(target)
+                    nav.navigateUnchecked(target)
                 },
                 onDiscardAndLeave = {
                     preferencesVm.revert()
                     pendingTab = null
-                    navigateTo(target)
+                    nav.navigateUnchecked(target)
                 },
                 onKeepEditing = { pendingTab = null },
             )
@@ -833,23 +841,23 @@ fun ShiftsApp(
                 Column(Modifier.testTag("more_sheet"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     MoreNavRow("Updates", ShiftIcons.Bell, "tab_updates") {
                         showMore = false
-                        requestTab(TAB_UPDATES)
+                        nav.navigate(ShiftDestination.Updates)
                     }
                     MoreNavRow("Preferences", ShiftIcons.Heart, "tab_preferences") {
                         showMore = false
-                        requestTab(TAB_PREFS)
+                        nav.navigate(ShiftDestination.Preferences)
                     }
                     MoreNavRow("Break shifts", ShiftIcons.Snowflake, "tab_break") {
                         showMore = false
-                        requestTab(TAB_BREAK)
+                        nav.navigate(ShiftDestination.BreakShifts)
                     }
                     MoreNavRow("Settings", ShiftIcons.Tune, "tab_settings") {
                         showMore = false
-                        requestTab(TAB_SETTINGS)
+                        nav.navigate(ShiftDestination.Settings)
                     }
                     MoreNavRow("Ask Snoopy", ShiftIcons.Sparkle, "tab_assistant") {
                         showMore = false
-                        requestTab(TAB_ASSISTANT)
+                        nav.navigate(ShiftDestination.Assistant)
                     }
                 }
             }

@@ -4,6 +4,8 @@ This document defines the operational truth of the Shift@PennHousing system. It 
 
 This document does not describe code, schema, or infrastructure. It describes behavior.
 
+It covers the **whole product**. Sections 1 through 15 define the staffing engine: the operating calendar, schedule creation, the coverage lifecycle, floats, swaps, hours, and notifications. Sections 16 through 22 define everything built on top of it: the duty hierarchy and contact routing, the Desk Assistant, the knowledge base, AI-assisted schedule building, worker onboarding and widgets, house transfers, and the staggered launch. Nothing in Sections 16 through 22 changes any rule in Sections 1 through 15.
+
 ---
 
 ## 1. Operating Domain
@@ -239,8 +241,13 @@ boundary. The system compiles the season into per-phase operating profiles, staf
 patterns, float routing, and calendar assignments, so the same runtime machinery that
 serves the academic year serves summer with no special cases. A date the Administrator leaves with no open house is simply dormant, exactly as an
 unassigned date is. Changes take effect prospectively (future shifts only); when a change
-reduces a desk that already has more workers scheduled than the new headcount, the extra
-workers are grandfathered rather than removed. Summer schedules are built by SMs like the
+reduces a desk that already has more workers scheduled than the new headcount, the excess
+workers are **cancelled**, not grandfathered. The cut order is fixed and deterministic:
+external floaters first, then the shorter shift (the worker holding the fewest blocks at
+that house on that date), then a stable tiebreak. Every cancelled worker is notified, and
+any inbound float landing on a cut seat is voided. Because this is an Administrator
+configuration action rather than an automated one, voiding those floats does not violate
+the no-takeback rule of Section 6.4, which governs automated revocation only. Summer schedules are built by SMs like the
 school year, including preference collection (Section 4): before summer begins, workers
 submit the shifts they want and SMs build from those preferences. The Administrator authors
 the preference-submission deadline on the season, where a single value covers all houses;
@@ -818,7 +825,7 @@ The operation skips:
 
 The dropping worker may permanently drop only a portion of their recurring slot (a contiguous subset of the slot's blocks). For example, a worker whose recurring slot is 19:00 to 24:00 may permanently drop just 22:00 to 24:00, retaining 19:00 to 22:00 each week.
 
-After the drop, the affected slot's information appears in the permanent openings feed for the affected house. The SM of the house receives an in-app notification that shows the next time they open the app and persists in their updates tab. The dropping worker also has a record of the permanent drop in their own updates tab so they can refer to what they dropped and when.
+After the drop, the affected slot's information appears in the permanent openings feed for the affected house. The dropping worker also has a record of the permanent drop in their own updates tab so they can refer to what they dropped and when. (The SM is not sent a passive notification of the drop: there is nothing actionable the SM does in response, so the alert was retired. The permanent openings feed remains the SM's authoritative view of dropped slots.)
 
 #### 8.4.2 SM/HM-Initiated Permanent Removal
 
@@ -931,7 +938,7 @@ Notifications are routed by recipient role and urgency. The system does not deli
 
 **Coverage / Allied-procurement notifications** are sent in real-time to **the house's RSM** when **both** the current time and the affected block's start time fall within HM working hours (Monday-Friday, [08:00, 17:00)). During HM working hours the HM is **not** the in-house recipient — the HM is contacted only in their HMOD capacity (outside HM hours and on weekends, per the HMOD rules below). If the RSM is on leave, the leave-resolution chain (Section 2.6) resolves the acting contact (the RSM's replacement — by default the HM, then the BM). If the house has no acting RSM at all (none assigned, or the chain resolves to no active person), the notification falls back to the HMOD on duty. If either the current time or the block start time is outside HM hours, the notification is routed to the HMOD on duty instead. The RSM/HMOD places the call to Allied.
 
-**SM in-app notifications.** SMs receive in-app notifications (visible on next app open, persisting in the updates tab) for events affecting their house that do not require immediate action but warrant their awareness. The primary such event is a worker permanently dropping a recurring slot at their house (Section 8.4). The SM is the operational decision-maker for whether to actively search for a permanent picker or let the weekly escalations run. SMs do not receive push notifications for these events; they appear in-app only.
+**SM in-app notifications.** SMs receive no passive permanent-drop alert. A worker permanently dropping a recurring slot at their house (Section 8.4) surfaces only in the permanent openings feed, which is the SM's authoritative view; the SM remains the operational decision-maker for whether to actively search for a permanent picker or let the weekly escalations run. The former in-app alert was retired because there is nothing actionable the SM does in response to a passive notification.
 
 **Worker in-app notifications.** Workers receive in-app notifications (visible on next app open, persisting in the updates tab) when an SM/HM permanently removes them from a recurring slot. The notification identifies the affected slot, the operator who initiated the removal, and the time period affected.
 
@@ -1058,6 +1065,22 @@ Both HMs and BMs can:
 
 **Housing Manager On Duty** holds HM permissions across all 13 houses while on duty, with notifications routed per the HMOD schedule.
 
+**Every internal role** (SW, SM, RSM, HM, BM, Administrator) can additionally:
+
+- Use the Desk Assistant (Section 17), with answers and available knowledge scoped to their role and house, and ask it about their own schedule only.
+- Review and send an Assistant-drafted page. No role may send a page without reviewing it, and no role can make the Assistant take a staffing action.
+
+**Housing Managers, Building Managers, and the Administrator** can additionally:
+
+- Transfer a worker between houses (Section 21), from either the source or the destination side.
+- Approve, edit, or reject proposed knowledge-base entries, and withdraw live ones (Section 18.4).
+
+**Student Managers** can additionally use AI-assisted schedule building (Section 19) for any house they may already build for. The assistant grants no authority the SM does not already hold, and no proposal reaches a worker without the SM publishing it.
+
+**The Administrator** can additionally set the launch state of each house and the master switches of Sections 16.5 and 22.
+
+Allied is not a user of the Desk Assistant.
+
 ---
 
 ## 14. System-Wide Configurable Parameters
@@ -1080,6 +1103,17 @@ The following parameters are system-wide configurable by the project administrat
 - **HM working hours**: Monday-Friday 08:00 to 17:00.
 - **HMOD rotor cadence**: weekly, Friday 08:00 handoff.
 
+The following govern the surfaces defined in Sections 16 through 22:
+
+- **Project administrator contact**: the terminal recipient of the Section 16.3 ladder and of urgent notifications that resolve past both HM and HMOD. **Every deployed environment must set this.** When it is unset, the urgent notification is logged rather than delivered, and no page is created.
+- **SMOD duty phone** and **CSMOD duty phone**: the shared numbers surfaced when routing lands on those tiers (Section 16.2). Unset means the tier is named without a number, never a substituted contact.
+- **Routing rules**: the issue-type-to-tier mapping with its day, time, and season windows (Section 16.4). Data, replaceable without a code change.
+- **Off-hours ladder switch**: enables the Section 16.5 pilot ladder. Default **off**.
+- **Off-hours ladder rung timeout**: how long a rung has to be acknowledged before the alert advances. Default 10 minutes.
+- **Staggered launch switch**: enables the Section 22 per-house gate. Default **off**, meaning every house behaves as live.
+- **Per-house launch state**: pre-launch or live. New houses default to **pre-launch**.
+- **Preference submission deadline for a season**: authored per operating season by the Administrator, one value covering all houses, on or before the season start date.
+
 Once finalized via project committee feedback, the administrator may update these. All updates apply system-wide and take effect at the start of the next orchestrator tick. Individual users do not have direct control over these values except for the per-worker tweakable acknowledgment reminders (6h and 2h).
 
 ---
@@ -1091,6 +1125,267 @@ The following items are marked as pending and will be resolved before launch:
 - **Additional winter break operational specifics.** Winter break has some specifics not yet captured here. These will be added once observed during the upcoming winter or learned during training.
 - **Short break list.** The exact dates of fall break, Thanksgiving, spring break, spring fling, and any other named short breaks for each academic year are populated by an administrator using the published academic calendar.
 - **Pending global configuration.** The project administrator may identify additional parameters that should be made globally modifiable based on project committee feedback. Section 14 will be updated accordingly.
+- **The real escalation ladder (Section 16.4).** The exact tier ladder, which issue types route to which tier, and the season, day, and time windows, including leave fallbacks, are an operational input Housing leadership owns. The system ships with a placeholder ladder; replacing it is a data change.
+- **Page handoff channel (Section 17.5).** Assistant-drafted pages are delivered through the app's own notification system. Whether the legacy pager channel must remain authoritative, and therefore whether pages should instead be formatted for entry there, is not yet settled. No direct pager hardware integration exists.
+
+---
+
+## 16. The Duty Hierarchy and Contact Routing
+
+Sections 2 through 15 define the **staffing engine**: who works when, and how a vacancy is filled. Sections 16 through 22 define the rest of the product, which is built on top of that engine and never changes it.
+
+### 16.1 The Standing Hierarchy
+
+Beyond the roles in Section 2, day-to-day operations run on a standing chain of authority:
+
+**Student Manager < Residential Services Manager < Housing Manager < Building Administrator.**
+
+The **Building Administrator (BA)** is the person in charge when the RSM and the HM are both unavailable. The BA is not a new role: it is the existing **Building Manager (`bm`)** role, scoped per house (confirmed 2026-07-12). Everything Section 2.3 says about BM authority is unchanged; "BA" is the operational name for that person when the question is _who is in charge right now_.
+
+BA resolution is leave-aware and as-of-date, exactly like HM resolution: if the scoped BM is on leave, the system follows the same replacement chain used for HM leave in Section 2.6, and yields nobody if every candidate is out.
+
+### 16.2 SMOD and CSMOD
+
+Two student-manager duty tiers exist that the staffing engine does not model:
+
+- **SMOD** — Student Manager On Duty.
+- **CSMOD** — Conferences Student Manager On Duty.
+
+Both are reached through a **shared duty phone**: one number that rings whoever currently holds the duty. Because the number is the contact, the system does **not** resolve SMOD or CSMOD to a named person. When routing lands on one of these tiers, the system names the tier and surfaces the configured number. If no number is configured, it names the tier and says the number is not on file rather than inventing one.
+
+"ASMOD" is not a real tier and must not appear anywhere in the product; the student-manager escalation contact is the **CSMOD**.
+
+### 16.3 The Escalation Ladder
+
+Contact routing walks a fixed ladder, lowest tier to terminal:
+
+**desk SM -> CSMOD -> RSM -> HMOD -> BA -> project administrator.**
+
+An **unfilled tier falls upward.** If the rule for a situation names the RSM but the RSM is on leave with no cover, the system tries the HMOD, then the BA, then the project administrator, and reports the chain it walked so the worker can see why they were sent where they were sent. Only if every tier including the terminal is empty does the system decline to name a contact, and that case is logged rather than shown as a dead end.
+
+This ladder governs **who to contact**. It is separate from, and does not alter, the coverage escalation chain of Section 5.4 (broadcast, float, Allied), which governs **how a vacant block gets staffed**.
+
+### 16.4 Routing Rules Are Data
+
+Which tier owns which kind of issue is **configuration, not logic**. A routing rule states: for this issue type, on this day type, within this time window, during this season, contact this tier. Rules carry a priority; the highest-priority matching rule wins, and ties resolve deterministically so the same question always yields the same answer.
+
+When no rule matches, routing defaults to the **HMOD**, which is the historical catch-all. This is deliberately conservative: an unclassified situation goes to the tier that can handle anything.
+
+The complete tier ladder, the issue-type-to-tier mapping, and the season and time windows are an operational input that Housing leadership owns. The system ships with a placeholder ladder; replacing it is a data change and requires no code change.
+
+### 16.5 Off-Hours Coverage Paging (Pilot)
+
+During the staggered rollout (Section 22), Housing Managers are not yet using the app, so an off-hours coverage alert routed to the HMOD would page someone who cannot receive it. While that is true, a coverage-lock event **outside HM working hours** instead runs a human ladder of people who are on the app and can bridge to the desk phone:
+
+1. the worker who dropped the seat,
+2. that house's Student Manager,
+3. every worker currently on that house's desk.
+
+Each rung is an acknowledgeable "call the desk" alert. If nobody acknowledges within the rung timeout (default 10 minutes, configurable), the alert advances to the next rung. An acknowledgment resolves the ladder, so exactly one person owns the duty at a time and the chain never double-pages. The third rung is deliberately multi-recipient (shared visibility among people already standing together) and is terminal.
+
+This ladder is **off by default** and gated by a single switch. Inside HM working hours, routing is unchanged and goes to the RSM per Section 10.1. When Housing Managers are on the app, the switch is turned off and off-hours routing reverts to the HMOD with no code change.
+
+---
+
+## 17. The Desk Assistant
+
+The Desk Assistant is a grounded, cited assistant that helps desk staff answer their own questions, follow the correct procedure, reach the right contact, and, when escalation is genuinely warranted, send a complete and correctly routed page. It exists to reduce both the **volume** and the **incompleteness** of pages reaching the HMOD, and to shorten new-worker ramp by making procedural knowledge queryable in the moment it is needed.
+
+**The Assistant never touches staffing.** It cannot create, change, cancel, or claim an assignment; it cannot float, swap, or drop; it cannot trigger the escalation chain. Everything in Sections 4 through 12 is out of its reach by design. Its only write action is sending a page that a human has reviewed.
+
+### 17.1 Who Can Use It
+
+Student Workers, Student Managers, Residential Services Managers, Housing Managers, Building Managers, and the Administrator. Allied is not a user.
+
+Answers are **scoped by role and house**. An SW, an SM, and an HM asking the same question may see different levels of detail and be given different contacts.
+
+### 17.2 What a Question Resolves Against
+
+Every question is classified into one of three kinds, because answering the wrong kind from the wrong source is how an assistant invents facts:
+
+- **Durable knowledge** ("can a resident of another house sign out a cart?") resolves against the knowledge base of Section 18.
+- **Duty contact** ("who is the HMOD next Tuesday?") resolves against **live duty state** as of the date asked, using the routing of Section 16 and the same HMOD, RSM, and BA resolution the rest of the system uses. It never resolves against stored documents, because a document cannot know who is on leave today.
+- **Personal schedule** ("what is my next shift?", "how many hours do I have this week?") resolves against the worker's own live assignments. A worker can only ever see their own schedule this way; the question is answered for the authenticated user and for nobody else.
+
+A question carrying a date reference ("next Tuesday", "on the 14th") is resolved as of that date, not as of today. Misclassification degrades to searching the knowledge base and deferring to a human. It never degrades to a fabricated contact.
+
+### 17.3 Grounded and Cited, or It Defers
+
+Every substantive answer is grounded in indexed official documentation, and the worker can always see **which documents it came from**. The Assistant does not answer a procedural question from general knowledge. When no source in the knowledge base supports an answer, it says so plainly and offers to route the worker to the right contact instead. An answer presented without its sources attached is a defect.
+
+**The sources are shown by the app, not spoken in the answer** (revised 2026-07-22). The Assistant never writes "Source 1", "according to", or a list of documents at the end; it states the guidance and nothing else. Every answer still carries its citations, and every surface must display them, but as a **collapsed control the worker can open**, not as prose. Naming documents inline buries the one line the worker actually needs, and it duplicates what the interface already shows.
+
+Whether a question counts as grounded is judged by **how far the best-matching source stands above the rest of the material considered for that question**, not by a fixed similarity score (revised 2026-07-22). The same correct source scores very differently depending only on how the worker phrased the question: a long, keyword-rich question and a short one about the identical policy can differ by half again as much, and an off-topic question can outscore a valid short one outright. A fixed score therefore cannot separate them, and a fixed score set high enough to reject the off-topic question also rejected valid short questions like "can a MindCore attendee have guests?" The rule is deliberately relative so that **the way a worker phrases a question does not decide whether they get an answer.**
+
+### 17.3a The Assistant Knows What Time It Is
+
+The Assistant is told the current date and time in America/New_York whenever it answers from the knowledge base, and resolves time-conditional guidance against it (added 2026-07-22). Most desk guidance is conditional on the clock: business hours versus after hours decide who to call for the same emergency, and visiting hours decide whether a guest is permitted right now. The Assistant states **which branch applies and why** ("it is Tuesday 09:19, which is within business hours, so...") rather than reciting every branch and leaving the worker to pick. When the worker asks about a different time than the present, the Assistant answers for the time they named.
+
+### 17.3b Answer First, Because Someone Is Waiting
+
+The Assistant is optimised for a worker who has just told a resident **"let me quickly check"** (added 2026-07-22). That setting, not a reading session, is the design centre: the resident is at the desk, and the worker needs one fact they can say out loud.
+
+So the first line of every answer is the answer itself: yes, no, the number to call, or the step to take. At most one or two short sentences follow, carrying only detail that changes what the worker does next. The Assistant does not restate the question, narrate its reasoning, list the options it rejected, or summarise at the end. Where guidance is time-conditional it gives **the branch that applies now**, not every branch. Length is a usability property here: an answer that is correct but takes twenty seconds to read has failed the person at the desk.
+
+### 17.3c Never an Em Dash or En Dash
+
+No answer, drafted page, or stored assistant message may contain an em dash or en dash, matching the project-wide rule for copy a user can see. This one is not left to the model's compliance: instruction alone was observed to fail, so the dashes are re-punctuated in code before any text reaches the worker and before it is persisted.
+
+### 17.4 Hard Safety Rules
+
+These are absolute and are not overridable by configuration:
+
+1. **Grounded and cited, or it defers.** No invented procedures.
+2. **Life safety is never substituted.** For fire, medical, or emergency-door situations, the Assistant surfaces the documented protocol and pushes the worker to the proper emergency line and escalation. It never positions itself as a substitute for emergency protocol. Detection here is deliberately over-inclusive: a false positive costs a redundant safety reminder, a false negative costs the reminder that mattered.
+3. **Access decisions: inform and defer, never authorize.** The Assistant states policy about who may enter what and when. When it is unsure, it tells the worker **not to grant access** and to escalate. It never issues an authorization.
+4. **No disclosure of specific incidents or personal information.** The Assistant gives guidance, never case detail. It refuses attempts to surface a specific past event ("what happened the other day") rather than relying on the search returning nothing. This bars specifics the Assistant produces from **outside** the sources it cited; it does not bar repeating what those sources themselves say (clarified 2026-07-22). An answer may quote the official contact numbers and program dates its own cited sources contain, because that material has already passed the same reader-scope and sensitivity checks the worker would clear by opening the document directly. Read the other way, this rule silently broke the corpus's most important answers: "there is a flood in the building right now, what is the escalation procedure?" was refused in full, because the correct answer must quote the Facilities and duty-manager numbers.
+5. **A human sends every page.** The Assistant drafts; a person reviews, edits if they want, and sends.
+
+### 17.5 Assisted Paging
+
+When the Assistant cannot resolve a situation and escalation is warranted, it:
+
+1. determines the issue type and which facts a page of that type requires (building-wide or isolated, when the shift ends, what has already been tried),
+2. asks the worker only for what is still missing,
+3. drafts a complete, categorized page and resolves the recipient using Section 16,
+4. presents the draft for review, which the worker may edit freely or send as-is, and
+5. delivers it through the app's existing notification system to the resolved contact.
+
+The intent is that the HMOD receives a page that is already complete, instead of starting from scratch or calling back for the one fact that was missing.
+
+### 17.6 Where It Lives
+
+The Assistant is available in the worker mobile app, in the web app, and as a **desk-facing view** intended for the monitor at the desk. Off-mobile surfaces have reduced notification and widget support; no Assistant behavior may depend on push notifications or widgets being available.
+
+Every surface **renders** the answer's formatting rather than showing its source (added 2026-07-22). The model emits Markdown whether or not it is asked to, so a surface that prints the raw text shows a worker literal `**10:00 pm**` mid-sentence. Emphasis, inline code, and bullets are rendered; nothing else is required, because §17.3b keeps answers to a few sentences.
+
+---
+
+## 18. The Knowledge Base
+
+The knowledge base is the corpus the Assistant answers from. It is built from documentation Housing already treats as authoritative, and it is curated, not crawled.
+
+### 18.1 Sources
+
+The HM guide, the house binders, the summer binder, in-app how-to guides written for the worker app, and de-identified lessons derived from incident records. Nothing enters the corpus without passing through Section 18.4.
+
+### 18.2 Shape: Same Rule, Different Person
+
+Most procedures are shared across all 13 houses; the largest genuine per-house difference is **who to contact**. So the corpus is a **shared rule set** plus a **per-house overlay** for the cases that really do differ (perimeter doors, key retrieval, access specifics, heaviest at Harnwell). Contacts are never stored as prose. They are resolved live per Section 16, because a stored contact is wrong the moment someone goes on leave.
+
+### 18.3 Scoping
+
+Every knowledge item carries a **sensitivity** level and an **audience**. Retrieval is filtered by the asking user's role and house before anything is read. An item the asking user may not see is not summarized, hinted at, or cited; it is simply not there for them.
+
+### 18.4 Intake and Approval
+
+New knowledge enters through a reviewed pipeline. A document is uploaded, normalized, and read; the system then **proposes** its metadata (source type, house scope, audience, sensitivity, how long it stays true, and any redactions). A human reviews that proposal and approves, edits, or rejects it. Only on approval is the document indexed and made answerable. A document may also be withdrawn later.
+
+The human approval step is the control. The system proposes; a person decides.
+
+### 18.5 Knowledge Expires
+
+Not every rule is permanent. Each item is marked as one of:
+
+- **durable** — true until someone changes it (the default),
+- **valid until superseded** — true until a newer item on the same topic replaces it,
+- **expiring** — true only within a stated date range (a summer-only rule, a temporary closure).
+
+Retrieval is **as of a date**. A question about next Tuesday is answered with the rules in force next Tuesday, not the rules in force today. An expired rule is not cited as current.
+
+### 18.6 Incidents Are Guidance, Never Disclosure
+
+Historical incidents are handled in two representations, and only one of them is searchable:
+
+- the **raw record** is access-controlled and is **never placed in the searchable index**;
+- a **de-identified lesson** — the generalizable takeaway, with people, rooms, and dates removed — is what gets indexed.
+
+Disciplinary and private incidents produce **no indexed lesson at all**. Keeping sensitive text out of the index entirely is the primary control; the refusal in Section 17.4 rule 4 is a second layer behind it, not the main one.
+
+---
+
+## 19. AI-Assisted Schedule Building
+
+Schedule building (Section 4.3) may be assisted. The Student Manager describes the week they want; the system proposes a complete draft, which the SM then edits and publishes exactly as they would a hand-built one.
+
+**The proposal is a draft, never a publish.** Nothing reaches a worker's calendar until a human publishes it. The assistant has no authority the SM does not already have.
+
+Every proposal is **validated before it is shown**, and a proposal that violates a hard rule is repaired or rejected rather than surfaced. The hard rules of Section 1.2 and Section 1.5 apply unchanged: the Harnwell training constraint, house headcounts, block boundaries, the hours cap, and worker availability are constraints on the generator, not preferences for it to trade away.
+
+Within those constraints, the system optimizes for, in decreasing importance:
+
+1. **Coverage.** Leaving a seat empty that could have been filled outweighs any preference gain. This dominance is deliberate and is not tunable into a tie.
+2. **Preference satisfaction**, weighting a worker's preferred blocks above merely available ones.
+3. **Target hours**, penalizing both under- and over-assignment against each worker's target, with over-assignment penalized slightly harder.
+4. **Shift quality**, favoring shifts of two to five hours, penalizing one-hour fragments and stretches beyond six hours.
+5. **Contiguity**, penalizing a worker's day being broken into several separate runs.
+6. **Fairness**, penalizing an uneven spread of desirable blocks and of hours-against-target across the roster.
+
+Unfilled seats are always **surfaced**, distinguishing those that could not be filled by anyone available from those that were left open. The SM is told what the draft failed to do, not just what it did.
+
+---
+
+## 20. Worker App Onboarding and Widgets
+
+### 20.1 Onboarding Is Three Layers
+
+1. **A short first-run tour.** On first launch, a brief walkthrough orients the worker to the bottom tabs and the Assistant. It fires once.
+2. **Just-in-time teaching.** The first time a worker reaches a surface that needs explaining, teaching happens there rather than all at once on day one. Most surfaces still use a single explanatory card, shown once per worker per surface. Six surfaces instead ship a full interactive tour in place of a card — **ShiftTour** (managing a shift), **PreferencesTour** (painting preferences), **BreakTour** (claiming a break), **SwapTour** (the swap composer), **HouseGridTour** (the house grid), and **OpenClaimTour** (claiming an open shift) — each a fixed three-step walkthrough that plays out on the real or a sample instance of the surface, so the worker sees the outcome, does the gesture, and watches where it lands, rather than reading about it.
+3. **Written how-to guides.** The guides are part of the knowledge base (Section 18), so a worker can also just ask the Assistant how to do something.
+
+Guided interactions that involve a gesture demonstrate the gesture rather than describing it. Onboarding progress is per-device and is a display preference, not scheduling state.
+
+Each of the six interactive tours auto-starts the first time a worker reaches its surface, once the first-run tour is done; the swap tour is the one exception, gating on first reaching the swap composer rather than on the first-run tour. A tour is shown once per worker per surface: finishing it or skipping it both mark it done, and it does not auto-start again after either. Tapping outside a tour's highlighted content dismisses the tour the same way the Skip control does, except during a step whose whole point is a drag gesture (choosing part of a shift or break by dragging a range, or dragging to claim or drop a break slot) — a stray tap while a worker is mid-drag must not lose their place, so those steps cannot be dismissed by tapping outside them. After a tour first finishes, whether by completion, Skip, or an outside tap, a one-time pointer briefly indicates the surface's help control, so the worker learns where to find it again. A tour can be replayed at any time from that help control or from its own row in Settings; replaying does not require the tour's done state to be cleared.
+
+### 20.2 Permission Prompts Are Earned, Not Cold
+
+The app never opens with a system notification permission dialog. A worker is first shown, in the app's own words, what notifications are for and what they will miss without them, and only a worker who says yes is shown the operating system's dialog. Declining the in-app prompt does **not** touch the system permission, so the worker can turn notifications on later without having spent their one system prompt.
+
+This is a presentation rule only. Which notifications are mandatory is unchanged and is governed by Section 10.1.
+
+### 20.3 Home-Screen Widgets
+
+The mobile app offers home-screen widgets on both platforms:
+
+- an **upcoming shifts** widget showing what is next without opening the app, and
+- an **open shifts** widget, configurable to a chosen house, showing what is currently claimable.
+
+Widgets are **read-only**. A widget never claims, drops, acknowledges, or changes anything; tapping one opens the relevant screen in the app. Widget content is a snapshot and may briefly lag the app. Nothing in the app requires a widget, and the web surfaces have no widget equivalent.
+
+There is no dedicated prompt encouraging a worker to add a widget. **(Revised 2026-07-23:** a behavioral "add the widget" prompt, gated on repeated schedule opens and a return visit, previously lived here; it was removed because on the first-run experience it could surface ahead of the interactive per-surface tours, which are the app's actual onboarding.)
+
+---
+
+## 21. House Membership and Transfers
+
+A worker's house is **season-scoped**, not a permanent property. A worker belongs to a house for a span of dates, and those spans never overlap: on any given date a worker belongs to exactly one house.
+
+Section 1.3 is unchanged: a worker still cannot move themselves, and informal cross-house work is still not a thing. What Section 21 adds is a sanctioned, recorded way for management to move someone.
+
+**Who may transfer.** Either the source house's or the destination house's HM or BM may initiate a transfer, as may the Administrator. This is deliberately not restricted to the losing house: a receiving manager who has agreed to take a worker can complete the move.
+
+**When it takes effect.** A transfer is either immediate, effective on a stated future date, or effective at the next season boundary (the default).
+
+- An **immediate** transfer moves the worker now. Their future shifts at the old house are released back to that house's open-shifts feed so the vacancy is visible and claimable, and any live float assignment involving them is voided.
+- A **future** transfer records the move and changes nothing until its date arrives, at which point the system applies it automatically.
+
+**Forward-looking surfaces respect the future house.** Preference collection and schedule building for an upcoming period use the house the worker will belong to **then**, not the house they belong to today. This is what makes it possible to pre-build a worker into their new house before they arrive. Every current-period surface — the live calendar, the roster, float eligibility, permissions — uses today's house.
+
+**The Harnwell training constraint holds with no exception.** A worker transferring out of Harnwell has their Harnwell shifts released as part of the move, and a worker transferring into Harnwell becomes a Harnwell worker for all purposes from the effective date. Section 1.2 rule 1 needs no special case here.
+
+Voiding floats on transfer is a sanctioned management action, like removing a worker, and does not violate the no-takeback rule of Section 6.4, which governs automated revocation only.
+
+---
+
+## 22. Staggered Launch
+
+The system can be rolled out **house by house** rather than to all 13 at once. Each house is either **pre-launch** or **live**, and a house is dark until an administrator explicitly launches it.
+
+For a worker whose house is not yet live, the app explains that their house is not on the system yet rather than showing an empty or broken schedule. Administrators are not gated and can see and prepare a pre-launch house.
+
+The whole gate sits behind a master switch that is **off by default**. When it is off, every house behaves as live regardless of its own flag, so no non-production environment is affected. Production turns the switch on and launches houses one at a time.
+
+Launch state is a **visibility** gate. It does not change any rule in Sections 1 through 15: a house that is live and a house that is pre-launch are governed identically, and turning a house live neither creates nor alters shifts.
 
 ---
 

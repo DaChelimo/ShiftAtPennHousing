@@ -10,6 +10,84 @@ It supplements but does not replace BEHAVIORAL_SPECIFICATION.md and ARCHITECTURE
 3. This file — repo conventions and agent guardrails
 4. Test names — behavioral checklist (do not infer behavior from test bodies)
 
+The two specs cover the **whole product**, not only the staffing engine: the Desk
+Assistant, the knowledge base, AI-assisted schedule building, the duty hierarchy and
+contact routing (SMOD/CSMOD/BA), onboarding, home-screen widgets, house transfers, and
+the launch gate are all in scope for them. If a shipped surface is missing from both
+specs, that is a spec defect to fix, not a signal that the surface is "not spec'd."
+
+## Specs Are Ground Truth — Update Them In The Same Change
+
+**A feature is not done until BEHAVIORAL_SPECIFICATION.md and ARCHITECTURE.md describe
+it.** Both files are the ground truth other people (and future agents) read to learn what
+this system is; anything true only in code or only in a `docs/**/PLAN.md` is invisible.
+This rule exists because a real drift was found on 2026-07-22: the Desk Assistant,
+knowledge base, AI scheduling, widgets, and SMOD/CSMOD routing had all shipped with
+**zero mention in either spec**, and two statements in the specs had been silently
+superseded by later migrations.
+
+### When this triggers (any one is enough)
+
+- A new user-facing capability, screen, or surface on web or mobile.
+- A new role, tier, duty concept, permission, or routing rule.
+- A new subsystem (a new `packages/core/src/*` module, a new group of Edge Functions, a
+  new family of tables).
+- Any change to an existing documented rule, threshold, or default, **including** a
+  behavior that is superseded (grandfathering to cancellation, a floor moving 2 to 1,
+  a gate widening from own-house to cross-house).
+- A new system-wide configurable parameter or `system_config` key.
+- A new deploy-time requirement (an env var, an API key, a cron, a config row that must
+  be set for correct behavior).
+
+Copy tweaks, refactors with no behavior change, and pure test additions do not trigger it.
+
+### Where each part goes
+
+- **BEHAVIORAL_SPECIFICATION.md** — the observable rule, stated implementation-free: who
+  can do what, when it fires, what the user sees, what is guaranteed and what is refused.
+  New configurable parameters go in §14; new permissions go in §13.
+- **ARCHITECTURE.md** — the mechanism: tables and enums, which module is pure vs. which
+  Edge Function orchestrates, the algorithm, the data flow, the invariants the schema
+  enforces, and deploy-time config.
+- **This file (AGENTS.md)** — only the agent-facing guardrail (a "do not break this"
+  invariant or a phase note). AGENTS.md notes are **not** a substitute for the specs; a
+  detailed note here plus silence in the specs is exactly the failure mode above.
+- **`docs/**`** — plans, scoping documents, and build logs. These are **working
+documents, not spec.** A `V1_SCOPE.md`or`BUILD_PLAN.md` never satisfies this rule.
+  When a plan lands, promote its settled behavior into the specs and let the plan
+  document become history.
+
+### Rules
+
+1. **Ship the spec edit in the same commit** as the feature it describes. Do not defer it
+   to a follow-up; follow-ups do not happen.
+2. **Fix superseded text, do not just append.** When behavior changes, grep both specs for
+   the old statement and correct it in place. Appending a new section while a
+   contradicting sentence survives elsewhere is worse than not documenting at all.
+3. **A disagreement between the two specs is a P0.** If BEHAVIORAL_SPECIFICATION.md and
+   ARCHITECTURE.md state different things about the same behavior, stop and reconcile with
+   the user before writing code on top of it. One of them is describing a system that does
+   not exist.
+4. **Never renumber existing sections.** Code comments, tests, and both specs cross-
+   reference section numbers (`BSpec §5.4`, `ARCH §2.8`). Append new top-level sections at
+   the end of the numbered run and add subsections in place.
+5. **Ground every claim in source.** Write the spec from the migration, the module, and
+   the Edge Function you actually read. If you cannot point to the code that makes a
+   sentence true, do not write the sentence.
+6. **Flag drastic changes rather than absorbing them.** If a request changes a hard
+   invariant, a documented default, or a role's authority, say so explicitly, get the
+   user's confirmation, and record the decision (with its date) in the spec. Treat it as a
+   spec amendment, not an implementation detail.
+
+### Before you call a feature done
+
+- [ ] Behavior stated in BEHAVIORAL_SPECIFICATION.md.
+- [ ] Mechanism stated in ARCHITECTURE.md.
+- [ ] Superseded sentences in both specs grepped for and corrected.
+- [ ] New config keys in BSpec §14; new permissions in BSpec §13.
+- [ ] Deploy-time requirements (env vars, keys, crons, required config rows) recorded.
+- [ ] The two specs agree with each other and with the code.
+
 ## Working Style — Ask Clarifying Questions First
 
 Clarifying questions are essential here, not optional. When a request is ambiguous,
@@ -56,6 +134,17 @@ critical things is the failure mode to avoid.
 
 ## Conventions
 
+- **Ad-hoc DELETE/UPDATE against the DB: scope-check before you run it, not after.**
+  Before running a hand-written mutation (psql, MCP, or otherwise) — including cleanup of
+  your own test rows — verify the WHERE clause actually scopes to what you intend against
+  the table's real schema, not what you assume from context. If a table lacks a direct
+  column for the scope you want (e.g. `draft_block_assignments` has `block_id` but no
+  `house_id`; the house only exists via a join to `shift_blocks`), write the join
+  explicitly or delete by the exact PK you inserted, never a broader "should be
+  equivalent" filter reconstructed later. Run the WHERE as `SELECT count(*)` first and
+  sanity-check the number before converting to a mutation. This applies locally now and
+  will matter far more once a prod database exists (no `db reset` safety net there). Full
+  incident + rationale: [[feedback_scoped_destructive_sql]] in memory.
 - **API keys: prefer a dedicated key per feature over reusing an existing one.** When a
   task needs an API key (Anthropic, Voyage, or otherwise) and you anticipate meaningful or
   recurring usage (not a one-off manual verification), do NOT default to reusing another
@@ -553,3 +642,23 @@ user, dest, effective_date, note)` is the entry point: either the SOURCE or DEST
   coalescer. Tests: `WorkerColorsTest` (10) + 2 in `HouseScheduleTest`; pgTAP
   `t3b-directory-grid.sql` (20, plan raised from 15; its fixtures moved to 2029 because the
   seeded real-Harnwell schedule collided with the old 2026-07-01 blocks).
+
+- [Interactive-tour tap-outside-to-dismiss] **All six interactive onboarding tours (Shift,
+  Preferences, Break, House grid, Open-claim, Swap) now dismiss on a scrim tap, gated per
+  step** (2026-07-22). Each tour's scrim previously swallowed every tap (deliberately, to
+  protect the interactive control from an accidental dismiss mid-gesture); it now calls a
+  new `onDismissOutside` callback (both `X TourOverlay` Compose functions and `X TourView`
+  SwiftUI structs), EXCEPT on the one or two steps that carry a real drag/slider gesture,
+  where the swallow behavior is preserved: `ShiftTour`/`OpenClaimTour`/`SwapTour` protect
+  only `AMOUNT` (the range slider); `PreferencesTour` protects only `PAINT` (the
+  press-and-drag canvas); `BreakTour` protects BOTH `CLAIM` and `DROP` (dismissible only on
+  `LAYOUT`); `HouseGridTour` has no drag step and is always dismissible. A step with a
+  discrete-tap control (a toggle, a segmented control, a tap-to-focus segment) does NOT need
+  protection — only continuous drag gestures risk overshooting onto the scrim mid-gesture.
+  Tap-outside calls the same `skip()` the tour's own Skip button calls, but ALSO always
+  re-shows that tour's "look here" pointer callout at the header "?" (bypassing the
+  once-ever `X TourPointerStore.hasShown()` gate that natural completion / the Skip button
+  still respect) — a deliberate, explicit product decision: a quick tap-away dismiss should
+  always remind the worker where to find the tour again, not just the first time ever.
+  Do not fold this into the natural-finish pointer path; they are two distinct triggers by
+  design.

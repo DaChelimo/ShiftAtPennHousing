@@ -4,6 +4,8 @@ This document describes how the software is structured to guarantee the rules de
 
 This document is opinionated and prescriptive. It exists because the behavioral spec must be implementable in a way that handles change gracefully — specifically, change to season rules, threshold timings, staffing patterns, and configurable parameters without requiring code modifications.
 
+Sections 1 through 12 cover the staffing engine. Sections 13 through 19 cover everything built on top of it: the Desk Assistant, the knowledge intake pipeline, the AI schedule agent, duty resolution and launch gating, house memberships, and mobile onboarding and widgets. These map onto behavioral spec Sections 16 through 22 and change nothing in the engine below them.
+
 ---
 
 ## 1. Core Architectural Principles
@@ -102,7 +104,9 @@ A date with no row in `operating_calendar` is "non-operating": no shifts, no orc
 
 1. **Authoring tables** (migration 20260702000003, admin-only RLS): `operating_seasons` (range + season-wide cap/enforcement/desk-hours/scheduling-mode), `season_house_windows` (per-house open windows + headcount, presence = open), `season_float_windows` (floating-on windows), `operating_config_audit`. Float routing is NOT authored — it is universal (any open multi-staffed house to any other open house, never into Harnwell) and derived by the compiler.
 2. **A pure compiler** (`packages/core/src/operating-seasons`, `compileSeason`) derives PHASES — one per date on which any setting changes — and emits, per phase, a compiled `operating_profiles` row named `s_<slug>_<YYYYMMDD>` (phase start), its `staffing_patterns` rows, an auto-generated all-pairs `float_routing` (universal float, Harnwell never a destination, precedence by descending source headcount), and the `operating_calendar` date→profile assignments. It is deterministic and does no I/O.
-3. **A reconciler RPC** (`apply_compiled_season`, migration 20260702000006) writes those config rows in one transaction and reconciles FUTURE blocks (`block_start_at > app_now()` only): generates newly-open blocks, adjusts `required_headcount` (adding vacant seats on an increase; trimming vacant seats and grandfathering occupied seats over the new floor on a decrease), and voids blocks whose house closed or whose desk hours shrank. Its `p_dry_run` mode runs the identical logic inside a rolled-back subtransaction to produce the preview impact, so preview and apply cannot drift.
+3. **A reconciler RPC** (`apply_compiled_season`, migration 20260702000006, body replaced by 20260709000003) writes those config rows in one transaction and reconciles FUTURE blocks (`block_start_at > app_now()` only): generates newly-open blocks, adjusts `required_headcount`, and voids blocks whose house closed or whose desk hours shrank. Its `p_dry_run` mode runs the identical logic inside a rolled-back subtransaction to produce the preview impact, so preview and apply cannot drift.
+
+   On a headcount **increase** it adds vacant seats. On a headcount **decrease** it trims vacant seats and then **cancels the excess occupants** (`cancelled_config`) — it does _not_ grandfather them. The cut order is deterministic: external floaters (`floated_in` / `pending_float_in`) first, then the shorter shift (ranked per `(worker, house, NY date)` by fewest occupied blocks, so the cut is coherent across an overlap), then `assignment_id`. Cancelled workers get a `shift_cancelled_config` notification and inbound floats on a cut seat are voided (`float_cancelled_config`), mirroring the house-close path. The `enforce_block_occupied_headcount` trigger (20260702000005) is unchanged and still only checks writes that _increase_ a block's occupied count, which is what keeps swaps and drops working on a transiently over-capacity block.
 
 A block retired by a config change carries `shift_blocks.voided_at` (migration 20260702000005) and has its occupied assignments moved to `cancelled_config` and its vacant seats deleted, which makes it self-excluding on the status-filtered read paths; the orchestrator scan, `is_assignment_claimable`, and the house-schedule grids additionally filter `voided_at IS NULL` (migration 20260702000007). Changes are prospective only; past and in-progress blocks are immutable history.
 
@@ -601,7 +605,7 @@ notifications
   notification_id   (primary key)
   recipient_user_id (foreign key)
   type              (enum: personal_shift, broadcast, hmod_urgent, ack_reminder,
-                          swap_request, hm_leave_notice, sm_permanent_drop_alert,
+                          swap_request, hm_leave_notice, sm_permanent_drop_alert [retired/unused],
                           sw_permanent_removal_alert)
   delivered_at      (timestamp; null if pending)
   scheduled_for     (timestamp; for future-cadence delivery)
@@ -613,7 +617,7 @@ The notifications table no longer carries an `hm_digest_card` type, since stacke
 
 The `scheduled_for` field is still used for acknowledgment cadence reminders, which are scheduled at the moment a float is assigned and delivered when their offset is reached.
 
-The `sm_permanent_drop_alert` type is used to notify an SM that a worker at their house has permanently dropped a recurring slot. The `sw_permanent_removal_alert` type is used to notify a worker that an SM/HM has permanently removed them from a recurring slot. Both notifications are in-app only (no push); they display on next app open and persist in the recipient's updates tab. The `acknowledged_at` field is populated when the recipient opens the updates tab and views the notification.
+The `sm_permanent_drop_alert` type is retired (2026-07-13): the enum value remains for backward compatibility, but no code path generates or displays it. SMs are no longer notified when a worker permanently drops a recurring slot (there is nothing actionable the SM does in response; the permanent openings feed is the SM's authoritative view). The `sw_permanent_removal_alert` type is used to notify a worker that an SM/HM has permanently removed them from a recurring slot. It is in-app only (no push); it displays on next app open and persists in the recipient's updates tab. The `acknowledged_at` field is populated when the recipient opens the updates tab and views the notification.
 
 ### 3.8 Float Exclusion List
 
@@ -1042,9 +1046,9 @@ The trailing AND-clause excludes blocks where the dropping worker is currently c
 
 This is purely a UI warning; the SQL backstop still skips `floated_out` / `pending_float_out` rows so the no-takeback rule cannot be accidentally violated.
 
-4. Notify the SM of the affected house: insert a row in `notifications` with `type = sm_permanent_drop_alert`, `delivered_at = NULL`, `scheduled_for = NOW()`. The notification is displayed in-app on the SM's next session and persists in their updates tab.
+4. (No SM notification.) The passive `sm_permanent_drop_alert` was retired (2026-07-13); the drop surfaces to the SM only via the permanent openings feed. No `notifications` row is written for the SM.
 
-5. If the dropping operation was initiated by an SM/HM/BM acting on behalf of the affected worker (rather than the worker themselves), additionally notify the affected worker: insert a row in `notifications` with `type = sw_permanent_removal_alert` and the operator's identity in the payload.
+5. If the dropping operation was initiated by an SM/HM/BM acting on behalf of the affected worker (rather than the worker themselves), notify the affected worker: insert a row in `notifications` with `type = sw_permanent_removal_alert` and the operator's identity in the payload.
 
 6. Return the count of affected blocks for the user-facing confirmation summary.
 
@@ -1199,11 +1203,13 @@ Cycle 2 should not require any code changes. If it does, the cycle 1 implementat
 - **Force-trigger endpoint and UI.** Ships in cycle 1.
 - **Permanent drop and pickup workflows.** Ship in cycle 1.
 
-### 8.5 Summer (Deferred Indefinitely)
+### 8.5 Summer (Shipped 2026-07-02 — This Section Superseded)
 
-Summer is left for a possible future implementation. The current architecture supports its eventual addition without schema changes: adding a `summer` row to `operating_profiles` with appropriate `escalation_chain`, `shift_start_bound`, `default_hours_cap`, etc., plus per-house rows in `staffing_patterns` (where time-banded headcounts may be useful), plus relevant `float_routing` rows, plus mapping summer dates in `operating_calendar` would suffice. No code changes are anticipated for an eventual summer rollout — this is a deliberate property of the configuration model.
+**Corrected.** This section previously stated that summer was "deferred indefinitely" on the grounds that summer schedules are static and the float engine adds no value. Both the deferral and its premise are now wrong, and the section is retained only so the reversal is legible.
 
-The reasons for deferring summer are operational, not technical: summer schedules at Penn Housing are essentially static, Harnwell does not float in summer, the Quad is closed, only a few houses are intermittently double-staffed, and coverage failures escalate immediately to HMOD/Allied without any meaningful float-lookup step. The system's primary value does not apply. See Behavioral Spec Section 3.1.
+Summer shipped on 2026-07-02 as the **operating-seasons** layer (§2.1): the Administrator authors a season, a pure compiler in `packages/core/src/operating-seasons` derives one phase per change-point, and `apply_compiled_season` materializes those phases into the same four runtime config tables the academic year uses. The prediction that no code changes would be needed held for the _runtime_ — the orchestrator, block generator, and publish path have no summer special cases — but the authoring, compilation, and reconciliation layers above them are all new code.
+
+The operational premise was also wrong. Summer is the **most** dynamic period, not the least: houses open on staggered dates as they take residents, a house may be single-staffed early and double-staffed later, staffing varies intraday, and floating is off early and on later. Floating in summer is **universal** (any open, multi-staffed house to any other open house, never into Harnwell) rather than absent. See behavioral spec Section 3.1 and hard invariant #2 in AGENTS.md.
 
 ---
 
@@ -1315,11 +1321,16 @@ Mitigation: the confirmation popup at permanent drop time explicitly shows the n
 - Performance metrics dashboard. No tracking of last-minute drops, no-shows, or worker reliability scores.
 - Cross-house worker pooling beyond the float mechanism.
 - Mobile schedule creation. Drag-picker is desktop-only.
-- External integrations beyond Penn's standard auth.
 - Multi-campus support.
-- Audit logging of who-did-what (beyond what's captured in the schema for force-triggers and HM leave).
+- General audit logging of who-did-what. Scoped audit trails do exist where a specific need drove one: `force_triggered_by`, HM leave, `operating_config_audit` for season changes, the `kb_intake` status trail (§14), and `da_page_deliveries` (§13.7). There is no system-wide change log.
+- Allied as a Desk Assistant user, and digitization of the Allied coverage-request form.
+- Direct physical-pager hardware integration (behavioral §15, pending items).
+- Masked or app-mediated contact between workers.
+- Cost and service-level reporting on Assistant usage.
 
-These can be added later as cycle 3+ work if needs arise.
+**Amended.** This list previously said "external integrations beyond Penn's standard auth." That is no longer true and the line has been removed: the system integrates with Anthropic (generation, intake proposal, schedule proposal), Voyage (embeddings), and Firebase (push delivery for both FCM and APNs). Each is a deploy-time secret, each has its own key so cost is attributable, and each is behind a thin client that fails with a clear error rather than crashing when unconfigured.
+
+The remaining items can be added later as cycle 3+ work if needs arise.
 
 ---
 
@@ -1333,6 +1344,196 @@ Items not yet decided:
 - **Additional system-wide configurable parameters the project administrator may want to add.** Section 14 of the behavioral spec will be updated as the project committee provides feedback.
 - **Whether SMs should be able to modify the global weekly cap.** Currently restricted to HM/BM; the project administrator may revisit.
 - **Whether the force-trigger should be auditable beyond the `force_triggered_by` field.** Currently no audit log; if misuse becomes a concern, a lightweight audit table may be added.
+- **The real escalation ladder and issue-type routing table (§13.5).** `routing_rules` ships seeded with a placeholder. The real tier ladder, issue-type mapping, and season/day/time windows are an operational input from Housing leadership. Replacing them is a data change; `TIER_LADDER` itself is the invariant.
+- **The page handoff channel (§13.7).** Assistant-drafted pages currently deliver through the app's own notification system. Whether the legacy pager channel must remain authoritative — in which case pages would instead be formatted for entry there — is undecided. No pager hardware integration exists either way.
+- **Re-embedding on an embedding-model change.** `kb_chunks` pins 1024 dimensions at the column type, so switching embedding models requires a re-embed migration. No such migration exists yet.
+
+---
+
+## 13. The Desk Assistant
+
+Behavioral spec Section 17. The Assistant follows the same shape as the rest of the system: **pure logic in `packages/core`, thin Edge Functions, Postgres for storage and retrieval.** It is strictly additive — it reads staffing state and never writes it.
+
+### 13.1 Layout
+
+- **Pure core**: `packages/core/src/desk-assistant/` — scope predicate, chunking, normalization, layout heuristics, temporal resolution, intake proposal, query classification, commit, per-house overlay, retrieval ranking, citations, guardrails, prompts, redaction, routing, page fields, page drafting, delivery. Zero Supabase imports, no clock (dates are injected), fully unit-tested.
+- **Edge Functions** (thin): `da-ask` (retrieval + grounded generation), `da-route` (contact resolution), `da-draft-page`, `da-send-page`.
+- **Web**: the `(assistant)` route group — an in-shell chat page that streams its answer over SSE, plus a kiosk `/assistant/desk` view for the monitor at the desk.
+- **Mobile**: an Assistant screen backed by a shared ViewModel, reachable from a persistent affordance.
+
+### 13.2 Storage
+
+| Table                                   | Holds                                                                               |
+| --------------------------------------- | ----------------------------------------------------------------------------------- |
+| `kb_documents`                          | One row per approved source document, with scope and temporal validity              |
+| `kb_chunks`                             | Embedded chunks (pgvector), scope and temporal columns denormalized from the parent |
+| `kb_intake`                             | The intake pipeline row for a document under review                                 |
+| `kb_incidents_raw`                      | Access-controlled raw incident records, **never indexed**                           |
+| `da_conversations` / `da_messages`      | Conversation history                                                                |
+| `routing_rules`                         | The issue-type-to-tier ladder (data, per §13.5)                                     |
+| `da_page_drafts` / `da_page_deliveries` | Drafted pages and their delivery records                                            |
+
+Enums: `da_sensitivity_enum` (`general` / `internal` / `restricted`), `da_source_type_enum` (`hm_guide`, `house_binder`, `summer_binder`, `incident_lesson`, `app_guide`, `fixture`), `da_temporality_enum` (`durable` / `until_superseded` / `expires`), `da_intake_status_enum`. Every table gets RLS in the migration that creates it, per the standing convention.
+
+### 13.3 Retrieval Is One Function
+
+`match_kb_chunks(requester, query_embedding, k, as_of_date)` is the **only** place retrieval happens. It applies the role/house/sensitivity scope predicate and the temporal filter **inside the function**, before ranking, so no caller can accidentally retrieve out of scope or cite an expired rule. The scope matrix it enforces is mirrored exactly by the pure `scope` predicate in core, so the same decision is unit-testable off-database.
+
+Embeddings are **Voyage `voyage-3`, 1024-dimensional** (`VOYAGE_API_KEY`). The dimension is fixed by the column type; changing the model requires a re-embed migration.
+
+Generation is **Claude** (`claude-sonnet-5` by default, overridable per deploy). Grounded extraction over supplied context does not need a larger model; the reasoning burden is on retrieval, not generation. Two model-surface constraints are load-bearing and easy to reintroduce as bugs: `claude-sonnet-5` **removed the sampling parameters**, so sending `temperature` / `top_p` / `top_k` returns `400 temperature is deprecated for this model` (there is no determinism knob; steer with the prompt), and it runs **adaptive thinking when the request omits `thinking`**, with thinking tokens charged against `max_tokens` — the grounded path therefore asks for 2048 rather than the 1024 default so a long escalation answer cannot run out mid-list.
+
+**Grounding is decided from the shape of the candidate distribution, not an absolute cutoff** (`isGroundedByDistribution`, in core and mirrored into `_shared/desk-assistant.ts`; revised 2026-07-22). A chunk grounds when its similarity clears a hard floor **and** either clears the outright-accept threshold or beats the **median of the whole candidate pool** by a margin. Measured against the Harnwell summer binder, an absolute cutoff provably cannot work: the identical correct chunk scored 0.5346 for a long question and 0.3688 for a short one, while an off-topic "wifi password" question scored an irrelevant chunk 0.4080 — higher than the valid short question, so no single cutoff separates them. Gap-to-background does: on-topic tops beat their pool median by 0.11 to 0.15, off-topic tops by only 0.03 to 0.07. The background statistic is the **median, deliberately not the runner-up**: once several documents genuinely bear on one question (a program's own row plus the house-wide definition of a term it uses), the runner-up is itself relevant and a top-vs-runner-up margin collapses toward zero, which would defer precisely the best-covered questions. The measured pools are pinned as regression fixtures in `retrieval.test.ts` and `mirror.test.ts`.
+
+The grounded user message also carries the **current NY date and time** (BSpec §17.3a), sourced from `fetchAppNow` (`app_now()`, so the dev sim clock moves the Assistant's "now" too) and formatted with `nyParts`. It names the date in **both** spelled and ISO form, which is not cosmetic: the leakage guardrail below treats a date absent from the prompt as un-sourced, and the model writes prose dates even when handed an ISO string.
+
+**Citations are transport, not prose** (BSpec §17.3). `GROUNDED_SYSTEM_PROMPT` forbids naming sources in the answer text; the citation list travels separately on the `meta` frame, and each client renders it as a collapsed control. Clients must therefore not parse citations out of `content` (nothing to parse) and must not treat an answer without inline references as uncited.
+
+**Em and en dashes are removed in code, not merely forbidden by prompt** (BSpec §17.3c). `stripEmDashes` (core, mirrored into `_shared/desk-assistant.ts`) re-punctuates: an en dash between word characters is a range and becomes a hyphen, every other dash becomes a comma. `da-ask` applies it over the WHOLE accumulated answer and streams the diff, rather than per delta, so each dash is judged with full context; a dash sitting at the very end of the buffer is held back one chunk, because `Mon–` alone reads as a clause break while `Mon–Fri` is a range. The persisted `da_messages` row is sanitized too, since the thread is replayed from it on reload.
+
+### 13.4 Question Classification
+
+`classifyQuery` (pure) routes a question to one of three resolvers before any retrieval happens:
+
+- `durable_knowledge` → `match_kb_chunks`.
+- `duty_contact` → the routing engine (§13.5) against live duty state. This exists because a stored document cannot know who is on leave; answering a duty question from the vector store is the fabrication failure mode.
+- `personal_schedule` → the `get_my_shifts` tool, backed by the `assistant_my_shifts` RPC (migration 20260713000003). **The user id passed to that RPC is the authenticated token subject, never a model-supplied value.** This is the load-bearing control: a tool call is model output, so trusting a model-supplied user id would let a crafted question read another worker's schedule.
+
+Temporal references are resolved to an as-of date in UTC date-only math (no wall-clock interval arithmetic), so §1.6 holds. Misclassification degrades to retrieval plus defer.
+
+### 13.5 The Routing Engine
+
+`resolveRoute` in `packages/core/src/desk-assistant/routing.ts` is pure: no Supabase, no clock. The Edge Function snapshots live duty state and the current season/day/time, then calls it.
+
+- `TIER_LADDER` is `['desk_sm', 'csmod', 'rsm', 'hmod', 'ba', 'project_admin']`. **This constant is the invariant; the rules are data.**
+- A rule matches on issue type, season scope, day type, and an NY wall-clock window (windows may wrap midnight). The lowest `priority` wins; ties break on rule id so the same question always resolves identically.
+- No match falls back to `hmod`, the historical catch-all.
+- Resolution then **walks up** the ladder from the matched tier to the first filled slot and returns the walked chain, so the UI can explain why the worker was sent where they were sent. Every slot empty yields a null contact and a logged warning, never a fabricated one.
+
+Duty slots are filled by the **existing** resolvers, not new ones: `resolve_hmod_on_duty`, `resolve_rsm_for_house`, `resolve_ba_for_house`, and the `project_administrator_user_id` config row. `resolve_ba_for_house` (migration 20260712000010) mirrors `resolve_rsm_for_house` exactly over `role = 'bm'`, scoped per house, and is leave-aware through the same `resolve_hm_for_user` chain — the Building Administrator is the existing `bm` role, not a new one.
+
+`smod` and `csmod` are deliberately **not** resolved to a person: they are reached on a shared duty phone, so routing surfaces the tier plus the optional `smod_duty_phone` / `csmod_duty_phone` config values. As with `project_administrator_user_id`, `seed.sql` leaves these unset and deployers configure them.
+
+### 13.6 Guardrails
+
+`guardrails.ts` flags a query **before** generation so the Edge Function can inject the right framing:
+
+- **Life safety** (fire / medical / emergency door) and **access decisions** are matched by high-recall keyword heuristics. High recall is intentional: a false positive adds a redundant safety preamble, a false negative omits the one that mattered.
+- **Incident probes** ("what happened the other day") are refused at the ask, rather than relying on retrieval returning nothing.
+
+The real control on incident disclosure is that raw incidents are never in the index (§13.2). The output filter is defense in depth, not the primary mechanism — if raw sensitive text lived in the vector store, a retrieval bug or an injection could surface it.
+
+That output filter, `containsIncidentLeakage`, is **scoped to specifics the model produced from outside the prompt** (revised 2026-07-22; BSpec §17.4 rule 4). It runs on the growing answer buffer after every delta and, when handed the grounding text, counts a pattern hit as leakage only if the matched text is absent from that text. The grounding text passed is the **whole user message**, not just the retrieved chunks: everything in it is source text, the worker's own question, or the injected clock line, so echoing any of it discloses nothing new. Comparison folds month names to a three-letter prefix and collapses whitespace, so an answer's "Aug 8" still matches a source's "August 8".
+
+This narrowing is a correctness fix, not a relaxation. The pattern set is shared with `validateLesson`, where "no dates, no phone numbers" is right because it vets a **de-identified incident lesson**; applied unscoped to _any_ answer it fails closed on the corpus's most important content, since the escalation flowcharts are made of phone numbers and the conference table is made of dates. Called with no grounding text the behaviour is unchanged, which is what the ingestion path still wants. Regression fixtures for both directions live in `redaction.test.ts`.
+
+### 13.7 Paging
+
+`page-fields` derives the required fields for an issue type; `page-draft` composes the draft; `da-draft-page` persists it to `da_page_drafts` for human review; `da-send-page` delivers it via the existing notification system and records `da_page_deliveries`. No new delivery channel and no pager hardware integration. The human review step is a hard gate, not a UI convenience.
+
+---
+
+## 14. The Knowledge Intake Pipeline
+
+Behavioral spec Section 18.4. Intake is a **state machine** on `kb_intake`, whose statuses are the audit trail:
+
+```
+uploaded → normalizing → proposed → in_review → approved → embedding → live
+                                         ↘ rejected        ↘ failed
+```
+
+1. **Upload and normalize.** The document is parsed to text. PDFs use a text extractor with a **vision fallback**: pages that extract empty or structurally suspect are re-read by Claude as images, so a scanned or heavily laid-out binder page does not silently ingest as blank.
+2. **Propose.** A Claude pass proposes the metadata a human would otherwise hand-enter: source type, house scope, audience, sensitivity, temporality with its effective dates, and any redactions. `propose.ts` shapes the request and validates the response; the model proposes, it does not decide.
+3. **Review.** A human approves, edits, or rejects in the web intake UI. **Nothing is indexed before approval.**
+4. **Embed and go live.** `commit.ts` chunks (`chunking.ts`, layout-aware via `layout-heuristic.ts`), embeds via Voyage, and writes `kb_documents` + `kb_chunks` with scope and temporal columns denormalized onto every chunk so `match_kb_chunks` filters without a join.
+
+Documents may later be withdrawn. Incident-derived content follows `redaction.ts`: the raw record lands in `kb_incidents_raw` (never indexed), and only a de-identified lesson is eligible to be proposed. Disciplinary and private incidents produce no lesson at all.
+
+**Per-feature API keys.** Each AI usage has its own key so cost is attributable: `CLAUDE_AI_CHATBOT_DESK_ASSISTANT` (generation), `CLAUDE_AI_CHATBOT_UPLOAD_CHUNKER`, `CLAUDE_AI_CHATBOT_PROPOSE`, `CLAUDE_AI_CREATE_SCHEDULE_KEY` (§15), and `VOYAGE_API_KEY`. There is deliberately **no** generic `ANTHROPIC_API_KEY` fallback — a bare shared key would make per-feature cost impossible to attribute. See the API-key convention in AGENTS.md.
+
+---
+
+## 15. The AI Schedule Agent
+
+Behavioral spec Section 19. Lives in `packages/core/src/ai-schedule/` and is, like the float algorithm, a **pure function**: the web action snapshots roster, preferences, targets, and blocks into an input, runs the agent, and hands the result back as a draft. It writes nothing.
+
+Pipeline: `grid` (block grid, contiguous runs, hours per worker) → `prompt` (system prompt, plan and proposal JSON schemas, repair prompt) → `loop` (plan, propose across perspectives, validate, repair) → `validator` → `scorer` → `finalize`.
+
+- **`validator` is the hard gate.** Harnwell training, headcount, block boundaries, hours cap, and availability are validated as violations, not scored as preferences. An invalid candidate is repaired or dropped; it is never surfaced.
+- **`scorer` + `weights` are the only tuning surface.** `AI_SCORE_WEIGHTS` centralizes every soft objective. The dominance that matters is pinned by a regression test: `fillableUnfilledSeat` at `-25` outweighs any achievable preference gain, so coverage can never be traded away for preference satisfaction.
+- Unfilled seats are classified **fillable** vs **unfillable** and surfaced either way, so the SM sees what the draft could not do.
+- The LLM is injected behind the `ScheduleLlm` interface, which keeps the agent testable without a network call.
+
+Output is a **draft**. It flows into the existing schedule-builder draft storage (§3.9) and reaches workers only through the existing `publish_schedule` path, which enforces its own invariants regardless of how the draft was produced.
+
+---
+
+## 16. Duty Resolution, Launch Gating, and the Off-Hours Ladder
+
+### 16.1 Off-Hours Allied Ladder (Pilot)
+
+Behavioral spec Section 16.5. Migration 20260713000001. When a coverage-lock (T-2h) event fires **outside HM working hours** and the ladder is enabled, the orchestrator runs a rung ladder — dropper, then house SM, then everyone currently on that desk — instead of the single `hmod_urgent` notification to `resolve_hmod_on_duty`.
+
+- New notification type `allied_page`; each rung is ackable.
+- No acknowledgment within `allied_page_rung_timeout_minutes` (default 10) advances the rung. An acknowledgment resolves the ladder, so exactly one owner holds the duty and the chain never double-pages. Rung 3 is deliberately multi-recipient and terminal.
+- Gated by `is_offhours_ladder_enabled()`, reading `system_config('offhours_ladder_enabled')`. **Absent or false means disabled**, so every existing seed, test, and environment keeps the historical HMOD-direct behavior and the suite is unchanged.
+- **Inside** HM working hours routing is untouched (the RSM path).
+
+Turning the switch off after HMOD adoption reverts to HMOD-direct routing with no code change. That is the point of the switch.
+
+### 16.2 Staggered Launch
+
+Behavioral spec Section 22. Migration 20260712000001.
+
+- `houses.launch_state` is `'pre_launch' | 'live'`, defaulting to `pre_launch` with a `launched_at` audit stamp.
+- `is_staggered_launch_enabled()` reads `system_config('staggered_launch_enabled')`; **absent means disabled**, so when the gate is off every house is effectively live.
+- `house_is_live(house_id)` is the single predicate both platforms consult, which is what keeps web and mobile agreeing. Unknown house is not live.
+
+Enforcement is at the **application** layer (a "your house is not live yet" placeholder for workers; admins bypass) per the product decision. The DB helpers are the source of truth both clients read, not a row-level gate — launch state is visibility, not authorization, and no scheduling rule keys off it.
+
+---
+
+## 17. House Memberships and Transfers
+
+Behavioral spec Section 21. Migrations 20260719000001 and 20260719000002.
+
+House membership is **season-scoped**: `user_house_memberships` holds one date-spanned row per user with at most one open-ended row, and a trigger enforces non-overlap. `users.home_house_id` is a **maintained cache** of the row covering today.
+
+That cache is the reason this change was cheap. Every existing current-season read path — float eligibility, the Harnwell training invariant, the live calendar, the roster, RLS — keeps reading the scalar and is **unchanged**. Only forward-looking surfaces look ahead, via `membership_house_for_date(user, date)` and `house_roster_as_of(house, date)`: the preference board resolves house as of the target period start, and the builder rosters (including the AI payload of §15) resolve as of the build week, which is what makes pre-building a transfer-in correct.
+
+`transfer_worker(initiator, user, dest, effective_date, note)` is the entry point. Either the source or the destination house's HM/BM may call it, or an admin — deliberately **not** tightened to own-house-only, since a receiving manager completing an agreed move is the common case.
+
+- `effective_date` NULL means the next season boundary; today means immediate.
+- An **immediate** move flips `home_house_id` now, reopens the worker's future old-house seats (recurring via `permanent_drop_slot`, with a direct vacate fallback outside a school-year semester, where `permanent_drop_slot` raises `semester_boundary_not_found` — **that fallback is required, do not remove it**), and voids their live floats.
+- A **future** move records only the membership. The hourly `apply-house-transfers` cron (`apply_due_house_transfers` → `apply_house_transfer`) applies it on the day, setting a local `app.house_transfer` flag so the `prevent_home_house_update_without_admin_override` trigger permits the cache write from cron, where `auth.role()` is not `service_role`.
+
+Transfer **out** of Harnwell vacates those seats here, so hard invariant #1 holds with no new enforcement. Voiding floats is a sanctioned manual admin action like `fire_worker`, not automated revocation, so the no-takeback invariant is not violated.
+
+---
+
+## 18. Mobile Onboarding and Widgets
+
+Behavioral spec Section 20. Both follow the Fruitties split: **shared pure logic in `commonMain`, native UI per platform.**
+
+- `shared/.../onboarding/` holds the pure modules — `Onboarding` (the first-run coach-mark program and contextual tips), the per-surface tours (`ShiftTour`, `SwapTour`, `OpenClaimTour`, `HouseGridTour`, `PreferencesTour`, `BreakTour`), and `NotificationPriming` — each with no clock and no I/O: seen-keys are injected and every function is a deterministic transform, which is what makes them unit-testable on the JVM host.
+- **Persistence is a platform concern** (SharedPreferences on Android, UserDefaults on iOS). These are per-device UX flags, **not server state**, and they must never become scheduling state.
+- **Notification priming** is presentation only: the in-app pre-prompt never touches the OS permission, so declining it leaves the system prompt unspent. Which notifications are mandatory is unchanged (§4.6, behavioral §10.1).
+- Each per-surface tour auto-starts the first time its host screen is reached (gated on the welcome tour being done), independent of whether that screen is reached via a tab-change or is the app's default landing tab — a screen that is the default landing surface (`ShiftTour` on My Shifts on iOS) needs its auto-start checked both on initial appearance and on the welcome tour finishing, not only on a subsequent tab change, since SwiftUI's `onChange` never fires for an unchanged initial value. **A behavioral prompt to add a home-screen widget after repeated opens (formerly documented here) was removed 2026-07-23** — it fired before the interactive tour on iOS's default tab and was superseded by the tours; see behavioral §20.3.
+- Each tour owns an independent seen-key store, not a shared one: its shared `{Tour}` object defines a `DONE_KEY` string constant (e.g. `ShiftTour.DONE_KEY = "tour.myshifts.done"`), the corresponding `{Tour}ViewModel` holds it in an in-memory `seen: Set<String>` and adds `DONE_KEY` to it only when the tour finishes or is skipped, and each platform persists that set under its own storage key (Android `{Tour}Prefs` over `SharedPreferences`; iOS `{Tour}Observable` over `UserDefaults`) — separate from the `Onboarding` welcome/tips store, so persisting one tour's progress never clobbers another tour's or the welcome tour's.
+- Auto-start is wired per platform, not inside the shared `{Tour}ViewModel`. On Android, `ShiftsScreen.kt` drives all six: `ShiftTour`, `PreferencesTour`, `HouseGridTour`, and `OpenClaimTour` each auto-start from a `LaunchedEffect` keyed on the selected tab index, gated on the welcome tour's done-key; `BreakTour` instead auto-starts from a `LaunchedEffect` keyed on the break state machine reaching its claim window, still gated on the welcome tour; `SwapTour` auto-starts from a `LaunchedEffect` keyed on the in-sheet manage-shift composer reaching its swap page, and is the one tour that does not gate on the welcome tour at all. On iOS, the five tab-hosted tours are centralized in `ContentView.swift`'s `autoStartTourForCurrentTab()`, invoked from `.onAppear` (the initial landing — needed because the default tab never fires `.onChange(of: tab)`), `.onChange(of: tab)` (subsequent tab switches), and `.onChange(of: onboardingTourDone)` (the welcome tour finishing while already parked on a tab); `SwapTour` is wired the same way as Android, off the manage-shift sheet's own page state.
+- Tapping outside a tour step's highlighted content skips the whole tour through the same path as the Skip control (marking the done-key immediately), except on the step or steps that demonstrate a real drag gesture — the range-drag step shared by `ShiftTour`, `SwapTour`, and `OpenClaimTour`, the paint-drag step in `PreferencesTour`, and both drag steps in `BreakTour` — where a per-step `dismissible` flag disables the scrim's tap handler so a stray tap mid-drag cannot lose the worker's place; `HouseGridTour` has no drag step and is always dismissible by an outside tap. Once a tour first finishes, by any of completion, Skip, or an outside tap, a one-time pointer callout points at the surface's help control before auto-fading, gated on its own per-tour "pointer shown" flag kept separate from the done-key, so it fires exactly once regardless of which of the three ways the tour ended. Every tour also has its own "Replay" row in Settings, which re-opens it from step one without needing to clear the done-key.
+
+Widgets are **read-only snapshots** written by the app: iOS WidgetKit (`iosApp/ShiftWidgets/` — an upcoming-shifts widget and a house-configurable open-shifts widget via an AppIntent, fed through an App Group) and Android Glance (`androidApp/.../widget/` — `ShiftWidget` + `WidgetSync`). A widget performs no writes; tapping deep-links into the app. Widget content may lag the app, and no behavior may depend on a widget existing.
+
+Two gotchas that have bitten before: the iOS configurable widget requires code signing even on the simulator, and its AppIntent must live in the app target.
+
+---
+
+## 19. What Is Deliberately Not Documented Here
+
+Plans and scoping documents under `docs/**` (`docs/desk-assistant/V1_SCOPE.md`, `BUILD_PLAN.md`, `INTAKE_PLAN.md`, `docs/operating-seasons/PLAN.md`, and the rest) are **working documents, not specification**. They record how something was built and what was considered; they are not authoritative about current behavior and may describe options that were never taken.
+
+When a plan lands, its settled behavior is promoted into the behavioral spec and this document, and the plan becomes history. A feature described only in `docs/**` is an undocumented feature. See the spec-governance rule in AGENTS.md.
 
 ---
 
@@ -1342,19 +1543,26 @@ The full schema in conceptual form:
 
 ```
 users ─┬─ user_roles
-       ├─ home_house_id → houses
+       ├─ home_house_id → houses   (CACHE of today's user_house_memberships row)
+       ├─ user_house_memberships (date-spanned, non-overlapping; §17)
        ├─ broadcast_subscribed (bool; enforced false for hm/bm at write time)
        ├─ ack_cadence_config
        └─ hm_leave (as user or replacement)
 
 houses ─┬─ shift_blocks ─── shift_block_assignments ──┬── user_id → users
-        │                                              ├── parent_float_id → float_assignments
+        │      (voided_at, coverage_locked_at)         ├── parent_float_id → float_assignments
         │                                              └── source_house_id → houses
         ├─ staffing_patterns (per profile)
-        └─ float_routing (per profile, as source or dest)
+        ├─ float_routing (per profile, as source or dest)
+        └─ launch_state / launched_at (§16.2)
 
 operating_calendar ── profile_name → operating_profiles
                                        (escalation_chain, defaults, claim phase offsets)
+
+operating_seasons ─┬─ season_house_windows (weekday_bands / weekend_bands jsonb)
+                   ├─ season_float_windows
+                   └─ operating_config_audit
+        (authored by admin → compileSeason → apply_compiled_season → the 4 config layers above)
 
 weekly_cap_overrides (per Monday-week)
 hmod_rotor (per Friday-week) → users
@@ -1371,6 +1579,17 @@ notifications ── recipient_user_id → users
 block_step_status ── block_id → shift_blocks
 
 allied_procurements ── assignment_ids → shift_block_assignments
+
+── Desk Assistant + knowledge base (§13, §14); additive, no FK into the engine ──
+
+kb_intake ──(approve)──▶ kb_documents ─── kb_chunks (pgvector 1024d)
+   (status state machine)     (scope: house / sensitivity / roles;
+                               temporality: durable | until_superseded | expires)
+
+kb_incidents_raw          (access-controlled; NEVER indexed)
+routing_rules             (issue_type × day × time window × season → tier, priority)
+da_conversations ─── da_messages ── user_id → users
+da_page_drafts ─── da_page_deliveries ── recipient → users
 ```
 
 ## Appendix B: Configuration Defaults at Launch
@@ -1405,6 +1624,33 @@ Initial values for system-wide configurable parameters (per behavioral spec Sect
 
 All values are stored in a `system_config` table (one row per parameter) and may be updated by the project administrator. The application layer reads these on a short cache cycle (~1 minute, matching the orchestrator).
 
+### Keys governing Sections 13 through 18
+
+| `system_config` key                | Default        | Effect when absent                                                                                                             |
+| ---------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `project_administrator_user_id`    | **unset**      | Terminal routing has no recipient; urgent notification is logged, not delivered. **Every deployed environment must set this.** |
+| `smod_duty_phone`                  | unset          | The SMOD tier is named without a number. Never substituted.                                                                    |
+| `csmod_duty_phone`                 | unset          | The CSMOD tier is named without a number. Never substituted.                                                                   |
+| `staggered_launch_enabled`         | absent = false | Launch gate off; every house behaves as live (§16.2).                                                                          |
+| `offhours_ladder_enabled`          | absent = false | Historical HMOD-direct off-hours routing (§16.1).                                                                              |
+| `allied_page_rung_timeout_minutes` | 10             | Rung timeout for the off-hours ladder.                                                                                         |
+
+Every one of these defaults to the **historical behavior** when absent. That is deliberate: `seed.sql` sets none of them, so no development environment or test run is affected by a feature that production has turned on, and a missing config row can never silently change staffing behavior.
+
+### Deploy-time secrets
+
+| Secret                                      | Used by                                                                                      |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `CLAUDE_AI_CHATBOT_DESK_ASSISTANT`          | Assistant generation (`da-ask`); model from `DA_GENERATION_MODEL`, default `claude-sonnet-5` |
+| `CLAUDE_AI_CHATBOT_UPLOAD_CHUNKER`          | Knowledge intake normalization and PDF vision fallback                                       |
+| `CLAUDE_AI_CHATBOT_PROPOSE`                 | Knowledge intake metadata proposal                                                           |
+| `CLAUDE_AI_CREATE_SCHEDULE_KEY`             | AI schedule agent (§15)                                                                      |
+| `VOYAGE_API_KEY`                            | Embeddings (`voyage-3`, 1024-dim)                                                            |
+| `FIREBASE_SERVICE_ACCOUNT_JSON`             | Push delivery (`dispatch-push`, both FCM and APNs)                                           |
+| `app.supabase_url` / `app.service_role_key` | Postgres settings for `deliver_pending_notifications`                                        |
+
+One key per feature, with **no generic fallback**, so per-feature cost is attributable. Each client fails with a clear 503 when its key is absent rather than crashing.
+
 ---
 
 ## Appendix C: Confirmed Decisions Captured in v2
@@ -1432,6 +1678,6 @@ The following architectural decisions support the permanent drop and permanent p
 4. **Race safety:** Permanent pickup's final UPDATE includes `vacancy_origin = 'permanent_drop'` and `status = 'vacant'` predicates, ensuring concurrent pickups are race-safe via last-write-wins per row (Section 10.9).
 5. **Bulk-update scope:** Permanent drops are scoped to (a) the dropping worker as current owner, (b) blocks strictly after the operation moment, (c) blocks within the current operating profile (Section 7.1). Past, in-progress, swap-transferred, or other-owner-held weeks are skipped naturally.
 6. **Per-week conflict resolution at pickup:** Time conflicts cause individual blocks to be skipped for that specific week (partial pickup); hours cap violations cause the entire week to be skipped (Section 7.2). The overall pickup proceeds with whatever weeks remain.
-7. **Notifications:** Two new notification types (`sm_permanent_drop_alert` and `sw_permanent_removal_alert`) carry the in-app passive indicators. Persistent in the updates tab via the `acknowledged_at` field (Section 3.7).
+7. **Notifications:** The worker-facing `sw_permanent_removal_alert` carries the in-app passive removal indicator, persistent in the updates tab via the `acknowledged_at` field (Section 3.7). The companion `sm_permanent_drop_alert` type is retired (2026-07-13, enum value kept but unused): SMs receive no passive permanent-drop alert.
 8. **No published-schedule snapshot:** The calendar's current state is the only state. No historical record of "this slot was originally Alice's" is retained beyond the live owner.
 9. **Profile boundary:** Permanent vacancies that go unfilled simply cease to exist at the end of the operating profile. The next profile is scheduled fresh (Section 7.4).

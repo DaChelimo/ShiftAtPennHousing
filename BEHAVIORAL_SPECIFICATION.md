@@ -1354,6 +1354,12 @@ Widgets are **read-only**. A widget never claims, drops, acknowledges, or change
 
 There is no dedicated prompt encouraging a worker to add a widget. **(Revised 2026-07-23:** a behavioral "add the widget" prompt, gated on repeated schedule opens and a return visit, previously lived here; it was removed because on the first-run experience it could surface ahead of the interactive per-surface tours, which are the app's actual onboarding.)
 
+### 20.4 Navigation and the Back Button
+
+The worker app is navigated by a bottom bar carrying the four frequent surfaces (My Shifts, Open Shifts, House, Swaps) plus a **More** overflow that reaches the episodic ones (Updates, Preferences, Break shifts, Settings, the Desk Assistant). My Shifts is the home surface the app opens on.
+
+**(Added 2026-07-23, Android:** the Android app has a back stack. The system back button returns to My Shifts from any other surface, and only exits the app from My Shifts itself. Each surface keeps its own place while the worker is elsewhere. Leaving Preferences with unsaved edits raises the same save-or-discard prompt whether the worker leaves by tapping another surface **or** by pressing back. iOS does not yet mirror this back-button behavior; bringing it to iOS is pending.)\*\*
+
 ---
 
 ## 21. House Membership and Transfers

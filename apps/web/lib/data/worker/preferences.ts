@@ -103,6 +103,18 @@ export async function getWorkerPreferenceBoard(
   if (periods.length === 0) return emptyBoard();
   const active = periods.find((p) => p.published_at === null) ?? periods[0];
 
+  // Forward-looking house: preferences are always for the UPCOMING period, so the
+  // paint grid must be the house this worker will belong to DURING that period.
+  // A worker with a scheduled transfer paints preferences for their DESTINATION
+  // house (their new season), while everyone else gets their current home house.
+  // Resolved from membership as-of the period start; falls back to homeHouseId.
+  // See membership_house_for_date (20260719000001).
+  const { data: boardHouse } = await supabase.rpc('membership_house_for_date', {
+    p_user_id: userId,
+    p_date: active.start_date,
+  });
+  const houseId = (boardHouse as string | null) ?? homeHouseId;
+
   const deadlineIso = active.preference_deadline;
   const period: WorkerPreferencePeriod = {
     periodId: active.period_id,
@@ -124,7 +136,7 @@ export async function getWorkerPreferenceBoard(
   const { data: blockRows } = await supabase
     .from('shift_blocks')
     .select('block_id, block_start_at')
-    .eq('house_id', homeHouseId)
+    .eq('house_id', houseId)
     .gte('block_start_at', week.toISOString())
     .lt('block_start_at', upperBound.toISOString())
     .order('block_start_at', { ascending: true });

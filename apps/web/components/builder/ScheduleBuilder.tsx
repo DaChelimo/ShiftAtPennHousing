@@ -24,6 +24,7 @@ import {
   type PublishStats,
 } from '../../lib/actions/builder';
 import type { BuilderBlock, BuilderData } from '../../lib/data/scheduleBuilder';
+import { buildScheduleExportHtml } from '../../lib/export/scheduleHtml';
 import { Avatar, Button, Icon, IconButton, Modal, Notification, Tag, TextInput } from '../ui';
 
 import { AiSchedulePanel } from './AiSchedulePanel';
@@ -72,7 +73,6 @@ function railTimeLabel(iso: string): string {
     hour12: true,
   }).format(new Date(iso));
 }
-
 
 type PendingAssign = {
   userId: string;
@@ -292,6 +292,66 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
     () => Object.values(drafts).filter((a) => a.length > 0).length,
     [drafts],
   );
+
+  // ---- export (download / print) -----------------------------------------
+  // Exports the CURRENT drafts as a standalone, presentation-ready snapshot —
+  // not a screenshot of this interactive page, but a dedicated read-only render
+  // (lib/export/scheduleHtml) so the artifact looks right dropped straight into
+  // slides. "Download HTML" is a single-click Blob download; "Print / Save as
+  // PDF" hands the same markup to the browser's native print dialog via a
+  // hidden iframe (no server-side PDF renderer needed).
+  const buildExportHtml = useCallback(() => {
+    return buildScheduleExportHtml({
+      houseLabel: prettifyHouse(data.houseId),
+      weekStartDate: data.weekStartDate,
+      blocks: data.blocks,
+      drafts: aiPreview ?? drafts,
+      workerName: (userId) => workerName.get(userId) ?? 'Unknown',
+      generatedAtLabel: `Generated ${new Intl.DateTimeFormat('en-US', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(new Date())}`,
+    });
+  }, [data.houseId, data.weekStartDate, data.blocks, aiPreview, drafts, workerName]);
+
+  const onDownloadHtml = useCallback(() => {
+    const html = buildExportHtml();
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${data.houseId}-schedule-${data.weekStartDate ?? 'week'}.html`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, [buildExportHtml, data.houseId, data.weekStartDate]);
+
+  const onPrintPdf = useCallback(() => {
+    const html = buildExportHtml();
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+    const doc = iframe.contentWindow?.document;
+    doc?.open();
+    doc?.write(html);
+    doc?.close();
+    const cleanup = () => {
+      document.body.removeChild(iframe);
+    };
+    iframe.onload = () => {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+      // Give the print dialog a moment to open before tearing the iframe down;
+      // most browsers block on print() but this is a safe fallback either way.
+      window.setTimeout(cleanup, 1000);
+    };
+  }, [buildExportHtml]);
 
   const commitAssign = useCallback(
     async (userId: string, blockIds: string[]) => {
@@ -539,6 +599,26 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
                 Clear all
               </Button>
             )}
+            {(aiPreview !== null || assignedBlockCount > 0) && (
+              <>
+                <Button
+                  kind="ghost"
+                  data-testid="export-html-button"
+                  icon="download"
+                  onClick={onDownloadHtml}
+                >
+                  Download HTML
+                </Button>
+                <Button
+                  kind="ghost"
+                  data-testid="export-pdf-button"
+                  icon="download"
+                  onClick={onPrintPdf}
+                >
+                  Print / Save as PDF
+                </Button>
+              </>
+            )}
             {!published && (
               <Button
                 data-testid="publish-button"
@@ -569,146 +649,147 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
           />
 
           <div className="bld-body">
-          <Grid
-            blocks={data.blocks}
-            drafts={aiPreview ?? drafts}
-            preview={aiPreview !== null}
-            workerName={workerName}
-            anchorIdx={anchorIdx}
-            hoverIdx={hoverIdx}
-            dragColFrac={dragColFrac}
-            dragging={dragging}
-            selectedBlockIds={selectedBlockIds}
-            onCellDown={(idx, colFrac) => {
-              setDragging(true);
-              setAnchorIdx(idx);
-              setHoverIdx(idx);
-              setDragColFrac(colFrac);
-              setSelectedBlockIds([]);
-            }}
-            onCellEnter={(idx, colFrac) => {
-              if (!dragging) return;
-              setHoverIdx(idx);
-              setDragColFrac(colFrac);
-            }}
-            onRemoveSpan={onRemoveSpan}
-          />
+            <Grid
+              blocks={data.blocks}
+              drafts={aiPreview ?? drafts}
+              preview={aiPreview !== null}
+              workerName={workerName}
+              anchorIdx={anchorIdx}
+              hoverIdx={hoverIdx}
+              dragColFrac={dragColFrac}
+              dragging={dragging}
+              selectedBlockIds={selectedBlockIds}
+              onCellDown={(idx, colFrac) => {
+                setDragging(true);
+                setAnchorIdx(idx);
+                setHoverIdx(idx);
+                setDragColFrac(colFrac);
+                setSelectedBlockIds([]);
+              }}
+              onCellEnter={(idx, colFrac) => {
+                if (!dragging) return;
+                setHoverIdx(idx);
+                setDragColFrac(colFrac);
+              }}
+              onRemoveSpan={onRemoveSpan}
+            />
 
-          <aside className="builder-side">
-            {selectedBlockIds.length === 0 ? (
-              <>
-                <div className="side-empty">
-                  <Icon name="drag" size={24} />
-                  <div className="t-h3">Select blocks to assign</div>
-                  <div className="t-helper">
-                    Drag across one or more consecutive cells to pick a span. Press Esc to clear it.
-                  </div>
-                  <div className="side-stat">
-                    <span className="t-meta">Assigned so far</span>
-                    <b className="t-mono">{assignedBlockCount} blocks</b>
-                  </div>
-                </div>
-                {aiPreview === null && !published && workersOnSchedule.length > 0 && (
-                  <div className="side-workers" data-testid="side-workers">
-                    <span className="side-list-label t-label">On this schedule</span>
-                    <div className="t-helper side-workers-hint">
-                      Removes a worker from their whole week. To drop just part of a shift, select
-                      that time range on the grid instead.
+            <aside className="builder-side">
+              {selectedBlockIds.length === 0 ? (
+                <>
+                  <div className="side-empty">
+                    <Icon name="drag" size={24} />
+                    <div className="t-h3">Select blocks to assign</div>
+                    <div className="t-helper">
+                      Drag across one or more consecutive cells to pick a span. Press Esc to clear
+                      it.
                     </div>
-                    <div className="side-worker-list">
-                      {workersOnSchedule.map((w) => (
-                        <div key={w.userId} className="side-worker-row">
-                          <Avatar name={w.name} size={26} />
-                          <div className="side-worker-meta">
-                            <b>{w.name}</b>
-                            <span className="t-meta">
-                              {w.blocks * HOURS_PER_BLOCK}h · {w.blocks} blocks
-                            </span>
+                    <div className="side-stat">
+                      <span className="t-meta">Assigned so far</span>
+                      <b className="t-mono">{assignedBlockCount} blocks</b>
+                    </div>
+                  </div>
+                  {aiPreview === null && !published && workersOnSchedule.length > 0 && (
+                    <div className="side-workers" data-testid="side-workers">
+                      <span className="side-list-label t-label">On this schedule</span>
+                      <div className="t-helper side-workers-hint">
+                        Removes a worker from their whole week. To drop just part of a shift, select
+                        that time range on the grid instead.
+                      </div>
+                      <div className="side-worker-list">
+                        {workersOnSchedule.map((w) => (
+                          <div key={w.userId} className="side-worker-row">
+                            <Avatar name={w.name} size={26} />
+                            <div className="side-worker-meta">
+                              <b>{w.name}</b>
+                              <span className="t-meta">
+                                {w.blocks * HOURS_PER_BLOCK}h · {w.blocks} blocks
+                              </span>
+                            </div>
+                            <Button
+                              kind="ghost"
+                              size="sm"
+                              icon="trash"
+                              data-testid={`remove-worker-${w.userId}`}
+                              aria-label={`Remove ${w.name} from the whole week`}
+                              onClick={() => setRemoveWorker({ userId: w.userId, name: w.name })}
+                            >
+                              Remove all
+                            </Button>
                           </div>
-                          <Button
-                            kind="ghost"
-                            size="sm"
-                            icon="trash"
-                            data-testid={`remove-worker-${w.userId}`}
-                            aria-label={`Remove ${w.name} from the whole week`}
-                            onClick={() => setRemoveWorker({ userId: w.userId, name: w.name })}
-                          >
-                            Remove all
-                          </Button>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="side-head">
+                    <div className="col gap-1">
+                      <span className="t-eyebrow">New selection</span>
+                      <span className="t-h2 t-mono">{spanLabel}</span>
+                      <span className="t-meta">
+                        {selectedBlockIds.length * HOURS_PER_BLOCK}h · {selectedBlockIds.length}{' '}
+                        blocks
+                      </span>
+                    </div>
+                    <IconButton icon="close" label="Clear selection" onClick={clearSelection} />
                   </div>
-                )}
-              </>
-            ) : (
-              <>
-                <div className="side-head">
-                  <div className="col gap-1">
-                    <span className="t-eyebrow">New selection</span>
-                    <span className="t-h2 t-mono">{spanLabel}</span>
-                    <span className="t-meta">
-                      {selectedBlockIds.length * HOURS_PER_BLOCK}h · {selectedBlockIds.length}{' '}
-                      blocks
-                    </span>
-                  </div>
-                  <IconButton icon="close" label="Clear selection" onClick={clearSelection} />
-                </div>
-                {aiPreview === null && !published && workersInSelection.length > 0 && (
-                  <div className="side-workers" data-testid="side-in-range">
-                    <span className="side-list-label t-label">In this range</span>
-                    <div className="side-worker-list">
-                      {workersInSelection.map((w) => (
-                        <div key={w.userId} className="side-worker-row">
-                          <Avatar name={w.name} size={26} />
-                          <div className="side-worker-meta">
-                            <b>{w.name}</b>
-                            <span className="t-meta">
-                              {w.blockIds.length * HOURS_PER_BLOCK}h in this range
-                            </span>
+                  {aiPreview === null && !published && workersInSelection.length > 0 && (
+                    <div className="side-workers" data-testid="side-in-range">
+                      <span className="side-list-label t-label">In this range</span>
+                      <div className="side-worker-list">
+                        {workersInSelection.map((w) => (
+                          <div key={w.userId} className="side-worker-row">
+                            <Avatar name={w.name} size={26} />
+                            <div className="side-worker-meta">
+                              <b>{w.name}</b>
+                              <span className="t-meta">
+                                {w.blockIds.length * HOURS_PER_BLOCK}h in this range
+                              </span>
+                            </div>
+                            <Button
+                              kind="ghost"
+                              size="sm"
+                              icon="close"
+                              data-testid={`remove-in-range-${w.userId}`}
+                              aria-label={`Remove ${w.name} from ${spanLabel}`}
+                              onClick={() => void onRemoveSpan(w.userId, w.blockIds)}
+                            >
+                              Remove
+                            </Button>
                           </div>
-                          <Button
-                            kind="ghost"
-                            size="sm"
-                            icon="close"
-                            data-testid={`remove-in-range-${w.userId}`}
-                            aria-label={`Remove ${w.name} from ${spanLabel}`}
-                            onClick={() => void onRemoveSpan(w.userId, w.blockIds)}
-                          >
-                            Remove
-                          </Button>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
-                {!spanValid ? (
-                  <div className="side-note">
-                    <Notification kind="warning" title="Adjust your selection">
-                      Pick one or more consecutive 30-min blocks.
-                    </Notification>
-                  </div>
-                ) : (
-                  <>
-                    <span className="side-list-label t-label">Assign</span>
-                    <div className="side-list">
-                      {phase1Card !== null && (
-                        <Phase1CardView card={phase1Card} onClick={onPhase1Click} />
-                      )}
-                      {phase2Roster !== null && (
-                        <Phase2RosterView
-                          roster={phase2Roster}
-                          query={rosterQuery}
-                          onQueryChange={setRosterQuery}
-                          onClick={onPhase2Click}
-                        />
-                      )}
+                  )}
+                  {!spanValid ? (
+                    <div className="side-note">
+                      <Notification kind="warning" title="Adjust your selection">
+                        Pick one or more consecutive 30-min blocks.
+                      </Notification>
                     </div>
-                  </>
-                )}
-              </>
-            )}
-          </aside>
+                  ) : (
+                    <>
+                      <span className="side-list-label t-label">Assign</span>
+                      <div className="side-list">
+                        {phase1Card !== null && (
+                          <Phase1CardView card={phase1Card} onClick={onPhase1Click} />
+                        )}
+                        {phase2Roster !== null && (
+                          <Phase2RosterView
+                            roster={phase2Roster}
+                            query={rosterQuery}
+                            onQueryChange={setRosterQuery}
+                            onClick={onPhase2Click}
+                          />
+                        )}
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+            </aside>
           </div>
         </div>
       </div>
@@ -875,7 +956,7 @@ function savedTimeLabel(ts: number): string {
   );
 }
 
-  const tip = 'Every change saves automatically. You can close this and pick up where you left off.';
+const tip = 'Every change saves automatically. You can close this and pick up where you left off.';
 function SaveStatus({ saving, savedAt }: { saving: boolean; savedAt: number | null }) {
   if (saving) {
     return (
@@ -999,7 +1080,11 @@ function runSegments(dayBlocks: BuilderBlock[], run: BlockRun): RunSegment[] {
 // into one placeholder — but a gap also BREAKS when the required headcount changes (noon on a
 // Harnwell weekday), so each seat spans a single width and the morning ghost is full width
 // while the afternoon ghosts are half width.
-function computeSeatGaps(dayBlocks: BuilderBlock[], laned: LanedRun[], laneCount: number): SeatGap[] {
+function computeSeatGaps(
+  dayBlocks: BuilderBlock[],
+  laned: LanedRun[],
+  laneCount: number,
+): SeatGap[] {
   const covered: boolean[][] = Array.from({ length: laneCount }, () =>
     new Array(dayBlocks.length).fill(false),
   );
@@ -1032,7 +1117,6 @@ function computeSeatGaps(dayBlocks: BuilderBlock[], laned: LanedRun[], laneCount
   }
   return gaps;
 }
-
 
 // "08:00–12:00" for a [startLocal, startLocal+len) span — the END is the last block's
 // start + 30 min, so the span reads as one continuous block and the 11:30-vs-12:00
@@ -1076,7 +1160,9 @@ function TimeRail({ cells, side }: { cells: BuilderBlock[]; side: 'left' | 'righ
                 never shown at all. */}
             {isLast && (
               <span className="bld-tick-label t-mono is-last">
-                {railTimeLabel(new Date(new Date(b.startAtIso).getTime() + 30 * 60000).toISOString())}
+                {railTimeLabel(
+                  new Date(new Date(b.startAtIso).getTime() + 30 * 60000).toISOString(),
+                )}
               </span>
             )}
           </div>

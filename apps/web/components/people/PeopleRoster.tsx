@@ -4,6 +4,9 @@ import { Avatar, type Column, DataTable, PageHead, Tag, type TagKind } from '../
 
 import { FireWorkerControl } from './FireWorkerControl';
 import { HireWorkerControl } from './HireWorkerControl';
+import { TransferWorkerControl } from './TransferWorkerControl';
+
+type House = { id: string; name: string };
 
 const ROLE_META: Record<AppRole, { short: string; full: string; kind: TagKind }> = {
   sw: { short: 'SW', full: 'Student Worker', kind: 'gray' },
@@ -41,7 +44,7 @@ function HoursMeter({ hours, cap, hasShifts }: { hours: number; cap: number; has
   );
 }
 
-function rosterColumns(cap: number): Column<PersonRow>[] {
+function rosterColumns(cap: number, houses: House[]): Column<PersonRow>[] {
   return [
     {
       key: 'person',
@@ -99,14 +102,26 @@ function rosterColumns(cap: number): Column<PersonRow>[] {
     {
       key: 'actions',
       header: '',
-      // S4: Fire is enabled per-row, but ONLY on active workers. An already-fired
-      // (inactive) row shows nothing here — the Status cell carries the Inactive tag.
-      render: (p) => (p.isActive ? <FireWorkerControl userId={p.userId} name={p.name} /> : null),
+      // Actions are enabled per-row, ONLY on active workers. An inactive row shows
+      // nothing here — the Status cell carries the Inactive tag. Transfer moves the
+      // worker to another house; Fire deactivates them.
+      render: (p) =>
+        p.isActive ? (
+          <span className="row gap-1 wrap">
+            <TransferWorkerControl
+              userId={p.userId}
+              name={p.name}
+              currentHouseId={p.homeHouseId}
+              houses={houses}
+            />
+            <FireWorkerControl userId={p.userId} name={p.name} />
+          </span>
+        ) : null,
     },
   ];
 }
 
-export function PeopleRoster({ data }: { data: PeopleData }) {
+export function PeopleRoster({ data, houses }: { data: PeopleData; houses: House[] }) {
   const rows = data.people;
   const active = rows.filter((p) => p.isActive).length;
   const workers = rows.filter((p) => p.roles.includes('sw')).length;
@@ -146,7 +161,7 @@ export function PeopleRoster({ data }: { data: PeopleData }) {
       </p>
 
       <DataTable
-        columns={rosterColumns(data.cap)}
+        columns={rosterColumns(data.cap, houses)}
         rows={rows}
         getRowKey={(p) => p.userId}
         emptyText="No people are home-housed here yet."

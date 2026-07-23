@@ -41,7 +41,8 @@ export default async function PeoplePage({
   const onDutyId = await getOnDutyHmodId(now);
   const canViewOtherHouses =
     isAdmin(user) || (await isProjectAdministrator(user.userId)) || onDutyId === user.userId;
-  const validHouseIds = (await getShellHouses()).map((h) => h.id);
+  const shellHouses = await getShellHouses();
+  const validHouseIds = shellHouses.map((h) => h.id);
   const viewHouse = resolveCalendarHouse({
     requested: house ?? null,
     homeHouse: adminHouseId(user),
@@ -50,5 +51,6 @@ export default async function PeoplePage({
   });
 
   const data = await getPeopleData(viewHouse);
-  return <PeopleRoster data={data} />;
+  const houses = shellHouses.map((h) => ({ id: h.id, name: h.name }));
+  return <PeopleRoster data={data} houses={houses} />;
 }

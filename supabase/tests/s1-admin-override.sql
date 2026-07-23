@@ -35,8 +35,8 @@
 --   F. Authz — non-(sm/hm/bm) rejected; admin of another house rejected.
 --   G. Remove — this_week (vacant+temporary_drop, no block_step_status row).
 --   H. Remove — permanent (all future in-semester → vacant+permanent_drop;
---      float-committed skipped; sm_permanent_drop_alert + sw_permanent_removal_alert;
---      feed appearance).
+--      float-committed skipped; sw_permanent_removal_alert (the SM passive
+--      sm_permanent_drop_alert was retired 2026-07-13); feed appearance).
 --   I. Remove — rejections (block_started / float_committed / not-occupied).
 --   J. Atomicity — a rejected op leaves every row untouched.
 --
@@ -48,7 +48,7 @@
 
 BEGIN;
 
-SELECT plan(59);
+SELECT plan(58);
 
 -- ============================================================
 -- 0. Fixtures.
@@ -69,7 +69,7 @@ VALUES
   -- incumbent SW (home harrison) — reassigned away from
   ('51000001-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 's1-incumbent@test.local'),
-  -- SM of harrison — the operator AND the sm_permanent_drop_alert recipient
+  -- SM of harrison — the operator who initiates the permanent removal
   ('51000001-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 's1-sm05@test.local'),
   -- a cross-house worker (home kings-court)
@@ -761,14 +761,6 @@ SELECT is(
   (SELECT vacancy_origin::text FROM public.shift_block_assignments WHERE assignment_id = '51000003-0000-0000-0000-0000000019a3'),
   'permanent_drop',
   'permanent remove: the +5w occurrence is vacant+permanent_drop (re-enters the feed)'
-);
--- The SM of harrison is notified (operator may be that SM — still a recipient).
-SELECT is(
-  (SELECT count(*)::integer FROM public.notifications
-   WHERE recipient_user_id = '51000001-0000-0000-0000-000000000003'
-     AND type = 'sm_permanent_drop_alert'),
-  1,
-  'permanent remove: the house SM receives an sm_permanent_drop_alert (§8.4.1 / §10)'
 );
 -- The removed worker (operator ≠ worker) is notified.
 SELECT is(

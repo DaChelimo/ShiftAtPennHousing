@@ -134,16 +134,17 @@ export async function getAiScheduleContext(houseId: string): Promise<AiScheduleC
     };
   }
 
-  // 4. House roster (active student workers), then narrow to submitters.
-  const { data: roleRows } = await supabase.from('user_roles').select('user_id').eq('role', 'sw');
-  const swIds = new Set((roleRows ?? []).map((r) => r.user_id));
-  const { data: userRows } = await supabase
-    .from('users')
-    .select('user_id, name, home_house_id')
-    .eq('home_house_id', houseId)
-    .eq('is_active', true)
-    .order('name');
-  const houseWorkers = (userRows ?? []).filter((u) => swIds.has(u.user_id));
+  // 4. House roster (active student workers), then narrow to submitters. Roster
+  //    is membership-aware as-of the build week (house_roster_as_of), so a worker
+  //    with a scheduled transfer is built into their DESTINATION house for the
+  //    upcoming season. Their forward-looking home house for that season IS this
+  //    house, so homeHouseId below is houseId (correct for the Harnwell training
+  //    constraint when pre-building a transfer-in). See 20260719000001.
+  const { data: rosterRows } = await supabase.rpc('house_roster_as_of', {
+    p_house_id: houseId,
+    p_as_of: firstDay,
+  });
+  const houseWorkers = (rosterRows ?? []) as { user_id: string; name: string }[];
   const houseWorkerIds = houseWorkers.map((u) => u.user_id);
 
   const prefRows = await selectByBlockIdChunks(weekBlockIds, (chunk) =>
@@ -191,7 +192,7 @@ export async function getAiScheduleContext(houseId: string): Promise<AiScheduleC
     if (target?.optedOut === true) continue; // opted out = zero hours
     roster.push({
       workerId: worker.user_id,
-      homeHouseId: worker.home_house_id,
+      homeHouseId: houseId,
       targetHours: target === undefined ? null : target.targetHours,
       prefs: prefsByUser.get(worker.user_id) ?? {},
     });

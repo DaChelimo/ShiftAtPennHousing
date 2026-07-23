@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { adminHouseId, getSessionUser, isHouseAdmin } from '../auth';
+import { adminHouseId, getSessionUser, isAdmin, isHouseAdmin } from '../auth';
 import { generateSetupLink } from '../data/authLinks';
 import { createServiceClient } from '../supabase/server';
 import { simNow } from '../time/simClock';
@@ -61,6 +61,12 @@ function friendlyMessage(raw: string): string {
     invalid_role: 'The initial role is invalid.',
     semester_boundary_not_found:
       'The semester boundary for one of this worker’s shifts could not be determined. Contact an administrator.',
+    worker_inactive: 'That worker is inactive and cannot be transferred.',
+    destination_house_not_found: 'The destination house could not be found.',
+    already_in_destination_house: 'That worker already belongs to the destination house.',
+    effective_date_in_past: 'The effective date cannot be in the past.',
+    no_upcoming_season:
+      'No upcoming season was found. Choose a specific effective date for the transfer.',
   };
   for (const [reason, friendly] of Object.entries(MAP)) {
     if (msg === reason || msg.includes(reason)) return friendly;
@@ -214,6 +220,96 @@ export async function hireWorker(input: {
       homeHouseId: result.home_house_id ?? homeHouseId,
       role: result.role ?? input.role,
       setupLink,
+    },
+  };
+}
+
+export type TransferWorkerSummary = {
+  transferred: boolean;
+  fromHouse: string;
+  toHouse: string;
+  effectiveDate: string; // 'YYYY-MM-DD'
+  appliedNow: boolean; // true = home house changed immediately; false = scheduled
+};
+
+// Transfer a worker between houses (season-scoped membership, migration
+// 20260719000001). Either the SOURCE or the DESTINATION house's HM/BM (or an
+// admin) may transfer; the RPC re-checks authoritatively. A same-day effective
+// date applies immediately (flips home house + vacates old-house future shifts);
+// a future date records the move and the daily job applies it on the day. Passing
+// no effective date defaults to the next season boundary.
+//
+// The worker keeps working their current house until the effective date; only the
+// forward-looking surfaces (preferences + the upcoming-season builder roster) look
+// ahead to the destination.
+export async function transferWorker(input: {
+  userId: string;
+  destHouseId: string;
+  effectiveDate?: string | null;
+  note?: string;
+}): Promise<ActionResult<TransferWorkerSummary>> {
+  const me = await getSessionUser();
+  if (!isHouseAdmin(me)) {
+    return { ok: false, error: 'You are not authorized to transfer workers.' };
+  }
+
+  const service = createServiceClient();
+
+  // Fail-fast either-side authz: the caller must administer the worker's current
+  // house OR the destination (admins bypass). The RPC is the authoritative gate.
+  const { data: target, error: targetError } = await service
+    .from('users')
+    .select('home_house_id, is_active')
+    .eq('user_id', input.userId)
+    .maybeSingle();
+  if (targetError !== null) return { ok: false, error: targetError.message };
+  if (target === null) return { ok: false, error: 'That worker could not be found.' };
+
+  const myHouse = adminHouseId(me!);
+  if (!isAdmin(me) && myHouse !== target.home_house_id && myHouse !== input.destHouseId) {
+    return {
+      ok: false,
+      error: 'You can only transfer workers into or out of the house you manage.',
+    };
+  }
+
+  // 'now' resolves to today's NY date from the sim clock so an immediate transfer
+  // matches the RPC's app_now-based "today"; null defaults to the next season
+  // boundary inside the RPC; a specific 'YYYY-MM-DD' passes through.
+  let effectiveDate: string | undefined;
+  if (input.effectiveDate === 'now') {
+    effectiveDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(
+      await simNow(),
+    );
+  } else {
+    effectiveDate = input.effectiveDate ?? undefined;
+  }
+
+  const { data, error } = await service.rpc('transfer_worker', {
+    p_initiator: me!.userId,
+    p_user_id: input.userId,
+    p_dest_house_id: input.destHouseId,
+    p_effective_date: effectiveDate,
+    p_note: input.note?.trim() || undefined,
+  });
+  if (error !== null) return { ok: false, error: friendlyMessage(error.message) };
+
+  const result = (data ?? {}) as {
+    from_house?: string;
+    to_house?: string;
+    effective_date?: string;
+    applied_now?: boolean;
+  };
+
+  revalidatePath('/admin/people');
+  return {
+    ok: true,
+    data: {
+      transferred: true,
+      fromHouse: result.from_house ?? target.home_house_id,
+      toHouse: result.to_house ?? input.destHouseId,
+      effectiveDate: result.effective_date ?? '',
+      appliedNow: result.applied_now ?? false,
     },
   };
 }

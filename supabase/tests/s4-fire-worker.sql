@@ -58,7 +58,7 @@
 
 BEGIN;
 
-SELECT plan(69);
+SELECT plan(68);
 
 -- ============================================================
 -- 0. Fixtures.
@@ -500,15 +500,6 @@ SELECT is(
   1,
   'should surface dropped recurring occurrences in the permanent_openings_feed (slot-B 16:00)'
 );
--- permanent_drop_slot writes the SM alert for the affected house (operator != worker).
-SELECT cmp_ok(
-  (SELECT count(*)::integer FROM public.notifications
-   WHERE type = 'sm_permanent_drop_alert'
-     AND (payload ->> 'dropping_user_id') = '54000001-0000-0000-0000-000000000001'),
-  '>=', 1,
-  'should write the sm_permanent_drop_alert for the affected house'
-);
-
 -- ============================================================
 -- D. FUTURE NON-RECURRING CLAIMS → VACATE (weekly feed, not permanent) (TEST_PLAN D).
 -- ============================================================

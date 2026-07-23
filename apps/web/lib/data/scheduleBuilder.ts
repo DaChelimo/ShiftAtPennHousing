@@ -97,22 +97,7 @@ export type BuilderData = {
 export async function getBuilderData(houseId: string): Promise<BuilderData> {
   const supabase = createServiceClient();
 
-  // 1. Roster: active student workers whose home house is this house.
-  const { data: roleRows } = await supabase.from('user_roles').select('user_id').eq('role', 'sw');
-  const swIds = new Set((roleRows ?? []).map((r) => r.user_id));
-
-  const { data: userRows } = await supabase
-    .from('users')
-    .select('user_id, name')
-    .eq('home_house_id', houseId)
-    .eq('is_active', true)
-    .order('name');
-  const workers: BuilderWorker[] = (userRows ?? [])
-    .filter((u) => swIds.has(u.user_id))
-    .map((u) => ({ userId: u.user_id, name: u.name }));
-  const workerIds = workers.map((w) => w.userId);
-
-  // 2. Blocks for the house; choose the week of the earliest block as the build week.
+  // 1. Blocks for the house; choose the week of the earliest block as the build week.
   const { data: blockRows } = await supabase
     .from('shift_blocks')
     .select('block_id, block_start_at, required_headcount')
@@ -124,6 +109,25 @@ export async function getBuilderData(houseId: string): Promise<BuilderData> {
     startAtIso: b.block_start_at,
     requiredHeadcount: b.required_headcount,
   }));
+
+  // 2. Roster: active student workers whose house membership covers the build
+  //    week (as-of its first day). A worker with a scheduled transfer shows in
+  //    their destination house for weeks on/after their effective date and drops
+  //    from the old house for those weeks; without a transfer this is just their
+  //    home house. Falls back to today when the house has no blocks yet.
+  //    See house_roster_as_of / membership_house_for_date (20260719000001).
+  const rosterAsOf = allBlocks.length
+    ? nyDate(allBlocks[0]!.startAtIso)
+    : nyDate(new Date().toISOString());
+  const { data: rosterRows } = await supabase.rpc('house_roster_as_of', {
+    p_house_id: houseId,
+    p_as_of: rosterAsOf,
+  });
+  const workers: BuilderWorker[] = (rosterRows ?? []).map((u) => ({
+    userId: u.user_id,
+    name: u.name,
+  }));
+  const workerIds = workers.map((w) => w.userId);
 
   const empty: BuilderData = {
     periodId: null,

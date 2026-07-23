@@ -407,12 +407,17 @@
 .scard-name {
   font-size: 12.5px;
   font-weight: 600;
-  white-space: nowrap;
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+}
+.scard-name-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
   overflow: hidden;
   text-overflow: ellipsis;
-  display: flex;
-  align-items: center;
-  gap: 5px;
+  word-break: break-word;
 }
 .scard-foot {
   display: flex;
@@ -438,6 +443,32 @@
   height: 6px;
   border-radius: 99px;
   background: currentColor;
+}
+
+/* worker calendar: the signed-in worker's own shifts, at a glance */
+.scard-mine {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+
+/* Per-worker color: applied to scheduled/picked-up cards that carry a worker.
+   `--wc` is the worker's full-strength color, `--wc-fg` its precomputed legible
+   foreground (workerContrastText), both set inline from lib/workerColor.ts.
+   The fill is that color at 90% opacity, the leading edge a full-strength rail.
+   Text uses `--wc-fg` for the name (max legibility) and a --wc-fg/--wc blend for
+   the time (keeps the worker's color identity, e.g. green-on-green, without
+   losing contrast now that the fill itself is near-opaque).
+   See docs/design/worker-colors.md. */
+.scard-worker {
+  background: color-mix(in srgb, var(--wc) 90%, transparent);
+  border-color: var(--wc);
+  border-left: 3px solid var(--wc);
+}
+.scard-worker .scard-time {
+  color: color-mix(in srgb, var(--wc-fg) 75%, var(--wc) 25%);
+}
+.scard-worker .scard-name {
+  color: var(--wc-fg);
 }
 
 .sc-float {

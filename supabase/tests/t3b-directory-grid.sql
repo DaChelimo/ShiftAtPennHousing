@@ -3,17 +3,29 @@
 -- Self-contained: creates its own actors + fixtures inside BEGIN…ROLLBACK.
 -- RLS probes run as `authenticated` with request.jwt.claims set (the
 -- break-periods-worker-read pattern), capturing results via set_config.
+--
+-- Fixture blocks are dated 2029 on purpose: the seeded real-Harnwell schedule now
+-- reaches into 2026, and the original 2026-07-01 fixtures collided with it on
+-- shift_blocks_house_id_block_start_at_key, aborting the run before any probe.
 BEGIN;
-SELECT plan(15);
+SELECT plan(20);
 
 -- ---- Schema surface ----
 SELECT has_column('public', 'houses', 'desk_phone', 'houses.desk_phone exists (§11.4 desk call)');
 SELECT has_view('public', 'worker_directory', 'worker_directory view exists');
 SELECT has_view('public', 'house_schedule_grid', 'house_schedule_grid view exists');
-SELECT hasnt_column('public', 'worker_directory', 'email',
-  'directory does NOT expose email (only user_id/name/phone/home_house_id/is_active)');
+-- 2026-07-22 ruling: the contact card needs the sign-up email, so the directory
+-- now carries it. Everything else stays out.
+SELECT has_column('public', 'worker_directory', 'email',
+  'directory exposes the sign-up email (2026-07-22 contact-card ruling)');
 SELECT hasnt_column('public', 'worker_directory', 'broadcast_subscribed',
   'directory does NOT expose notification settings');
+SELECT has_column('public', 'house_schedule_grid', 'worker_email',
+  'grid carries the occupant''s email for the contact card');
+SELECT has_column('public', 'house_schedule_grid', 'worker_home_house_name',
+  'grid carries the occupant''s HOME house (not the desk being staffed)');
+SELECT has_column('public', 'house_schedule_grid_any', 'worker_email',
+  'cross-house grid carries the occupant''s email too');
 
 -- ---- Actors (harnwell SW ×2, quad SW, an INACTIVE worker) ----
 INSERT INTO auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -44,9 +56,9 @@ UPDATE houses SET desk_phone = '+12155551234' WHERE id = 'harnwell';
 -- ---- Blocks + assignments: H2 staffs a harnwell block; one harnwell vacant
 --      gap; Q1 staffs a quad block (must be INVISIBLE to a harnwell worker). ----
 INSERT INTO shift_blocks (block_id, house_id, block_start_at, required_headcount) VALUES
-  ('d3b00000-0000-4000-9000-000000000001','harnwell','2026-07-01 20:00:00-04',2),
-  ('d3b00000-0000-4000-9000-000000000002','harnwell','2026-07-01 20:30:00-04',2),
-  ('d3b00000-0000-4000-9000-000000000003','quad','2026-07-01 20:00:00-04',1);
+  ('d3b00000-0000-4000-9000-000000000001','harnwell','2029-07-01 20:00:00-04',2),
+  ('d3b00000-0000-4000-9000-000000000002','harnwell','2029-07-01 20:30:00-04',2),
+  ('d3b00000-0000-4000-9000-000000000003','quad','2029-07-01 20:00:00-04',1);
 
 INSERT INTO shift_block_assignments (assignment_id, block_id, user_id, status, vacancy_origin) VALUES
   ('d3b00000-0000-4000-a000-000000000001','d3b00000-0000-4000-9000-000000000001',
@@ -61,6 +73,7 @@ DO $$
 DECLARE
   v_dir_name text; v_dir_phone text; v_dir_inactive int; v_dir_cross_name text;
   v_grid_worker text; v_grid_phone text; v_grid_desk text;
+  v_grid_email text; v_grid_home_house text;
   v_grid_vacant int; v_grid_other_house int; v_upd_denied boolean := false;
 BEGIN
   PERFORM set_config('request.jwt.claims',
@@ -85,8 +98,8 @@ BEGIN
 
   -- Grid: the home house's staffed block carries the housemate's name/phone +
   -- the desk phone; the vacant gap shows; the OTHER house's rows are invisible.
-  SELECT worker_name, worker_phone, desk_phone
-    INTO v_grid_worker, v_grid_phone, v_grid_desk
+  SELECT worker_name, worker_phone, desk_phone, worker_email, worker_home_house_name
+    INTO v_grid_worker, v_grid_phone, v_grid_desk, v_grid_email, v_grid_home_house
     FROM public.house_schedule_grid WHERE id = 'd3b00000-0000-4000-a000-000000000001';
   SELECT count(*)::int INTO v_grid_vacant
     FROM public.house_schedule_grid
@@ -104,6 +117,8 @@ BEGIN
   PERFORM set_config('t3b.grid_worker', COALESCE(v_grid_worker,'<null>'), true);
   PERFORM set_config('t3b.grid_phone', COALESCE(v_grid_phone,'<null>'), true);
   PERFORM set_config('t3b.grid_desk', COALESCE(v_grid_desk,'<null>'), true);
+  PERFORM set_config('t3b.grid_email', COALESCE(v_grid_email,'<null>'), true);
+  PERFORM set_config('t3b.grid_home_house', COALESCE(v_grid_home_house,'<null>'), true);
   PERFORM set_config('t3b.grid_vacant', v_grid_vacant::text, true);
   PERFORM set_config('t3b.grid_other', v_grid_other_house::text, true);
 END $$;
@@ -124,6 +139,10 @@ SELECT is(current_setting('t3b.grid_phone'), '+12150000002',
   'grid: ...and their phone (§11.4 contact lookup)');
 SELECT is(current_setting('t3b.grid_desk'), '+12155551234',
   'grid: the house desk_phone rides along');
+SELECT is(current_setting('t3b.grid_email'), 't3b.h2@example.test',
+  'grid: ...and their sign-up email (contact card mail intent)');
+SELECT is(current_setting('t3b.grid_home_house'), 'Harnwell',
+  'grid: ...and their HOME house name (differs from house_name on a float-in)');
 SELECT is(current_setting('t3b.grid_vacant')::int, 1,
   'grid: vacant gaps are included (worker_name null)');
 SELECT is(current_setting('t3b.grid_other')::int, 0,

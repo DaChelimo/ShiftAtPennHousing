@@ -3,44 +3,44 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 
-import './calendar.css';
+import '../calendar/calendar.css';
 
-import type { CalendarModel, CalShift } from '../../lib/data/calendar';
-import { EmptyState, Icon, IconButton, StatusLegend, Tag } from '../ui';
+import type { WorkerCalendarModel, WorkerCalShift, HouseOption } from '../../lib/data/worker/house';
+import { DayColumn, GutterTicks, SplitDay, StatusLegend, useNowBlock } from '../calendar/Grid';
+import { ShiftInfoPopover } from '../calendar/ShiftInfoPopover';
+import { WeekPicker } from '../calendar/WeekPicker';
+import { addDaysKey, fmtRange, relWeekLabel } from '../calendar/format';
+import { EmptyState, Icon, IconButton, Tag } from '../ui';
+import { Field, Select } from '../ui/Field';
+import { PageHead } from '../ui/PageHead';
 
-import { DayColumn, GutterTicks, SplitDay, useNowBlock } from './Grid';
-import { ShiftDetailPanel } from './ShiftDetailPanel';
-import { WeekPicker } from './WeekPicker';
-import { addDaysKey, fmtRange, relWeekLabel } from './format';
-
-export function HouseCalendar({
+export function HouseCalendarView({
   model,
   todayKey,
   thisMondayKey,
+  houses,
+  viewerUserId,
+  deskPhone,
 }: {
-  model: CalendarModel;
+  model: WorkerCalendarModel;
   todayKey: string;
   thisMondayKey: string;
+  houses: HouseOption[];
+  viewerUserId: string;
+  deskPhone: string | null;
 }) {
   const router = useRouter();
   const [view, setView] = useState<'week' | 'day'>('week');
-  const [selected, setSelected] = useState<CalShift | null>(null);
+  const [selected, setSelected] = useState<WorkerCalShift | null>(null);
   const [pickOpen, setPickOpen] = useState(false);
   const navRef = useRef<HTMLDivElement>(null);
   const weekScrollRef = useRef<HTMLDivElement>(null);
   const nowBlock = useNowBlock(model.dayStartMin, model.blocksPerDay);
 
-  // When a shift is opened in week view, scroll its day column up to just right
-  // of the sticky time gutter so it sits in the area beside the inset panel
-  // (never hidden behind it).
   useEffect(() => {
     if (selected === null || view !== 'week') return;
     const sc = weekScrollRef.current;
     if (sc === null) return;
-    // Wait for the inset-drawer padding transition to settle before measuring —
-    // scrolling mid-transition reads a transient layout and lands short. Centering
-    // the day column in the (now narrower) scroll area keeps it clear of both the
-    // sticky time rail and the panel.
     const id = window.setTimeout(() => {
       const col = sc.querySelector<HTMLElement>(`[data-col-index="${selected.dayIndex}"]`);
       col?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
@@ -62,24 +62,54 @@ export function HouseCalendar({
     };
   }, [pickOpen]);
 
-  const go = (monday: string) => router.push(`/calendar?week=${monday}&house=${model.houseId}`);
+  const go = (params: { houseId?: string; week?: string }) => {
+    const houseId = params.houseId ?? model.houseId;
+    const week = params.week ?? model.weekStartDate;
+    router.push(`/home/house?house=${encodeURIComponent(houseId)}&week=${week}`);
+  };
   const colMin = model.lanes >= 3 ? 248 : model.lanes === 2 ? 196 : 168;
   const dayShifts = (idx: number) => model.shifts.filter((s) => s.dayIndex === idx);
   const dayViewDay = model.days.find((d) => d.isToday) ?? model.days[0]!;
+  const isMine = (s: WorkerCalShift) => s.userId === viewerUserId;
 
   const gridStyle = (ncols: number): CSSProperties =>
     ({ '--ncols': ncols, '--colmin': `${colMin}px` }) as unknown as CSSProperties;
 
   return (
     <div className={`page page-wide cal-page ${selected !== null ? 'is-panel-open' : ''}`.trim()}>
+      <PageHead
+        eyebrow="House schedule"
+        title={model.houseName}
+        sub="See who is on the desk at any house. This view is read only."
+        actions={
+          deskPhone ? (
+            <a
+              className="btn btn-secondary btn-md"
+              href={`tel:${deskPhone}`}
+              data-testid="house-call-desk"
+            >
+              Call the desk
+            </a>
+          ) : undefined
+        }
+      />
+
+      <Field label="House">
+        <Select
+          value={model.houseId}
+          data-testid="house-switcher"
+          onChange={(e) => go({ houseId: e.target.value })}
+        >
+          {houses.map((h) => (
+            <option key={h.id} value={h.id}>
+              {h.name}
+            </option>
+          ))}
+        </Select>
+      </Field>
+
       <div className="cal-toolbar">
         <div className="col gap-1">
-          <div className="row gap-2">
-            <h1 className="t-h1" data-testid="calendar-house-name">
-              {model.houseName}
-            </h1>
-            {model.restricted && <Tag kind="outline">Harnwell-trained only</Tag>}
-          </div>
           <div className="t-helper">
             {model.minLanes === model.lanes ? model.lanes : `${model.minLanes}-${model.lanes}`}{' '}
             staff per block
@@ -91,7 +121,7 @@ export function HouseCalendar({
             <IconButton
               icon="chevLeft"
               label="Previous week"
-              onClick={() => go(addDaysKey(model.weekStartDate, -7))}
+              onClick={() => go({ week: addDaysKey(model.weekStartDate, -7) })}
             />
             <button
               type="button"
@@ -109,7 +139,7 @@ export function HouseCalendar({
             <IconButton
               icon="chevRight"
               label="Next week"
-              onClick={() => go(addDaysKey(model.weekStartDate, 7))}
+              onClick={() => go({ week: addDaysKey(model.weekStartDate, 7) })}
             />
             {pickOpen && (
               <WeekPicker
@@ -117,11 +147,11 @@ export function HouseCalendar({
                 todayKey={todayKey}
                 onPick={(m) => {
                   setPickOpen(false);
-                  go(m);
+                  go({ week: m });
                 }}
                 onToday={() => {
                   setPickOpen(false);
-                  go(thisMondayKey);
+                  go({ week: thisMondayKey });
                 }}
               />
             )}
@@ -149,10 +179,9 @@ export function HouseCalendar({
         <StatusLegend />
       </div>
 
-      {model.isPast && model.hasBlocks && (
+      {model.restricted && (
         <div className="cal-banner">
-          <Icon name="clock" size={16} />
-          Viewing a past week — history is read-only.
+          <Tag kind="outline">Harnwell-trained only</Tag>
         </div>
       )}
 
@@ -165,7 +194,7 @@ export function HouseCalendar({
               title={model.isFuture ? 'Not published yet' : 'No schedule this week'}
               desc={
                 model.isFuture
-                  ? 'This week has not been published. Build it in the Schedule builder, then publish to make it the source of truth.'
+                  ? 'This week has not been published yet.'
                   : 'No shifts are scheduled for this house this week.'
               }
             />
@@ -180,6 +209,7 @@ export function HouseCalendar({
             blocksPerDay={model.blocksPerDay}
             nowBlock={nowBlock}
             onSelect={setSelected}
+            isMine={isMine}
           />
         </div>
       ) : view === 'day' ? (
@@ -193,14 +223,12 @@ export function HouseCalendar({
               originMin={model.dayStartMin}
               nowBlock={nowBlock}
               onSelect={setSelected}
+              isMine={isMine}
             />
           </div>
         </div>
       ) : (
-        <div
-          className={`cal-scroll ${model.isPast ? 'is-history' : ''}`.trim()}
-          ref={weekScrollRef}
-        >
+        <div className="cal-scroll" ref={weekScrollRef}>
           <div className="cal-grid" style={gridStyle(model.days.length)}>
             <GutterTicks startBlock={0} rows={model.blocksPerDay} originMin={model.dayStartMin} />
             {model.days.map((d) => (
@@ -212,6 +240,7 @@ export function HouseCalendar({
                 originMin={model.dayStartMin}
                 nowBlock={nowBlock}
                 onSelect={setSelected}
+                isMine={isMine}
               />
             ))}
           </div>
@@ -219,19 +248,12 @@ export function HouseCalendar({
       )}
 
       {selected && (
-        <ShiftDetailPanel
+        <ShiftInfoPopover
           key={selected.id}
           shift={selected}
           houseName={model.houseName}
           dayLabel={`${model.days[selected.dayIndex]!.label} ${model.days[selected.dayIndex]!.date}`}
-          assignableWorkers={model.assignableWorkers}
-          softCapHours={model.softCapHours}
-          capEnforcement={model.capEnforcement}
           onClose={() => setSelected(null)}
-          onApplied={() => {
-            setSelected(null);
-            router.refresh();
-          }}
         />
       )}
     </div>

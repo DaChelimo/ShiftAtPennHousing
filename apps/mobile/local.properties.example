@@ -1,0 +1,16 @@
+# Copy to apps/mobile/local.properties (gitignored) and fill in.
+# Read by Android Studio's Run button and Gradle (no -P flags needed).
+
+# Path to your Android SDK. Android Studio fills this in automatically the
+# first time you open the project; set it yourself only for a CLI-only setup.
+sdk.dir=/Users/YOUR_USERNAME/Library/Android/sdk
+
+# Local Supabase dev backend. 10.0.2.2 is the Android emulator's alias for the
+# host machine's localhost (a physical device needs the Mac's LAN IP instead,
+# same caveat as apps/mobile/iosApp/README.md). Anon key is deterministic,
+# derived from the fixed jwt_secret in supabase/config.toml, or read it back
+# with `supabase status` -> ANON_KEY.
+#
+# Leave both blank to run on bundled DemoData with no backend (no login).
+SUPABASE_URL=http://10.0.2.2:54321
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0

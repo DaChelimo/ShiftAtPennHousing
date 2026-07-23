@@ -97,9 +97,38 @@ unchanged by the foundation.
 4. iOS registers the **Firebase FCM token** (not the raw APNs token) with
    `register-push-token`, platform `"ios"` — Firebase routes APNs (AGENTS phase-12).
 
-## Supabase config
+## Demo data vs. a real backend
 
-`Configuration/Config.xcconfig` defines `SUPABASE_URL` / `SUPABASE_ANON_KEY`,
-surfaced into `Info.plist` and read by `AppDelegate` into the shared `AppConfig`
-(the iOS analogue of Android `BuildConfig`). Empty by default → the app runs on
-`DemoData` with no backend.
+**First time:** `cp Configuration/Config.xcconfig.example Configuration/Config.xcconfig`
+— the `.example` file is committed and documents every field; the real one is
+gitignored so it is safe to hold keys.
+
+**Edit `Configuration/Config.xcconfig`** (read by every build path: Xcode Cmd+R,
+`xcodebuild`, UI tests):
+
+```
+SHIFT_DATA_SOURCE = live   # demo | live | auto — see comments in the file
+SUPABASE_HOST     = 127.0.0.1:54321
+SUPABASE_ANON_KEY = <supabase status -> ANON_KEY>
+```
+
+Rebuild after editing. A one-off `xcodebuild … SHIFT_DATA_SOURCE=demo` override
+outranks the file — that's how the UI test suite pins itself to demo regardless of
+your local setting.
+
+Check what a build actually resolved to:
+
+```sh
+xcrun simctl spawn booted log show --predicate 'eventMessage CONTAINS "ShiftConfig"' --last 2m --style compact
+```
+
+### Signing in as a real worker
+
+A previously-restored session sends the app straight past login. To force the login
+screen, clear the app's stored session by reinstalling:
+
+```sh
+xcrun simctl uninstall booted com.pennhousing.shift
+xcrun simctl install booted "$(xcodebuild -project iosApp.xcodeproj -scheme iosApp -configuration Debug -sdk iphonesimulator -showBuildSettings 2>/dev/null | awk -F' = ' '/ BUILT_PRODUCTS_DIR/{d=$2} / FULL_PRODUCT_NAME/{n=$2} END{print d"/"n}')"
+xcrun simctl launch booted com.pennhousing.shift
+```

@@ -1,0 +1,21 @@
+// Copy to Config.xcconfig (gitignored, same directory) and fill in. Read by every
+// build path: Xcode Cmd+R, `xcodebuild`, UI tests. Rebuild after editing.
+
+APP_NAME = Shift PennHousing
+BUNDLE_ID = com.pennhousing.shift
+TEAM_ID =
+
+// demo = bundled DemoData ("Andrew P."), no login.
+// live = real Supabase + login screen (errors loudly if the values below are blank).
+// auto = live if configured below, demo otherwise.
+SHIFT_DATA_SOURCE = live
+
+// Host:port only, no scheme/slashes (xcconfig treats `//` as a comment).
+// Simulator: 127.0.0.1:54321. Anon key is deterministic for local dev (fixed
+// jwt_secret in supabase/config.toml) or read it back with `supabase status` -> ANON_KEY.
+SUPABASE_SCHEME = http
+SUPABASE_HOST = 127.0.0.1:54321
+SUPABASE_ANON_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
+
+SLASH = /
+SUPABASE_URL = $(SUPABASE_SCHEME):$(SLASH)$(SLASH)$(SUPABASE_HOST)

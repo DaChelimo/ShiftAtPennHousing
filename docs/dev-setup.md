@@ -164,6 +164,9 @@ cd shift-pennhousing
 # Install TS/JS dependencies
 pnpm install
 
+# Start local Supabase (needed before the copy-and-fill step below)
+supabase start
+
 # Start the dev server (web)
 pnpm --filter @shift/web dev
 
@@ -176,3 +179,52 @@ cd apps/mobile && ./gradlew :androidApp:assembleDebug
 # iOS simulator (macOS only)
 cd apps/mobile && ./gradlew :shared:iosSimulatorArm64Test
 ```
+
+---
+
+## 5. Local config files (secrets, gitignored)
+
+None of these are committed — each carries a URL, key, or path specific to your
+machine. Every one has a **committed `.example` counterpart** documenting exactly
+what to fill in and where to get each value; copy it, fill it in, and you're running.
+
+| Copy this...                                               | ...to this (gitignored)                            | Used by                                     |
+| ---------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------- |
+| `apps/web/.env.local.example`                              | `apps/web/.env.local`                              | Web app (Next.js)                           |
+| `supabase/functions/.env.example`                          | `supabase/functions/.env`                          | Edge Functions (`supabase functions serve`) |
+| `apps/mobile/local.properties.example`                     | `apps/mobile/local.properties`                     | Android (Gradle / Android Studio Run)       |
+| `apps/mobile/iosApp/Configuration/Config.xcconfig.example` | `apps/mobile/iosApp/Configuration/Config.xcconfig` | iOS (Xcode / xcodebuild / UI tests)         |
+
+```bash
+cp apps/web/.env.local.example apps/web/.env.local
+cp supabase/functions/.env.example supabase/functions/.env
+cp apps/mobile/local.properties.example apps/mobile/local.properties
+cp apps/mobile/iosApp/Configuration/Config.xcconfig.example apps/mobile/iosApp/Configuration/Config.xcconfig
+```
+
+Then fill in each copy:
+
+- **Supabase URL / anon key / service-role key** — printed by `supabase start`
+  (or `supabase status` if already running). The local anon key is deterministic
+  (derived from the fixed `jwt_secret` in `supabase/config.toml`), so the value in
+  each `.example` file already works against a local stack with no edits.
+- **Anthropic (`CLAUDE_AI_*`) keys** — create one **per feature** at
+  https://console.anthropic.com (AGENTS.md: never reuse a key across features).
+  Leave a field blank to disable that feature; everything else still builds/runs.
+- **`VOYAGE_API_KEY`** — https://dash.voyageai.com (Desk Assistant KB embeddings).
+- **Mobile `SUPABASE_URL`/`SHIFT_DATA_SOURCE`** — leave blank (Android) or
+  `SHIFT_DATA_SOURCE = demo` (iOS) to run on bundled DemoData with no backend at
+  all, which is the default the Maestro/XCUITest suites run against. See
+  `apps/mobile/iosApp/README.md` ("Demo data vs. a real backend") for the full
+  demo/live switch on iOS; Android reads the same two keys via `local.properties`.
+- **Firebase (`google-services.json` / `GoogleService-Info.plist`)** — downloaded
+  from the Firebase console per-project, not hand-written, so there is no
+  `.example` for these. Both platforms build without them (FCM just no-ops); see
+  `apps/mobile/iosApp/README.md` ("Push notifications") for how to add them.
+- **`.claude/settings.local.json`** (service-role key for the Supabase MCP server) —
+  see §2 above, not a `cp`-and-edit file since `.claude/settings.json` already
+  ships a placeholder-keyed version.
+
+None of these values are production credentials when copied as-is — they are the
+fixed keys/URLs a local `supabase start` always prints. Never point any of them at
+a production Supabase URL during development.

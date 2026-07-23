@@ -23,6 +23,10 @@ apps/mobile/composeApp/build/
 apps/mobile/local.properties
 
 # iOS
+# Machine-local build config (Supabase URL/key + the demo-vs-live flag).
+# Every .xcconfig here is machine-local except the checked-in *.example templates.
+apps/mobile/iosApp/Configuration/*.xcconfig
+!apps/mobile/iosApp/Configuration/*.xcconfig.example
 apps/mobile/iosApp/.build/
 apps/mobile/iosApp/iosApp.xcworkspace/xcuserdata/
 *.xcuserstate

@@ -8,8 +8,22 @@
         "--supabase-url",
         "http://localhost:54321",
         "--service-role-key",
-        "<key printed by `supabase start` — never commit the real value here>"
+        "<key printed by `supabase start` \u2014 never commit the real value here>"
       ]
     }
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/hooks/psql-destructive-guard.js",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
   }
 }

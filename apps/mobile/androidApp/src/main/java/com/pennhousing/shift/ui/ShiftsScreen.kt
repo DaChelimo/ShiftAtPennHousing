@@ -135,109 +135,56 @@ internal const val OPEN_SUB_OTHER = 1 // "Others"
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun ShiftsApp(
-    shiftsVm: ShiftsScreenViewModel,
-    ackVm: AckDeclineViewModel,
-    updatesVm: UpdatesViewModel,
-    swapsVm: SwapsViewModel,
-    calendarVm: CalendarViewModel,
-    houseVm: HouseScheduleViewModel,
-    preferencesVm: PreferencesViewModel,
-    breakCalendarVm: BreakCalendarViewModel,
-    settingsVm: SettingsViewModel,
-    assistantVm: AssistantViewModel,
-    currentWeeklyHours: Double,
-    // The worker's load instant (the sim-clock on live) — builds the per-float ack
-    // detail VM for the carousel's tap-to-detail. The screen VMs embed their own `now`.
-    now: Instant,
-    // Outstanding float requests for the My-Shifts carousel (§7.1), closest-start first.
-    // Live host reads `worker_pending_floats`; demo seeds a couple. Empty → no carousel.
-    pendingFloats: List<PendingFloat> = emptyList(),
-    // Floats RESOLVED in the last 24h for the collapsible recent section under the carousel.
-    recentFloats: List<RecentFloat> = emptyList(),
-    breakProfile: Boolean = false,
-    toast: ToastNotification? = null,
-    // Non-null when a best-effort live write (drop/claim/reclaim/pickup/…) failed to
-    // reach the server — surfaced as a top error toast so a swallowed EF failure no
-    // longer masquerades as success. The host clears it after a few seconds and reverts
-    // the optimistic move; demo defaults to null (no live writes).
-    writeError: String? = null,
-    onSignOut: () -> Unit = {},
-    // Live host POSTs to `submit-preferences` then flips the optimistic state; demo
-    // defaults to the local-only flip (the screen's own ViewModel.submit).
-    onSubmitPreferences: () -> Unit = preferencesVm::submit,
-    // Manager-only (BSpec §4.2): set the active period's submission deadline (year, month
-    // 1..12, day). Null in the demo host (no live write); the setter card only renders when
-    // the ViewModel reports `canSetDeadline`.
-    onSetDeadline: ((Int, Int, Int) -> Unit)? = null,
-    // Live host POSTs to `drop-shift` / `permanent-drop` on confirm (best-effort) while
-    // the ViewModel still does the optimistic local move; demo defaults to no live write.
-    onDropShift: (MyShift, Boolean) -> Unit = { _, _ -> },
-    // Live host POSTs to `claim-shift` on confirm (best-effort) while the ViewModel still
-    // does the optimistic local pickup; demo defaults to no live write. Used for WEEKLY
-    // openings only — permanent openings route through [onPickUpPermanent].
-    onClaimShift: (OpenShift) -> Unit = {},
-    // The open-shift claim / permanent-pickup confirmation toast, OWNED BY THE HOST so it can
-    // reflect the real network outcome (full success, an informative partial-pickup note, or
-    // cleared on a full failure). The sheet sets it optimistically via [onClaimSuccessMessage];
-    // the host's claim handler then overrides it once the per-block result is known.
-    claimSuccessMessage: String? = null,
-    onClaimSuccessMessage: (String?) -> Unit = {},
-    // Live host POSTs to the `permanent-pickup` EF on confirm of a PERMANENT opening
-    // (best-effort) — the real permanent-pickup path (the prior `claim-shift` permanent
-    // returned 501). The ViewModel still does the optimistic local pickup; demo = no write.
-    onPickUpPermanent: (OpenShift) -> Unit = {},
-    // Live host GETs the `permanent-pickup` dry-run SCOPE for the design's "Picking up N of
-    // M weeks · K skipped" confirmation; demo returns null (the sheet shows the plain note).
-    loadPermanentScope: suspend (OpenShift) -> PermanentPickupScope? = { null },
-    // Live host POSTs to `acknowledge-float` / `decline-float` (best-effort) while the
-    // ack ViewModel still does the optimistic local phase transition; demo defaults to
-    // no live write. The argument is the float id the modal is showing.
-    onAcknowledgeFloat: (String) -> Unit = {},
-    onDeclineFloat: (String) -> Unit = {},
-    // Break CALENDAR drag (§4.4): live host POSTs the dragged block ids to `break-claim`
-    // (best-effort) and reconciles the picker to the server's actual claimed seats while
-    // the picker does the optimistic local move; demo = no write. Argument = the dragged
-    // claimable block ids.
-    onClaimBreakRange: (List<String>) -> Unit = {},
-    // Live host POSTs a `drop-shift` covering the run's seats; demo = no write. Argument =
-    // the claimed seats' assignment ids.
-    onDropBreakSeats: (List<String>) -> Unit = {},
-    // Live host writes the §4.4 "no break hours" opt-out (own `break_optouts` row, insert/
-    // delete) DIRECTLY via Postgrest while the picker flips its optimistic opted-out state;
-    // demo defaults to no live write. The argument is the NEW desired opted-out state.
-    onToggleBreakOptOut: (Boolean) -> Unit = {},
-    // Live host PATCHes `users-broadcast-subscription` (best-effort) while the settings
-    // ViewModel still does the optimistic local toggle; demo defaults to no live write.
-    // The argument is the NEW desired subscription state. Only the broadcast / "General
-    // updates" channel is interactive — the three personal-notif rows stay disabled (§10.1).
-    onToggleBroadcast: (Boolean) -> Unit = {},
-    // Live host loops the worker's still-unread notification ids through the
-    // `mark_notification_read` RPC (best-effort) when "Mark all read" is tapped; the Updates
-    // ViewModel does the optimistic local clear. Demo defaults to local-only (no write).
-    onMarkAllRead: (List<String>) -> Unit = {},
-    // Live host POSTs `accept-swap` / `reject-swap` (best-effort) when an incoming swap
-    // entry's Accept/Decline is tapped (T3a); the Updates ViewModel already resolved the
-    // entry optimistically. Demo defaults to local-only. The argument is the swap id.
-    onAcceptSwap: (String) -> Unit = {},
-    onRejectSwap: (String) -> Unit = {},
-    // Live host POSTs `acknowledge-allied-page` (best-effort) when a worker taps "I've
-    // called the desk" on an off-hours ladder alert (staggered-rollout pilot); the Updates
-    // ViewModel already resolved the entry optimistically. Demo = local-only. Arg = block id.
-    onAcknowledgeAlliedPage: (String) -> Unit = {},
-    // T2-13: non-null when the app was opened from the float push notification / a
-    // `pennshift://float-ack/{floatId}` deep link → present the FULL-SCREEN ack
-    // surface on launch (the ack VM already targets the worker's pending float).
-    launchFloatAckId: String? = null,
-    // D2/D3 + CALENDAR_REDESIGN: swap initiation via the week-paged calendar. [swapMeUserId]
-    // is the live worker (null = demo → use [swapDemoSeats] for the current week); the
-    // calendar fetches each navigated week's house grid live. `onCreateSwap` POSTs.
-    swapMeUserId: String? = null,
-    swapDemoSeats: List<HouseSeat> = emptyList(),
-    onCreateSwap: suspend (SwapProposal) -> Boolean = { false },
-    // D4 — cancel an own outgoing pending swap → `void-swap` (best-effort).
-    onVoidSwap: (String) -> Unit = {},
+internal fun ShiftsApp(
+    viewModels: ShiftsViewModels,
+    hostState: ShiftsHostState,
+    actions: ShiftsActions = ShiftsActions(),
 ) {
+    // Unpack the grouped inputs back into the names the body below has always used, so the
+    // grouping is purely the public contract (see ShiftsAppInputs.kt) and the screen logic is
+    // unchanged. onSubmitPreferences resolves its ViewModel-dependent default here, the one
+    // place that carries both the action and the ViewModel.
+    val shiftsVm = viewModels.shiftsVm
+    val ackVm = viewModels.ackVm
+    val updatesVm = viewModels.updatesVm
+    val swapsVm = viewModels.swapsVm
+    val calendarVm = viewModels.calendarVm
+    val houseVm = viewModels.houseVm
+    val preferencesVm = viewModels.preferencesVm
+    val breakCalendarVm = viewModels.breakCalendarVm
+    val settingsVm = viewModels.settingsVm
+    val assistantVm = viewModels.assistantVm
+    val now = hostState.now
+    val currentWeeklyHours = hostState.currentWeeklyHours
+    val pendingFloats = hostState.pendingFloats
+    val recentFloats = hostState.recentFloats
+    val breakProfile = hostState.breakProfile
+    val toast = hostState.toast
+    val writeError = hostState.writeError
+    val claimSuccessMessage = hostState.claimSuccessMessage
+    val launchFloatAckId = hostState.launchFloatAckId
+    val swapMeUserId = hostState.swapMeUserId
+    val swapDemoSeats = hostState.swapDemoSeats
+    val onSignOut = actions.onSignOut
+    val onSubmitPreferences = actions.onSubmitPreferences ?: preferencesVm::submit
+    val onSetDeadline = actions.onSetDeadline
+    val onDropShift = actions.onDropShift
+    val onClaimShift = actions.onClaimShift
+    val onClaimSuccessMessage = actions.onClaimSuccessMessage
+    val onPickUpPermanent = actions.onPickUpPermanent
+    val loadPermanentScope = actions.loadPermanentScope
+    val onAcknowledgeFloat = actions.onAcknowledgeFloat
+    val onDeclineFloat = actions.onDeclineFloat
+    val onClaimBreakRange = actions.onClaimBreakRange
+    val onDropBreakSeats = actions.onDropBreakSeats
+    val onToggleBreakOptOut = actions.onToggleBreakOptOut
+    val onToggleBroadcast = actions.onToggleBroadcast
+    val onMarkAllRead = actions.onMarkAllRead
+    val onAcceptSwap = actions.onAcceptSwap
+    val onRejectSwap = actions.onRejectSwap
+    val onAcknowledgeAlliedPage = actions.onAcknowledgeAlliedPage
+    val onCreateSwap = actions.onCreateSwap
+    val onVoidSwap = actions.onVoidSwap
     // Appearance override: the settings VM holds the live choice so an in-app toggle
     // re-themes the whole app immediately (System → follow OS). Collected OUTSIDE the
     // theme so it can pick the palette.

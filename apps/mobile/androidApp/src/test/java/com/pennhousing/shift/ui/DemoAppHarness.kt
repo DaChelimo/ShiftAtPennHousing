@@ -28,22 +28,25 @@ internal fun DemoShiftsApp() {
     val now = Clock.System.now()
     val snapshot = DemoData.snapshot(now)
     ShiftsApp(
-        shiftsVm = ShiftsScreenViewModel(snapshot.myShifts, snapshot.openShifts, now),
-        ackVm = AckDeclineViewModel(DemoData.pendingFloat(now), now),
-        updatesVm = UpdatesViewModel(DemoData.notifications(now), now),
-        swapsVm = SwapsViewModel(DemoData.pendingSwaps(now), now),
-        calendarVm = CalendarViewModel(snapshot.myShifts, now, pendingSwaps = DemoData.pendingSwaps(now)),
-        houseVm = HouseScheduleViewModel(DemoData.houseSchedule(now), now, meUserId = DemoData.DEMO_ME_USER_ID),
-        preferencesVm = PreferencesViewModel(DemoData.preferencePeriod(now)),
-        breakCalendarVm = BreakCalendarViewModel(DemoData.breakCalendar(now), now),
-        settingsVm =
-            SettingsViewModel(
-                DemoData.settingsProfile(),
-                DemoData.DEMO_BROADCAST_SUBSCRIBED,
-                DemoData.DEMO_APP_VERSION,
+        viewModels =
+            ShiftsViewModels(
+                shiftsVm = ShiftsScreenViewModel(snapshot.myShifts, snapshot.openShifts, now),
+                ackVm = AckDeclineViewModel(DemoData.pendingFloat(now), now),
+                updatesVm = UpdatesViewModel(DemoData.notifications(now), now),
+                swapsVm = SwapsViewModel(DemoData.pendingSwaps(now), now),
+                calendarVm = CalendarViewModel(snapshot.myShifts, now, pendingSwaps = DemoData.pendingSwaps(now)),
+                houseVm = HouseScheduleViewModel(DemoData.houseSchedule(now), now, meUserId = DemoData.DEMO_ME_USER_ID),
+                preferencesVm = PreferencesViewModel(DemoData.preferencePeriod(now)),
+                breakCalendarVm = BreakCalendarViewModel(DemoData.breakCalendar(now), now),
+                settingsVm =
+                    SettingsViewModel(
+                        DemoData.settingsProfile(),
+                        DemoData.DEMO_BROADCAST_SUBSCRIBED,
+                        DemoData.DEMO_APP_VERSION,
+                    ),
+                assistantVm = AssistantViewModel(),
             ),
-        assistantVm = AssistantViewModel(),
-        currentWeeklyHours = DemoData.DEMO_WEEKLY_HOURS,
-        now = now,
+        // No actions: the demo relies on every default no-op (optimistic local moves, no network).
+        hostState = ShiftsHostState(now = now, currentWeeklyHours = DemoData.DEMO_WEEKLY_HOURS),
     )
 }

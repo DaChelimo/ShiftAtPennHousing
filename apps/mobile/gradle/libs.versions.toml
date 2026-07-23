@@ -17,6 +17,7 @@ supabase = "3.1.1"
 firebaseMessaging = "24.1.0"
 googleServices = "4.4.2"
 material3 = "1.4.0"
+navigation3 = "1.1.4"
 glance = "1.1.1"
 skie = "0.10.8"
 spotless = "8.1.0"
@@ -60,6 +61,10 @@ compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview"
 compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
 compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
 compose-material3 = { module = "androidx.compose.material3:material3", version.ref = "material3" }
+# Navigation 3 — the Compose-first navigation library (stable 1.1.4). Owns the app's
+# back stack as a plain list; `androidApp/ui/navigation` builds on it.
+androidx-navigation3-runtime = { module = "androidx.navigation3:navigation3-runtime", version.ref = "navigation3" }
+androidx-navigation3-ui = { module = "androidx.navigation3:navigation3-ui", version.ref = "navigation3" }
 # Glance — Jetpack home-screen widgets (Upcoming shifts). The Android analogue of the
 # iOS ShiftWidgets WidgetKit extension.
 androidx-glance-appwidget = { module = "androidx.glance:glance-appwidget", version.ref = "glance" }

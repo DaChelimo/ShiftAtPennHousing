@@ -6,6 +6,9 @@ plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.kotlinAndroid)
     alias(libs.plugins.compose.compiler)
+    // Navigation 3 back stacks are persisted across process death by serializing their
+    // NavKeys, so every destination type must be @Serializable.
+    alias(libs.plugins.kotlinxSerialization)
 }
 
 // Firebase: apply Google Services only when google-services.json is present, so
@@ -98,6 +101,11 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
+
+    // Navigation 3 — see ui/navigation/. Each bottom-nav destination owns its own
+    // back stack, so switching tabs preserves per-tab state.
+    implementation(libs.androidx.navigation3.runtime)
+    implementation(libs.androidx.navigation3.ui)
 
     // Glance — home-screen widgets (Upcoming shifts). Mirrors the iOS ShiftWidgets target.
     implementation(libs.androidx.glance.appwidget)

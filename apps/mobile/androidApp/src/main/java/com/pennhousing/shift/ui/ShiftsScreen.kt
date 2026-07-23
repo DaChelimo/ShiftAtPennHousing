@@ -102,6 +102,9 @@ import com.pennhousing.shift.ui.onboarding.ShiftTourPointerCallout
 import com.pennhousing.shift.ui.onboarding.ShiftTourPointerStore
 import com.pennhousing.shift.ui.onboarding.ShiftTourPrefs
 import com.pennhousing.shift.ui.onboarding.SwapTourPrefs
+import com.pennhousing.shift.ui.onboarding.TourWirings
+import com.pennhousing.shift.ui.onboarding.rememberTourHost
+import com.pennhousing.shift.ui.onboarding.rememberTourSeenWriter
 import com.pennhousing.shift.ui.openshifts.OpenShiftsTabContent
 import com.pennhousing.shift.ui.swaps.SwapsTabContent
 import com.pennhousing.shift.ui.theme.ShiftTheme
@@ -333,169 +336,82 @@ fun ShiftsApp(
             if (carouselState.total > 0) onboardingVm.triggerTip(TipTrigger.FLOAT_REQUEST)
         }
 
-        // The interactive "Manage a shift" tour (replaces the old My-Shifts contextual tip).
-        // Own seen-key store; auto-opens on the first My-Shifts landing once the welcome
-        // tour is done, re-openable from the header "?" and the Settings row. See
-        // ui/onboarding/ShiftTourView.kt (Compose port of iosApp's ShiftTourView.swift).
+        // The six interactive tours. Each owns its OWN seen-key store and pointer flag
+        // (persisting one must never clobber another) and auto-opens the first time the
+        // worker reaches its surface, once the welcome tour is done. `rememberTourHost`
+        // holds the five effects they all used to repeat verbatim; the per-tour keys and
+        // auto-show rule live in TourWirings. See ui/onboarding/TourHost.kt.
+        val welcomeDone = Onboarding.WELCOME_DONE_KEY in onboardingState.seen
+
         val shiftTourVm = remember { ShiftTourViewModel(ShiftTourPrefs.read(onboardingContext)) }
         val shiftTourState by shiftTourVm.uiState.collectAsStateWithLifecycle()
-        LaunchedEffect(shiftTourState.seen) { ShiftTourPrefs.write(onboardingContext, shiftTourState.seen) }
-        var shiftTourHelpRect by remember { mutableStateOf<Rect?>(null) }
-        var showTourPointer by remember { mutableStateOf(false) }
-        LaunchedEffect(selectedIndex) {
-            if (selectedIndex == TAB_MY && Onboarding.WELCOME_DONE_KEY in onboardingState.seen) {
-                shiftTourVm.autoStart()
-            }
-        }
-        // After the tour first finishes, point at the header "?" once so the re-entry point
-        // is learned, then it auto-fades (LaunchedEffect below).
-        LaunchedEffect(shiftTourState.active) {
-            if (!shiftTourState.active &&
-                !ShiftTour.shouldAutoShow(shiftTourState.seen) &&
-                !ShiftTourPointerStore.hasShown(onboardingContext)
-            ) {
-                ShiftTourPointerStore.markShown(onboardingContext)
-                showTourPointer = true
-            }
-        }
-        LaunchedEffect(showTourPointer) {
-            if (showTourPointer) {
-                kotlinx.coroutines.delay(4000)
-                showTourPointer = false
-            }
-        }
+        val shiftTour =
+            rememberTourHost(
+                wiring = TourWirings.Shift,
+                seen = shiftTourState.seen,
+                active = shiftTourState.active,
+                autoStartWhen = selectedIndex == TAB_MY && welcomeDone,
+                onAutoStart = shiftTourVm::autoStart,
+            )
 
-        // Four more interactive tours, same shape as shiftTourVm's block above: own
-        // seen-key store, auto-open on first landing (once the welcome tour is done),
-        // replayable from a header "?" + the Settings row. See
-        // docs/onboarding-android-port-plan.md / ui/onboarding/{Feature}TourView.kt (Compose
-        // ports of iosApp's {Feature}TourView.swift).
+        // Net-new teaching: no prior contextual tip existed for Preferences.
         val preferencesTourVm = remember { PreferencesTourViewModel(PreferencesTourPrefs.read(onboardingContext)) }
         val preferencesTourState by preferencesTourVm.uiState.collectAsStateWithLifecycle()
-        LaunchedEffect(preferencesTourState.seen) { PreferencesTourPrefs.write(onboardingContext, preferencesTourState.seen) }
-        var preferencesTourHelpRect by remember { mutableStateOf<Rect?>(null) }
-        var showPreferencesTourPointer by remember { mutableStateOf(false) }
-        LaunchedEffect(selectedIndex) {
-            // No prior Tier-2 tip existed for Preferences; this is net-new teaching.
-            if (selectedIndex == TAB_PREFS && Onboarding.WELCOME_DONE_KEY in onboardingState.seen) {
-                preferencesTourVm.autoStart()
-            }
-        }
-        LaunchedEffect(preferencesTourState.active) {
-            if (!preferencesTourState.active &&
-                !PreferencesTour.shouldAutoShow(preferencesTourState.seen) &&
-                !PreferencesTourPointerStore.hasShown(onboardingContext)
-            ) {
-                PreferencesTourPointerStore.markShown(onboardingContext)
-                showPreferencesTourPointer = true
-            }
-        }
-        LaunchedEffect(showPreferencesTourPointer) {
-            if (showPreferencesTourPointer) {
-                kotlinx.coroutines.delay(4000)
-                showPreferencesTourPointer = false
-            }
-        }
+        val preferencesTour =
+            rememberTourHost(
+                wiring = TourWirings.Preferences,
+                seen = preferencesTourState.seen,
+                active = preferencesTourState.active,
+                autoStartWhen = selectedIndex == TAB_PREFS && welcomeDone,
+                onAutoStart = preferencesTourVm::autoStart,
+            )
 
+        // Keyed on the break PHASE, not a tab: it opens when a claim window does.
         val breakTourVm = remember { BreakTourViewModel(BreakTourPrefs.read(onboardingContext)) }
         val breakTourState by breakTourVm.uiState.collectAsStateWithLifecycle()
-        LaunchedEffect(breakTourState.seen) { BreakTourPrefs.write(onboardingContext, breakTourState.seen) }
-        var breakTourHelpRect by remember { mutableStateOf<Rect?>(null) }
-        var showBreakTourPointer by remember { mutableStateOf(false) }
-        LaunchedEffect(breakState.phase) {
-            // The interactive Break tour supersedes the old flat break-window tip.
-            if (breakState.phase == BreakPhase.CLAIM_WINDOW && Onboarding.WELCOME_DONE_KEY in onboardingState.seen) {
-                breakTourVm.autoStart()
-            }
-        }
-        LaunchedEffect(breakTourState.active) {
-            if (!breakTourState.active &&
-                !BreakTour.shouldAutoShow(breakTourState.seen) &&
-                !BreakTourPointerStore.hasShown(onboardingContext)
-            ) {
-                BreakTourPointerStore.markShown(onboardingContext)
-                showBreakTourPointer = true
-            }
-        }
-        LaunchedEffect(showBreakTourPointer) {
-            if (showBreakTourPointer) {
-                kotlinx.coroutines.delay(4000)
-                showBreakTourPointer = false
-            }
-        }
+        val breakTour =
+            rememberTourHost(
+                wiring = TourWirings.Break,
+                seen = breakTourState.seen,
+                active = breakTourState.active,
+                autoStartWhen = breakState.phase == BreakPhase.CLAIM_WINDOW && welcomeDone,
+                onAutoStart = breakTourVm::autoStart,
+            )
 
         val houseGridTourVm = remember { HouseGridTourViewModel(HouseGridTourPrefs.read(onboardingContext)) }
         val houseGridTourState by houseGridTourVm.uiState.collectAsStateWithLifecycle()
-        LaunchedEffect(houseGridTourState.seen) { HouseGridTourPrefs.write(onboardingContext, houseGridTourState.seen) }
-        var houseGridTourHelpRect by remember { mutableStateOf<Rect?>(null) }
-        var showHouseGridTourPointer by remember { mutableStateOf(false) }
-        LaunchedEffect(selectedIndex) {
-            // The interactive House-grid tour supersedes the old flat "Call the desk" tip.
-            if (selectedIndex == TAB_HOUSE && Onboarding.WELCOME_DONE_KEY in onboardingState.seen) {
-                houseGridTourVm.autoStart()
-            }
-        }
-        LaunchedEffect(houseGridTourState.active) {
-            if (!houseGridTourState.active &&
-                !HouseGridTour.shouldAutoShow(houseGridTourState.seen) &&
-                !HouseGridTourPointerStore.hasShown(onboardingContext)
-            ) {
-                HouseGridTourPointerStore.markShown(onboardingContext)
-                showHouseGridTourPointer = true
-            }
-        }
-        LaunchedEffect(showHouseGridTourPointer) {
-            if (showHouseGridTourPointer) {
-                kotlinx.coroutines.delay(4000)
-                showHouseGridTourPointer = false
-            }
-        }
+        val houseGridTour =
+            rememberTourHost(
+                wiring = TourWirings.HouseGrid,
+                seen = houseGridTourState.seen,
+                active = houseGridTourState.active,
+                autoStartWhen = selectedIndex == TAB_HOUSE && welcomeDone,
+                onAutoStart = houseGridTourVm::autoStart,
+            )
 
         val openClaimTourVm = remember { OpenClaimTourViewModel(OpenClaimTourPrefs.read(onboardingContext)) }
         val openClaimTourState by openClaimTourVm.uiState.collectAsStateWithLifecycle()
-        LaunchedEffect(openClaimTourState.seen) { OpenClaimTourPrefs.write(onboardingContext, openClaimTourState.seen) }
-        var openClaimTourHelpRect by remember { mutableStateOf<Rect?>(null) }
-        var showOpenClaimTourPointer by remember { mutableStateOf(false) }
-        LaunchedEffect(selectedIndex) {
-            // The interactive Open-Shifts claim tour supersedes the old flat Open-Shifts tip
-            // (its whole point is teaching one-time vs permanent pickup, which the tip never
-            // covered).
-            if (selectedIndex == TAB_OPEN && Onboarding.WELCOME_DONE_KEY in onboardingState.seen) {
-                openClaimTourVm.autoStart()
-            }
-        }
-        LaunchedEffect(openClaimTourState.active) {
-            if (!openClaimTourState.active &&
-                !OpenClaimTour.shouldAutoShow(openClaimTourState.seen) &&
-                !OpenClaimTourPointerStore.hasShown(onboardingContext)
-            ) {
-                OpenClaimTourPointerStore.markShown(onboardingContext)
-                showOpenClaimTourPointer = true
-            }
-        }
-        LaunchedEffect(showOpenClaimTourPointer) {
-            if (showOpenClaimTourPointer) {
-                kotlinx.coroutines.delay(4000)
-                showOpenClaimTourPointer = false
-            }
-        }
+        val openClaimTour =
+            rememberTourHost(
+                wiring = TourWirings.OpenClaim,
+                seen = openClaimTourState.seen,
+                active = openClaimTourState.active,
+                autoStartWhen = selectedIndex == TAB_OPEN && welcomeDone,
+                onAutoStart = openClaimTourVm::autoStart,
+            )
 
-        // The swap-composer tour. Unlike the four tours above, this one does NOT auto-open
-        // on a tab landing — it opens the FIRST time the worker reaches the swap PAGE inside
-        // the manage-shift sheet (after already choosing "Swap it" over "Drop the shift" on
-        // the prior page; that Drop-vs-Swap decision is ShiftTour's job, not this tour's),
-        // and is intentionally NOT gated on the welcome tour being done (mirrors iOS's
-        // `ManageShiftSheet.onChange(of: page)`, which carries no such gate either — by the
-        // time a worker reaches this deep into a flow, welcome-tour sequencing no longer
-        // applies). The ViewModel + seen-key store live HERE (shared by the Settings replay
-        // row); the autoStart trigger, overlay, help button, and one-time pointer all render
-        // from INSIDE ManageShiftSheet itself (nested inside CalendarTabContent) since a
-        // root-level overlay would render BEHIND the modal bottom sheet — mirrors iOS's
-        // `showSwapTourPointer` being `@State` local to its `ManageShiftSheet`, not lifted to
-        // the top-level `ContentView`.
+        // The swap-composer tour is the one exception. It does NOT auto-open on a landing:
+        // it opens the first time the worker reaches the swap PAGE inside the manage-shift
+        // sheet, having already chosen "Swap it" over "Drop the shift" (that decision is
+        // ShiftTour's job). It is also deliberately NOT gated on the welcome tour, mirroring
+        // iOS's `ManageShiftSheet.onChange(of: page)` — this deep into a flow, welcome-tour
+        // sequencing no longer applies. The ViewModel and seen-key store live here because
+        // the Settings replay row shares them, but the autoStart trigger, overlay, help
+        // button and pointer all render from INSIDE ManageShiftSheet: a root-level overlay
+        // would render BEHIND the modal bottom sheet.
         val swapTourVm = remember { SwapTourViewModel(SwapTourPrefs.read(onboardingContext)) }
         val swapTourState by swapTourVm.uiState.collectAsStateWithLifecycle()
-        LaunchedEffect(swapTourState.seen) { SwapTourPrefs.write(onboardingContext, swapTourState.seen) }
+        rememberTourSeenWriter(TourWirings.Swap, swapTourState.seen)
 
         CompositionLocalProvider(LocalOnboardingAnchors provides onboardingAnchors) {
             Box(Modifier.fillMaxSize()) {
@@ -579,7 +495,7 @@ fun ShiftsApp(
                                             onVoidSwap(swapId)
                                         },
                                         onReplayShiftTour = shiftTourVm::replay,
-                                        onShiftTourHelpPositioned = { shiftTourHelpRect = it },
+                                        onShiftTourHelpPositioned = { shiftTour.helpRect = it },
                                         swapTourVm = swapTourVm,
                                     )
                                 TAB_OPEN ->
@@ -594,14 +510,14 @@ fun ShiftsApp(
                                         onPickUpPermanent = onPickUpPermanent,
                                         loadPermanentScope = loadPermanentScope,
                                         onReplayOpenClaimTour = openClaimTourVm::replay,
-                                        onOpenClaimTourHelpPositioned = { openClaimTourHelpRect = it },
+                                        onOpenClaimTourHelpPositioned = { openClaimTour.helpRect = it },
                                     )
                                 TAB_HOUSE ->
                                     HouseTabContent(
                                         vm = houseVm,
                                         meUserId = swapMeUserId,
                                         onReplayHouseGridTour = houseGridTourVm::replay,
-                                        onHouseGridTourHelpPositioned = { houseGridTourHelpRect = it },
+                                        onHouseGridTourHelpPositioned = { houseGridTour.helpRect = it },
                                     )
                                 TAB_UPDATES ->
                                     UpdatesTabContent(
@@ -646,7 +562,7 @@ fun ShiftsApp(
                                         PageTitle("Preferences") {
                                             PreferencesTourHelpButton(
                                                 onClick = preferencesTourVm::replay,
-                                                onPositioned = { preferencesTourHelpRect = it },
+                                                onPositioned = { preferencesTour.helpRect = it },
                                             )
                                         }
                                         PreferencesTabContent(preferencesVm, onSubmitPreferences, onSetDeadline = onSetDeadline)
@@ -656,7 +572,7 @@ fun ShiftsApp(
                                         PageTitle("Break shifts") {
                                             BreakTourHelpButton(
                                                 onClick = breakTourVm::replay,
-                                                onPositioned = { breakTourHelpRect = it },
+                                                onPositioned = { breakTour.helpRect = it },
                                             )
                                         }
                                         BreakCalendarTabContent(breakCalendarVm, onClaimBreakRange, onDropBreakSeats, onToggleBreakOptOut)
@@ -778,14 +694,14 @@ fun ShiftsApp(
                         // learns where to pick the tour back up, every time this happens.
                         onDismissOutside = {
                             shiftTourVm.skip()
-                            showTourPointer = true
+                            shiftTour.showPointer = true
                         },
                     )
                 }
                 // The one-time "look here" pointer at the header "?", positioned from the real
                 // button's reported bounds so it always lands on the actual control.
-                if (showTourPointer) {
-                    ShiftTourPointerCallout(targetRect = shiftTourHelpRect)
+                if (shiftTour.showPointer) {
+                    ShiftTourPointerCallout(targetRect = shiftTour.helpRect)
                 }
                 // Four more interactive tours, identical shape to shiftTourVm's block above.
                 if (preferencesTourState.active) {
@@ -796,12 +712,12 @@ fun ShiftsApp(
                         onSkip = preferencesTourVm::skip,
                         onDismissOutside = {
                             preferencesTourVm.skip()
-                            showPreferencesTourPointer = true
+                            preferencesTour.showPointer = true
                         },
                     )
                 }
-                if (showPreferencesTourPointer) {
-                    PreferencesTourPointerCallout(targetRect = preferencesTourHelpRect)
+                if (preferencesTour.showPointer) {
+                    PreferencesTourPointerCallout(targetRect = preferencesTour.helpRect)
                 }
                 if (breakTourState.active) {
                     BreakTourOverlay(
@@ -811,12 +727,12 @@ fun ShiftsApp(
                         onSkip = breakTourVm::skip,
                         onDismissOutside = {
                             breakTourVm.skip()
-                            showBreakTourPointer = true
+                            breakTour.showPointer = true
                         },
                     )
                 }
-                if (showBreakTourPointer) {
-                    BreakTourPointerCallout(targetRect = breakTourHelpRect)
+                if (breakTour.showPointer) {
+                    BreakTourPointerCallout(targetRect = breakTour.helpRect)
                 }
                 if (houseGridTourState.active) {
                     HouseGridTourOverlay(
@@ -826,12 +742,12 @@ fun ShiftsApp(
                         onSkip = houseGridTourVm::skip,
                         onDismissOutside = {
                             houseGridTourVm.skip()
-                            showHouseGridTourPointer = true
+                            houseGridTour.showPointer = true
                         },
                     )
                 }
-                if (showHouseGridTourPointer) {
-                    HouseGridTourPointerCallout(targetRect = houseGridTourHelpRect)
+                if (houseGridTour.showPointer) {
+                    HouseGridTourPointerCallout(targetRect = houseGridTour.helpRect)
                 }
                 if (openClaimTourState.active) {
                     OpenClaimTourOverlay(
@@ -841,12 +757,12 @@ fun ShiftsApp(
                         onSkip = openClaimTourVm::skip,
                         onDismissOutside = {
                             openClaimTourVm.skip()
-                            showOpenClaimTourPointer = true
+                            openClaimTour.showPointer = true
                         },
                     )
                 }
-                if (showOpenClaimTourPointer) {
-                    OpenClaimTourPointerCallout(targetRect = openClaimTourHelpRect)
+                if (openClaimTour.showPointer) {
+                    OpenClaimTourPointerCallout(targetRect = openClaimTour.helpRect)
                 }
                 // The swap-composer tour overlay + pointer are rendered from INSIDE
                 // ManageShiftSheet (via CalendarTabContent), not here — see the swapTourVm comment
@@ -931,7 +847,7 @@ fun ShiftsApp(
                         showMore = false
                         requestTab(TAB_SETTINGS)
                     }
-                    MoreNavRow("Assistant", ShiftIcons.Sparkle, "tab_assistant") {
+                    MoreNavRow("Ask Snoopy", ShiftIcons.Sparkle, "tab_assistant") {
                         showMore = false
                         requestTab(TAB_ASSISTANT)
                     }

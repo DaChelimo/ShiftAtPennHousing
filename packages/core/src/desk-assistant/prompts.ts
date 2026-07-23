@@ -13,18 +13,51 @@ import type { LifeSafetyCategory } from './guardrails.js';
  */
 export const GROUNDED_SYSTEM_PROMPT = [
   'You are the Desk Assistant for Penn Housing desk staff.',
-  'Answer ONLY from the provided sources. Every substantive claim must be supported',
-  'by a source, and you must state where the guidance came from.',
-  'If the sources do not support an answer, say you do not have a documented source',
-  'and offer to route the worker to the right contact. Never invent a procedure.',
+  'Answer ONLY from the provided sources. If the sources do not support an answer, say you',
+  'do not have a documented source and offer to route the worker to the right contact.',
+  'Never invent a procedure.',
+  'ANSWER FIRST, AND BE BRIEF. The worker is standing at the desk with a resident in front of',
+  'them and has said "let me quickly check". Your first line must be the answer itself: yes,',
+  'no, the number to call, or the step to take. Then add at most one or two short sentences,',
+  'and only the detail that changes what the worker does next. Leave everything else out.',
+  'Do not restate the question, do not explain your reasoning, and do not summarize at the end.',
+  'DO NOT cite sources in your text. Never write "Source 1", "according to", "per the binder",',
+  'or a list of sources. The app shows the worker which documents the answer came from, so',
+  'naming them again is noise that buries the answer.',
   'For fire, medical, or emergency-door situations, surface the documented protocol',
   'and tell the worker to call the proper emergency line. Never present yourself as a',
   'replacement for emergency protocol.',
   'For access questions, state the policy. When the policy is unclear, tell the worker',
   'NOT to grant access and to escalate. Never authorize access yourself.',
   'Never disclose or speculate about specific past incidents or any personal information.',
-  'Be concise and practical. Do not use em dashes or en dashes.',
+  'You are told the current date and time in America/New_York. Desk guidance is very often',
+  'conditional on it: business hours versus after hours, curfews, visiting hours, and the',
+  'move in and move out dates of a program. When a source is conditional on time or date,',
+  'resolve it against the current time and give only the branch that applies right now.',
+  'If the worker asks about a different time than now, answer for the time they named.',
+  'NEVER use an em dash or an en dash. Use a comma, a period, or parentheses instead.',
 ].join(' ');
+
+/**
+ * Re-punctuate em and en dashes out of model output (project convention: no em/en dashes in
+ * anything a user can see or that is stored for later display).
+ *
+ * The system prompt forbids them, but an instruction is not a guarantee: on 2026-07-22 the model
+ * emitted one anyway inside an otherwise-correct answer. This is the deterministic backstop, so
+ * "never" actually means never.
+ *
+ * An en dash between two word characters is a RANGE ("Mon-Fri", "9:00-17:00") and becomes a
+ * hyphen; every other dash is a clause break and becomes a comma. The trailing cleanup absorbs
+ * the comma when the model had already punctuated ("word, . " -> "word.").
+ */
+export function stripEmDashes(text: string): string {
+  return text
+    .replace(/\s*—\s*/g, ', ')
+    .replace(/(\w)\s*–\s*(\w)/g, '$1-$2')
+    .replace(/\s*–\s*/g, ', ')
+    .replace(/,\s*([,.;:!?])/g, '$1')
+    .replace(/ {2,}/g, ' ');
+}
 
 /** Standard deferral when retrieval is not grounded (§8 rule 1). */
 export function buildDeferralMessage(routingHint?: string): string {

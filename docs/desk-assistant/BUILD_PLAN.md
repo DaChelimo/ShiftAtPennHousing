@@ -66,7 +66,9 @@ packages/shared/src/database.types.ts`, then **rebuild `@shift/shared`** (web co
 ### 0.4 Secrets and models (deploy-time config, never committed)
 
 - `VOYAGE_API_KEY` — Voyage AI embeddings (EF secret / local `.env` for scripts).
-- `ANTHROPIC_API_KEY` — Claude generation (EF secret).
+- `CLAUDE_AI_CHATBOT_DESK_ASSISTANT` — Claude generation, dedicated to this feature (EF
+  secret / local `.env` for scripts). Not the generic `ANTHROPIC_API_KEY` name on purpose
+  (see AGENTS.md Conventions — per-feature key hygiene).
 - `DA_GENERATION_MODEL` — env override; default `claude-sonnet-5` (cost/latency fit for
   desk Q&A; Opus is not required for grounded extraction over supplied context).
 - Embedding model/dimension are pinned in code: `voyage-3`, 1024 (see §1.1).
@@ -229,8 +231,8 @@ sensitivity, allowed_roles) ORDER BY embedding <=> p_query_embedding LIMIT p_top
   fixtures are then deleted with `--replace` semantics or a `--purge-fixtures` flag.
 - `supabase/functions/_shared/desk-assistant.ts` — the ask-time mirror (§3.3).
 - `supabase/functions/da-ask/index.ts` — the pinned pipeline (§3). CORS headers as in
-  existing EFs; degrade with a clear 503 JSON if `VOYAGE_API_KEY`/`ANTHROPIC_API_KEY`
-  unset.
+  existing EFs; degrade with a clear 503 JSON if `VOYAGE_API_KEY`/
+  `CLAUDE_AI_CHATBOT_DESK_ASSISTANT` unset.
 - `supabase/tests/desk-assistant-scope.sql` — pgTAP mirroring the 22-case Vitest truth
   table against `da_can_read_item` (callable under raw psql since it is a function, not
   an RLS read), plus RLS smoke (structure for `supabase test db`).

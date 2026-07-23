@@ -42,6 +42,37 @@ describe('classifyQuery', () => {
   it('classifies a plain procedure question as durable knowledge', () => {
     expect(classifyQuery('How long can a resident keep a cart?').intent).toBe('durable_knowledge');
   });
+
+  it('routes first-person schedule questions to personal_schedule', () => {
+    for (const q of [
+      "What's my next shift?",
+      'When do I work next?',
+      'Am I working this weekend?',
+      'How many hours do I have this week?',
+      'Show me my schedule',
+      'Do I have a shift tomorrow?',
+      'what time do I work on Friday',
+    ]) {
+      const c = classifyQuery(q);
+      expect(c.intent, q).toBe('personal_schedule');
+      expect(c.asksPersonalSchedule, q).toBe(true);
+      expect(c.tier, q).toBeNull();
+    }
+  });
+
+  it('does NOT treat a bare first-person procedure question as personal_schedule', () => {
+    for (const q of ['How do I reset the printer?', 'Where do I log a package?']) {
+      expect(classifyQuery(q).intent, q).toBe('durable_knowledge');
+    }
+  });
+
+  it('lets a contact question win over a personal-schedule cue', () => {
+    // Names a contact cue + verb ("who do I contact") AND a schedule noun; the contact
+    // intent takes precedence so it does not read out the schedule.
+    const c = classifyQuery('Who do I contact to cover my shift tomorrow?');
+    expect(c.intent).toBe('duty_contact');
+    expect(c.asksPersonalSchedule).toBe(false);
+  });
 });
 
 describe('resolveAsOfDate', () => {

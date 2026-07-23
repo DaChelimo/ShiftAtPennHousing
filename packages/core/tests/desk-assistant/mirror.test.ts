@@ -26,6 +26,12 @@ describe('mirror constants match core', () => {
     );
   });
 
+  it('em/en dash stripping is identical', () => {
+    for (const s of ['a—b', 'Mon–Fri', 'Yes — but only day visitors.', '9:00–17:00', 'plain']) {
+      expect(mirror.stripEmDashes(s)).toBe(core.stripEmDashes(s));
+    }
+  });
+
   it('life-safety preambles match', () => {
     for (const cat of ['fire', 'medical', 'emergency_door'] as const) {
       expect(mirror.lifeSafetyPreamble(cat)).toBe(core.lifeSafetyPreamble(cat));
@@ -35,8 +41,27 @@ describe('mirror constants match core', () => {
   it('retrieval constants match', () => {
     expect(mirror.DEFAULT_TOP_K).toBe(core.DEFAULT_TOP_K);
     expect(mirror.DEFAULT_GROUNDING_THRESHOLD).toBe(core.DEFAULT_GROUNDING_THRESHOLD);
+    expect(mirror.DEFAULT_GROUNDING_FLOOR).toBe(core.DEFAULT_GROUNDING_FLOOR);
+    expect(mirror.DEFAULT_GROUNDING_MARGIN).toBe(core.DEFAULT_GROUNDING_MARGIN);
     expect(mirror.DEFAULT_PER_DOCUMENT_LIMIT).toBe(core.DEFAULT_PER_DOCUMENT_LIMIT);
     expect(mirror.OVERLAY_TOLERANCE).toBe(core.OVERLAY_TOLERANCE);
+  });
+
+  it('grounding decision agrees on the measured 2026-07-22 similarity pools', () => {
+    // Real voyage-3 pools captured against the Harnwell summer binder. The first three are
+    // valid MindCore guest questions (must ground); the last two are off topic (must defer).
+    const pools: Array<[string, number[]]> = [
+      ['q1 long guest question', [0.5346, 0.4025, 0.3897, 0.3672, 0.3663]],
+      ['q2 "guests at 11?"', [0.3688, 0.2579, 0.2561, 0.2561, 0.2465]],
+      ['q3 "can they have guests?"', [0.4203, 0.2739, 0.2727, 0.2689, 0.267]],
+      ['off topic wifi password', [0.408, 0.3529, 0.3459, 0.3402, 0.3381]],
+      ['off topic parking permit', [0.3158, 0.2851, 0.2821, 0.2805, 0.2799]],
+    ];
+    for (const [label, pool] of pools) {
+      expect(mirror.isGroundedByDistribution(pool), label).toBe(
+        core.isGroundedByDistribution(pool),
+      );
+    }
   });
 });
 
@@ -164,6 +189,10 @@ describe('query classification parity with core', () => {
     'who is the Building Administrator this week?',
     'should I call the SMOD about this access issue?',
     'who handles conference guests, the CSMOD?',
+    "What's my next shift?",
+    'Am I working this weekend?',
+    'How many hours do I have this week?',
+    'How do I reset the printer?',
   ];
 
   it('classifyQuery agrees', () => {

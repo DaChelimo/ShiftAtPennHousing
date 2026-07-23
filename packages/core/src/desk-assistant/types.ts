@@ -11,6 +11,7 @@ export type SourceType =
   | 'house_binder'
   | 'summer_binder'
   | 'incident_lesson'
+  | 'app_guide'
   | 'fixture';
 
 /**

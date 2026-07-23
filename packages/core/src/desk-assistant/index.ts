@@ -7,6 +7,7 @@ export * from './scope.js';
 export * from './embeddings.js';
 export * from './chunking.js';
 export * from './normalize.js';
+export * from './layout-heuristic.js';
 export * from './temporal.js';
 export * from './propose.js';
 export * from './query-classify.js';

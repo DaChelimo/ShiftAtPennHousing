@@ -5,6 +5,7 @@ import { Notification } from '../../../../components/ui/Notification';
 import { PageHead } from '../../../../components/ui/PageHead';
 import { loadIntakeQueue } from '../../../../lib/actions/kbIntake';
 import { getSessionUser, isAdmin, isHouseAdmin, isRsm } from '../../../../lib/auth';
+import { createServiceClient } from '../../../../lib/supabase/server';
 
 // KB Intake admin (INTAKE_PLAN Phase 3). HM / BM / RSM / admin only, matching the
 // da_is_kb_admin gate on kb_intake. The queue + review UI drives the whole
@@ -41,5 +42,9 @@ async function KnowledgeIntakeLoader() {
       </Notification>
     );
   }
-  return <KnowledgeIntake initial={res.data} />;
+  // House scope in the review panel is a picker over real houses (by name, not a
+  // free-typed id) so an operator can't typo a house scope into a silent no-match.
+  const svc = createServiceClient();
+  const { data: houseRows } = await svc.from('houses').select('id, name').order('name');
+  return <KnowledgeIntake initial={res.data} houses={houseRows ?? []} />;
 }

@@ -79,7 +79,7 @@ Deno.serve(
         authorName: prof?.name ?? 'Desk',
         recipientLabel: tierLabel(route.resolvedTier),
       };
-      const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
+      const anthropicKey = Deno.env.get('CLAUDE_AI_CHATBOT_DESK_ASSISTANT');
       if (anthropicKey !== undefined) {
         try {
           body = await claudeComplete({

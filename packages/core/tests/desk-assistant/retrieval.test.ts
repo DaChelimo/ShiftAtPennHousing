@@ -4,12 +4,15 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  DEFAULT_GROUNDING_MARGIN,
+  DEFAULT_GROUNDING_THRESHOLD,
   buildCitations,
   buildDeferralMessage,
   chunkDocument,
   detectLifeSafety,
   estimateTokens,
   formatCitationLine,
+  isGroundedByDistribution,
   lifeSafetyPreamble,
   looksLikeIncidentProbe,
   mentionsAccessDecision,
@@ -256,5 +259,51 @@ describe('deferral message', () => {
 
   it('falls back to a generic offer without a hint', () => {
     expect(buildDeferralMessage()).toMatch(/reach the right contact/i);
+  });
+});
+
+describe('isGroundedByDistribution (measured voyage-3 pools, 2026-07-22)', () => {
+  // Absolute similarity is NOT comparable across questions, so these pools are the real
+  // regression contract: the same correct chunk scores 0.5346 for a long question and only
+  // 0.3688 for a short one, while an off-topic question scores an irrelevant chunk 0.4080.
+  // Any future retuning must keep all five of these verdicts.
+  const Q1_LONG = [0.5346, 0.4025, 0.3897, 0.3672, 0.3663];
+  const Q2_AT_11 = [0.3688, 0.2579, 0.2561, 0.2561, 0.2465];
+  const Q3_HAVE_GUESTS = [0.4203, 0.2739, 0.2727, 0.2689, 0.267];
+  const OFF_TOPIC_WIFI = [0.408, 0.3529, 0.3459, 0.3402, 0.3381];
+  const OFF_TOPIC_PARKING = [0.3158, 0.2851, 0.2821, 0.2805, 0.2799];
+
+  it('grounds a long, keyword-rich question on absolute score alone', () => {
+    expect(isGroundedByDistribution(Q1_LONG)).toBe(true);
+  });
+
+  it('grounds SHORT valid questions that the old 0.5 absolute cutoff wrongly deferred', () => {
+    expect(Math.max(...Q2_AT_11)).toBeLessThan(DEFAULT_GROUNDING_THRESHOLD);
+    expect(Math.max(...Q3_HAVE_GUESTS)).toBeLessThan(DEFAULT_GROUNDING_THRESHOLD);
+    expect(isGroundedByDistribution(Q2_AT_11)).toBe(true);
+    expect(isGroundedByDistribution(Q3_HAVE_GUESTS)).toBe(true);
+  });
+
+  it('defers off-topic questions even when they outscore a valid short question', () => {
+    // The crux: wifi's top (0.408) is HIGHER than q2's top (0.3688), so no absolute
+    // cutoff can separate them. Only the gap to the background does.
+    expect(Math.max(...OFF_TOPIC_WIFI)).toBeGreaterThan(Math.max(...Q2_AT_11));
+    expect(isGroundedByDistribution(OFF_TOPIC_WIFI)).toBe(false);
+    expect(isGroundedByDistribution(OFF_TOPIC_PARKING)).toBe(false);
+  });
+
+  it('still grounds when SEVERAL chunks are genuinely relevant (runner-up margin would not)', () => {
+    // A program's own row plus the house-wide "day visitor" definition both match. A
+    // top-vs-runner-up rule would see a ~0 gap and defer; the median is unmoved.
+    const twoRelevant = [0.44, 0.43, 0.27, 0.26, 0.26, 0.25];
+    expect(twoRelevant[0]! - twoRelevant[1]!).toBeLessThan(DEFAULT_GROUNDING_MARGIN);
+    expect(isGroundedByDistribution(twoRelevant)).toBe(true);
+  });
+
+  it('never grounds below the hard floor, and handles empty/tiny pools', () => {
+    expect(isGroundedByDistribution([0.29, 0.05, 0.04])).toBe(false);
+    expect(isGroundedByDistribution([])).toBe(false);
+    expect(isGroundedByDistribution([0.42])).toBe(false);
+    expect(isGroundedByDistribution([0.62])).toBe(true);
   });
 });

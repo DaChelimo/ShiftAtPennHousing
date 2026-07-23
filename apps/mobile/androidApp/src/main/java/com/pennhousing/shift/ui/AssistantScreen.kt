@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -35,10 +37,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -46,6 +56,8 @@ import com.pennhousing.shift.shared.assistant.AssistantMessage
 import com.pennhousing.shift.shared.assistant.AssistantPrompts
 import com.pennhousing.shift.shared.assistant.AssistantRole
 import com.pennhousing.shift.shared.assistant.AssistantStreamEvent
+import com.pennhousing.shift.shared.assistant.Citation
+import com.pennhousing.shift.shared.assistant.parseAssistantMarkdown
 import com.pennhousing.shift.shared.data.AssistantRepository
 import com.pennhousing.shift.shared.data.WorkerBackend
 import com.pennhousing.shift.shared.viewmodel.AssistantViewModel
@@ -96,7 +108,7 @@ fun AssistantScreen(
     }
 
     LaunchedEffect(state.messages.size, state.loading, state.messages.lastOrNull()?.content) {
-        val lastIndex = state.messages.size - if (state.loading) 0 else 1
+        val lastIndex = state.messages.size - 1
         if (lastIndex >= 0) listState.animateScrollToItem(lastIndex)
     }
 
@@ -114,7 +126,7 @@ fun AssistantScreen(
             } else {
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().testTag("assistant_message_list"),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
@@ -148,7 +160,7 @@ fun AssistantScreen(
 private fun AssistantEmptyState(onPrompt: (String) -> Unit) {
     val c = ShiftTheme.colors
     Column(
-        Modifier.fillMaxSize().padding(horizontal = 24.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.Center,
     ) {
         Box(
@@ -185,7 +197,8 @@ private fun AssistantEmptyState(onPrompt: (String) -> Unit) {
                             .background(c.surface)
                             .border(1.dp, c.divider, RoundedCornerShape(999.dp))
                             .clickable { onPrompt(prompt) }
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
+                            .testTag("assistant_starter_prompt"),
                     color = c.ink,
                     fontSize = 13.5.sp,
                 )
@@ -201,7 +214,10 @@ private fun AssistantBubble(
 ) {
     val c = ShiftTheme.colors
     val isUser = message.role == AssistantRole.USER
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start) {
+    Row(
+        Modifier.fillMaxWidth().testTag("assistant_bubble_${message.id}"),
+        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+    ) {
         Column(
             Modifier.widthIn(max = 300.dp),
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
@@ -233,32 +249,14 @@ private fun AssistantBubble(
                         Box(Modifier.width(110.dp).height(12.dp).shimmer())
                     }
                 } else {
-                    Text(
-                        message.content,
+                    MarkdownAnswer(
+                        content = message.content,
                         color = if (isUser) MaterialTheme.colorScheme.onPrimary else c.ink,
-                        fontSize = 14.5.sp,
-                        lineHeight = 20.sp,
                     )
                 }
             }
             if (!isUser && message.citations.isNotEmpty()) {
-                Row(
-                    Modifier.padding(top = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    message.citations.forEach { citation ->
-                        Text(
-                            citation.sourceRef,
-                            modifier =
-                                Modifier
-                                    .clip(RoundedCornerShape(999.dp))
-                                    .background(c.surfaceVar)
-                                    .padding(horizontal = 10.dp, vertical = 5.dp),
-                            color = c.sec,
-                            fontSize = 11.5.sp,
-                        )
-                    }
-                }
+                SourcesBar(message.citations)
             }
             message.route?.let { route ->
                 Text(
@@ -268,6 +266,96 @@ private fun AssistantBubble(
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Render an answer's Markdown instead of printing its source. Parsing is the shared
+ * [parseAssistantMarkdown] so this and the SwiftUI bubble cannot drift.
+ */
+@Composable
+private fun MarkdownAnswer(
+    content: String,
+    color: Color,
+) {
+    val lines = remember(content) { parseAssistantMarkdown(content) }
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        lines.forEach { line ->
+            // Spans join into ONE AnnotatedString so the line still wraps as a single
+            // paragraph rather than breaking at every style change.
+            val annotated =
+                buildAnnotatedString {
+                    line.spans.forEach { span ->
+                        withStyle(
+                            SpanStyle(
+                                fontWeight = if (span.bold) FontWeight.SemiBold else null,
+                                fontStyle = if (span.italic) FontStyle.Italic else null,
+                                fontFamily = if (span.code) FontFamily.Monospace else null,
+                            ),
+                        ) {
+                            append(span.text)
+                        }
+                    }
+                }
+            if (line.bullet) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("•", color = color, fontSize = 14.5.sp, lineHeight = 20.sp)
+                    Text(annotated, color = color, fontSize = 14.5.sp, lineHeight = 20.sp)
+                }
+            } else {
+                Text(annotated, color = color, fontSize = 14.5.sp, lineHeight = 20.sp)
+            }
+        }
+    }
+}
+
+/**
+ * Where an answer came from, kept out of the way (BSpec §17.3). Collapsed it is one quiet row;
+ * tapping reveals the document names, each clipped to a single line. Binder titles are long, so
+ * rendering them inline pushed the answer itself off screen.
+ */
+@Composable
+private fun SourcesBar(citations: List<Citation>) {
+    val c = ShiftTheme.colors
+    var expanded by remember { mutableStateOf(false) }
+    Column(Modifier.padding(top = 6.dp)) {
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(6.dp))
+                .clickable { expanded = !expanded }
+                .testTag("assistant_sources_toggle")
+                .padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Icon(
+                ShiftIcons.ChevronRight,
+                contentDescription = null,
+                tint = c.ter,
+                modifier = Modifier.size(12.dp).rotate(if (expanded) 90f else 0f),
+            )
+            Text(
+                if (citations.size == 1) "1 source" else "${citations.size} sources",
+                color = c.ter,
+                fontSize = 11.5.sp,
+            )
+        }
+        if (expanded) {
+            Column(
+                Modifier.padding(top = 2.dp).testTag("assistant_sources_list"),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                citations.forEach { citation ->
+                    Text(
+                        citation.sourceRef,
+                        color = c.ter,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }

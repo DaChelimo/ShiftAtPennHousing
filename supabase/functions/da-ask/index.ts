@@ -6,8 +6,17 @@
 //   grounded? generate : defer -> persist -> respond.
 // Scope filtering lives entirely in match_kb_chunks (da_can_read_item); this
 // function never re-implements the matrix.
+//
+// Every SUCCESSFUL reply (any branch that reaches a `content` to answer with) is now an
+// SSE stream: `meta` (citations/deferred/route/safety, known before generation) once,
+// then one or more `delta` (text) frames, then `done` (messageId) — or `retract`
+// (content) + `done` if the leakage guardrail trips mid-stream. Pre-generation failures
+// (bad request, auth, retrieval/embedding errors, unconfigured) stay plain JSON error
+// responses, exactly as before — clients only enter SSE-parsing mode on a 200
+// `text/event-stream` response. See `apps/web/lib/assistant/streamTypes.ts` for the
+// mirrored client-side event union.
 
-import { claudeComplete } from '../_shared/anthropic.ts';
+import { claudeStream, claudeToolLoop, type ToolSpec } from '../_shared/anthropic.ts';
 import { fetchAppNow } from '../_shared/clock.ts';
 import {
   nyParts,
@@ -30,8 +39,10 @@ import {
   narrowContext,
   nyDate,
   resolveAsOfDate,
+  stripEmDashes,
   type Candidate,
 } from '../_shared/desk-assistant.ts';
+import { createSseStream } from '../_shared/sse.ts';
 import { authenticate, edgeHandler, jsonResponse, readObjectBody } from '../_shared/swap-http.ts';
 import { toVectorLiteral, voyageEmbed } from '../_shared/voyage.ts';
 
@@ -43,6 +54,87 @@ interface MatchRow {
   house_scope: string | null;
   source_updated_at: string | null;
   similarity: number;
+}
+
+// ---- personal-schedule branch (get_my_shifts tool) ----
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_SCHEDULE_WINDOW_DAYS = 62; // bound the resolver query span
+
+// Add `days` to a YYYY-MM-DD calendar date (UTC math, DST-safe: date-only, project #6).
+function addDays(iso: string, days: number): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const ms = Date.UTC(y!, m! - 1, d!) + days * 86400000;
+  const dt = new Date(ms);
+  const p = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+  return `${dt.getUTCFullYear()}-${p(dt.getUTCMonth() + 1)}-${p(dt.getUTCDate())}`;
+}
+
+const WEEKDAY_NAMES = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+];
+function weekdayName(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return WEEKDAY_NAMES[new Date(Date.UTC(y!, m! - 1, d!)).getUTCDay()]!;
+}
+
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+/** "2026-07-21" -> "July 21, 2026". The input is already an NY calendar date, so no tz math. */
+function longDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return `${MONTH_NAMES[m! - 1]} ${d}, ${y}`;
+}
+
+const GET_MY_SHIFTS_TOOL: ToolSpec = {
+  name: 'get_my_shifts',
+  description:
+    "Look up the current worker's OWN shifts (scheduled, claimed, floated-in, or " +
+    'dropped-still-open) between two calendar dates, inclusive, in America/New_York. ' +
+    'Returns a list of coalesced shift spans, each with the house, start and end time ' +
+    '(ISO 8601), a kind, and the number of hours. Use it to answer any question about ' +
+    "the worker's own schedule or hours. It only ever returns the asking worker's shifts.",
+  input_schema: {
+    type: 'object',
+    properties: {
+      from_date: {
+        type: 'string',
+        description: 'Start of the range, YYYY-MM-DD (America/New_York calendar date).',
+      },
+      to_date: {
+        type: 'string',
+        description: 'End of the range, inclusive, YYYY-MM-DD.',
+      },
+    },
+    required: ['from_date', 'to_date'],
+  },
+};
+
+interface ShiftSpanRow {
+  house_name: string;
+  start_at: string;
+  end_at: string;
+  kind: string;
+  cross_house: boolean;
+  hours: number;
 }
 
 // Map active routing_rules rows into the pure engine's RoutingRule shape. Shared by the
@@ -59,6 +151,35 @@ function mapRoutingRules(rows: Array<Record<string, unknown>> | null): RoutingRu
     priority: r.priority as number,
     active: r.active as boolean,
   }));
+}
+
+/**
+ * A branch whose full text is already known synchronously (duty-contact, incident-probe
+ * refusal, not-grounded defer) — emits the whole SSE sequence in one go: `meta`, one
+ * `delta` carrying the complete string, then `done`.
+ */
+function respondOnce(opts: {
+  conversationId: string;
+  messageId: string | null;
+  content: string;
+  citations: unknown[];
+  deferred: boolean;
+  route?: unknown;
+  safety: Record<string, unknown>;
+}): Response {
+  const { response, send, close } = createSseStream();
+  send({
+    t: 'meta',
+    conversationId: opts.conversationId,
+    citations: opts.citations,
+    deferred: opts.deferred,
+    route: opts.route ?? null,
+    safety: opts.safety,
+  });
+  send({ t: 'delta', text: opts.content });
+  send({ t: 'done', messageId: opts.messageId });
+  close();
+  return response;
 }
 
 Deno.serve(
@@ -118,7 +239,7 @@ Deno.serve(
     // before any retrieval or generation (raw incidents are never indexed anyway).
     if (looksLikeIncidentProbe(question)) {
       const messageId = await insertMessage('assistant', INCIDENT_PROBE_REFUSAL, [], false);
-      return jsonResponse({
+      return respondOnce({
         conversationId: convId,
         messageId,
         content: INCIDENT_PROBE_REFUSAL,
@@ -164,13 +285,12 @@ Deno.serve(
           ? `${guide} Call the duty phone: ${phone}.`
           : `${guide} The duty phone number is on the IC phone list.`;
         const messageId = await insertMessage('assistant', content, [], false);
-        return jsonResponse({
+        return respondOnce({
           conversationId: convId,
           messageId,
           content,
           citations: [],
           deferred: false,
-          asOf: asOfDate,
           safety: {
             lifeSafety,
             access,
@@ -234,14 +354,13 @@ Deno.serve(
             : `I could not resolve a named on-duty contact ${whenLabel}. This escalates to ` +
               `${tier}. Want me to draft a page?`;
         const messageId = await insertMessage('assistant', content, [], false);
-        return jsonResponse({
+        return respondOnce({
           conversationId: convId,
           messageId,
           content,
           citations: [],
           deferred: false,
           route,
-          asOf: asOfDate,
           safety: { lifeSafety, access, incidentProbe: false, dutyContact: true },
         });
       } catch (_err) {
@@ -249,11 +368,97 @@ Deno.serve(
       }
     }
 
+    // Personal-schedule questions ("what's my next shift", "am I working this weekend",
+    // "how many hours do I have this week") resolve against the worker's OWN live
+    // assignment data via the get_my_shifts tool -- never the vector store. This is the
+    // gap that made those questions defer to a human. The user_id passed to the resolver
+    // is the AUTHENTICATED token subject, never a model-supplied value. No leakage scan
+    // here: schedule answers legitimately contain dates/times, and the data is the
+    // worker's own (the incident-PII guardrail is for KB-retrieved text).
+    if (classification.intent === 'personal_schedule' && lifeSafety === null) {
+      const anthropicKey = Deno.env.get('CLAUDE_AI_CHATBOT_DESK_ASSISTANT');
+      if (anthropicKey === undefined) {
+        return jsonResponse(
+          { error: 'assistant_unconfigured', detail: 'CLAUDE_AI_CHATBOT_DESK_ASSISTANT not set' },
+          503,
+        );
+      }
+
+      const dispatch = async (_name: string, input: Record<string, unknown>): Promise<string> => {
+        // Validate + bound the range; default to a 14-day forward window on bad input.
+        let from = typeof input.from_date === 'string' ? input.from_date : '';
+        let to = typeof input.to_date === 'string' ? input.to_date : '';
+        if (!ISO_DATE_RE.test(from)) from = todayNy;
+        if (!ISO_DATE_RE.test(to)) to = addDays(from, 14);
+        if (to < from) to = from;
+        if (to > addDays(from, MAX_SCHEDULE_WINDOW_DAYS))
+          to = addDays(from, MAX_SCHEDULE_WINDOW_DAYS);
+        const { data, error } = await supabase.rpc('assistant_my_shifts', {
+          p_user_id: userId,
+          p_from: from,
+          p_to: to,
+        });
+        if (error) return `Tool error: ${error.message}`;
+        const rows = (data as ShiftSpanRow[]).map((r) => ({
+          house: r.house_name,
+          start: r.start_at,
+          end: r.end_at,
+          kind: r.kind,
+          hours: Number(r.hours),
+          cross_house: r.cross_house,
+        }));
+        return JSON.stringify({ range: { from, to }, shifts: rows });
+      };
+
+      const system = [
+        'You are the Desk Assistant for Penn Housing desk staff.',
+        "Answer the worker's question about THEIR OWN shift schedule using only the",
+        'get_my_shifts tool results. State shift dates, times, and house plainly, in',
+        'America/New_York. Convert ISO timestamps to a friendly form (e.g. "Mon Jul 14,',
+        '3:00 to 7:00 PM at Harnwell"). If the tool returns no shifts in the range, say',
+        'plainly that they have no shifts scheduled in that period. Never invent shifts',
+        'or hours. Be concise. Do not use em dashes or en dashes.',
+      ].join(' ');
+      const userMessage =
+        `Today is ${todayNy} (${weekdayName(todayNy)}) in America/New_York. ` +
+        `The worker asked: "${question}". Use get_my_shifts to look up their schedule, ` +
+        'then answer. If they did not name a range, look at the next 14 days.';
+
+      let answer = '';
+      try {
+        answer = await claudeToolLoop({
+          apiKey: anthropicKey,
+          system,
+          userMessage,
+          tools: [GET_MY_SHIFTS_TOOL],
+          dispatch,
+        });
+      } catch (_err) {
+        answer = '';
+      }
+      if (answer.trim() === '') {
+        answer =
+          'I could not read your schedule just now. Please try again, or check the My Shifts tab.';
+      }
+      const messageId = await insertMessage('assistant', answer, [], false);
+      return respondOnce({
+        conversationId: convId,
+        messageId,
+        content: answer,
+        citations: [],
+        deferred: false,
+        safety: { lifeSafety, access, incidentProbe: false, personalSchedule: true },
+      });
+    }
+
     const voyageKey = Deno.env.get('VOYAGE_API_KEY');
-    const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
+    const anthropicKey = Deno.env.get('CLAUDE_AI_CHATBOT_DESK_ASSISTANT');
     if (voyageKey === undefined || anthropicKey === undefined) {
       return jsonResponse(
-        { error: 'assistant_unconfigured', detail: 'VOYAGE_API_KEY / ANTHROPIC_API_KEY not set' },
+        {
+          error: 'assistant_unconfigured',
+          detail: 'VOYAGE_API_KEY / CLAUDE_AI_CHATBOT_DESK_ASSISTANT not set',
+        },
         503,
       );
     }
@@ -312,7 +517,7 @@ Deno.serve(
       }
       const content = buildDeferralMessage(hint);
       const messageId = await insertMessage('assistant', content, [], true);
-      return jsonResponse({
+      return respondOnce({
         conversationId: convId,
         messageId,
         content,
@@ -323,7 +528,9 @@ Deno.serve(
       });
     }
 
-    // Grounded generation. Preambles (life-safety / access) lead the answer.
+    // Grounded generation — real token streaming. Preambles (life-safety / access) lead
+    // the answer and are sent as an initial synthetic delta (they're static safe text,
+    // not model output, so they never need the leakage check below).
     const preambles: string[] = [];
     if (lifeSafety) preambles.push(lifeSafetyPreamble(lifeSafety));
     if (access)
@@ -334,50 +541,108 @@ Deno.serve(
     const contextBlock = context
       .map((c, i) => `[Source ${i + 1}] (${c.sourceRef})\n${c.content}`)
       .join('\n\n');
+    // Current NY date AND time-of-day. Most of this corpus is time-conditional (the whole
+    // escalation flowchart splits on business hours vs. after hours, and guest policy splits
+    // on day vs. overnight), so without the clock the model cannot pick the right branch.
+    // `now` comes from app_now() via fetchAppNow, i.e. the dev sim clock, NOT the wall clock,
+    // so time travel on the web dev-clock card moves the assistant's "now" too.
+    const { timeHHMM: nowTimeNy } = nyParts(now);
+    // BOTH the spelled and ISO forms of today deliberately appear here. The leakage guardrail
+    // below treats a date absent from this message as un-sourced, and the model writes prose
+    // ("July 21, 2026") even when handed an ISO string, which intermittently retracted correct
+    // answers. Naming both forms makes either phrasing grounded.
     const userContent =
       `${preambles.length ? preambles.join(' ') + '\n\n' : ''}` +
+      `Right now it is ${weekdayName(todayNy)}, ${longDate(todayNy)} (${todayNy}), ` +
+      `at ${nowTimeNy} in America/New_York.\n\n` +
       `Question: ${question}\n\nSources:\n${contextBlock}\n\n` +
-      'Answer using only these sources and state which source supports the answer.';
+      'Answer using only these sources. Lead with the answer itself and keep it short. ' +
+      'Do not name or number the sources in your reply.';
 
-    let answer: string;
-    try {
-      answer = await claudeComplete({
-        apiKey: anthropicKey,
-        system: GROUNDED_SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: userContent }],
-      });
-    } catch (err) {
-      return jsonResponse(
-        { error: 'generation_failed', detail: err instanceof Error ? err.message : String(err) },
-        502,
-      );
-    }
-
-    // §8 output guardrail (defense in depth): if the generated answer somehow carries
-    // incident-identifying PII, fail closed rather than return it.
-    if (containsIncidentLeakage(answer)) {
-      const messageId = await insertMessage('assistant', INCIDENT_PROBE_REFUSAL, [], false);
-      return jsonResponse({
-        conversationId: convId,
-        messageId,
-        content: INCIDENT_PROBE_REFUSAL,
-        citations: [],
-        deferred: false,
-        safety: { lifeSafety, access, incidentProbe: false, leakageBlocked: true },
-      });
-    }
-
-    const finalAnswer = preambles.length ? `${preambles.join(' ')}\n\n${answer}` : answer;
     const citations = buildCitations(context);
-    const messageId = await insertMessage('assistant', finalAnswer, citations, false);
-
-    return jsonResponse({
+    const { response, send, close } = createSseStream();
+    send({
+      t: 'meta',
       conversationId: convId,
-      messageId,
-      content: finalAnswer,
       citations,
       deferred: false,
+      route: null,
       safety: { lifeSafety, access, incidentProbe: false },
     });
+    if (preambles.length) send({ t: 'delta', text: `${preambles.join(' ')}\n\n` });
+
+    // Not awaited — the response (and its ReadableStream) is returned to the caller
+    // below while this keeps writing to it. §8 output guardrail (defense in depth): ran
+    // on the FULL text before streaming existed; here it runs on the growing buffer
+    // after every delta so a leak is caught within a token or two instead of never being
+    // checked at all. If it trips: stop consuming further deltas, `retract` (the client
+    // replaces the whole message with the refusal), and persist ONLY the refusal — the
+    // leaked text is never written to `da_messages` and, past the retract, never shown.
+    (async () => {
+      let answer = '';
+      // How much of the SANITIZED answer has already gone out. Dashes are re-punctuated over the
+      // whole answer and only the diff is streamed, so every dash is judged with full context.
+      let sentLen = 0;
+      let leaked = false;
+      const pushClean = (text: string): void => {
+        if (text.length > sentLen) {
+          send({ t: 'delta', text: text.slice(sentLen) });
+          sentLen = text.length;
+        }
+      };
+      try {
+        for await (const delta of claudeStream({
+          apiKey: anthropicKey,
+          system: GROUNDED_SYSTEM_PROMPT,
+          messages: [{ role: 'user', content: userContent }],
+          // Headroom over the 1024 default. claude-sonnet-5 runs ADAPTIVE THINKING when the
+          // request omits `thinking`, and thinking tokens are charged against max_tokens, so
+          // a long procedural answer (the after-hours escalation path lists five Building
+          // Administrators with two numbers each) can run out mid-list on the default.
+          maxTokens: 2048,
+        })) {
+          answer += delta;
+          // Pass the WHOLE user message, not just contextBlock: everything in it is either
+          // retrieved source text, the worker's own question, or the clock line we injected, so
+          // echoing any of it discloses nothing. Leakage is a specific that came from NONE of
+          // those. Passing only contextBlock retracted answers that merely restated today's
+          // date, because the clock line lives outside the sources.
+          if (containsIncidentLeakage(answer, userContent)) {
+            leaked = true;
+            break;
+          }
+          // Hold back a dash sitting at the very end: alone it looks like a clause break
+          // ("Mon–" becomes "Mon, ") but the next token may reveal a range ("Mon–Fri" becomes
+          // "Mon-Fri"). Waiting one chunk keeps the already-sent prefix stable either way.
+          pushClean(stripEmDashes(answer.replace(/[—–]\s*$/, '')));
+        }
+        // Release whatever the trailing-dash hold-back kept out of the stream.
+        if (!leaked) pushClean(stripEmDashes(answer));
+      } catch (err) {
+        send({ t: 'error', message: err instanceof Error ? err.message : String(err) });
+        close();
+        return;
+      }
+
+      if (leaked) {
+        const messageId = await insertMessage('assistant', INCIDENT_PROBE_REFUSAL, [], false);
+        send({ t: 'retract', content: INCIDENT_PROBE_REFUSAL });
+        send({ t: 'done', messageId });
+        close();
+        return;
+      }
+
+      // Persist exactly what was streamed, dashes already re-punctuated: `da_messages` is
+      // replayed into the thread on reload, so an unsanitized row would resurrect them.
+      const cleanAnswer = stripEmDashes(answer);
+      const finalAnswer = preambles.length
+        ? `${preambles.join(' ')}\n\n${cleanAnswer}`
+        : cleanAnswer;
+      const messageId = await insertMessage('assistant', finalAnswer, citations, false);
+      send({ t: 'done', messageId });
+      close();
+    })();
+
+    return response;
   }),
 );

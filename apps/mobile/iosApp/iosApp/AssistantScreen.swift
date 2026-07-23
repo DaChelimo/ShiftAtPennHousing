@@ -105,7 +105,13 @@ struct AssistantTabView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(c.bg)
-        .accessibilityIdentifier("assistant_screen")
+        // A non-wrapping marker, not the container itself — an identifier set directly on a
+        // wrapping container leaks onto every descendant element in the XCUITest tree,
+        // shadowing that container's own more-specific descendant identifiers (confirmed
+        // empirically; see ContentView.swift's `shifts_screen` fix for the full explanation).
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("assistant_screen")
+        }
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
@@ -114,8 +120,9 @@ struct AssistantTabView: View {
     }
 
     private var emptyState: some View {
+        ScrollView {
         VStack(spacing: 0) {
-            Spacer()
+            Spacer(minLength: 24)
             ZStack {
                 RoundedRectangle(cornerRadius: 14, style: .continuous).fill(c.today)
                     .frame(width: 48, height: 48)
@@ -143,7 +150,9 @@ struct AssistantTabView: View {
                 }
             }
             .padding(.top, 20).padding(.horizontal, 24)
-            Spacer()
+            Spacer(minLength: 24)
+        }
+        .frame(maxWidth: .infinity)
         }
     }
 
@@ -182,6 +191,84 @@ struct AssistantTabView: View {
     }
 }
 
+/// One line of a parsed answer. Spans are concatenated into a single `Text` so the line still
+/// wraps and hyphenates as one paragraph rather than breaking at every style change.
+private struct MarkdownLineView: View {
+    let line: MarkdownLine
+    let isUser: Bool
+    @Environment(\.colorScheme) private var scheme
+    private var c: ShiftColors { .resolve(scheme) }
+
+    var body: some View {
+        let body = line.spans.reduce(Text("")) { acc, span in acc + styled(span) }
+        if line.bullet {
+            HStack(alignment: .top, spacing: 6) {
+                Text("•").font(ShiftFont.sans(14.5)).foregroundColor(isUser ? .white : c.sec)
+                body
+            }
+        } else {
+            body.frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func styled(_ span: MarkdownSpan) -> Text {
+        var t = Text(span.text)
+        if span.code {
+            t = t.font(ShiftFont.mono(13.5))
+        } else {
+            t = t.font(ShiftFont.sans(14.5, span.bold ? .semibold : .regular))
+        }
+        if span.italic { t = t.italic() }
+        return t.foregroundColor(isUser ? .white : c.ink)
+    }
+}
+
+/// Where an answer came from, kept out of the way (BSpec §17.3).
+///
+/// Collapsed it is a single quiet row ("2 sources"); tapping reveals the document names, each
+/// clipped to one line. The names are long binder titles, so showing them inline pushed the
+/// answer off screen and clipped mid-word. The answer is what the worker needs in the moment;
+/// provenance is there to be checked, not read.
+private struct SourcesBar: View {
+    let citations: [Citation]
+    @State private var expanded = false
+    @Environment(\.colorScheme) private var scheme
+    private var c: ShiftColors { .resolve(scheme) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: ShiftIcons.chevronRight)
+                        .font(.system(size: 9, weight: .semibold))
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                    Text(citations.count == 1 ? "1 source" : "\(citations.count) sources")
+                        .font(ShiftFont.sans(11.5))
+                }
+                .foregroundColor(c.ter)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("assistant_sources_toggle")
+
+            if expanded {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(citations.enumerated()), id: \.offset) { _, citation in
+                        Text(citation.sourceRef)
+                            .font(ShiftFont.sans(11))
+                            .foregroundColor(c.ter)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
+                .accessibilityIdentifier("assistant_sources_list")
+            }
+        }
+        .padding(.top, 2)
+    }
+}
+
 private struct AssistantBubbleView: View {
     let message: AssistantMessage
     var showShimmer: Bool = false
@@ -210,9 +297,16 @@ private struct AssistantBubbleView: View {
                             ShimmerBar().frame(width: 110, height: 12)
                         }
                     } else {
-                        Text(message.content)
-                            .font(ShiftFont.sans(14.5))
-                            .foregroundColor(isUser ? .white : c.ink)
+                        // Rendered, not raw: the model writes Markdown regardless of the prompt,
+                        // and this bubble used to print `**10:00 pm**` verbatim.
+                        VStack(alignment: .leading, spacing: 3) {
+                            ForEach(
+                                Array(AssistantMarkdownKt.parseAssistantMarkdown(raw: message.content).enumerated()),
+                                id: \.offset
+                            ) { _, line in
+                                MarkdownLineView(line: line, isUser: isUser)
+                            }
+                        }
                     }
                 }
                     .padding(.horizontal, 14).padding(.vertical, 11)
@@ -224,15 +318,7 @@ private struct AssistantBubbleView: View {
                         }
                     }
                 if !isUser && !message.citations.isEmpty {
-                    HStack(spacing: 6) {
-                        ForEach(message.citations, id: \.sourceRef) { citation in
-                            Text(citation.sourceRef)
-                                .font(ShiftFont.sans(11.5)).foregroundColor(c.sec)
-                                .padding(.horizontal, 10).padding(.vertical, 5)
-                                .background(c.surfaceVar)
-                                .clipShape(Capsule())
-                        }
-                    }
+                    SourcesBar(citations: message.citations)
                 }
                 if let route = message.route {
                     Text("Routed to: \(route.tierLabel ?? route.resolvedTier)")

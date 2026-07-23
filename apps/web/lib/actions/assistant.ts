@@ -101,18 +101,6 @@ async function callEdge<T>(fn: string, body: unknown): Promise<ActionResult<T>> 
   }
 }
 
-export async function askAssistant(input: {
-  question: string;
-  conversationId?: string | null;
-  surface?: string;
-}): Promise<ActionResult<AskResult>> {
-  return callEdge<AskResult>('da-ask', {
-    question: input.question,
-    conversationId: input.conversationId ?? null,
-    surface: input.surface ?? 'web',
-  });
-}
-
 export async function draftPage(input: {
   issueType: string;
   fields: Record<string, string>;

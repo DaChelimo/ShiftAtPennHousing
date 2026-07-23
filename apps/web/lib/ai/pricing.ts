@@ -37,3 +37,14 @@ export function estimateCostUsd(model: string, usage: ScheduleUsage): number {
 export function emptyUsage(): ScheduleUsage {
   return { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 };
 }
+
+// Voyage AI published rate (voyage-3, per million input tokens). Voyage bills
+// embedding input only; there is no output-token component.
+const VOYAGE_INPUT_PER_MTOK: Record<string, number> = {
+  'voyage-3': 0.06,
+};
+
+export function estimateVoyageCostUsd(model: string, tokens: number): number {
+  const rate = VOYAGE_INPUT_PER_MTOK[model] ?? VOYAGE_INPUT_PER_MTOK['voyage-3']!;
+  return (tokens / 1_000_000) * rate;
+}

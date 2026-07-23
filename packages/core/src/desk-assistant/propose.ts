@@ -43,6 +43,7 @@ const SOURCE_TYPES: readonly SourceType[] = [
   'house_binder',
   'summer_binder',
   'incident_lesson',
+  'app_guide',
   'fixture',
 ];
 const SENSITIVITIES: readonly Sensitivity[] = ['general', 'internal', 'restricted'];
@@ -60,7 +61,7 @@ export function proposeSystemPrompt(anchorDate: string): string {
     `normalized text. The source is dated ${anchorDate}; resolve every relative date`,
     '("tomorrow", "next Tuesday", "this weekend") to an absolute YYYY-MM-DD using that',
     'anchor. Return ONLY a JSON object with these fields:',
-    '- title, sourceType (one of hm_guide|house_binder|summer_binder|incident_lesson|fixture),',
+    '- title, sourceType (one of hm_guide|house_binder|summer_binder|incident_lesson|app_guide|fixture),',
     '  sourceRef (a short human citation label), houseScope (a house id or null for shared),',
     '  sensitivity (general|internal|restricted), allowedRoles (array; empty = all roles).',
     '- items: array. Split the document into individual facts. For each item set:',

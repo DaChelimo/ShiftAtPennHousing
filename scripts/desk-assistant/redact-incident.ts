@@ -46,9 +46,9 @@ async function classify(
   if (fake === 'none')
     return { kind: 'no_lesson', reason: 'disciplinary, no generalizable lesson' };
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.CLAUDE_AI_CHATBOT_DESK_ASSISTANT;
   if (apiKey === undefined)
-    throw new Error('ANTHROPIC_API_KEY not set (or pass --fake lesson|none)');
+    throw new Error('CLAUDE_AI_CHATBOT_DESK_ASSISTANT not set (or pass --fake lesson|none)');
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {

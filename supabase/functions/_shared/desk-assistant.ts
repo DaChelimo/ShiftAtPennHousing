@@ -12,18 +12,43 @@
 // ---- prompts.ts ----
 export const GROUNDED_SYSTEM_PROMPT = [
   'You are the Desk Assistant for Penn Housing desk staff.',
-  'Answer ONLY from the provided sources. Every substantive claim must be supported',
-  'by a source, and you must state where the guidance came from.',
-  'If the sources do not support an answer, say you do not have a documented source',
-  'and offer to route the worker to the right contact. Never invent a procedure.',
+  'Answer ONLY from the provided sources. If the sources do not support an answer, say you',
+  'do not have a documented source and offer to route the worker to the right contact.',
+  'Never invent a procedure.',
+  'ANSWER FIRST, AND BE BRIEF. The worker is standing at the desk with a resident in front of',
+  'them and has said "let me quickly check". Your first line must be the answer itself: yes,',
+  'no, the number to call, or the step to take. Then add at most one or two short sentences,',
+  'and only the detail that changes what the worker does next. Leave everything else out.',
+  'Do not restate the question, do not explain your reasoning, and do not summarize at the end.',
+  'DO NOT cite sources in your text. Never write "Source 1", "according to", "per the binder",',
+  'or a list of sources. The app shows the worker which documents the answer came from, so',
+  'naming them again is noise that buries the answer.',
   'For fire, medical, or emergency-door situations, surface the documented protocol',
   'and tell the worker to call the proper emergency line. Never present yourself as a',
   'replacement for emergency protocol.',
   'For access questions, state the policy. When the policy is unclear, tell the worker',
   'NOT to grant access and to escalate. Never authorize access yourself.',
   'Never disclose or speculate about specific past incidents or any personal information.',
-  'Be concise and practical. Do not use em dashes or en dashes.',
+  'You are told the current date and time in America/New_York. Desk guidance is very often',
+  'conditional on it: business hours versus after hours, curfews, visiting hours, and the',
+  'move in and move out dates of a program. When a source is conditional on time or date,',
+  'resolve it against the current time and give only the branch that applies right now.',
+  'If the worker asks about a different time than now, answer for the time they named.',
+  'NEVER use an em dash or an en dash. Use a comma, a period, or parentheses instead.',
 ].join(' ');
+
+/**
+ * Mirror of core's stripEmDashes (packages/core/src/desk-assistant/prompts.ts) — see there for
+ * the rationale. Keep the two identical; mirror.test.ts pins them.
+ */
+export function stripEmDashes(text: string): string {
+  return text
+    .replace(/\s*—\s*/g, ', ')
+    .replace(/(\w)\s*–\s*(\w)/g, '$1-$2')
+    .replace(/\s*–\s*/g, ', ')
+    .replace(/,\s*([,.;:!?])/g, '$1')
+    .replace(/ {2,}/g, ' ');
+}
 
 export function buildDeferralMessage(routingHint?: string): string {
   const base = 'I do not have a documented source for that, so I will not guess.';
@@ -97,15 +122,66 @@ const PII_PATTERNS: RegExp[] = [
   /\bnamed\s+[A-Z][a-z]+/,
 ];
 
-export function containsIncidentLeakage(answer: string): boolean {
-  return PII_PATTERNS.some((re) => re.test(answer));
+/**
+ * Mirror of core's containsIncidentLeakage (packages/core/src/desk-assistant/redaction.ts) —
+ * see there for the full rationale. With [groundingText] supplied, a pattern hit is leakage only
+ * if the matched text is absent from the retrieved sources, so an answer may quote the official
+ * phone numbers and program dates its own sources contain. Keep the two identical.
+ */
+export function containsIncidentLeakage(answer: string, groundingText?: string): boolean {
+  if (groundingText === undefined) return PII_PATTERNS.some((re) => re.test(answer));
+  const sources = normalizeForSourceCompare(groundingText);
+  for (const re of PII_PATTERNS) {
+    const global = new RegExp(re.source, re.flags.includes('g') ? re.flags : `${re.flags}g`);
+    for (const match of answer.matchAll(global)) {
+      if (!sources.includes(normalizeForSourceCompare(match[0]))) return true;
+    }
+  }
+  return false;
+}
+
+/** Mirror of core's normalizeForSourceCompare; see there for the rationale. */
+function normalizeForSourceCompare(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?/g, '$1')
+    .replace(/\s+/g, ' ');
 }
 
 // ---- retrieval.ts (narrowing) + overlay.ts + citations.ts ----
 export const DEFAULT_TOP_K = 6;
+/** Similarity at which the best chunk is grounding outright, with no background comparison. */
 export const DEFAULT_GROUNDING_THRESHOLD = 0.5;
+/** Hard floor: below this the best chunk never grounds, however isolated it looks. */
+export const DEFAULT_GROUNDING_FLOOR = 0.3;
+/** How far the best chunk must stand above the query's background to count as a real match. */
+export const DEFAULT_GROUNDING_MARGIN = 0.08;
 export const DEFAULT_PER_DOCUMENT_LIMIT = 3;
 export const OVERLAY_TOLERANCE = 0.05;
+
+/**
+ * Decide grounding from the SHAPE of the candidate distribution, not an absolute cutoff alone.
+ * Mirror of core's isGroundedByDistribution (packages/core/src/desk-assistant/retrieval.ts) —
+ * see there for the measured rationale. Keep the two identical; mirror.test.ts pins them.
+ */
+export function isGroundedByDistribution(
+  similarities: readonly number[],
+  options: { groundingThreshold?: number; groundingFloor?: number; groundingMargin?: number } = {},
+): boolean {
+  const threshold = options.groundingThreshold ?? DEFAULT_GROUNDING_THRESHOLD;
+  const floor = options.groundingFloor ?? DEFAULT_GROUNDING_FLOOR;
+  const margin = options.groundingMargin ?? DEFAULT_GROUNDING_MARGIN;
+  if (similarities.length === 0) return false;
+  const top = Math.max(...similarities);
+  if (top < floor) return false;
+  if (top >= threshold) return true;
+  // Too small a pool to have a meaningful background; fall back to the absolute cutoff.
+  if (similarities.length < 3) return false;
+  const sorted = [...similarities].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const median = sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+  return top - median >= margin;
+}
 
 export interface Candidate {
   chunkId: string;
@@ -138,6 +214,8 @@ export function narrowContext(
   opts: {
     topK?: number;
     groundingThreshold?: number;
+    groundingFloor?: number;
+    groundingMargin?: number;
     perDocumentLimit?: number;
     requesterHouseId?: string;
     overlayTolerance?: number;
@@ -172,7 +250,17 @@ export function narrowContext(
     if (picked.length >= topK) break;
   }
   const context = picked.map((c, i) => ({ ...c, rank: i }));
-  return { context, grounded: context.some((c) => c.similarity >= threshold) };
+  // Grounding reads the FULL candidate pool, not just the topK slice: the background median is a
+  // better estimate over the whole candidate set, and the best chunk is the same either way.
+  const grounded = isGroundedByDistribution(
+    candidates.map((c) => c.similarity),
+    {
+      groundingThreshold: threshold,
+      groundingFloor: opts.groundingFloor,
+      groundingMargin: opts.groundingMargin,
+    },
+  );
+  return { context, grounded };
 }
 
 export interface Citation {
@@ -202,11 +290,12 @@ export function buildCitations(context: readonly RankedChunk[]): Citation[] {
 // packages/core/src/desk-assistant/query-classify.ts (Deno cannot import the workspace).
 
 export type DutyTier = 'hmod' | 'rsm' | 'ba' | 'smod' | 'csmod' | 'unknown';
-export type QueryIntent = 'duty_contact' | 'durable_knowledge';
+export type QueryIntent = 'duty_contact' | 'personal_schedule' | 'durable_knowledge';
 
 export interface QueryClassification {
   intent: QueryIntent;
   asksContact: boolean;
+  asksPersonalSchedule: boolean;
   tier: DutyTier | null;
   hasTemporalReference: boolean;
 }
@@ -242,6 +331,25 @@ export function hasTemporalReference(q: string): boolean {
   return DAY_RE.test(q) || RELATIVE_RE.test(q) || NUMERIC_DATE_RE.test(q) || MONTH_DATE_RE.test(q);
 }
 
+const SELF_SCHEDULE_NOUN_RE =
+  /\bmy\s+(next\s+|last\s+|upcoming\s+|current\s+|this\s+week'?s?\s+|weekend\s+)?(shift|shifts|schedule|hours|roster|rota|desk\s+shift)\b/i;
+const SELF_WORKING_RE = /\b(am|are)\s+i\s+(working|scheduled|on\s+(the\s+)?(desk|shift|schedule))/i;
+const SELF_WHEN_WORK_RE =
+  /\b(when|what\s+time|what\s+day|where)\b[^?.!]*\bi\s+(work|working|scheduled)\b/i;
+const SELF_DO_I_SHIFT_RE =
+  /\bdo\s+i\s+(have|work)\b[^?.!]*\b(shift|shifts|work|hours|today|tomorrow|tonight|this\s+week|this\s+weekend)\b/i;
+const SELF_HOURS_RE = /\bhow\s+many\s+(hours|shifts)\b[^?.!]*\bi\b/i;
+
+export function detectPersonalSchedule(q: string): boolean {
+  return (
+    SELF_SCHEDULE_NOUN_RE.test(q) ||
+    SELF_WORKING_RE.test(q) ||
+    SELF_WHEN_WORK_RE.test(q) ||
+    SELF_DO_I_SHIFT_RE.test(q) ||
+    SELF_HOURS_RE.test(q)
+  );
+}
+
 export function classifyQuery(question: string): QueryClassification {
   const q = question.toLowerCase();
   const tier = detectTier(q);
@@ -249,9 +357,16 @@ export function classifyQuery(question: string): QueryClassification {
     (CONTACT_RE.test(q) && (CONTACT_VERB_RE.test(q) || tier !== 'unknown')) ||
     /\bpoint of contact\b/i.test(q) ||
     (tier !== 'unknown' && CONTACT_VERB_RE.test(q));
+  const asksPersonalSchedule = !asksContact && detectPersonalSchedule(q);
+  const intent: QueryIntent = asksContact
+    ? 'duty_contact'
+    : asksPersonalSchedule
+      ? 'personal_schedule'
+      : 'durable_knowledge';
   return {
-    intent: asksContact ? 'duty_contact' : 'durable_knowledge',
+    intent,
     asksContact,
+    asksPersonalSchedule,
     tier: asksContact ? tier : null,
     hasTemporalReference: hasTemporalReference(q),
   };

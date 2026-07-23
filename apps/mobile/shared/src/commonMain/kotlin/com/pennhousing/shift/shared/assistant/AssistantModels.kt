@@ -46,7 +46,8 @@ object AssistantPrompts {
     val starters: List<String> = listOf(
         "Who's on duty right now?",
         "What's my next shift?",
-        "How do I request a break?",
+        "How do I check if a resident has access to a specific room?",
+        "A resident is locked out of their room. What are the steps?",
     )
 }
 

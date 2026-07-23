@@ -28,13 +28,32 @@ export const SUPABASE_SERVICE_ROLE_KEY =
 
 // Server-only. Powers the AI schedule generator; no local default (the
 // adapter fails loudly when unset so the feature degrades to a clear error).
-// CLAUDE_AI_CREATE_SCHEDULE_KEY is the project's chosen name for this key
-// (set in apps/web/.env.local); ANTHROPIC_API_KEY is accepted as a fallback
-// for deployed environments that use the generic name.
-export const ANTHROPIC_API_KEY =
-  process.env.CLAUDE_AI_CREATE_SCHEDULE_KEY ?? process.env.ANTHROPIC_API_KEY ?? '';
+// No generic-name fallback on purpose: reusing a bare ANTHROPIC_API_KEY across
+// features makes per-feature spend impossible to attribute (per-feature key
+// hygiene; see AGENTS.md Conventions). Every deployed environment must set
+// CLAUDE_AI_CREATE_SCHEDULE_KEY explicitly.
+export const AI_SCHEDULE_KEY = process.env.CLAUDE_AI_CREATE_SCHEDULE_KEY ?? '';
 
 // The Claude model driving the plan/propose/repair loop. Opus 4.8 by default
 // for the strongest schedules; override via env (e.g. AI_SCHEDULE_MODEL=
 // claude-sonnet-5 for a cheaper, faster run) without code changes.
 export const AI_SCHEDULE_MODEL = process.env.AI_SCHEDULE_MODEL ?? 'claude-opus-4-8';
+
+// Server-only. Dedicated Anthropic key for the KB intake "upload chunker" — the
+// vision transcription of uploaded PDF pages (flowcharts/tables/scans) in
+// lib/actions/kbIntake.ts. Kept separate from the scheduling-agent key on
+// purpose so this feature's spend is attributable on its own (per-feature key
+// hygiene; see AGENTS.md Conventions). No local default: the caller fails loudly
+// when unset rather than silently reusing another feature's key. Materialized
+// into apps/web/.env.local by scripts/sync-secrets.sh from the Infisical secret
+// of the same name.
+export const KB_UPLOAD_CHUNKER_KEY = process.env.CLAUDE_AI_CHATBOT_UPLOAD_CHUNKER ?? '';
+
+// Server-only. Dedicated Anthropic key for the KB intake "propose" step — the
+// metadata/temporal classification of extracted text in lib/actions/kbIntake.ts
+// (claudePropose). Separate from the upload-chunker (vision) key on purpose so
+// extraction vs. metadata-proposal spend is attributable independently
+// (per-feature key hygiene; see AGENTS.md Conventions). No local default; the
+// caller fails loudly when unset. Materialized into apps/web/.env.local by
+// scripts/sync-secrets.sh from the Infisical secret of the same name.
+export const KB_PROPOSE_KEY = process.env.CLAUDE_AI_CHATBOT_PROPOSE ?? '';

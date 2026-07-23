@@ -2,14 +2,10 @@
 
 import { useRef, useState } from 'react';
 
-import {
-  askAssistant,
-  type AskResult,
-  type Citation,
-  type RouteInfo,
-} from '../../../lib/actions/assistant';
+import type { Citation, RouteInfo } from '../../../lib/actions/assistant';
+import type { AssistantStreamEvent } from '../../../lib/assistant/streamTypes';
 
-import { PageDraftModal } from './PageDraftModal';
+import { PageDraftModal } from '@/components/assistant/PageDraftModal';
 
 interface ChatMessage {
   id: string;
@@ -42,31 +38,90 @@ export function AssistantChat({ surface, desk = false }: { surface: string; desk
     if (question === '' || loading) return;
     setError(null);
     setInput('');
-    setMessages((prev) => [...prev, { id: nextId(), role: 'user', content: question }]);
+
+    const assistantId = nextId();
+    setMessages((prev) => [
+      ...prev,
+      { id: nextId(), role: 'user', content: question },
+      { id: assistantId, role: 'assistant', content: '' },
+    ]);
     scrollDown();
     setLoading(true);
 
-    const res = await askAssistant({ question, conversationId, surface });
-    setLoading(false);
-    if (!res.ok) {
-      setError(res.error);
-      return;
+    const patchAssistant = (patch: Partial<ChatMessage>): void => {
+      setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, ...patch } : m)));
+    };
+
+    try {
+      const resp = await fetch('/api/assistant/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, conversationId, surface }),
+      });
+      if (!resp.ok || resp.body === null) {
+        throw new Error('The assistant could not be reached. Try again.');
+      }
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      let streamError: string | null = null;
+
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let sep = buf.indexOf('\n\n');
+        while (sep >= 0) {
+          const frame = buf.slice(0, sep);
+          buf = buf.slice(sep + 2);
+          sep = buf.indexOf('\n\n');
+          const dataLine = frame.split('\n').find((l) => l.startsWith('data:'));
+          if (dataLine === undefined) continue;
+          const ev = JSON.parse(dataLine.slice(5).trim()) as AssistantStreamEvent;
+          switch (ev.t) {
+            case 'meta':
+              if (ev.conversationId) setConversationId(ev.conversationId);
+              patchAssistant({
+                citations: ev.citations,
+                deferred: ev.deferred,
+                route: ev.route,
+                lifeSafety: ev.safety?.lifeSafety ?? null,
+              });
+              break;
+            case 'delta':
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId ? { ...m, content: m.content + ev.text } : m,
+                ),
+              );
+              scrollDown();
+              break;
+            case 'retract':
+              // The leakage guardrail tripped mid-stream: discard the partial text and
+              // replace it with the refusal — never a grounded answer.
+              patchAssistant({ content: ev.content, citations: [], deferred: false, route: null });
+              break;
+            case 'done':
+              break;
+            case 'error':
+              streamError = ev.message;
+              break;
+          }
+        }
+      }
+
+      if (streamError !== null) {
+        setError(streamError);
+        setMessages((prev) => prev.filter((m) => m.id !== assistantId));
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not reach the assistant service.');
+      setMessages((prev) => prev.filter((m) => m.id !== assistantId));
+    } finally {
+      setLoading(false);
+      scrollDown();
     }
-    const data: AskResult = res.data;
-    if (data.conversationId) setConversationId(data.conversationId);
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: nextId(),
-        role: 'assistant',
-        content: data.content,
-        citations: data.citations,
-        deferred: data.deferred,
-        route: data.route,
-        lifeSafety: data.safety?.lifeSafety ?? null,
-      },
-    ]);
-    scrollDown();
   }
 
   return (
@@ -105,8 +160,11 @@ export function AssistantChat({ surface, desk = false }: { surface: string; desk
                   Life-safety situation. Call the emergency line now, then follow the steps below.
                 </div>
               )}
-              <div className="whitespace-pre-wrap rounded-2xl border border-border-subtle bg-surface px-4 py-3">
-                {m.content}
+              <div
+                className="whitespace-pre-wrap rounded-2xl border border-border-subtle bg-surface px-4 py-3"
+                data-testid={m.content === '' ? 'assistant-loading' : undefined}
+              >
+                {m.content === '' ? 'Thinking...' : m.content}
               </div>
               {m.citations && m.citations.length > 0 && (
                 <div className="flex flex-wrap gap-1.5" data-testid="citation-chips">
@@ -144,11 +202,6 @@ export function AssistantChat({ surface, desk = false }: { surface: string; desk
               )}
             </div>
           ),
-        )}
-        {loading && (
-          <div className="text-sm text-text-secondary" data-testid="assistant-loading">
-            Thinking...
-          </div>
         )}
       </div>
 

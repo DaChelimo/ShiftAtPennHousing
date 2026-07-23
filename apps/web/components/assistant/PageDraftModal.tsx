@@ -2,12 +2,7 @@
 
 import { useState } from 'react';
 
-import {
-  draftPage,
-  sendPage,
-  type DraftResult,
-  type FieldSpec,
-} from '../../../lib/actions/assistant';
+import { draftPage, sendPage, type DraftResult, type FieldSpec } from '@/lib/actions/assistant';
 
 const ISSUE_TYPES = ['access', 'equipment', 'facilities', 'fire', 'general'] as const;
 

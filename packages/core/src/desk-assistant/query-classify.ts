@@ -12,12 +12,18 @@
 // 'csmod' are reached via a shared duty phone (the caller surfaces the number, no person
 // resolution); 'ba' is the Building Administrator (resolved as the leave-aware bm).
 export type DutyTier = 'hmod' | 'rsm' | 'ba' | 'smod' | 'csmod' | 'unknown';
-export type QueryIntent = 'duty_contact' | 'durable_knowledge';
+export type QueryIntent = 'duty_contact' | 'personal_schedule' | 'durable_knowledge';
 
 export interface QueryClassification {
   intent: QueryIntent;
   /** Whether the question asks who to contact / who is on duty. */
   asksContact: boolean;
+  /**
+   * Whether the question asks about the WORKER'S OWN schedule ("what's my next
+   * shift", "am I working this weekend", "how many hours do I have this week").
+   * These resolve against live assignment data via the get_my_shifts tool, not RAG.
+   */
+  asksPersonalSchedule: boolean;
   /** Best-guess tier the contact question targets, or null if not a contact question. */
   tier: DutyTier | null;
   /** Whether the question carries a date reference needing as-of resolution. */
@@ -56,10 +62,36 @@ export function hasTemporalReference(q: string): boolean {
   return DAY_RE.test(q) || RELATIVE_RE.test(q) || NUMERIC_DATE_RE.test(q) || MONTH_DATE_RE.test(q);
 }
 
+// Personal-schedule cues: the worker asking about their OWN shifts/hours. Anchored on a
+// first-person subject ("my"/"I") AND a schedule noun/verb so a policy question that
+// merely says "I" ("how do I reset the printer") does not misroute. Kept deliberately
+// tight — a false negative degrades to RAG + defer, the same safe fallback as before.
+const SELF_SCHEDULE_NOUN_RE =
+  /\bmy\s+(next\s+|last\s+|upcoming\s+|current\s+|this\s+week'?s?\s+|weekend\s+)?(shift|shifts|schedule|hours|roster|rota|desk\s+shift)\b/i;
+const SELF_WORKING_RE = /\b(am|are)\s+i\s+(working|scheduled|on\s+(the\s+)?(desk|shift|schedule))/i;
+const SELF_WHEN_WORK_RE =
+  /\b(when|what\s+time|what\s+day|where)\b[^?.!]*\bi\s+(work|working|scheduled)\b/i;
+const SELF_DO_I_SHIFT_RE =
+  /\bdo\s+i\s+(have|work)\b[^?.!]*\b(shift|shifts|work|hours|today|tomorrow|tonight|this\s+week|this\s+weekend)\b/i;
+const SELF_HOURS_RE = /\bhow\s+many\s+(hours|shifts)\b[^?.!]*\bi\b/i;
+
+/** Whether the question is about the asker's own schedule/hours (get_my_shifts tool). */
+export function detectPersonalSchedule(q: string): boolean {
+  return (
+    SELF_SCHEDULE_NOUN_RE.test(q) ||
+    SELF_WORKING_RE.test(q) ||
+    SELF_WHEN_WORK_RE.test(q) ||
+    SELF_DO_I_SHIFT_RE.test(q) ||
+    SELF_HOURS_RE.test(q)
+  );
+}
+
 /**
  * Classify a question. A contact question needs BOTH a who/contact cue and either a
  * contact verb or a named duty tier, so "who can sign out a cart" (a who-question that
- * is really procedural) does not misroute to the duty tool.
+ * is really procedural) does not misroute to the duty tool. Contact takes precedence
+ * over personal-schedule ("who covers my shift" stays a contact question); a personal
+ * schedule cue that is NOT a contact question routes to the get_my_shifts tool.
  */
 export function classifyQuery(question: string): QueryClassification {
   const q = question.toLowerCase();
@@ -69,9 +101,16 @@ export function classifyQuery(question: string): QueryClassification {
     /\bpoint of contact\b/i.test(q) ||
     // a named duty tier with a contact verb ("should I reach the RSM", "page the HMOD")
     (tier !== 'unknown' && CONTACT_VERB_RE.test(q));
+  const asksPersonalSchedule = !asksContact && detectPersonalSchedule(q);
+  const intent: QueryIntent = asksContact
+    ? 'duty_contact'
+    : asksPersonalSchedule
+      ? 'personal_schedule'
+      : 'durable_knowledge';
   return {
-    intent: asksContact ? 'duty_contact' : 'durable_knowledge',
+    intent,
     asksContact,
+    asksPersonalSchedule,
     tier: asksContact ? tier : null,
     hasTemporalReference: hasTemporalReference(q),
   };

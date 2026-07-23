@@ -19,7 +19,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { ScheduleLlm, ScheduleLlmRequest, ScheduleLlmResponse } from '@shift/core';
 
-import { AI_SCHEDULE_MODEL, ANTHROPIC_API_KEY } from '../env';
+import { AI_SCHEDULE_KEY, AI_SCHEDULE_MODEL } from '../env';
 
 import { emptyUsage, type ScheduleUsage } from './pricing';
 
@@ -30,10 +30,12 @@ export type ScheduleLlmHandle = {
 };
 
 export function createAnthropicScheduleLlm(): ScheduleLlmHandle {
-  if (ANTHROPIC_API_KEY === '') {
-    throw new Error('ANTHROPIC_API_KEY is not set. Add it to the web server environment.');
+  if (AI_SCHEDULE_KEY === '') {
+    throw new Error(
+      'CLAUDE_AI_CREATE_SCHEDULE_KEY is not set. Add it to the web server environment.',
+    );
   }
-  const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY, maxRetries: 3 });
+  const client = new Anthropic({ apiKey: AI_SCHEDULE_KEY, maxRetries: 3 });
   const usage = emptyUsage();
 
   const llm: ScheduleLlm = {

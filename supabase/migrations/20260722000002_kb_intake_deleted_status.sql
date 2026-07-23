@@ -1,0 +1,11 @@
+-- KB intake: add a terminal 'deleted' status distinct from 'rejected'.
+--
+-- 'rejected' means an admin declined a PROPOSAL before it ever went live.
+-- 'deleted' means a document WAS live (embedded, indexed, citable by the
+-- assistant) and an admin removed it afterward -- e.g. the wrong file was
+-- uploaded and approved. Deleting kb_documents cascades kb_chunks (existing FK
+-- ON DELETE CASCADE) so the assistant can no longer retrieve it; the kb_intake
+-- row itself is kept (status flips to 'deleted', document_id nulled by the
+-- existing ON DELETE SET NULL) so the pipeline cost/duration metrics captured
+-- at approval time stay reviewable.
+ALTER TYPE da_intake_status_enum ADD VALUE 'deleted';

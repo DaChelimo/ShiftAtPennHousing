@@ -37,8 +37,12 @@ export interface RankedChunk extends RetrievalCandidate {
 
 export interface RetrievalOptions {
   topK?: number;
-  /** Minimum similarity for a chunk to count as grounding support. */
+  /** Similarity at which the best chunk grounds outright, with no background comparison. */
   groundingThreshold?: number;
+  /** Hard floor: below this the best chunk never grounds. See isGroundedByDistribution. */
+  groundingFloor?: number;
+  /** Required gap between the best chunk and the pool median. See isGroundedByDistribution. */
+  groundingMargin?: number;
   /** Cap chunks per source document so one long doc cannot crowd out others. */
   perDocumentLimit?: number;
   /**
@@ -66,8 +70,50 @@ export interface RetrievalResult {
 }
 
 export const DEFAULT_TOP_K = 6;
+/** Similarity at which the best chunk is grounding outright, with no background comparison. */
 export const DEFAULT_GROUNDING_THRESHOLD = 0.5;
+/** Hard floor: below this the best chunk never grounds, however isolated it looks. */
+export const DEFAULT_GROUNDING_FLOOR = 0.3;
+/** How far the best chunk must stand above the query's background to count as a real match. */
+export const DEFAULT_GROUNDING_MARGIN = 0.08;
 export const DEFAULT_PER_DOCUMENT_LIMIT = 3;
+
+/**
+ * Decide grounding from the SHAPE of the candidate distribution, not an absolute cutoff alone.
+ *
+ * Absolute cosine similarity is not comparable across questions. Measured against the Harnwell
+ * summer binder on 2026-07-22, the very same correct chunk scored 0.5346 for a long keyword-rich
+ * question but only 0.3688 for a short one, while an off-topic "wifi password" question scored an
+ * irrelevant chunk 0.4080. A single 0.5 cutoff therefore deferred two of three valid MindCore
+ * guest questions and would have admitted the off-topic one had the cutoff simply been lowered.
+ *
+ * What DOES separate them is how far the best chunk stands above the background of its OWN query's
+ * pool: on-topic tops beat their pool median by 0.11 to 0.15, off-topic tops by only 0.03 to 0.07.
+ *
+ * The background statistic is the pool MEDIAN, deliberately NOT the runner-up. Once the KB holds
+ * several documents that genuinely bear on one question (a program's own row PLUS the house-wide
+ * definition of "day visitor", say), the runner-up is itself relevant, so a top-vs-runner-up margin
+ * would collapse toward zero and wrongly defer exactly the best-covered questions. A median barely
+ * moves when a handful of chunks are relevant, so it keeps working as the KB grows.
+ */
+export function isGroundedByDistribution(
+  similarities: readonly number[],
+  options: { groundingThreshold?: number; groundingFloor?: number; groundingMargin?: number } = {},
+): boolean {
+  const threshold = options.groundingThreshold ?? DEFAULT_GROUNDING_THRESHOLD;
+  const floor = options.groundingFloor ?? DEFAULT_GROUNDING_FLOOR;
+  const margin = options.groundingMargin ?? DEFAULT_GROUNDING_MARGIN;
+  if (similarities.length === 0) return false;
+  const top = Math.max(...similarities);
+  if (top < floor) return false;
+  if (top >= threshold) return true;
+  // Too small a pool to have a meaningful background; fall back to the absolute cutoff.
+  if (similarities.length < 3) return false;
+  const sorted = [...similarities].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const median = sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!;
+  return top - median >= margin;
+}
 
 /**
  * Filter candidates to what the requester may read, rank by similarity, cap per
@@ -123,6 +169,15 @@ export function selectContext(
   }
 
   const context = picked.map((c, i) => ({ ...c, rank: i }));
-  const grounded = context.some((c) => c.similarity >= threshold);
+  // Grounding reads the FULL readable pool, not just the topK slice: the background median is a
+  // better estimate over the whole candidate set, and the best chunk is the same either way.
+  const grounded = isGroundedByDistribution(
+    readable.map((c) => c.similarity),
+    {
+      groundingThreshold: threshold,
+      groundingFloor: options.groundingFloor,
+      groundingMargin: options.groundingMargin,
+    },
+  );
   return { context, grounded };
 }

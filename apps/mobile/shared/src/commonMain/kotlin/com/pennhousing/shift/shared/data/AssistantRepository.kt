@@ -5,6 +5,7 @@ import com.pennhousing.shift.shared.assistant.AssistantStreamEvent
 import com.pennhousing.shift.shared.assistant.Citation
 import com.pennhousing.shift.shared.network.EdgeFunctionClient
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -26,9 +27,23 @@ class AssistantRepository(
     private val edge: EdgeFunctionClient = EdgeFunctionClient(),
 ) {
     /**
-     * A cold [Flow] of [AssistantStreamEvent]s. Throws (propagating through the flow) on a
-     * transport failure or an unparseable frame; the caller's catch drives
-     * [AssistantViewModel.onError] the same way a failed [EdgeFunctionClient.stream] does.
+     * A cold [Flow] of [AssistantStreamEvent]s that NEVER throws: a transport failure or an
+     * unparseable frame is converted into a terminal [AssistantStreamEvent.Failed], which the
+     * hosts already route to [AssistantViewModel.onError].
+     *
+     * The non-throwing contract is load-bearing on iOS, not a nicety. SKIE bridges this Flow
+     * to a Swift `AsyncSequence` by collecting it inside a `launch`-ed coroutine; an exception
+     * escaping the flow therefore surfaces as an UNCAUGHT exception in a `StandaloneCoroutine`,
+     * and Kotlin/Native's uncaught-coroutine-exception handler calls `abort()`. That kills the
+     * whole app before the Swift `do { for try await ... } catch` in `AssistantObservable.ask`
+     * can ever see it, because the throw never crosses back as a Swift error. Confirmed from
+     * two crash reports (2026-07-22) whose triggered thread was
+     * `terminateWithUnhandledException` <- `handleUncaughtCoroutineException` <-
+     * `StandaloneCoroutine.handleJobException` on SKIE's `SwiftCoroutineDispatcher`, produced
+     * by asking a question while the local `da-ask` Edge Function was unreachable.
+     *
+     * So: do NOT "simplify" this by removing the [catch] and letting callers handle it. Android
+     * would survive (its `runCatching` collects on the caller's own scope); iOS would crash.
      */
     fun askStream(question: String): Flow<AssistantStreamEvent> =
         flow {
@@ -46,7 +61,7 @@ class AssistantRepository(
                     }
                 }
             }
-        }
+        }.catch { emit(AssistantStreamEvent.Failed("Couldn't reach the assistant. Try again.")) }
 }
 
 private val assistantJson = Json { ignoreUnknownKeys = true }

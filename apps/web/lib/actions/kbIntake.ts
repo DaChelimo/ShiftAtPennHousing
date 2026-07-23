@@ -8,7 +8,11 @@
 //
 // Pipeline (INTAKE_PLAN section 2 + 6.2): upload -> normalize -> propose (Claude) ->
 // review -> approve (embed + commit) | reject. Status advances at each step so the admin
-// queue shows live progress.
+// queue shows live progress. The normalize+propose step itself (download, per-page
+// extraction, propose) lives in ../kbIntakePipeline as runIntakePipeline, invoked from
+// the streaming route (app/api/kb-intake/process) rather than from a Server Action --
+// Server Actions can't stream progress back to the client, which is why extraction and
+// proposal drafting moved there instead of staying inline in this file.
 
 import {
   buildKbChunkRows,
@@ -16,9 +20,6 @@ import {
   EMBEDDING_MODEL,
   estimateTokens,
   indexableItems,
-  normalize,
-  parseProposedDoc,
-  proposeSystemPrompt,
   type KbChunkInput,
   type KbDocMeta,
   type NormalizedFormat,
@@ -26,12 +27,13 @@ import {
 } from '@shift/core';
 import { revalidatePath } from 'next/cache';
 
-import { getSessionUser, isAdmin, isHouseAdmin, isRsm, type SessionUser } from '../auth';
+import { estimateVoyageCostUsd } from '../ai/pricing';
+import { getSessionUser } from '../auth';
+import { isKbAdmin, KB_LOG, withTotals, type IntakeMetrics } from '../kbIntakePipeline';
 import { createServiceClient } from '../supabase/server';
 
 const BUCKET = 'kb-uploads';
 const VOYAGE_URL = 'https://api.voyageai.com/v1/embeddings';
-const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 
 type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -43,10 +45,6 @@ type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type LooseFrom = { from: (table: string) => any };
 
-function isKbAdmin(u: SessionUser | null): boolean {
-  return isHouseAdmin(u) || isRsm(u) || isAdmin(u);
-}
-
 function formatFromName(name: string): NormalizedFormat {
   const ext = name.toLowerCase().split('.').pop() ?? '';
   if (ext === 'pdf') return 'pdf';
@@ -54,18 +52,7 @@ function formatFromName(name: string): NormalizedFormat {
   return 'text';
 }
 
-// PDF text extraction implements the core PdfTextExtractor seam (INTAKE_PLAN Phase 1).
-// unpdf is a serverless-friendly pdf.js build (no native deps, no filesystem), so it runs
-// in the Next server runtime. Returns the merged text layer + page count; an empty text
-// layer (a scan) falls through to normalizePdfText's "needs OCR" warning downstream.
-async function extractPdf(bytes: Uint8Array): Promise<{ text: string; pageCount?: number } | null> {
-  const { extractText, getDocumentProxy } = await import('unpdf');
-  const pdf = await getDocumentProxy(bytes);
-  const { text, totalPages } = await extractText(pdf, { mergePages: true });
-  return { text, pageCount: totalPages };
-}
-
-async function voyageEmbed(texts: string[]): Promise<number[][]> {
+async function voyageEmbed(texts: string[]): Promise<{ embeddings: number[][]; tokens: number }> {
   const apiKey = process.env.VOYAGE_API_KEY;
   if (apiKey === undefined) throw new Error('VOYAGE_API_KEY not set');
   const res = await fetch(VOYAGE_URL, {
@@ -74,38 +61,11 @@ async function voyageEmbed(texts: string[]): Promise<number[][]> {
     body: JSON.stringify({ input: texts, model: EMBEDDING_MODEL, input_type: 'document' }),
   });
   if (!res.ok) throw new Error(`Voyage error ${res.status}`);
-  const json = (await res.json()) as { data: Array<{ embedding: number[] }> };
-  return json.data.map((d) => d.embedding);
-}
-
-async function claudePropose(text: string, anchorDate: string): Promise<ProposedDoc | null> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (apiKey === undefined) throw new Error('ANTHROPIC_API_KEY not set');
-  const res = await fetch(ANTHROPIC_URL, {
-    method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-5',
-      max_tokens: 4096,
-      system: proposeSystemPrompt(anchorDate),
-      messages: [{ role: 'user', content: text }],
-    }),
-  });
-  if (!res.ok) throw new Error(`Anthropic error ${res.status}`);
-  const json = (await res.json()) as { content: Array<{ type: string; text?: string }> };
-  const raw = json.content.find((c) => c.type === 'text')?.text ?? '';
-  const jsonStart = raw.indexOf('{');
-  const jsonEnd = raw.lastIndexOf('}');
-  if (jsonStart === -1 || jsonEnd === -1) return null;
-  try {
-    return parseProposedDoc(JSON.parse(raw.slice(jsonStart, jsonEnd + 1)));
-  } catch {
-    return null;
-  }
+  const json = (await res.json()) as {
+    data: Array<{ embedding: number[] }>;
+    usage?: { total_tokens: number };
+  };
+  return { embeddings: json.data.map((d) => d.embedding), tokens: json.usage?.total_tokens ?? 0 };
 }
 
 function toVectorLiteral(v: number[]): string {
@@ -137,7 +97,9 @@ export interface IntakeQueue {
   kb: { documents: number; chunks: number; lastIngestedAt: string | null };
 }
 
-/** Upload a file into the intake queue, then normalize + propose. Returns the intake id. */
+/** Upload a file into the intake queue. Returns the intake id; the caller drives
+ * normalize+propose separately via the streaming route (app/api/kb-intake/process)
+ * so this action stays fast and the client regains control immediately. */
 export async function uploadForIntake(form: FormData): Promise<ActionResult<{ intakeId: string }>> {
   const me = await getSessionUser();
   if (!isKbAdmin(me)) return { ok: false, error: 'not authorized' };
@@ -167,89 +129,27 @@ export async function uploadForIntake(form: FormData): Promise<ActionResult<{ in
   if (insErr) return { ok: false, error: `queue insert failed: ${insErr.message}` };
 
   const intakeId = (row as { intake_id: string }).intake_id;
-  await processIntake(intakeId); // normalize + propose inline; advances status
   revalidatePath('/admin/knowledge');
   return { ok: true, data: { intakeId } };
 }
 
-/** Normalize the stored file and draft a proposal with Claude. Advances status. */
-export async function processIntake(intakeId: string): Promise<ActionResult<{ status: string }>> {
+/** Lightweight poll target: just the two fields that change. Used as a fallback if
+ * the stream connection drops; the stream itself is the primary progress source. */
+export async function getIntakeStatus(
+  intakeId: string,
+): Promise<ActionResult<{ status: string; statusDetail: string | null }>> {
   const me = await getSessionUser();
   if (!isKbAdmin(me)) return { ok: false, error: 'not authorized' };
   const svc = createServiceClient();
   const db = svc as unknown as LooseFrom;
-
-  const { data: row, error } = await db
+  const { data, error } = await db
     .from('kb_intake')
-    .select('original_storage_path, input_format, created_at')
+    .select('status, status_detail')
     .eq('intake_id', intakeId)
     .single();
-  if (error || row === null) return { ok: false, error: 'intake not found' };
-  const rec = row as {
-    original_storage_path: string;
-    input_format: NormalizedFormat;
-    created_at: string;
-  };
-
-  const setStatus = async (
-    status: string,
-    detail: string | null,
-    extra: Record<string, unknown> = {},
-  ) => {
-    await db
-      .from('kb_intake')
-      .update({ status, status_detail: detail, ...extra })
-      .eq('intake_id', intakeId);
-  };
-
-  await setStatus('normalizing', 'Reading document');
-  const { data: blob, error: dlErr } = await svc.storage
-    .from(BUCKET)
-    .download(rec.original_storage_path);
-  if (dlErr || blob === null) {
-    await setStatus('failed', `download failed: ${dlErr?.message ?? 'unknown'}`);
-    return { ok: false, error: 'download failed' };
-  }
-
-  let raw: string;
-  let pageCount: number | undefined;
-  if (rec.input_format === 'pdf') {
-    const extracted = await extractPdf(new Uint8Array(await blob.arrayBuffer()));
-    if (extracted === null) {
-      await setStatus('failed', 'PDF text extractor is not configured on the server yet.');
-      return { ok: false, error: 'pdf extractor unavailable' };
-    }
-    raw = extracted.text;
-    pageCount = extracted.pageCount;
-  } else {
-    raw = await blob.text();
-  }
-
-  const normalized = normalize({ format: rec.input_format, raw, pageCount });
-  if (normalized.text.length === 0) {
-    await setStatus('failed', 'Document is empty after normalization.');
-    return { ok: false, error: 'empty' };
-  }
-
-  let proposed: ProposedDoc | null;
-  try {
-    proposed = await claudePropose(normalized.text, nyDate(new Date(rec.created_at)));
-  } catch (err) {
-    await setStatus('failed', `proposal failed: ${err instanceof Error ? err.message : 'unknown'}`);
-    return { ok: false, error: 'propose failed' };
-  }
-  if (proposed === null) {
-    await setStatus('failed', 'Could not draft a valid proposal from this document.');
-    return { ok: false, error: 'invalid proposal' };
-  }
-
-  await setStatus('proposed', 'Ready for review', {
-    normalized_text: normalized.text,
-    proposed_meta: proposed,
-    representations: proposed.representations,
-  });
-  revalidatePath('/admin/knowledge');
-  return { ok: true, data: { status: 'proposed' } };
+  if (error || data === null) return { ok: false, error: 'intake not found' };
+  const rec = data as { status: string; status_detail: string | null };
+  return { ok: true, data: { status: rec.status, statusDetail: rec.status_detail } };
 }
 
 /** Approve a proposal: embed the indexable items and commit them to the knowledge base. */
@@ -264,13 +164,14 @@ export async function approveIntake(
 
   const { data: row, error } = await db
     .from('kb_intake')
-    .select('proposed_meta')
+    .select('proposed_meta, metrics')
     .eq('intake_id', intakeId)
     .single();
   if (error || row === null) return { ok: false, error: 'intake not found' };
   const proposed = (editedMeta ??
     (row as { proposed_meta: ProposedDoc }).proposed_meta) as ProposedDoc | null;
   if (proposed === null) return { ok: false, error: 'no proposal to approve' };
+  const priorMetrics = (row as { metrics: IntakeMetrics | null }).metrics ?? undefined;
 
   await db
     .from('kb_intake')
@@ -303,8 +204,27 @@ export async function approveIntake(
   }));
 
   let embeddings: number[][];
+  let embedMetrics: IntakeMetrics['embed'];
+  const embedStartedAt = Date.now();
   try {
-    embeddings = await voyageEmbed(chunkInputs.map((c) => c.content));
+    const result = await voyageEmbed(chunkInputs.map((c) => c.content));
+    embeddings = result.embeddings;
+    embedMetrics = {
+      durationMs: Date.now() - embedStartedAt,
+      tokens: result.tokens,
+      costUsd: estimateVoyageCostUsd(EMBEDDING_MODEL, result.tokens),
+      chunkCount: chunkInputs.length,
+    };
+    console.log(
+      `${KB_LOG} embed done: ${embedMetrics.durationMs}ms, ${embedMetrics.tokens} tokens, ` +
+        `$${embedMetrics.costUsd.toFixed(4)}, ${embedMetrics.chunkCount} chunk(s):`,
+    );
+    chunkInputs.forEach((c, i) => {
+      const temporality = c.window?.temporality ?? 'durable';
+      console.log(
+        `${KB_LOG}   chunk ${i + 1}/${chunkInputs.length} [${temporality}]: ${c.content}`,
+      );
+    });
   } catch (err) {
     await db
       .from('kb_intake')
@@ -316,6 +236,7 @@ export async function approveIntake(
     return { ok: false, error: 'embedding failed' };
   }
 
+  const commitStartedAt = Date.now();
   const docRow = buildKbDocumentRow(docMeta);
   const { data: docData, error: docErr } = await db
     .from('kb_documents')
@@ -344,10 +265,25 @@ export async function approveIntake(
       .eq('intake_id', intakeId);
     return { ok: false, error: 'chunk write failed' };
   }
+  const commitMetrics: IntakeMetrics['commit'] = {
+    durationMs: Date.now() - commitStartedAt,
+    documentId,
+  };
+
+  const metrics = withTotals({
+    extraction: priorMetrics?.extraction,
+    propose: priorMetrics?.propose,
+    embed: embedMetrics,
+    commit: commitMetrics,
+  });
+  console.log(
+    `${KB_LOG} intake ${intakeId} live: document ${documentId}, ${chunkRows.length} chunk(s) added, ` +
+      `total ${metrics.totalDurationMs}ms, total $${metrics.totalCostUsd.toFixed(4)}`,
+  );
 
   await db
     .from('kb_intake')
-    .update({ status: 'live', status_detail: 'Live', document_id: documentId })
+    .update({ status: 'live', status_detail: 'Live', document_id: documentId, metrics })
     .eq('intake_id', intakeId);
   revalidatePath('/admin/knowledge');
   return { ok: true, data: { documentId, chunks: chunkRows.length } };
@@ -358,6 +294,16 @@ export interface IntakeDetail {
   status: string;
   normalizedText: string | null;
   proposed: ProposedDoc | null;
+  metrics: IntakeMetrics | null;
+  chunks: CommittedChunk[];
+}
+
+export interface CommittedChunk {
+  content: string;
+  temporality: string;
+  effectiveFrom: string | null;
+  effectiveUntil: string | null;
+  tokenCount: number | null;
 }
 
 /** Load one intake row's normalized text + proposal for the review panel. */
@@ -368,11 +314,29 @@ export async function loadIntakeDetail(intakeId: string): Promise<ActionResult<I
   const db = svc as unknown as LooseFrom;
   const { data, error } = await db
     .from('kb_intake')
-    .select('intake_id, status, normalized_text, proposed_meta')
+    .select('intake_id, status, normalized_text, proposed_meta, metrics, document_id')
     .eq('intake_id', intakeId)
     .single();
   if (error || data === null) return { ok: false, error: 'intake not found' };
   const rec = data as Record<string, unknown>;
+  const documentId = rec.document_id as string | null;
+
+  let chunks: CommittedChunk[] = [];
+  if (documentId !== null) {
+    const { data: chunkRows } = await db
+      .from('kb_chunks')
+      .select('content, temporality, effective_from, effective_until, token_count')
+      .eq('document_id', documentId)
+      .order('chunk_index', { ascending: true });
+    chunks = ((chunkRows ?? []) as Array<Record<string, unknown>>).map((c) => ({
+      content: c.content as string,
+      temporality: c.temporality as string,
+      effectiveFrom: (c.effective_from as string | null) ?? null,
+      effectiveUntil: (c.effective_until as string | null) ?? null,
+      tokenCount: (c.token_count as number | null) ?? null,
+    }));
+  }
+
   return {
     ok: true,
     data: {
@@ -380,6 +344,8 @@ export async function loadIntakeDetail(intakeId: string): Promise<ActionResult<I
       status: rec.status as string,
       normalizedText: (rec.normalized_text as string | null) ?? null,
       proposed: (rec.proposed_meta as ProposedDoc | null) ?? null,
+      metrics: (rec.metrics as IntakeMetrics | null) ?? null,
+      chunks,
     },
   };
 }
@@ -392,6 +358,45 @@ export async function rejectIntake(intakeId: string): Promise<ActionResult<null>
   await db
     .from('kb_intake')
     .update({ status: 'rejected', status_detail: 'Rejected' })
+    .eq('intake_id', intakeId);
+  revalidatePath('/admin/knowledge');
+  return { ok: true, data: null };
+}
+
+/**
+ * Remove a LIVE document from the knowledge base (e.g. the wrong file was
+ * approved by mistake). Deletes the kb_documents row, which cascades to every
+ * kb_chunks row indexed from it (existing FK ON DELETE CASCADE) -- the
+ * assistant can no longer retrieve or cite it. The kb_intake row is kept (not
+ * deleted) and flipped to 'deleted' so the pipeline cost/duration/chunk-count
+ * metrics captured at approval time stay reviewable after the fact.
+ */
+export async function deleteDocument(intakeId: string): Promise<ActionResult<null>> {
+  const me = await getSessionUser();
+  if (!isKbAdmin(me)) return { ok: false, error: 'not authorized' };
+  const svc = createServiceClient();
+  const db = svc as unknown as LooseFrom;
+
+  const { data: row, error } = await db
+    .from('kb_intake')
+    .select('document_id')
+    .eq('intake_id', intakeId)
+    .single();
+  if (error || row === null) return { ok: false, error: 'intake not found' };
+  const documentId = (row as { document_id: string | null }).document_id;
+
+  if (documentId !== null) {
+    const { error: delErr } = await db.from('kb_documents').delete().eq('document_id', documentId);
+    if (delErr) return { ok: false, error: `delete failed: ${delErr.message}` };
+  }
+
+  await db
+    .from('kb_intake')
+    .update({
+      status: 'deleted',
+      status_detail: 'Removed from the knowledge base',
+      document_id: null,
+    })
     .eq('intake_id', intakeId);
   revalidatePath('/admin/knowledge');
   return { ok: true, data: null };

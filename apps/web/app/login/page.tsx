@@ -5,17 +5,9 @@ import { Suspense, useState } from 'react';
 
 import { Button } from '../../components/ui/Button';
 import { Field, TextInput } from '../../components/ui/Field';
-import { Icon } from '../../components/ui/Icon';
+import { LogoMark, Wordmark } from '../../components/ui/Logo';
 import { createClient } from '../../lib/supabase/client';
 import './login.css';
-
-function Wordmark() {
-  return (
-    <span className="login-wordmark">
-      Shift<span className="at">@</span>PennHousing
-    </span>
-  );
-}
 
 function LoginForm() {
   const router = useRouter();
@@ -49,10 +41,8 @@ function LoginForm() {
     <main className="login">
       <aside className="login-brand" aria-hidden="true">
         <div className="login-lockup">
-          <span className="login-mark">
-            <Icon name="calendar" size={22} />
-          </span>
-          <Wordmark />
+          <LogoMark size={40} variant="reversed" className="login-mark" />
+          <Wordmark className="login-wordmark" />
         </div>
 
         <div className="login-pitch">
@@ -69,10 +59,8 @@ function LoginForm() {
       <section className="login-form-side">
         <form onSubmit={handleSubmit} className="login-form col gap-6">
           <div className="login-form-lockup">
-            <span className="login-mark">
-              <Icon name="calendar" size={20} />
-            </span>
-            <Wordmark />
+            <LogoMark size={32} className="login-mark" />
+            <Wordmark className="login-wordmark" />
           </div>
 
           <div className="login-heading">

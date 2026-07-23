@@ -50,15 +50,8 @@
   align-items: center;
   gap: 12px;
 }
+/* The mark carries its own ground, so it needs no tile behind it. */
 .login-mark {
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--brand);
-  color: #fff;
-  border-radius: var(--radius-sm);
   flex-shrink: 0;
 }
 .login-wordmark {
@@ -66,7 +59,7 @@
   font-weight: 600;
   letter-spacing: 0.01em;
 }
-.login-wordmark .at {
+.login-wordmark .brand-at {
   color: #6aa3ff;
   font-weight: 700;
 }
@@ -118,7 +111,7 @@
 .login-form-lockup .login-wordmark {
   color: var(--text-primary);
 }
-.login-form-lockup .login-wordmark .at {
+.login-form-lockup .login-wordmark .brand-at {
   color: var(--brand);
 }
 

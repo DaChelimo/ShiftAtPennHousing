@@ -45,6 +45,11 @@ export const ICONS = {
   hours: 'M8 14.5A6.5 6.5 0 1 0 8 1.5a6.5 6.5 0 0 0 0 13zM8 5v3.2L10 10',
   doc: 'M4 1h6l3 3v11H4zM10 1v3h3',
   copy: 'M6 6h8v8H6zM3 11V3a1 1 0 0 1 1-1h7',
+  chat: 'M2 2h12v8H5l-3 3z',
+  upload: 'M8 10V3M5 6l3-3 3 3M2 10v3a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-3',
+  download: 'M8 2v7M5 6l3 3 3-3M2 10v3a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-3',
+  expand: 'M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4',
+  collapse: 'M6 2v4H2M10 2v4h4M10 14v-4h4M6 14v-4H2',
 } as const;
 
 export type IconName = keyof typeof ICONS;

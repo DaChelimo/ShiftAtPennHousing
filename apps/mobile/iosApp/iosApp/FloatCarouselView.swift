@@ -61,7 +61,13 @@ struct FloatCarouselView: View {
             .onChange(of: cards.count) { _ in
                 if page > cards.count - 1 { page = max(0, cards.count - 1) }
             }
-            .accessibilityIdentifier("float_carousel")
+            // A non-wrapping marker, not the container itself — an identifier set directly on a
+            // wrapping container leaks onto every descendant element in the XCUITest tree,
+            // shadowing that container's own more-specific descendant identifiers (confirmed
+            // empirically; see ContentView.swift's `shifts_screen` fix for the full explanation).
+            .overlay(alignment: .topLeading) {
+                Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("float_carousel")
+            }
         }
     }
 
@@ -187,7 +193,13 @@ private struct FloatRequestCardView: View {
         )
         .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .onTapGesture { onOpenDetail() }
-        .accessibilityIdentifier("float_card")
+        // A non-wrapping marker, not the container itself — an identifier set directly on a
+        // wrapping container leaks onto every descendant element in the XCUITest tree,
+        // shadowing that container's own more-specific descendant identifiers (confirmed
+        // empirically; see ContentView.swift's `shifts_screen` fix for the full explanation).
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("float_card")
+        }
     }
 }
 
@@ -288,7 +300,13 @@ private struct RecentFloatsSection: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityIdentifier("recent_floats_section")
+        // A non-wrapping marker, not the container itself — an identifier set directly on a
+        // wrapping container leaks onto every descendant element in the XCUITest tree,
+        // shadowing that container's own more-specific descendant identifiers (confirmed
+        // empirically; see ContentView.swift's `shifts_screen` fix for the full explanation).
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("recent_floats_section")
+        }
     }
 }
 

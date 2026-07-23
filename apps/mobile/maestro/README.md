@@ -175,8 +175,9 @@ The screens MUST expose these stable ids. On Android attach them with
 | `house_prev_week` / `house_next_week` | House week navigator — step to the previous / next week (last week … +4; the chevron hides at the bound). |
 | `house_week_picker_sheet`   | The House week-picker sheet.                             |
 | `house_week_picker_option`  | One quick-week row in the House picker.                  |
-| `contact_sheet`             | The §11.4 contact sheet (who covers a block + call affordance). |
-| `contact_call_button`       | "Call {worker}" in the contact sheet; `contact_call_desk` calls the desk line. |
+| `contact_sheet`             | The §11.4 contact sheet: the tapped slot (`contact_time`) + the person on it. |
+| `contact_person_card`       | The person card inside the sheet — avatar in the worker's own colour, `contact_name`, `contact_house`, `contact_phone`, `contact_email`. |
+| `contact_call_button`       | "Call {worker}" (opens the dialer prefilled); `contact_email_button` opens a mail compose; `contact_call_desk` calls the desk line. |
 | `tab_preferences`           | Preferences row inside `more_sheet` (preference submission). |
 | `preferences_screen`        | Preferences screen root.                                 |
 | `pref_week_strip`           | The Mon–Sun day picker for the preference week.          |
@@ -188,8 +189,9 @@ The screens MUST expose these stable ids. On Android attach them with
 | `pref_brush_available`      | Brush: Available.                                        |
 | `pref_brush_preferred`      | Brush: Preferred.                                        |
 | `pref_brush_cannot`         | Brush: Cannot.                                           |
-| `pref_block_grid`           | The selected day's paintable timeline (gutter + segments).|
-| `pref_block_cell`           | A paintable 30-min segment. A single tap paints one block (Maestro/accessibility); humans long-press-drag to paint a range. |
+| `pref_block_grid`           | The selected day's paintable block column. A pure PAINT canvas: it consumes its own drags and never scrolls the page. |
+| `pref_time_gutter`          | The left hour column, which doubles as the page SCROLL handle (the grid beside it won't scroll). Drag here to move through the day. |
+| `pref_block_cell`           | A paintable 30-min segment. A single tap paints one block; a drag across the grid paints the whole span (and auto-scrolls at the viewport edge to keep going). |
 | `submit_preferences_button` | Submit the preferences (label "Submit changes" when re-submitting edits). Shown only when there are unsaved edits or no prior submission. |
 | `pref_discard_button`       | Discard unsaved edits → revert to the last-saved state. Shown only when dirty. |
 | `pref_unsaved_sheet`        | The unsaved-changes guard sheet raised on leaving the tab dirty (Android). Buttons: `pref_unsaved_submit` / `pref_unsaved_discard`. |

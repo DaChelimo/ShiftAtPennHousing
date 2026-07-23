@@ -71,7 +71,13 @@ struct FloatAcknowledgmentView: View {
                 statusOrCountdown(state.phase, hero, c)
                 actionButtons(state)
             }
-            .accessibilityIdentifier("ack_modal")
+            // A non-wrapping marker, not the container itself — an identifier set directly on a
+            // wrapping container leaks onto every descendant element in the XCUITest tree,
+            // shadowing that container's own more-specific descendant identifiers (confirmed
+            // empirically; see ContentView.swift's `shifts_screen` fix for the full explanation).
+            .overlay(alignment: .topLeading) {
+                Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("ack_modal")
+            }
         }
     }
 

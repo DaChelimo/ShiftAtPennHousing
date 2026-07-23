@@ -3,8 +3,10 @@ package com.pennhousing.shift.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -30,11 +32,16 @@ import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
+import kotlinx.coroutines.isActive
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
@@ -50,6 +57,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
@@ -87,10 +97,11 @@ import com.pennhousing.shift.ui.theme.ShiftTheme
  * over the shared [PreferencesViewModel]. The canonical kit: the context eyebrow, the
  * deadline/unsaved banner, a Mon-Sun strip, the target-hours stepper card, the
  * Available/Preferred/Cannot brush selector, the day TIMELINE (hours in a left gutter,
- * bare colored segments, one label per painted run — long-press-drag to paint a range,
- * tap for one block), and a Submit/Discard bar that appears only when there are unsaved
- * edits. Editable until the deadline; read-only only once it has passed. Selector ids
- * match `apps/mobile/maestro/README.md`.
+ * bare colored segments, one label per painted run — drag the grid to paint a range, tap
+ * for one block, and drag the left time gutter to SCROLL; see [PrefTimeline]), and a
+ * Submit/Discard bar that appears only when there are unsaved edits. Editable until the
+ * deadline; read-only only once it has passed. Selector ids match
+ * `apps/mobile/maestro/README.md`.
  */
 @Composable
 fun PreferencesTabContent(
@@ -117,11 +128,23 @@ fun PreferencesTabContent(
         }
         PrefWeekStripView(state.weekStrip, vm::selectDay)
 
+        // The scroll state and the viewport's on-screen bounds are hoisted so the paint canvas can
+        // drive edge auto-scroll: once a paint drag reaches the top/bottom of this viewport it
+        // scrolls itself just far enough to keep extending the range. `onGloballyPositioned` sits
+        // BEFORE `verticalScroll` so it measures the visible viewport box, not the scrolled content.
+        val gridScroll = rememberScrollState()
+        var viewportTop by remember { mutableFloatStateOf(0f) }
+        var viewportBottom by remember { mutableFloatStateOf(0f) }
         Column(
             Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+                .onGloballyPositioned {
+                    val bounds = it.boundsInRoot()
+                    viewportTop = bounds.top
+                    viewportBottom = bounds.bottom
+                }
+                .verticalScroll(gridScroll)
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -171,6 +194,9 @@ fun PreferencesTabContent(
                     onBeginPaint = vm::beginPaintDrag,
                     onPaintRange = vm::paintRange,
                     onEndPaint = vm::endPaintDrag,
+                    scroll = gridScroll,
+                    viewportTop = { viewportTop },
+                    viewportBottom = { viewportBottom },
                 )
                 Box(Modifier.height(8.dp))
             }
@@ -582,15 +608,29 @@ private val PREF_BLOCK_HEIGHT = 39.dp
 // other non-grid area) instead.
 private val PREF_GUTTER_WIDTH = 46.dp
 
+// How close to the edge of the visible timeline a paint drag must get before the grid starts
+// scrolling itself, and the fastest it will go (per frame, so ~60x that per second). Deliberately
+// gentle: edge auto-scroll exists only to let ONE drag reach off-screen blocks, and an over-eager
+// edge zone turns every drag that ends low on the screen into a runaway scroll. Mirrors iOS's
+// `autoScrollZone` / `autoScrollMaxStep`; keep the two in step.
+private val PREF_AUTO_SCROLL_ZONE = 64.dp
+private val PREF_AUTO_SCROLL_MAX_STEP = 9.dp
+
 /**
  * The selected day's vertical timeline: hours in a left gutter (on the dividing lines),
  * bare colored 30-min segments (no per-cell text), and ONE label pill per painted run.
- * A plain swipe SCROLLS the page; holding a block still for [PAINT_LONG_PRESS_MS] hands off
- * to paint mode (a haptic tick fires at the handoff), after which dragging paints a contiguous
- * range. While dragging, the affected span is outlined and tinted LIVE: accent blue when the
- * drag is adding the active brush, red when it is erasing (dragging back over blocks already
- * painted in that same mode). A single tap toggles one block. The add-vs-erase operation is
- * decided by the block the drag starts on (see [PreferencesViewModel.beginPaintDrag]).
+ *
+ * The gesture model is SPLIT rather than arbitrated: the shift grid is a pure paint canvas that
+ * NEVER scrolls, and the page is scrolled from the left time gutter (which has no pointerInput)
+ * instead. Dragging on the grid paints a contiguous range; a single tap toggles one block. While
+ * dragging, the affected span is outlined and tinted LIVE: accent blue when the drag is adding the
+ * active brush, red when it is erasing (dragging back over blocks already painted in that same
+ * mode). The add-vs-erase operation is decided by the block the drag starts on (see
+ * [PreferencesViewModel.beginPaintDrag]).
+ *
+ * The one exception to "never scrolls" is edge auto-scroll: a drag that reaches the top/bottom of
+ * the viewport scrolls it just far enough to keep going, because lifting to scroll and starting a
+ * second drag cannot express one continuous span. [scroll] and the viewport bounds are the host's.
  * [enabled] is false once the deadline has passed.
  */
 @Composable
@@ -602,11 +642,17 @@ private fun PrefTimeline(
     onBeginPaint: (String) -> Unit,
     onPaintRange: (String, String) -> Unit,
     onEndPaint: () -> Unit,
+    scroll: ScrollState,
+    viewportTop: () -> Float,
+    viewportBottom: () -> Float,
 ) {
     val cells = day.cells
     if (cells.isEmpty()) return
     val total = PREF_BLOCK_HEIGHT * cells.size
-    val blockPx = with(LocalDensity.current) { PREF_BLOCK_HEIGHT.toPx() }
+    val density = LocalDensity.current
+    val blockPx = with(density) { PREF_BLOCK_HEIGHT.toPx() }
+    val autoScrollZonePx = with(density) { PREF_AUTO_SCROLL_ZONE.toPx() }
+    val autoScrollMaxPx = with(density) { PREF_AUTO_SCROLL_MAX_STEP.toPx() }
     fun idxAt(y: Float): Int = (y / blockPx).toInt().coerceIn(0, cells.size - 1)
 
     val c = ShiftTheme.colors
@@ -621,6 +667,35 @@ private fun PrefTimeline(
     var dragSpan by remember { mutableStateOf<IntRange?>(null) }
     var dragErase by remember { mutableStateOf(false) }
 
+    // ── Edge auto-scroll state, shared between the pointer loop and the frame loop below ──
+    // The grid's own top in root coords, so a pointer position can be compared to the viewport.
+    var gridTopInRoot by remember { mutableFloatStateOf(0f) }
+    // Signed px-per-frame; 0 = the finger is not in an edge zone. The pointer loop writes it, the
+    // frame loop reads it fresh every frame, so HOLDING at the edge keeps scrolling with no further
+    // pointer events (which is the whole point: the finger is stationary while content moves).
+    var autoScrollStep by remember { mutableFloatStateOf(0f) }
+    var autoScrolling by remember { mutableStateOf(false) }
+    // The finger's y in GRID-local coords. Real pointer events reset it; auto-scroll ticks advance
+    // it by however much actually scrolled, because a stationary finger covers a new block once the
+    // content slides underneath it.
+    val dragLocalY = remember { mutableFloatStateOf(0f) }
+    var dragStartIdx by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(autoScrolling) {
+        if (!autoScrolling) return@LaunchedEffect
+        while (isActive) {
+            withFrameNanos { }
+            val step = autoScrollStep
+            if (step == 0f) continue
+            val consumed = scroll.scrollBy(step)
+            if (consumed == 0f) continue // at the end of the timeline; keep waiting, don't spin out
+            dragLocalY.floatValue += consumed
+            val cur = idxAt(dragLocalY.floatValue)
+            dragSpan = minOf(dragStartIdx, cur)..maxOf(dragStartIdx, cur)
+            onPaintRange(cellsNow[dragStartIdx].blockId, cellsNow[cur].blockId)
+        }
+    }
+
     Row(Modifier.fillMaxWidth().height(total)) {
         PrefGutter(day.hourMarks, total)
         Box(
@@ -628,23 +703,28 @@ private fun PrefTimeline(
                 .weight(1f)
                 .fillMaxHeight()
                 .testTag("pref_block_grid")
+                .onGloballyPositioned { gridTopInRoot = it.positionInRoot().y }
                 .then(
                     if (enabled) {
-                        // The grid is a pure paint canvas: every drag paints (and is CONSUMED, so the
-                        // parent verticalScroll never scrolls from a touch on the grid) and a tap toggles
-                        // one block. The page is scrolled by dragging the time gutter (or any non-grid
-                        // area) instead, which is left unconsumed. This removes the scroll-vs-paint
-                        // conflict entirely rather than trying to arbitrate it.
+                        // The grid is a pure paint canvas: every move is CONSUMED from the down
+                        // onwards, so the parent verticalScroll can never accumulate touch slop from
+                        // a touch that landed on the grid. Consuming only AFTER slop (the previous
+                        // shape) left a race the scroll could win on the first post-slop event, which
+                        // is exactly how an in-grid drag ended up scrolling the page instead of
+                        // painting. The page is scrolled from the time gutter, which is left
+                        // unconsumed. A tap still toggles one block.
                         Modifier.pointerInput(day.dayIndex) {
                             val slop = viewConfiguration.touchSlop
                             awaitEachGesture {
                                 val down = awaitFirstDown(requireUnconsumed = false)
+                                down.consume()
                                 val startIdx = idxAt(down.position.y)
                                 val startId = cellsNow[startIdx].blockId
                                 var dragging = false
                                 while (true) {
                                     val event = awaitPointerEvent()
                                     val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    change.consume() // unconditional: the grid owns this pointer
                                     if (!change.pressed) {
                                         if (!dragging) {
                                             onPaint(startId) // tap toggles a single block
@@ -652,6 +732,8 @@ private fun PrefTimeline(
                                             onEndPaint()
                                         }
                                         dragSpan = null
+                                        autoScrollStep = 0f
+                                        autoScrolling = false
                                         break
                                     }
                                     if (!dragging && (change.position - down.position).getDistance() > slop) {
@@ -661,13 +743,29 @@ private fun PrefTimeline(
                                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                         dragErase = cellsNow[startIdx].brush == brushNow
                                         dragSpan = startIdx..startIdx
+                                        dragStartIdx = startIdx
                                         onBeginPaint(startId)
+                                        autoScrolling = true
                                     }
                                     if (dragging) {
-                                        change.consume() // keep the parent scroll from grabbing the grid
+                                        dragLocalY.floatValue = change.position.y
                                         val cur = idxAt(change.position.y)
                                         dragSpan = minOf(startIdx, cur)..maxOf(startIdx, cur)
                                         onPaintRange(startId, cellsNow[cur].blockId)
+                                        // Re-arm (or stand down) edge auto-scroll from where the
+                                        // finger now sits relative to the visible viewport.
+                                        val fingerRootY = gridTopInRoot + change.position.y
+                                        val fromBottom = viewportBottom() - fingerRootY
+                                        val fromTop = fingerRootY - viewportTop()
+                                        autoScrollStep = when {
+                                            fromBottom < autoScrollZonePx ->
+                                                autoScrollMaxPx *
+                                                    (1f - fromBottom.coerceAtLeast(0f) / autoScrollZonePx)
+                                            fromTop < autoScrollZonePx ->
+                                                -autoScrollMaxPx *
+                                                    (1f - fromTop.coerceAtLeast(0f) / autoScrollZonePx)
+                                            else -> 0f
+                                        }
                                     }
                                 }
                             }
@@ -701,7 +799,9 @@ private fun PrefGutter(
     totalHeight: Dp,
 ) {
     val c = ShiftTheme.colors
-    Box(Modifier.width(PREF_GUTTER_WIDTH).height(totalHeight)) {
+    // Tagged because the gutter is a CONTROL, not decoration: it is the screen's scroll handle
+    // (the grid beside it consumes its own drags), so tests need to be able to drag it.
+    Box(Modifier.width(PREF_GUTTER_WIDTH).height(totalHeight).testTag("pref_time_gutter")) {
         marks.forEach { mark ->
             Text(
                 mark.label,

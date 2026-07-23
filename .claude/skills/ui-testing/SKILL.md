@@ -6,10 +6,46 @@ description: Write, verify, and commit automated UI tests for the Shift@PennHous
 # UI Testing (apps/mobile)
 
 This skill encodes a specific, already-decided testing architecture for this repo — it is not a
-generic "how to test mobile apps" skill. Follow the four steps below in order; do not skip VERIFY
-or COMMIT, and do not substitute a different testing approach (e.g. reaching for connectedAndroidTest
-or an interactive Simulator session) without an explicit justification, documented inline, for why
-the default couldn't be used.
+generic "how to test mobile apps" skill. Follow the steps below in order; do not skip ISOLATE,
+VERIFY, or MERGE, and do not substitute a different testing approach (e.g. reaching for
+connectedAndroidTest or an interactive Simulator session) without an explicit justification,
+documented inline, for why the default couldn't be used.
+
+**Isolation is automatic — never ask.** This skill always runs its WRITE/VERIFY work in a scratch
+git worktree (Step 0) and merges back at the end (Step 4a). Do not prompt the user to choose between
+worktree / same-session / cloud execution, and do not use the interactive `EnterWorktree` tool for
+this (it's for user-directed worktree sessions, not this skill's internal scratch space) — just run
+the plain `git` commands below. This exists specifically so a concurrent session editing the same
+checkout is never affected: the user's working directory and index are never touched except by the
+final, additive merge in Step 4a.
+
+## Step 0 — ISOLATE
+
+Do this before IDENTIFY, every invocation, unconditionally:
+
+```bash
+SLUG=$(date +%s)  # or a short feature-derived slug if one is obvious
+ORIG_BRANCH=$(git branch --show-current)
+WT_PATH=".claude/worktrees/ui-testing-$SLUG"
+
+# Snapshot any uncommitted changes WITHOUT touching the working tree or index.
+# git stash create is non-destructive: it builds the stash commit object and
+# leaves the working directory exactly as it was. Do NOT use `git stash push`/`pop`
+# here — those mutate the current session's working tree, which is the one thing
+# a concurrent session must never see disturbed.
+STASH_SHA=$(git stash create)
+
+git worktree add "$WT_PATH" -b "ui-testing/$SLUG" HEAD
+
+if [ -n "$STASH_SHA" ]; then
+  git -C "$WT_PATH" stash apply "$STASH_SHA"
+fi
+```
+
+Do all of Steps 1–3 (IDENTIFY, WRITE, VERIFY) with `cwd` set to `$WT_PATH`. This worktree has its
+own working directory, index, and Gradle/Xcode build output — it cannot collide with whatever the
+original session (or any other concurrent session) is doing in the main checkout, and there is
+nothing to stash there because nothing was stashed to begin with.
 
 **Why this shape, briefly:** shared business logic already has strong `kotlin.test` coverage on the
 JVM host — that's not this skill's job. This skill covers the two things nothing currently tests:
@@ -98,11 +134,52 @@ silently mark a test `@Ignore`/`XCTSkip` to make a run go green.
 
 ## Step 4 — COMMIT
 
-One commit per distinct feature/change-set, conventional-commit subject
+Still inside `$WT_PATH`. One commit per distinct feature/change-set, conventional-commit subject
 (`type(scope): summary`), per this repo's existing commit convention (AGENTS.md). If step 1 found an
 orphaned test that needed updating or deleting because the UI it covered changed, that update ships
 in the _same_ commit as the UI change that orphaned it — never a separate later "fix tests" commit.
 That's what actually prevents the pile of stale tests from forming in the first place.
+
+## Step 4a — MERGE (automatic, no prompt)
+
+Bring the worktree's commit(s) back onto `$ORIG_BRANCH` and tear down the scratch worktree. Do this
+unconditionally, in the original session's working directory — never leave the branch sitting
+unmerged in the worktree waiting for the user to deal with it.
+
+```bash
+cd "$(git rev-parse --show-toplevel)"   # back to the original checkout, NOT $WT_PATH
+git merge --no-ff "ui-testing/$SLUG" -m "test(mobile): merge UI test coverage from ui-testing/$SLUG"
+```
+
+This is safe against the original session's uncommitted changes: the merge only ever touches paths
+this skill itself created or edited (new/updated test files, and — rarely — a `testTag`/
+`accessibilityIdentifier` fix in a source file per Step 2's exception path). It never touches the
+paths a concurrent feature change is actively editing, because those are different files by
+construction (this skill doesn't rewrite feature logic).
+
+**If the merge reports a conflict:**
+
+1. `git status` to see which paths conflict.
+2. If every conflicting path is a test file or a test-support file (i.e. under `androidApp/src/test/`,
+   `iosApp/iosAppUITests/`, `apps/mobile/maestro/`, or the Robolectric/XCUITest scaffolding) — resolve
+   it yourself: this means the original branch grew its own test changes since the worktree branched.
+   Reconcile by keeping both sets of assertions where they're additive, and re-run VERIFY (Step 3)
+   against the merged result before finishing. Never resolve a conflict by silently dropping one
+   side's assertions.
+3. If a conflicting path is a non-test source file, STOP and surface it to the user with the specific
+   file and the two versions — do not guess at how to reconcile feature-code conflicts. This should be
+   rare to never; if it happens, `git merge --abort`, leave `ui-testing/$SLUG` in place, and explain
+   what happened instead of forcing a resolution.
+4. After a clean merge (with or without step 2's manual reconciliation), remove the scratch worktree
+   and its branch:
+
+```bash
+git worktree remove "$WT_PATH"
+git branch -d "ui-testing/$SLUG"
+```
+
+If `git stash create` produced a `$STASH_SHA` earlier, it was only ever applied inside `$WT_PATH` —
+the original working directory's uncommitted changes were never touched and need no restoring.
 
 ## Reference files
 

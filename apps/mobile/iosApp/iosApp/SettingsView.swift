@@ -200,7 +200,13 @@ struct SettingsScreen: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(c.bg)
-        .accessibilityIdentifier("settings_screen")
+        // A non-wrapping marker, not the container itself — an identifier set directly on a
+        // wrapping VStack leaks onto every descendant element in the XCUITest tree, shadowing
+        // every settings_replay_*_tour row (confirmed empirically; see ContentView.swift's
+        // matching `shifts_screen` fix for the full explanation).
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("settings_screen")
+        }
     }
 
     private func profileCard(_ profile: SettingsProfile, _ c: ShiftColors) -> some View {

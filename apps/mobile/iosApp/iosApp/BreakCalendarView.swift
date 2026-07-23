@@ -150,7 +150,13 @@ struct BreakCalendarScreen: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(c.bg)
-        .accessibilityIdentifier("break_calendar_screen")
+        // A non-wrapping marker, not the container itself — an identifier set directly on a
+        // wrapping container leaks onto every descendant element in the XCUITest tree,
+        // shadowing that container's own more-specific descendant identifiers (confirmed
+        // empirically; see ContentView.swift's `shifts_screen` fix for the full explanation).
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("break_calendar_screen")
+        }
         // Reset the selection when the shown day/week changes.
         .onChange(of: st.selectedDayIndex) { _ in selFrom = -1; selTo = -1; selCol = 0 }
         .onChange(of: st.weekIndex) { _ in selFrom = -1; selTo = -1; selCol = 0 }
@@ -391,7 +397,13 @@ struct BreakCalendarScreen: View {
             )
         }
         .padding(.horizontal, 12)
-        .accessibilityIdentifier("break_calendar_day")
+        // A non-wrapping marker, not the container itself — an identifier set directly on a
+        // wrapping container leaks onto every descendant element in the XCUITest tree,
+        // shadowing that container's own more-specific descendant identifiers (confirmed
+        // empirically; see ContentView.swift's `shifts_screen` fix for the full explanation).
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("break_calendar_day")
+        }
     }
 
     private func blockRow(_ block: BreakBlockCoverage, highlightedLane: Int?, _ c: ShiftColors) -> some View {
@@ -458,7 +470,13 @@ struct BreakCalendarScreen: View {
         .padding(16)
         .background(c.surface)
         .overlay(Rectangle().frame(height: 1).foregroundColor(c.divider), alignment: .top)
-        .accessibilityIdentifier("break_calendar_claim_bar")
+        // A non-wrapping marker, not the container itself — an identifier set directly on a
+        // wrapping container leaks onto every descendant element in the XCUITest tree,
+        // shadowing that container's own more-specific descendant identifiers (confirmed
+        // empirically; see ContentView.swift's `shifts_screen` fix for the full explanation).
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("break_calendar_claim_bar")
+        }
     }
 
     private func firstName(_ s: String) -> String {

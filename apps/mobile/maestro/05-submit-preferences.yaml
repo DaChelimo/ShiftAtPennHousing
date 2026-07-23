@@ -20,7 +20,8 @@ appId: com.pennhousing.shift
     id: "pref_target_stepper"
 
 # Pick the "Cannot" brush, then paint the first block on the day timeline. A single tap
-# paints one 30-min block (humans long-press-drag to paint a range — not scriptable here).
+# paints one 30-min block; painting a RANGE is a drag across the grid, which Maestro can't
+# express reliably (see PreferencesScreenTest / the iOS suite for drag coverage).
 - tapOn:
     id: "pref_brush_cannot"
 - assertVisible:

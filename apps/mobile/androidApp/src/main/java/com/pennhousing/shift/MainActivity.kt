@@ -76,7 +76,6 @@ import com.pennhousing.shift.shared.viewmodel.SwapsViewModel
 import com.pennhousing.shift.shared.viewmodel.UpdatesViewModel
 import com.pennhousing.shift.ui.HouseNotLiveScreen
 import com.pennhousing.shift.ui.LoginRoute
-import com.pennhousing.shift.ui.onboarding.WidgetPromptPrefs
 import com.pennhousing.shift.widget.WidgetSync
 import com.pennhousing.shift.ui.ShiftsApp
 import com.pennhousing.shift.ui.kit.SkeletonShiftCard
@@ -110,9 +109,6 @@ class MainActivity : ComponentActivity() {
         // now primed after the welcome tour finishes (NotificationPrimingHost in
         // ui/onboarding/Onboarding.kt), so the worker learns WHY alerts matter before the
         // OS dialog appears — and a decline never burns the one-shot iOS-style prompt.
-
-        // Per-launch counter for the behavioral widget-add prompt (return-session gating).
-        WidgetPromptPrefs.recordLaunch(this)
 
         val backendConfigured = AppConfig.supabaseUrl.isNotBlank()
         // T2-13: a float push tap / external deep link (pennshift://float-ack/{id})
@@ -164,8 +160,7 @@ private fun DemoRoot(launchFloatAckId: String? = null) {
             claimSuccessMessage = null
         }
     }
-    // Feed the home-screen widget + derive the widget-prompt preview from the demo week.
-    val widgetPreview = remember(now) { WidgetSync.firstUpcomingPreview(snapshot.myShifts, now) }
+    // Feed the home-screen widget from the demo week.
     LaunchedEffect(now) { WidgetSync.update(context, snapshot.myShifts, DemoData.pendingFloats(now), now) }
     ShiftsApp(
         shiftsVm = shiftsVm,
@@ -180,8 +175,6 @@ private fun DemoRoot(launchFloatAckId: String? = null) {
         assistantVm = assistantVm,
         currentWeeklyHours = DemoData.DEMO_WEEKLY_HOURS,
         now = now,
-        widgetPreviewHouse = widgetPreview?.house,
-        widgetPreviewWhen = widgetPreview?.let { "${it.dayLabel}, ${it.timeLabel}" },
         // Demo float-request carousel — two floats so the swipe + completion are visible.
         pendingFloats = remember(now) { DemoData.pendingFloats(now) },
         // Demo recent-floats history (accepted / declined / expired) for the section below it.
@@ -392,10 +385,8 @@ private fun LiveShiftsRoot(
                 }
             val livePendingFloat = livePendingFloats.firstOrNull()?.toFloatAck()
             val ackVm = remember(livePendingFloat) { AckDeclineViewModel(livePendingFloat ?: DemoData.pendingFloat(now), now) }
-            // Feed the home-screen widget from the live week + pending floats, and derive the
-            // widget-prompt preview (the worker's real next shift).
+            // Feed the home-screen widget from the live week + pending floats.
             val widgetContext = LocalContext.current
-            val widgetPreview = remember(snapshot.myShifts, now) { WidgetSync.firstUpcomingPreview(snapshot.myShifts, now) }
             LaunchedEffect(snapshot.myShifts, livePendingFloats) {
                 WidgetSync.update(widgetContext, snapshot.myShifts, livePendingFloats, now)
             }
@@ -605,8 +596,6 @@ private fun LiveShiftsRoot(
                 // constant was a placeholder; dropped-still-open blocks don't count).
                 currentWeeklyHours = remember(snapshot) { weeklyHours(snapshot.myShifts, now) },
                 now = now,
-                widgetPreviewHouse = widgetPreview?.house,
-                widgetPreviewWhen = widgetPreview?.let { "${it.dayLabel}, ${it.timeLabel}" },
                 pendingFloats = livePendingFloats,
                 recentFloats = liveRecentFloats,
                 writeError = writeError,

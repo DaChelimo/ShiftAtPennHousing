@@ -64,8 +64,10 @@ struct iOSApp: App {
     }
 }
 
-/// Demo vs. live decision (mirrors Android `MainActivity`): no backend → demo shifts;
-/// backend configured → the login/live path.
+/// Demo vs. live decision (mirrors Android `MainActivity`), owned by `ShiftConfig` and
+/// driven by the `SHIFT_DATA_SOURCE` flag in `Configuration/Config.xcconfig`:
+/// demo → bundled DemoData; live → the login/live path; misconfigured → a visible
+/// error, so asking for live and getting demo can never happen silently.
 struct RootView: View {
     /// The in-app appearance override (System / Light / Dark). Applied here at the very
     /// top so it covers login, the loading restore, and the live/demo shifts UI alike.
@@ -73,13 +75,42 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if AppConfig.shared.supabaseUrl.isEmpty {
+            switch ShiftConfig.dataSource {
+            case .demo:
                 ShiftsRootView()
-            } else {
+            case .live:
                 LiveRootView()
+            case .misconfigured(let reason):
+                ConfigErrorView(reason: reason)
             }
         }
         .preferredColorScheme(theme.preferredColorScheme)
+    }
+}
+
+/// Shown when the build asked for `SHIFT_DATA_SOURCE = live` but the backend config is
+/// incomplete. A loud, specific failure beats the old silent demo fallback: that fallback
+/// is what made the app look like it "randomly" signed in as the demo worker.
+struct ConfigErrorView: View {
+    let reason: String
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let c = ShiftColors.resolve(scheme)
+        return ZStack {
+            c.bg.ignoresSafeArea()
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Backend not configured")
+                    .font(.title2.bold())
+                Text(reason)
+                    .font(.body)
+                Text("SHIFT_DATA_SOURCE is set to \"live\", so the app will not fall back to demo data. Fill in apps/mobile/iosApp/Configuration/Config.xcconfig and rebuild, or set SHIFT_DATA_SOURCE to \"demo\" there.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(24)
+        }
+        .accessibilityIdentifier("config_error")
     }
 }
 

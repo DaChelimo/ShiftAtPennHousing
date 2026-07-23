@@ -136,8 +136,10 @@ struct PreferencesScreen: View {
                 .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 2)
             }
 
-            // Only the timeline (and the demoted target card) scroll. Inside the timeline a
-            // plain swipe scrolls; a ~0.25s hold hands off to paint (see PrefTimelineView).
+            // Only the timeline (and the demoted target card) scroll, and this is the ONLY scroll
+            // view in the screen — Preferences renders outside the shared page ScrollView precisely
+            // so the paint canvas has a single ancestor to lock. Inside the timeline the left time
+            // column is the scroll handle and the grid is a pure paint canvas (see PrefTimelineView).
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if st.optedOut {
@@ -181,7 +183,13 @@ struct PreferencesScreen: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(c.bg)
-        .accessibilityIdentifier("preferences_screen")
+        // A non-wrapping marker, not the container itself — an identifier set directly on a
+        // wrapping container leaks onto every descendant element in the XCUITest tree,
+        // shadowing that container's own more-specific descendant identifiers (confirmed
+        // empirically; see ContentView.swift's `shifts_screen` fix for the full explanation).
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("preferences_screen")
+        }
         .sheet(isPresented: $showDeadlinePicker) { deadlinePickerSheet(st, c) }
         .overlay(alignment: .top) {
             if let msg = deadlineToast {
@@ -303,7 +311,13 @@ struct PreferencesScreen: View {
         .padding(.horizontal, 12).padding(.vertical, 10)
         .background(tint)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .accessibilityIdentifier("pref_status_card")
+        // A non-wrapping marker, not the container itself — an identifier set directly on a
+        // wrapping container leaks onto every descendant element in the XCUITest tree,
+        // shadowing that container's own more-specific descendant identifiers (confirmed
+        // empirically; see ContentView.swift's `shifts_screen` fix for the full explanation).
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("pref_status_card")
+        }
     }
 
     // MARK: week strip
@@ -327,7 +341,13 @@ struct PreferencesScreen: View {
             }
         }
         .padding(.horizontal, 16)
-        .accessibilityIdentifier("pref_week_strip")
+        // A non-wrapping marker, not the container itself — an identifier set directly on a
+        // wrapping container leaks onto every descendant element in the XCUITest tree,
+        // shadowing that container's own more-specific descendant identifiers (confirmed
+        // empirically; see ContentView.swift's `shifts_screen` fix for the full explanation).
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("pref_week_strip")
+        }
     }
 
     // MARK: target card
@@ -380,7 +400,13 @@ struct PreferencesScreen: View {
         .background(c.surface)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(c.divider, lineWidth: 1))
-        .accessibilityIdentifier("pref_target_stepper")
+        // A non-wrapping marker, not the container itself — an identifier set directly on a
+        // wrapping container leaks onto every descendant element in the XCUITest tree,
+        // shadowing that container's own more-specific descendant identifiers (confirmed
+        // empirically; see ContentView.swift's `shifts_screen` fix for the full explanation).
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("pref_target_stepper")
+        }
     }
 
     private func stepButton(_ icon: String, enabled: Bool, action: @escaping () -> Void) -> some View {
@@ -497,7 +523,10 @@ struct PrefTimelineView: View {
                     .offset(y: labelOffset(Int(mark.boundaryIndex)))
             }
         }
+        // Identified because the gutter is a CONTROL, not decoration: it is the screen's scroll
+        // handle (the grid beside it swallows its own drags), so tests need to be able to drag it.
         .frame(width: prefGutterWidth, height: total, alignment: .topTrailing)
+        .accessibilityIdentifier("pref_time_gutter")
     }
 
     /// Vertical position of a gutter label: centred on its boundary line, but the first line
@@ -528,7 +557,13 @@ struct PrefTimelineView: View {
         }
         .frame(maxWidth: .infinity, minHeight: total, maxHeight: total, alignment: .topLeading)
         .contentShape(Rectangle())
-        .accessibilityIdentifier("pref_block_grid")
+        // A non-wrapping marker, not the container itself — an identifier set directly on a
+        // wrapping container leaks onto every descendant element in the XCUITest tree,
+        // shadowing that container's own more-specific descendant identifiers (confirmed
+        // empirically; see ContentView.swift's `shifts_screen` fix for the full explanation).
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("pref_block_grid")
+        }
         // A raw-touch UIKit canvas (not SwiftUI gestures, not a long-press): the moment a finger
         // lands on the grid it disables the enclosing ScrollView's pan, so the grid NEVER scrolls
         // and every drag paints immediately. Scrolling the page is done from the time column on the
@@ -586,16 +621,29 @@ struct PrefTimelineView: View {
         .frame(maxWidth: .infinity)
         .frame(height: prefBlockHeight * CGFloat(run.blockCount))
         .offset(y: prefBlockHeight * CGFloat(run.startBlockIndex))
+        // The one VISIBLE result of a paint gesture, so it is what a test asserts on rather than
+        // reaching for the label text. Mirrors Android's run pill inside `pref_block_grid`.
+        .accessibilityIdentifier("pref_run_pill")
     }
 }
 
 // MARK: - Paint canvas (raw UIKit touches, so the grid never scrolls)
 
 /// A transparent overlay that turns the shift grid into a pure paint canvas. The moment a finger
-/// touches down it disables the enclosing ScrollView's pan, so the grid NEVER scrolls under the
+/// touches down it disables EVERY enclosing ScrollView's pan, so the grid NEVER scrolls under the
 /// finger; every drag paints immediately and a plain touch toggles one block. The page is scrolled
 /// from the time column on the left (which has no such overlay) instead. This sidesteps the whole
 /// scroll-vs-paint gesture arbitration that made an in-grid drag behave erratically.
+///
+/// "Every enclosing" is load-bearing, not belt-and-braces: locking only the NEAREST scroll view is
+/// what made an in-grid drag still scroll the page. Preferences used to render inside the shared
+/// page ScrollView as well as its own, so the outer one stayed free to pan and stole the drag.
+/// That nesting is gone, but a single missed ancestor silently reintroduces the exact same bug.
+///
+/// The one time the page DOES move under a grid touch is [autoScrollStep]: once a drag reaches the
+/// top/bottom edge of the visible timeline, the canvas scrolls itself just far enough to keep
+/// extending the painted range, because the alternative (lift, scroll, start a second drag) can't
+/// express one continuous span.
 private struct PaintSurface: UIViewRepresentable {
     let blockCount: Int
     let blockHeight: CGFloat
@@ -619,16 +667,36 @@ private struct PaintSurface: UIViewRepresentable {
     /// The raw-touch canvas. Painting is driven by touchesBegan/Moved/Ended rather than gesture
     /// recognizers so it can't be pre-empted by (or have to cooperate with) the scroll view's pan.
     final class PaintView: UIView {
+        // How close to the edge of the visible timeline a drag must get before the canvas starts
+        // scrolling itself, and the fastest it will go (points per frame, so ~60x that per second).
+        // Deliberately gentle: this only exists to let one drag reach off-screen blocks, and an
+        // over-eager edge zone turns every drag that ends low on the screen into a runaway scroll.
+        private static let autoScrollZone: CGFloat = 64
+        private static let autoScrollMaxStep: CGFloat = 9
+        // How far the finger must travel before this counts as a drag rather than a tap. Below it
+        // the canvas never auto-scrolls, so resting a thumb near the bottom edge stays inert.
+        private static let dragSlop: CGFloat = 6
+
         private var blockCount = 0
         private var blockHeight: CGFloat = 1
         private var onBegin: ((Int) -> Void)?
         private var onChange: ((Int, Int) -> Void)?
         private var onEnd: (() -> Void)?
         private var startIdx = 0
-        // The enclosing scroll view's pan, disabled for the lifetime of a touch on the grid so the
+        // EVERY enclosing scroll view's pan, disabled for the lifetime of a touch on the grid so the
         // page can't scroll while painting; re-enabled on lift. Dragging the time column (no overlay)
         // still scrolls normally.
-        private weak var lockedPan: UIPanGestureRecognizer?
+        private var lockedPans: [UIPanGestureRecognizer] = []
+        // The scroll view the timeline actually lives in — the innermost ancestor, and the one
+        // edge auto-scroll drives.
+        private weak var scrollHost: UIScrollView?
+        // Auto-scroll state. The touch point is held in WINDOW coordinates because the finger stays
+        // still while the content moves under it: a point in this view's own space would go stale
+        // the moment we scroll, and no touchesMoved arrives to refresh it.
+        private var displayLink: CADisplayLink?
+        private var lastWindowPoint: CGPoint = .zero
+        private var touchDidMove = false
+        private var touchStartWindowPoint: CGPoint = .zero
 
         func apply(_ surface: PaintSurface) {
             blockCount = surface.blockCount
@@ -638,20 +706,24 @@ private struct PaintSurface: UIViewRepresentable {
             onEnd = surface.onEnd
         }
 
-        private func enclosingScroll() -> UIScrollView? {
+        /// Every UIScrollView above this view, innermost first.
+        private func enclosingScrolls() -> [UIScrollView] {
+            var found: [UIScrollView] = []
             var v = superview
             while let cur = v {
-                if let scroll = cur as? UIScrollView { return scroll }
+                if let scroll = cur as? UIScrollView { found.append(scroll) }
                 v = cur.superview
             }
-            return nil
+            return found
         }
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
             // Deliver touches to this canvas without the scroll view's ~150ms "is it a scroll?" delay,
             // so painting starts on contact.
-            enclosingScroll()?.delaysContentTouches = false
+            let scrolls = enclosingScrolls()
+            scrolls.forEach { $0.delaysContentTouches = false }
+            scrollHost = scrolls.first
         }
 
         private func index(_ p: CGPoint) -> Int {
@@ -661,9 +733,14 @@ private struct PaintSurface: UIViewRepresentable {
 
         override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
             guard blockCount > 0, let t = touches.first else { return }
-            let scroll = enclosingScroll()
-            scroll?.panGestureRecognizer.isEnabled = false // the grid never scrolls
-            lockedPan = scroll?.panGestureRecognizer
+            let scrolls = enclosingScrolls()
+            scrollHost = scrolls.first
+            // Lock every ancestor, not just the nearest — see the type doc.
+            lockedPans = scrolls.map(\.panGestureRecognizer)
+            lockedPans.forEach { $0.isEnabled = false }
+            touchDidMove = false
+            touchStartWindowPoint = t.location(in: nil)
+            lastWindowPoint = touchStartWindowPoint
             startIdx = index(t.location(in: self))
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             onBegin?(startIdx)
@@ -671,6 +748,11 @@ private struct PaintSurface: UIViewRepresentable {
 
         override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
             guard blockCount > 0, let t = touches.first else { return }
+            lastWindowPoint = t.location(in: nil)
+            if !touchDidMove, abs(lastWindowPoint.y - touchStartWindowPoint.y) > Self.dragSlop {
+                touchDidMove = true
+                startAutoScrollIfNeeded()
+            }
             onChange?(startIdx, index(t.location(in: self)))
         }
 
@@ -678,9 +760,54 @@ private struct PaintSurface: UIViewRepresentable {
         override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) { finish() }
 
         private func finish() {
+            stopAutoScroll()
             onEnd?()
-            lockedPan?.isEnabled = true
-            lockedPan = nil
+            lockedPans.forEach { $0.isEnabled = true }
+            lockedPans = []
+        }
+
+        // MARK: Edge auto-scroll
+
+        private func startAutoScrollIfNeeded() {
+            guard displayLink == nil else { return }
+            let link = CADisplayLink(target: self, selector: #selector(autoScrollStep))
+            link.add(to: .main, forMode: .common)
+            displayLink = link
+        }
+
+        private func stopAutoScroll() {
+            displayLink?.invalidate()
+            displayLink = nil
+        }
+
+        /// One frame of edge auto-scroll. Runs only while a drag is in flight; scrolls the host by a
+        /// distance that ramps up as the finger goes deeper into the edge zone, then re-derives the
+        /// block under the (stationary) finger from its window position and extends the painted span.
+        @objc private func autoScrollStep() {
+            guard touchDidMove, blockCount > 0, let scroll = scrollHost, scroll.window != nil else { return }
+            let inset = scroll.adjustedContentInset
+            let point = scroll.convert(lastWindowPoint, from: nil) // scroll view space == content space
+            let visibleTop = scroll.contentOffset.y + inset.top
+            let visibleBottom = scroll.contentOffset.y + scroll.bounds.height - inset.bottom
+
+            var step: CGFloat = 0
+            let fromBottom = visibleBottom - point.y
+            let fromTop = point.y - visibleTop
+            if fromBottom < Self.autoScrollZone {
+                step = Self.autoScrollMaxStep * (1 - max(fromBottom, 0) / Self.autoScrollZone)
+            } else if fromTop < Self.autoScrollZone {
+                step = -Self.autoScrollMaxStep * (1 - max(fromTop, 0) / Self.autoScrollZone)
+            }
+            guard step != 0 else { return }
+
+            let minOffset = -inset.top
+            let maxOffset = max(minOffset, scroll.contentSize.height - scroll.bounds.height + inset.bottom)
+            let target = min(max(scroll.contentOffset.y + step, minOffset), maxOffset)
+            guard target != scroll.contentOffset.y else { return } // already at the end of the timeline
+            scroll.contentOffset.y = target
+
+            // The content moved under a stationary finger, so the block beneath it changed.
+            onChange?(startIdx, index(convert(lastWindowPoint, from: nil)))
         }
     }
 }

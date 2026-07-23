@@ -177,7 +177,6 @@ import com.pennhousing.shift.shared.onboarding.PreferencesTour
 import com.pennhousing.shift.shared.onboarding.ShiftTour
 import com.pennhousing.shift.shared.onboarding.SwapTour
 import com.pennhousing.shift.shared.onboarding.TipTrigger
-import com.pennhousing.shift.shared.onboarding.WidgetPrompt
 import com.pennhousing.shift.shared.viewmodel.BreakTourViewModel
 import com.pennhousing.shift.shared.viewmodel.HouseGridTourViewModel
 import com.pennhousing.shift.shared.viewmodel.OnboardingViewModel
@@ -222,10 +221,7 @@ import com.pennhousing.shift.ui.onboarding.SwapTourOverlay
 import com.pennhousing.shift.ui.onboarding.SwapTourPointerCallout
 import com.pennhousing.shift.ui.onboarding.SwapTourPointerStore
 import com.pennhousing.shift.ui.onboarding.SwapTourPrefs
-import com.pennhousing.shift.ui.onboarding.WidgetPromptCard
-import com.pennhousing.shift.ui.onboarding.WidgetPromptPrefs
 import com.pennhousing.shift.ui.onboarding.onboardingAnchor
-import com.pennhousing.shift.widget.WidgetSync
 import com.pennhousing.shift.shared.viewmodel.BreakCalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.HouseScheduleViewModel
@@ -317,11 +313,6 @@ fun ShiftsApp(
     pendingFloats: List<PendingFloat> = emptyList(),
     // Floats RESOLVED in the last 24h for the collapsible recent section under the carousel.
     recentFloats: List<RecentFloat> = emptyList(),
-    // The worker's next upcoming shift, pre-formatted (house + "day, time"), for the
-    // widget-add prompt's live preview. Null when they have none ahead → the prompt (which
-    // needs a real shift to preview) stays hidden. Both platforms; see shared WidgetPrompt.
-    widgetPreviewHouse: String? = null,
-    widgetPreviewWhen: String? = null,
     breakProfile: Boolean = false,
     toast: ToastNotification? = null,
     // Non-null when a best-effort live write (drop/claim/reclaim/pickup/…) failed to
@@ -657,34 +648,6 @@ fun ShiftsApp(
         val swapTourState by swapTourVm.uiState.collectAsStateWithLifecycle()
         LaunchedEffect(swapTourState.seen) { SwapTourPrefs.write(onboardingContext, swapTourState.seen) }
 
-        // Widget-add prompt (behavioral). After the worker has opened My-Shifts enough
-        // times and has an upcoming shift to preview, on a return session, nudge them to add
-        // the home-screen widget. Counters persist per device; see shared WidgetPrompt.
-        var widgetOpens by remember { mutableStateOf(WidgetPromptPrefs.calendarOpens(onboardingContext)) }
-        var widgetAccepted by remember { mutableStateOf(WidgetPromptPrefs.accepted(onboardingContext)) }
-        var widgetPromptOpen by remember { mutableStateOf(false) }
-        var widgetPromptShownThisSession by remember { mutableStateOf(false) }
-        LaunchedEffect(selectedIndex) {
-            if (selectedIndex == TAB_MY) widgetOpens = WidgetPromptPrefs.recordCalendarOpen(onboardingContext)
-        }
-        LaunchedEffect(widgetOpens, widgetPreviewHouse, widgetAccepted) {
-            if (!widgetPromptOpen && !widgetPromptShownThisSession &&
-                WidgetPrompt.eligible(
-                    calendarOpens = widgetOpens,
-                    hasUpcomingShift = widgetPreviewHouse != null,
-                    launchCount = WidgetPromptPrefs.launchCount(onboardingContext),
-                    showCount = WidgetPromptPrefs.showCount(onboardingContext),
-                    accepted = widgetAccepted,
-                    alreadyHasWidget = WidgetSync.hasWidgetInstalled(onboardingContext),
-                    lastShownLaunch = WidgetPromptPrefs.lastShownLaunch(onboardingContext),
-                )
-            ) {
-                widgetPromptOpen = true
-                widgetPromptShownThisSession = true
-                WidgetPromptPrefs.recordShown(onboardingContext)
-            }
-        }
-
         CompositionLocalProvider(LocalOnboardingAnchors provides onboardingAnchors) {
         Box(Modifier.fillMaxSize()) {
         Scaffold(
@@ -953,19 +916,6 @@ fun ShiftsApp(
         // and (only on Confirm) fire the real OS permission request. Replaces the cold
         // launch-time prompt that used to fire in MainActivity.onCreate.
         NotificationPrimingHost(tourDone = Onboarding.WELCOME_DONE_KEY in onboardingState.seen)
-        // Widget-add prompt (opened by the behavioral gate above): benefit nudge with a live
-        // preview of the real next shift, then a 3-step how-to on "Show me how".
-        if (widgetPromptOpen) {
-            WidgetPromptCard(
-                previewHouse = widgetPreviewHouse,
-                previewWhen = widgetPreviewWhen,
-                onConfirm = {
-                    WidgetPromptPrefs.markAccepted(onboardingContext)
-                    widgetAccepted = true
-                },
-                onDismiss = { widgetPromptOpen = false },
-            )
-        }
         // The interactive "Manage a shift" tour — above the whole screen; auto-opens on the
         // first My-Shifts landing and on replay (from the header "?" or Settings row).
         if (shiftTourState.active) {
@@ -4283,25 +4233,27 @@ private fun HouseGridBlockCell(
     // Everyone else's seats recede so mine is findable at a glance: a grid where every seat
     // wears a saturated colour is pretty but useless for the one question a worker actually
     // asks ("where am I?"). Vacant seats are nobody's card and stay full strength (they're
-    // the actionable open-seat affordance for a manager).
+    // the actionable open-seat affordance for a manager). The dimming applies only to the
+    // background/border fill, never to the text, which must always render at full opacity.
     val blockAlpha = if (b.mine || b.vacant) 1f else HOUSE_OTHER_OPACITY
+    val recededBg = bg.copy(alpha = bg.alpha * blockAlpha)
+    val recededAccent = accent.copy(alpha = accent.alpha * blockAlpha)
     Box(
         Modifier
             .offset(x = x, y = top)
             .width(width)
             .height(height)
-            .alpha(blockAlpha)
             .clip(shape)
-            .background(bg)
+            .background(recededBg)
             .then(
                 when {
-                    b.vacant -> Modifier.dashedBorder(accent, 8.dp)
-                    emphatic -> Modifier.border(1.5.dp, primary, shape)
-                    wc != null -> Modifier.border(1.dp, accent, shape)
-                    else -> Modifier.border(1.dp, accent.copy(alpha = 0.45f), shape)
+                    b.vacant -> Modifier.dashedBorder(recededAccent, 8.dp)
+                    emphatic -> Modifier.border(1.5.dp, primary.copy(alpha = primary.alpha * blockAlpha), shape)
+                    wc != null -> Modifier.border(1.dp, recededAccent, shape)
+                    else -> Modifier.border(1.dp, accent.copy(alpha = 0.45f * blockAlpha), shape)
                 },
             )
-            .drawBehind { drawRect(color = accent, size = Size(3.dp.toPx(), size.height)) }
+            .drawBehind { drawRect(color = recededAccent, size = Size(3.dp.toPx(), size.height)) }
             .clickable(enabled = !b.vacant || vacantTappable) { onTap(b) }
             .padding(start = 7.dp, end = 5.dp, top = 4.dp, bottom = 3.dp)
             .testTag("house_grid_block"),

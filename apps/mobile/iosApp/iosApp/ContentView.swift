@@ -546,12 +546,6 @@ struct ShiftsRootView: View {
     // once the tour is done; `notifPrimerResponded` is the once-per-install guard.
     @State private var notifPrimerResponded = NotificationPrimingStore.hasResponded()
     @State private var notifOsCanPrompt = false
-    // Widget-add prompt (behavioral): counters + the currently-open flag.
-    @State private var widgetCalendarOpens = WidgetPromptStore.calendarOpens()
-    @State private var widgetPromptAccepted = WidgetPromptStore.accepted()
-    @State private var widgetPromptOpen = false
-    @State private var widgetPromptShownThisSession = false
-    @State private var didRecordLaunch = false
 
     /// Run a best-effort live write and surface failure instead of swallowing it. `op`
     /// returns whether the EF accepted the write (`EdgeResult.ok`); on failure the error
@@ -683,31 +677,18 @@ struct ShiftsRootView: View {
         NotificationAuthorizer.osCanPrompt { notifOsCanPrompt = $0 }
     }
 
-    /// The worker's next upcoming shift, pre-formatted for the widget-prompt preview tile.
-    private var widgetPreview: WidgetPreview? {
-        WidgetPromptPreview.next(
-            from: model.state.myShifts.inDisplayOrder(),
-            nowMillis: DemoFactory.shared.now().toEpochMilliseconds()
-        )
-    }
-
-    /// Open the widget-add prompt if the behavioral gate is satisfied, recording the show so
-    /// it does not re-open this session (iOS has no reliable installed-widget check pre-18,
-    /// so `alreadyHasWidget` stays false; the accepted / show-count guards prevent nagging).
-    private func evaluateWidgetPrompt() {
-        guard !widgetPromptOpen, !widgetPromptShownThisSession else { return }
-        if WidgetPrompt.shared.eligible(
-            calendarOpens: Int32(widgetCalendarOpens),
-            hasUpcomingShift: widgetPreview != nil,
-            launchCount: Int32(WidgetPromptStore.launchCount()),
-            showCount: Int32(WidgetPromptStore.showCount()),
-            accepted: widgetPromptAccepted,
-            alreadyHasWidget: false,
-            lastShownLaunch: Int32(WidgetPromptStore.lastShownLaunch())
-        ) {
-            widgetPromptOpen = true
-            widgetPromptShownThisSession = true
-            WidgetPromptStore.recordShown()
+    /// Auto-starts the interactive tour for whichever root tab is currently showing, once the
+    /// first-run welcome tour is done. Shared by the initial landing (`.onAppear`, since the
+    /// default tab is `.mine` and SwiftUI's `onChange` never fires for an unchanged initial
+    /// value), by tab changes, and by the welcome tour finishing while already parked on a tab.
+    private func autoStartTourForCurrentTab() {
+        guard onboardingTourDone else { return }
+        switch tab {
+        case .mine: shiftTourModel.autoStart()
+        case .openShifts: openClaimTourModel.autoStart()
+        case .house: houseGridTourModel.autoStart()
+        case .preferences: preferencesTourModel.autoStart()
+        default: break
         }
     }
 
@@ -929,40 +910,23 @@ struct ShiftsRootView: View {
                 )
             }
         }
-        // Widget-add prompt (opened by the behavioral gate): benefit nudge with a live
-        // preview of the real next shift, then a 3-step how-to on "Show me how".
-        .overlay {
-            if widgetPromptOpen {
-                WidgetPromptCardView(
-                    previewHouse: widgetPreview?.house,
-                    previewWhen: widgetPreview?.whenLabel,
-                    onConfirm: {
-                        WidgetPromptStore.markAccepted()
-                        widgetPromptAccepted = true
-                    },
-                    onDismiss: { widgetPromptOpen = false }
-                )
-            }
-        }
         // Kick off the first-run tour, and raise one-time tips as the worker first reaches
-        // each root-level surface (mirrors the Android LaunchedEffects).
+        // each root-level surface (mirrors the Android LaunchedEffects). Also auto-starts the
+        // current tab's interactive tour for the initial landing, since the default tab is
+        // `.mine` and `.onChange(of: tab)` never fires for an unchanged initial value.
         .onAppear {
             onboardingModel.start()
             refreshNotifPrimerEligibility()
-            // Per-process launch counter for the widget-prompt return-session gate. The
-            // initial landing on My-Shifts is counted here (onChange fires only on CHANGE),
-            // mirroring Android's keyed LaunchedEffect(selectedIndex).
-            if !didRecordLaunch {
-                didRecordLaunch = true
-                WidgetPromptStore.recordLaunch()
-                if tab == .mine { widgetCalendarOpens = WidgetPromptStore.recordCalendarOpen() }
-                evaluateWidgetPrompt()
-            }
+            autoStartTourForCurrentTab()
         }
         // When the tour finishes (or was already done for a returning worker), ask the OS
-        // whether a notification prompt would still surface, so the primer can appear.
+        // whether a notification prompt would still surface, so the primer can appear, and
+        // auto-start the current tab's tour if the worker is still parked on it.
         .onChange(of: onboardingTourDone) { done in
-            if done { refreshNotifPrimerEligibility() }
+            if done {
+                refreshNotifPrimerEligibility()
+                autoStartTourForCurrentTab()
+            }
         }
         .onChange(of: tab) { newTab in
             switch newTab {
@@ -970,9 +934,6 @@ struct ShiftsRootView: View {
                 // The interactive shift tour supersedes the old My-Shifts tip. Gate on the
                 // welcome tour being done so orientation and this teaching don't overlap.
                 if onboardingTourDone { shiftTourModel.autoStart() }
-                // Count the My-Shifts open, then re-check the widget-prompt gate.
-                widgetCalendarOpens = WidgetPromptStore.recordCalendarOpen()
-                evaluateWidgetPrompt()
             case .openShifts:
                 // The claim tour supersedes the old Open-Shifts tip on iOS (its whole point
                 // is teaching one-time vs permanent pickup, which the flat tip never covered).
@@ -2625,6 +2586,12 @@ struct ShiftsRootView: View {
         // The time label keeps a hint of the worker's hue without losing contrast (web:
         // `color-mix(in srgb, F 75%, C 25%)`); on a state-coloured block it's just `fg`.
         let timeFg = wc.map { $0.labelColor(0.25) } ?? fg
+        // Everyone else's seats recede so mine is findable at a glance (see doc comment #3).
+        // The dimming applies only to the background/border fill, never to the text, which
+        // must always render at full opacity.
+        let blockAlpha = (b.mine || b.vacant) ? 1.0 : Self.houseOtherOpacity
+        let recededBg = bg.opacity(blockAlpha)
+        let recededAccent = accent.opacity(blockAlpha)
         return VStack(alignment: .leading, spacing: 1) {
             Text(b.timeLabel).font(ShiftFont.mono(10.5)).monospacedDigit().foregroundColor(timeFg).lineLimit(1)
             Text(b.workerLabel + (b.mine && b.floatIn ? " ·float" : ""))
@@ -2636,29 +2603,34 @@ struct ShiftsRootView: View {
         }
         .padding(.leading, 7).padding(.trailing, 5).padding(.top, 4).padding(.bottom, 3)
         .frame(width: width, height: h, alignment: .topLeading)
-        .background(bg)
-        .overlay(alignment: .leading) { Rectangle().fill(accent).frame(width: 3) }
+        .background(recededBg)
+        .overlay(alignment: .leading) { Rectangle().fill(recededAccent).frame(width: 3) }
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(
-                    b.vacant ? accent : (emphatic ? c.blue : (wc != nil ? accent : accent.opacity(0.45))),
+                    b.vacant ? recededAccent : (emphatic ? c.blue.opacity(blockAlpha) : (wc != nil ? recededAccent : accent.opacity(0.45 * blockAlpha))),
                     style: StrokeStyle(lineWidth: b.vacant ? 1.5 : (emphatic ? 1.5 : 1), dash: b.vacant ? [6, 4] : [])
                 )
         )
-        // Everyone else's seats recede so mine is findable at a glance (see doc comment #3).
-        .opacity(b.mine || b.vacant ? 1 : Self.houseOtherOpacity)
         .offset(x: x, y: top)
         .contentShape(Rectangle())
-        .onTapGesture {
-            if b.vacant {
-                // A manager on the home house gets the open-seat actions; everyone else
-                // sees an open seat as passive (view-only).
-                if houseModel.state.canManage { houseActionTarget = b }
-            } else {
-                contactTarget = b
+        // `.highPriorityGesture`, not `.onTapGesture`: the block sits inside nested
+        // vertical + horizontal `ScrollView`s (the House grid body), whose pan gesture
+        // recognizers otherwise win the race for a stationary tap and swallow it as a
+        // (no-op) scroll, so the block never opens. High-priority still lets a genuine
+        // drag pass through to the ScrollViews once it exceeds the tap gesture's slop.
+        .highPriorityGesture(
+            TapGesture().onEnded {
+                if b.vacant {
+                    // A manager on the home house gets the open-seat actions; everyone else
+                    // sees an open seat as passive (view-only).
+                    if houseModel.state.canManage { houseActionTarget = b }
+                } else {
+                    contactTarget = b
+                }
             }
-        }
+        )
         .accessibilityIdentifier("house_grid_block")
     }
 

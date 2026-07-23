@@ -65,6 +65,15 @@ fun SettingsTabContent(
     onReplayTour: () -> Unit = {},
     // Restart the interactive "Manage a shift" tour on demand (navigates to My Shifts first).
     onReplayShiftTour: () -> Unit = {},
+    // Restart the four other interactive Tier-3 tours on demand, each navigating to its own
+    // tab first. The swap-composer tour has no tab of its own — its replay navigates to My
+    // Shifts and PRIMES the tour, which then actually fires the next time the worker reaches
+    // the swap page inside the manage-shift sheet (mirrors iOS's onReplaySwapTour comment).
+    onReplayPreferencesTour: () -> Unit = {},
+    onReplayBreakTour: () -> Unit = {},
+    onReplaySwapTour: () -> Unit = {},
+    onReplayHouseGridTour: () -> Unit = {},
+    onReplayOpenClaimTour: () -> Unit = {},
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val c = ShiftTheme.colors
@@ -164,6 +173,51 @@ fun SettingsTabContent(
                     title = "Replay shift tour",
                     onClick = onReplayShiftTour,
                     modifier = Modifier.testTag("settings_replay_shift_tour"),
+                ) {
+                    Icon(ShiftIcons.ChevronRight, contentDescription = null, tint = c.outline, modifier = Modifier.size(17.dp))
+                }
+                SettingsRow(
+                    icon = ShiftIcons.QuestionMark,
+                    tint = MaterialTheme.colorScheme.primary,
+                    title = "Replay preferences tour",
+                    onClick = onReplayPreferencesTour,
+                    modifier = Modifier.testTag("settings_replay_preferences_tour"),
+                ) {
+                    Icon(ShiftIcons.ChevronRight, contentDescription = null, tint = c.outline, modifier = Modifier.size(17.dp))
+                }
+                SettingsRow(
+                    icon = ShiftIcons.QuestionMark,
+                    tint = MaterialTheme.colorScheme.primary,
+                    title = "Replay break tour",
+                    onClick = onReplayBreakTour,
+                    modifier = Modifier.testTag("settings_replay_break_tour"),
+                ) {
+                    Icon(ShiftIcons.ChevronRight, contentDescription = null, tint = c.outline, modifier = Modifier.size(17.dp))
+                }
+                SettingsRow(
+                    icon = ShiftIcons.QuestionMark,
+                    tint = MaterialTheme.colorScheme.primary,
+                    title = "Replay swap tour",
+                    onClick = onReplaySwapTour,
+                    modifier = Modifier.testTag("settings_replay_swap_tour"),
+                ) {
+                    Icon(ShiftIcons.ChevronRight, contentDescription = null, tint = c.outline, modifier = Modifier.size(17.dp))
+                }
+                SettingsRow(
+                    icon = ShiftIcons.QuestionMark,
+                    tint = MaterialTheme.colorScheme.primary,
+                    title = "Replay house grid tour",
+                    onClick = onReplayHouseGridTour,
+                    modifier = Modifier.testTag("settings_replay_housegrid_tour"),
+                ) {
+                    Icon(ShiftIcons.ChevronRight, contentDescription = null, tint = c.outline, modifier = Modifier.size(17.dp))
+                }
+                SettingsRow(
+                    icon = ShiftIcons.QuestionMark,
+                    tint = MaterialTheme.colorScheme.primary,
+                    title = "Replay open shifts tour",
+                    onClick = onReplayOpenClaimTour,
+                    modifier = Modifier.testTag("settings_replay_openclaim_tour"),
                 ) {
                     Icon(ShiftIcons.ChevronRight, contentDescription = null, tint = c.outline, modifier = Modifier.size(17.dp))
                 }

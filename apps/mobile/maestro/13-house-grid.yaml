@@ -49,9 +49,24 @@ appId: com.pennhousing.shift
 - tapOn: "This week"
 - assertVisible: "This week"
 
-# Tap a staffed block → the §11.4 contact sheet (who's working + call affordance).
+# Tap a staffed block → the §11.4 contact sheet: the slot plus a card for the person
+# on it (name / house / phone / email) and the call + email affordances.
 - tapOn:
     id: "house_grid_block"
     index: 0
 - assertVisible:
     id: "contact_sheet"
+- assertVisible:
+    id: "contact_time"
+- assertVisible:
+    id: "contact_person_card"
+- assertVisible:
+    id: "contact_name"
+- assertVisible:
+    id: "contact_house"
+- assertVisible:
+    id: "contact_phone"
+- assertVisible:
+    id: "contact_email"
+# The call / email BUTTONS are deliberately not asserted here: they only render when
+# that detail is on file, and which block lands at index 0 depends on the week.

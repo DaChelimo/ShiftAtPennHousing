@@ -28,13 +28,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         FirebaseApp.configure()
         #endif
 
-        // Supabase config from Info.plist (the iOS analogue of Android BuildConfig).
-        if let url = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_URL") as? String, !url.isEmpty {
-            AppConfig.shared.supabaseUrl = url
-        }
-        if let key = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_ANON_KEY") as? String, !key.isEmpty {
-            AppConfig.shared.supabaseAnonKey = key
-        }
+        // Resolve demo-vs-live and install the Supabase config from Info.plist (the iOS
+        // analogue of Android BuildConfig). ShiftConfig owns the decision and is a lazy
+        // `static let`, so touching it here just forces it early: whichever of this
+        // method or the first SwiftUI body runs first gets the same answer.
+        _ = ShiftConfig.dataSource
 
         UNUserNotificationCenter.current().delegate = self
         #if canImport(FirebaseMessaging)

@@ -2613,13 +2613,20 @@ struct ShiftsRootView: View {
                     style: StrokeStyle(lineWidth: b.vacant ? 1.5 : (emphatic ? 1.5 : 1), dash: b.vacant ? [6, 4] : [])
                 )
         )
-        .offset(x: x, y: top)
+        // Hit region and gesture MUST be attached BEFORE `.offset`, never after.
+        // `.offset` is a render-only transform: it moves the drawn result but leaves the
+        // view's LAYOUT bounds at the ZStack's top-leading origin. A `.contentShape`
+        // applied after it therefore builds the tap target from those un-offset bounds,
+        // so every block in a column stacks its hit rect at (0,0) while drawing at
+        // (x, top) — taps then resolve by z-order to some OTHER block (wrong contact
+        // card), or to a vacant one whose handler no-ops (nothing opens at all).
+        // Declared here, the shape is the block's own bounds and `.offset` transforms
+        // the rendering and the hit region together.
         .contentShape(Rectangle())
         // `.highPriorityGesture`, not `.onTapGesture`: the block sits inside nested
         // vertical + horizontal `ScrollView`s (the House grid body), whose pan gesture
-        // recognizers otherwise win the race for a stationary tap and swallow it as a
-        // (no-op) scroll, so the block never opens. High-priority still lets a genuine
-        // drag pass through to the ScrollViews once it exceeds the tap gesture's slop.
+        // recognizers otherwise win the race for a stationary tap. High-priority still
+        // lets a genuine drag pass through once it exceeds the tap gesture's slop.
         .highPriorityGesture(
             TapGesture().onEnded {
                 if b.vacant {
@@ -2631,6 +2638,7 @@ struct ShiftsRootView: View {
                 }
             }
         )
+        .offset(x: x, y: top)
         .accessibilityIdentifier("house_grid_block")
     }
 

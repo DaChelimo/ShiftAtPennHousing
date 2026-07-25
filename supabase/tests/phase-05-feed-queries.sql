@@ -36,7 +36,7 @@
 
 BEGIN;
 
-SELECT plan(35);
+SELECT plan(44);
 
 -- ============================================================
 -- 0. Setup: minimal fixture across a 60-day window.
@@ -559,6 +559,167 @@ SELECT is(
     LIMIT 1)::integer,
   1,
   'after a permanent_drop occurrence is claimed, weeks_remaining reflects only the remaining vacant occurrences'
+);
+
+-- ============================================================
+-- 13. worker_open_shifts: the read model the CLIENTS consume must reproduce the
+--     §5.1 feed overlap that sections 5 and 12 assert at the function layer.
+--
+--     Divergence fixed on 2026-07-24 (migration 20260724000004): the view had
+--     partitioned the feeds with an exclusive CASE
+--       CASE WHEN vacancy_origin = 'permanent_drop' THEN 'permanent_opening' ELSE 'weekly' END
+--     so a permanently-dropped occurrence never rendered as a weekly card and the §5.3
+--     single-occurrence temporary claim had no surface to originate from. Since every
+--     client reads this view and nothing outside pgTAP calls weekly_open_shifts_feed,
+--     section 5 passing was not evidence that the behavior shipped.
+--
+--     Unlike the feed FUNCTIONS, the view resolves the horizon against now(), so these
+--     fixtures are anchored on now() rather than test.phase05.as_of.
+-- ============================================================
+
+-- Hermetic calendar for the two target dates: the permanent branch requires a
+-- regular_school_year day (it mirrors the permanent-pickup candidate filter), and the
+-- weekly branch requires no break period holding the date out of its open_feed phase.
+DELETE FROM public.break_optouts WHERE break_id IN (
+  SELECT break_id FROM public.break_periods
+   WHERE ((now() AT TIME ZONE 'America/New_York')::date + 20) BETWEEN start_date AND end_date
+      OR ((now() AT TIME ZONE 'America/New_York')::date + 48) BETWEEN start_date AND end_date);
+DELETE FROM public.break_phase_log WHERE break_id IN (
+  SELECT break_id FROM public.break_periods
+   WHERE ((now() AT TIME ZONE 'America/New_York')::date + 20) BETWEEN start_date AND end_date
+      OR ((now() AT TIME ZONE 'America/New_York')::date + 48) BETWEEN start_date AND end_date);
+DELETE FROM public.break_periods
+ WHERE ((now() AT TIME ZONE 'America/New_York')::date + 20) BETWEEN start_date AND end_date
+    OR ((now() AT TIME ZONE 'America/New_York')::date + 48) BETWEEN start_date AND end_date;
+
+INSERT INTO public.operating_calendar (date, profile_name)
+VALUES
+  (((now() AT TIME ZONE 'America/New_York')::date + 20), 'regular_school_year'),
+  (((now() AT TIME ZONE 'America/New_York')::date + 48), 'regular_school_year')
+ON CONFLICT (date) DO UPDATE SET profile_name = 'regular_school_year';
+
+-- V_near / V_far: one recurring slot (same house, same ISODOW, same 04:00 local time,
+-- 28 days apart). V_near is inside the 30-day horizon, V_far is not.
+-- V_plain: an ordinary temporary_drop vacancy inside the horizon, for contrast.
+-- The overnight hours are used because shift_blocks is UNIQUE on (house_id,
+-- block_start_at) and no house is staffed at 04:00/05:00, so these fixtures never
+-- collide with a seeded block the way a daytime hour would.
+INSERT INTO public.shift_blocks
+  (block_id, house_id, block_start_at, required_headcount)
+VALUES
+  ('f0000005-0000-0000-0000-0000000000f1', 'harnwell',
+   ((((now() AT TIME ZONE 'America/New_York')::date + 20)::timestamp + interval '4 hours')
+     AT TIME ZONE 'America/New_York'), 2),
+  ('f0000005-0000-0000-0000-0000000000f2', 'harnwell',
+   ((((now() AT TIME ZONE 'America/New_York')::date + 48)::timestamp + interval '4 hours')
+     AT TIME ZONE 'America/New_York'), 2),
+  ('f0000005-0000-0000-0000-0000000000f3', 'harnwell',
+   ((((now() AT TIME ZONE 'America/New_York')::date + 20)::timestamp + interval '5 hours')
+     AT TIME ZONE 'America/New_York'), 2),
+  ('f0000005-0000-0000-0000-0000000000f4', 'harnwell',
+   ((((now() AT TIME ZONE 'America/New_York')::date + 34)::timestamp + interval '4 hours')
+     AT TIME ZONE 'America/New_York'), 2);
+
+-- V_offcal: a third occurrence of the SAME slot (+34 days is the same ISODOW and time as
+-- +20) that sits off the regular calendar. It must not be advertised as a permanent
+-- opening, because the permanent-pickup candidate filter would never take it: a slot the
+-- pickup cannot claim would strand in the feed as a phantom "N weeks remaining" card.
+-- 20260617000004 fixed that; 20260627000001 silently reverted it by re-replacing the view
+-- without the filter; 20260724000004 restored it. Assertion 6 below is the regression
+-- guard -- with the filter missing this occurrence inflates weeks_remaining to 3.
+DELETE FROM public.operating_calendar
+ WHERE date = ((now() AT TIME ZONE 'America/New_York')::date + 34);
+
+INSERT INTO public.shift_block_assignments
+  (assignment_id, block_id, user_id, status, vacancy_origin)
+VALUES
+  ('e0000005-1000-0000-0000-0000000000f1',
+   'f0000005-0000-0000-0000-0000000000f1', NULL, 'vacant', 'permanent_drop'),
+  ('e0000005-1000-0000-0000-0000000000f2',
+   'f0000005-0000-0000-0000-0000000000f2', NULL, 'vacant', 'permanent_drop'),
+  ('e0000005-1000-0000-0000-0000000000f3',
+   'f0000005-0000-0000-0000-0000000000f3', NULL, 'vacant', 'temporary_drop'),
+  ('e0000005-1000-0000-0000-0000000000f4',
+   'f0000005-0000-0000-0000-0000000000f4', NULL, 'vacant', 'permanent_drop');
+
+SELECT is(
+  (SELECT count(*) FROM public.worker_open_shifts
+    WHERE eligible_user_id = 'e0000005-0000-0000-0000-000000000099'
+      AND id = 'e0000005-1000-0000-0000-0000000000f1'
+      AND feed = 'weekly')::integer,
+  1,
+  'view: a permanent_drop occurrence inside the 30-day horizon IS a weekly opening (BEH §5.1, §5.3)'
+);
+
+SELECT is(
+  (SELECT count(*) FROM public.worker_open_shifts
+    WHERE eligible_user_id = 'e0000005-0000-0000-0000-000000000099'
+      AND id = 'e0000005-1000-0000-0000-0000000000f1'
+      AND feed = 'permanent_opening')::integer,
+  1,
+  'view: the same occurrence is ALSO a permanent opening (the two feeds overlap)'
+);
+
+SELECT is(
+  (SELECT count(*) FROM public.worker_open_shifts
+    WHERE eligible_user_id = 'e0000005-0000-0000-0000-000000000099'
+      AND id = 'e0000005-1000-0000-0000-0000000000f2'
+      AND feed = 'weekly')::integer,
+  0,
+  'view: an occurrence beyond the 30-day horizon is NOT yet a weekly opening'
+);
+
+SELECT is(
+  (SELECT count(*) FROM public.worker_open_shifts
+    WHERE eligible_user_id = 'e0000005-0000-0000-0000-000000000099'
+      AND id = 'e0000005-1000-0000-0000-0000000000f2'
+      AND feed = 'permanent_opening')::integer,
+  1,
+  'view: the far occurrence is still in the permanent openings feed'
+);
+
+SELECT is(
+  (SELECT weeks_remaining FROM public.worker_open_shifts
+    WHERE eligible_user_id = 'e0000005-0000-0000-0000-000000000099'
+      AND id = 'e0000005-1000-0000-0000-0000000000f1'
+      AND feed = 'weekly'),
+  NULL::integer,
+  'view: the weekly row carries no weeks_remaining (it is one occurrence, not a recurrence)'
+);
+
+SELECT is(
+  (SELECT weeks_remaining FROM public.worker_open_shifts
+    WHERE eligible_user_id = 'e0000005-0000-0000-0000-000000000099'
+      AND id = 'e0000005-1000-0000-0000-0000000000f1'
+      AND feed = 'permanent_opening'),
+  2,
+  'view: the permanent row counts both remaining regular-school-year weeks of the slot'
+);
+
+SELECT is(
+  (SELECT string_agg(feed, ',' ORDER BY feed) FROM public.worker_open_shifts
+    WHERE eligible_user_id = 'e0000005-0000-0000-0000-000000000099'
+      AND id = 'e0000005-1000-0000-0000-0000000000f3'),
+  'weekly',
+  'view: an ordinary vacancy is weekly-only (the overlap is specific to permanent drops)'
+);
+
+SELECT is(
+  (SELECT count(*) FROM public.worker_open_shifts
+    WHERE eligible_user_id = 'e0000005-0000-0000-0000-000000000099'
+      AND id = 'e0000005-1000-0000-0000-0000000000f4'
+      AND feed = 'permanent_opening')::integer,
+  0,
+  'view: a permanent_drop block off the regular calendar is NOT a permanent opening'
+);
+
+SELECT is(
+  (SELECT count(*) FROM public.worker_open_shifts
+    WHERE eligible_user_id = 'e0000005-0000-0000-0000-000000000099'
+      AND id = 'e0000005-1000-0000-0000-0000000000f4'
+      AND feed = 'weekly')::integer,
+  1,
+  'view: it falls through to the weekly feed instead (20260617000004)'
 );
 
 SELECT finish();

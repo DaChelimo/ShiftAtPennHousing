@@ -24,7 +24,11 @@ function OpenCard({
 }) {
   const locked = card.state === 'unpickable';
   return (
-    <Card pad className={`open-card ${locked ? 'is-locked' : ''}`.trim()} data-testid={`open-${card.id}`}>
+    <Card
+      pad
+      className={`open-card ${locked ? 'is-locked' : ''}`.trim()}
+      data-testid={`open-${card.id}`}
+    >
       <Avatar name={card.houseName} size={36} />
       <div className="open-card-body grow">
         <div className="row gap-2" style={{ alignItems: 'center' }}>
@@ -85,7 +89,7 @@ export function OpenShifts({ board }: { board: OpenShiftsBoard }) {
     const res = await claimShift(card.id);
     setBusyId(null);
     if (res.ok) {
-      setToast({ kind: 'ok', message: "Claimed. It is now in My shifts." });
+      setToast({ kind: 'ok', message: 'Claimed. It is now in My shifts.' });
       router.refresh();
     } else {
       setToast({ kind: 'error', message: res.error });
@@ -103,7 +107,10 @@ export function OpenShifts({ board }: { board: OpenShiftsBoard }) {
       />
 
       <Card pad data-testid="open-hours-meter">
-        <div className="row gap-2" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <div
+          className="row gap-2"
+          style={{ justifyContent: 'space-between', alignItems: 'baseline' }}
+        >
           <span className="t-body">This week</span>
           <span className="t-meta">
             {String(board.currentWeekHours)}h of {String(board.hoursCap)}h soft cap
@@ -137,7 +144,7 @@ export function OpenShifts({ board }: { board: OpenShiftsBoard }) {
       ) : (
         <div className="open-feed" data-testid="open-feed">
           {board.cards.map((c) => (
-            <OpenCard key={c.id} card={c} busy={busyId !== null} onAct={onAct} />
+            <OpenCard key={`${c.feed}-${c.id}`} card={c} busy={busyId !== null} onAct={onAct} />
           ))}
         </div>
       )}

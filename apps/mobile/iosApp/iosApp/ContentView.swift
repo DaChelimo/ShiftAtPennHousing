@@ -1514,7 +1514,7 @@ struct ShiftsRootView: View {
                 accent: c.pickupDot
             ) {
                 VStack(spacing: 10) {
-                    ForEach(weeklySplit.upcoming, id: \.id) { openFeedCard($0) }
+                    ForEach(weeklySplit.upcoming, id: \.feedKey) { openFeedCard($0) }
                 }
             }
             .accessibilityIdentifier("home_weekly_feed")
@@ -1533,7 +1533,7 @@ struct ShiftsRootView: View {
                 accent: ShiftColors.resolve(scheme).permanent.accent
             ) {
                 VStack(spacing: 10) {
-                    ForEach(model.state.homeOpen.permanentOpenings, id: \.id) { openFeedCard($0) }
+                    ForEach(model.state.homeOpen.permanentOpenings, id: \.feedKey) { openFeedCard($0) }
                 }
             }
             .accessibilityIdentifier("home_permanent_feed")
@@ -1631,7 +1631,7 @@ struct ShiftsRootView: View {
 
             if pastOpenExpanded {
                 VStack(spacing: 10) {
-                    ForEach(past, id: \.id) { openFeedCard($0) }
+                    ForEach(past, id: \.feedKey) { openFeedCard($0) }
                 }
                 .opacity(0.55)
             }
@@ -1689,7 +1689,7 @@ struct ShiftsRootView: View {
 
             if !collapsed {
                 VStack(spacing: 10) {
-                    ForEach(group.shifts, id: \.id) { openFeedCard($0) }
+                    ForEach(group.shifts, id: \.feedKey) { openFeedCard($0) }
                 }
             }
         }

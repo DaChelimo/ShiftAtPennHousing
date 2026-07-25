@@ -73,7 +73,17 @@ data class OpenShift(
     //                   even if a floater/Allied later fills the desk.
     val deskCovered: Boolean = false,
     val coverageLocked: Boolean = false,
-)
+) {
+    /**
+     * Stable list identity. [id] alone is NOT unique across a mixed feed: a permanently
+     * dropped occurrence inside the 30-day horizon is emitted by `worker_open_shifts` twice,
+     * once as a weekly opening (§5.3, claim this week only) and once as a permanent opening
+     * (§8.4.3, take the whole recurrence), and both rows carry the same assignment_id. Any
+     * list that can hold both kinds at once (the cross-house tab groups them together) must
+     * key on this rather than on [id].
+     */
+    val feedKey: String get() = "${feed.name}|$id"
+}
 
 data class FloatAck(
     val floatId: String,

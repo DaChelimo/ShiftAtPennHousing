@@ -288,6 +288,132 @@ describe('hours-cap handling — soft AND hard both skip (§8.4.3)', () => {
 });
 
 // ---------------------------------------------------------------------
+// Double-vacant blocks — a multi-staff desk whose recurring slot was permanently
+// dropped by BOTH owners (ARCH §7.2 step 3 / step 4c).
+//
+// The scope snapshot comes from `shift_block_assignments`, which is one row per
+// SEAT. On Harnwell (required_headcount 2) or the Quad (3), two owners of the same
+// recurring slot can each permanently drop it, leaving TWO `permanent_drop`
+// vacancies on the SAME block_id. An occurrence is 0.5h once, not once per seat
+// (AGENTS.md hard invariant #5), and the seats of a block are interchangeable —
+// the same "block, not seat" framing as claim_open_shift (20260724000003) and
+// permanent_pickup_slot (20260724000005).
+//
+// Counting the duplicate would project 1.0h for one occurrence, and §8.4.3 skips a
+// cap-exceeding week IN FULL, so the over-projection does not merely trim a block:
+// it silently drops the whole week. It would also emit duplicate ids in
+// assignedBlockIds / skippedBlockIds.
+// ---------------------------------------------------------------------
+
+describe('double-vacant block (multi-staff desk, ARCH §7.2 step 3)', () => {
+  it('a block listed twice counts 0.5h ONCE — the week fits the cap and is not skipped', () => {
+    const result = evaluatePermanentPickup(
+      makePickupInput({
+        weeks: [
+          makePickupWeek({
+            weekStartDate: '2026-11-02',
+            // ONE occurrence, two dropped seats. Deduped: 19.5 + 0.5 = 20.0 (== cap,
+            // allowed). Counting both seats: 19.5 + 1.0 = 20.5 (> 20 → whole-week skip).
+            blocks: [makePickupBlock({ blockId: 'b-dup' }), makePickupBlock({ blockId: 'b-dup' })],
+            currentWeeklyHours: 19.5,
+            capHours: 20,
+            capEnforcement: 'soft',
+          }),
+        ],
+      }),
+    );
+
+    expect(result.weeks[0]).toEqual({
+      weekStartDate: '2026-11-02',
+      status: 'fully_assigned',
+      assignedBlockIds: ['b-dup'],
+      skippedBlockIds: [],
+      skipReason: null,
+    });
+    expect(result.assignedBlockIds).toEqual(['b-dup']);
+    expect(result).toMatchObject({ weeksFullyAssigned: 1, weeksSkipped: 0 });
+  });
+
+  it('duplicate seats never inflate the queued set — one id per block, alongside distinct blocks', () => {
+    const result = evaluatePermanentPickup(
+      makePickupInput({
+        weeks: [
+          makePickupWeek({
+            weekStartDate: '2026-11-02',
+            blocks: [
+              makePickupBlock({ blockId: 'b1' }),
+              makePickupBlock({ blockId: 'b1' }),
+              makePickupBlock({ blockId: 'b2' }),
+            ],
+            currentWeeklyHours: 10,
+            capHours: 20,
+          }),
+        ],
+      }),
+    );
+
+    expect(result.assignedBlockIds).toEqual(['b1', 'b2']);
+    expect(result.weeks[0]?.status).toBe('fully_assigned');
+  });
+
+  it('a genuinely over-cap week is still skipped in full, with one skipped id per block', () => {
+    // Dedupe must not rescue a week that really exceeds the cap: 19.5 + 2 blocks ×
+    // 0.5 = 20.5 > 20. The skip set carries each block ONCE.
+    const result = evaluatePermanentPickup(
+      makePickupInput({
+        weeks: [
+          makePickupWeek({
+            weekStartDate: '2026-11-02',
+            blocks: [
+              makePickupBlock({ blockId: 'b1' }),
+              makePickupBlock({ blockId: 'b1' }),
+              makePickupBlock({ blockId: 'b2' }),
+              makePickupBlock({ blockId: 'b2' }),
+            ],
+            currentWeeklyHours: 19.5,
+            capHours: 20,
+          }),
+        ],
+      }),
+    );
+
+    expect(result.weeks[0]?.status).toBe('skipped');
+    expect(result.weeks[0]?.skipReason).toBe('hours_cap');
+    expect(result.weeks[0]?.skippedBlockIds).toEqual(['b1', 'b2']);
+    expect(result.skippedBlockIds).toEqual(['b1', 'b2']);
+  });
+
+  it('if EITHER seat of a block conflicts, the block conflicts — never double-booked', () => {
+    // Seats of one block are interchangeable, so a disagreement between duplicate
+    // entries resolves to the safe side: skip the block rather than assign it.
+    const result = evaluatePermanentPickup(
+      makePickupInput({
+        weeks: [
+          makePickupWeek({
+            weekStartDate: '2026-11-02',
+            blocks: [
+              makePickupBlock({ blockId: 'b-dup', conflictsWithExisting: false }),
+              makePickupBlock({ blockId: 'b-dup', conflictsWithExisting: true }),
+              makePickupBlock({ blockId: 'b-ok', conflictsWithExisting: false }),
+            ],
+            currentWeeklyHours: 10,
+            capHours: 20,
+          }),
+        ],
+      }),
+    );
+
+    expect(result.weeks[0]).toEqual({
+      weekStartDate: '2026-11-02',
+      status: 'partially_assigned',
+      assignedBlockIds: ['b-ok'],
+      skippedBlockIds: ['b-dup'],
+      skipReason: 'time_conflict',
+    });
+  });
+});
+
+// ---------------------------------------------------------------------
 // Multi-week confirmation summary (§8.4.3 step 4 / ARCH §7.2 step 5): the popup
 // shows total / fully / partial / skipped tallies, and the queued set is the
 // flattened union of every week's assigned blocks.

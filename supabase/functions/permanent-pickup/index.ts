@@ -123,25 +123,35 @@ async function candidateBlocks(
 
   if (error !== null) throw error;
 
-  const matching = ((data ?? []) as AssignmentSnapshot[])
-    .map((assignment) => {
-      const block = nestedOne(assignment.shift_blocks);
-      return {
-        blockId: assignment.block_id,
-        houseId: block.house_id,
-        blockStartAt: block.block_start_at,
-      };
-    })
-    .filter((block) => {
-      const at = new Date(block.blockStartAt);
-      const local = localParts(at);
-      return (
-        at.getTime() > asOf.getTime() &&
-        local.date <= endDate &&
-        local.dayOfWeek === slot.dayOfWeek &&
-        slot.blockStartLocals.includes(local.blockStartLocal)
-      );
+  // `shift_block_assignments` holds one row per SEAT, so a multi-staff desk
+  // (Harnwell required_headcount 2, Quad 3) whose recurring slot was permanently
+  // dropped by BOTH of its owners returns the same block_id twice. The pickup scope
+  // reasons in BLOCKS — 0.5h each (ARCH §7.2 step 4c) — and the seats of a block are
+  // interchangeable, so collapse to one entry per block. Leaving the duplicate in
+  // double-counts the occurrence at 1.0h and can wrongly skip the whole week
+  // `hours_cap` (§8.4.3). Same "block, not seat" framing as claim_open_shift
+  // (20260724000003) and permanent_pickup_slot (20260724000005).
+  const distinct = new Map<string, BlockSnapshot>();
+  for (const assignment of (data ?? []) as AssignmentSnapshot[]) {
+    if (distinct.has(assignment.block_id)) continue;
+    const block = nestedOne(assignment.shift_blocks);
+    distinct.set(assignment.block_id, {
+      blockId: assignment.block_id,
+      houseId: block.house_id,
+      blockStartAt: block.block_start_at,
     });
+  }
+
+  const matching = [...distinct.values()].filter((block) => {
+    const at = new Date(block.blockStartAt);
+    const local = localParts(at);
+    return (
+      at.getTime() > asOf.getTime() &&
+      local.date <= endDate &&
+      local.dayOfWeek === slot.dayOfWeek &&
+      slot.blockStartLocals.includes(local.blockStartLocal)
+    );
+  });
 
   const dates = [
     ...new Set(matching.map((block) => localParts(new Date(block.blockStartAt)).date)),

@@ -489,6 +489,8 @@ The `is_float` and `is_cross_house_pickup` flags are mutually exclusive. Both de
 
 Each 30-minute block at each house with required headcount > 0 has its own row in `shift_blocks`. For a Harnwell weekday from 12:00 to 24:00 with headcount 2, there are 24 block rows × 2 assignments per block = 48 assignment rows per day for that band.
 
+**The seats of a block are interchangeable, so seat allocation is server-side (Behavioral Spec §5.3/§4.4).** An `assignment_id` identifies a row, not a meaningful "lane": which of a block's rows a worker occupies carries no information. Every read model is per-seat (`worker_open_shifts` returns one row per vacant assignment), but the clients coalesce same-span seats of a multi-staff desk into one card with a count ("2 open") carrying a single representative seat's ids (`Coalesce.kt`, `coalesceOpenShifts`). Every client coalesces the same snapshot identically, so concurrent claimers on that card necessarily send the **same** `assignment_id`. Allocation therefore cannot live client-side: `claim_open_shift(assignment_id, user_id, as_of)` treats the id as naming the **block**, runs its guards, then selects one still-`vacant` seat on that block with `ORDER BY (vacancy_origin = 'permanent_drop'), (assignment_id = requested) DESC, assignment_id ... FOR UPDATE SKIP LOCKED LIMIT 1` and claims it. The leading sort term is the Behavioral Spec §5.3 seat-preference rule: ordinary vacancies drain before a seat that is open because its owner permanently dropped the slot, so the recurring slot stays available to `permanent_pickup_slot` as a whole recurrence for as long as the block offers any alternative seat. A `permanent_drop` seat is eligible at all only while its own week is inside the §5.1 30-day horizon (`block_start_at <= as_of + interval '30 days'`) -- the same condition that makes it a weekly card; taking one is the §5.3 single-occurrence temporary claim, and it clears `vacancy_origin` for that occurrence only, leaving every other week of the slot in the permanent openings feed. `claim_open_shift` is unambiguously the temporary path: permanent pickup never routes through it. `SKIP LOCKED` is what makes it true first-come-first-served under real concurrency: a competing transaction's uncommitted seat is stepped over rather than waited on, so claimer 2 takes a free seat immediately instead of blocking and then failing. `shift_unavailable` is raised only when the block has no open seat left. The RPC returns the `assignment_id` it **actually** claimed, which may differ from the one requested; the `claim-shift` Edge Function passes it back and both clients propagate it. `claim_break_blocks` (§4.4 drag) and `permanent_pickup_slot` (§7) already allocate per block the same way; the per-seat `claim_open_shift` was the last holdout and was corrected on 2026-07-24.
+
 **Approach B (storage-optimized but harder to reason about): Range-with-Contiguity-Inference.** Stores ranges and infers blocks at query time. Rejected here in favor of A because the user explicitly prioritized correctness, understandability, and functionality over space.
 
 The system uses Approach A. Storage cost is mitigated by the float-assignment retention policy and by partitioning `shift_block_assignments` by month if growth becomes a concern.
@@ -524,6 +526,10 @@ The `vacancy_origin` field is populated whenever the block transitions to `vacan
 Firing is implemented as `permanent_drop` (for recurring slots) plus `temporary_drop` (for the in-progress block and non-recurring assignments). There is no distinct fired-worker origin value; the firing event is tracked via the worker's account deactivation, not via a separate `vacancy_origin`.
 
 The `permanent_drop` value is what powers the permanent openings feed. The feed query selects blocks with `status = vacant` AND `vacancy_origin = permanent_drop`, grouped by (house, day-of-week, block-start-time) to present them as recurring slots rather than individual blocks.
+
+**The two feeds overlap; they are not a partition (corrected 2026-07-24).** Behavioral Spec §5.1 and §8.4.3 require a permanently-dropped occurrence to surface in the **weekly** feed as well, once that specific week crosses the 30-day horizon, so a worker can take one week of it without owning the rest. The client read model `worker_open_shifts` had instead partitioned the feeds with an exclusive `CASE WHEN vacancy_origin = 'permanent_drop' THEN 'permanent_opening' ELSE 'weekly' END`, which made the §5.3 single-occurrence claim unreachable: the occurrence never rendered as a weekly card, so no worker could originate the claim, and every week of an unwanted slot ran the full escalation chain to paid Allied coverage instead. The view now emits such an occurrence **twice** while it is inside the horizon, once per feed, both rows carrying the same `assignment_id` (migration `20260724000004`). The permanent branch is additionally restricted to `regular_school_year` days, mirroring the permanent-pickup candidate filter so the feed never advertises a slot the pickup cannot take; a `permanent_drop` block off the regular calendar falls through to the weekly branch instead.
+
+Because one `assignment_id` can now back two cards, **card identity is (feed, assignment_id), not assignment_id**. Any list that can hold both kinds at once must key on the pair: the cross-house tab groups weekly and permanent cards together (`OtherHousesTab.grouped`), so `OpenShift.feedKey` exists for exactly this purpose and the SwiftUI `ForEach`es and the web `OpenCard` list key on it. The original phase-05 SQL surfaces `weekly_open_shifts_feed` / `permanent_openings_feed` always modelled the overlap correctly and were never the source of the divergence, but nothing outside pgTAP calls them -- the clients read the view, so the function-level tests passing was not evidence that the behavior shipped.
 
 The `vacant` status is what the orchestrator scans for to identify gaps needing escalation. There is no intermediate `awaiting_allied` status; once HMOD is notified and the HMOD confirms Allied is procured, the block flips to `allied`. Between HMOD notification and HMOD confirmation, the block remains `vacant` (the HMOD's pending action is tracked via the notification, not via the block status). Allied is assumed to be reliable: once HMOD has been notified, Allied is treated as a virtual certainty.
 
@@ -657,6 +663,10 @@ draft_block_assignments
 `draft_block_assignments` mirrors the minimal shape of `shift_block_assignments` but carries no `status` column — every row represents a tentative scheduled assignment. The table has no row for vacant draft blocks; the SM's UI computes "still unassigned" by comparing the dragged span against existing rows for the relevant `period_id` and blocks.
 
 **Visibility.** The workers' calendar query never reads `draft_block_assignments`. Only the schedule-builder UI (scoped to SMs/HMs/BMs of the house) reads it. The orchestrator never reads it (orchestrator operates only on `shift_block_assignments.status = vacant`).
+
+**Builder client structure** (`apps/web/components/builder/`). `gridModel.ts` is pure and React-free: it coalesces `blockId -> userIds` drafts into per-day contiguous runs, lane-packs them for multi-headcount houses, derives ghost seats, and resolves a click to a shift (`findShiftAt`, disambiguated by the pointer's fraction across the column) or a worker to their whole week (`workerWeekShifts`). `Grid.tsx` renders the day columns; `WorkerFocusPanel.tsx` renders the two focus cards; `ScheduleBuilder.tsx` holds state and the writes. The AI preview and the persisted drafts flow through the same model, so a proposed shift explains itself exactly like a drafted one.
+
+The **drag versus click** split (BSpec §4.3) is decided at mouse-up: the gesture is tracked in a ref (not only in state) and the `mouseup` listener is registered once on mount, because a listener attached by an effect keyed on a `dragging` state flag misses a mouse-up that lands in the same task as the mouse-down. Same anchor and hover index over a drafted shift means focus (a pure view state, no write); anything else keeps the pre-existing span-selection path, which is what the e2e drag contract exercises. Full screen is a class on the builder root that takes it `position: fixed; inset: 0` out of the app shell; the AI panel is hidden with CSS rather than unmounted so an in-flight generation survives the toggle.
 
 **Publish operation.** The schedule builder edits a single **template week** (the week
 of the earliest block — the UI shows and drafts only that week). Drafts therefore
@@ -1073,6 +1083,8 @@ The slot_definition identifies blocks currently in `vacant` / `permanent_drop` s
 
 3. Identify candidate blocks: all blocks matching `vacancy_origin = 'permanent_drop'`, the slot's recurring pattern (house_id, day-of-week, block-start-time), date strictly after the moment of the pickup operation, and date within the current operating profile.
 
+   The candidate set is **distinct by `block_id`**. `shift_block_assignments` holds one row per seat, so a multi-staff desk (Harnwell `required_headcount` 2, Quad 3) whose recurring slot was permanently dropped by both of its owners carries two `permanent_drop` vacancies on the same block — the mirror image of the one-seat-per-block claim in step 6. The seats of a block are interchangeable (Section 1.7), and an occurrence is 0.5 hours once, not once per seat, so a block listed per seat would double its contribution to the step 4c projection. Because a cap-exceeding week is skipped **in full**, that over-projection does not merely trim a block — it silently drops the whole week, and it emits duplicate ids in the queued and skipped sets.
+
 4. For each future week in scope:
 
    a. Group the slot's blocks for that specific week.
@@ -1091,7 +1103,30 @@ The slot_definition identifies blocks currently in `vacant` / `permanent_drop` s
 
 6. On user confirmation, execute within a single transaction. The transaction **re-runs time-conflict and cap checks per-week against the live database state** at the time of the transaction, not against the state shown in the confirmation popup. If any week has become ineligible since the popup was shown (e.g., the picker was assigned a conflicting shift between popup and submit, or the cap was lowered), those weeks are silently removed from the queued set before the UPDATE executes. A post-commit summary surfaces any additional skips.
 
+The claim takes **at most one seat per block**. A multi-staff desk (Harnwell `required_headcount` 2, Quad 3) can hold several `permanent_drop` vacancies on the same 30-minute block at once — two owners of the same recurring slot each permanently dropped it, and Section 7.1 vacates one seat per owner. A set-update on `block_id IN (...)` alone would match both seats and put the picker on both, which violates the one-worker-one-seat-per-block rule of Section 1.7 (nothing else catches it: there is no unique index on `(block_id, user_id)`, and the occupied-headcount trigger only compares occupied seats to `required_headcount`, which two seats on a headcount-2 block satisfy no matter who holds them). So the seat is chosen per block, the same way `claim_open_shift` (Section 5.3) and `claim_break_blocks` (Section 4.4 of the Behavioral Spec) choose one:
+
 ```sql
+WITH candidate_blocks AS MATERIALIZED (
+  SELECT DISTINCT sba.block_id
+  FROM shift_block_assignments sba
+  WHERE sba.block_id IN :final_queued_block_ids  -- after in-transaction per-week re-check
+    AND sba.status = 'vacant'
+    AND sba.vacancy_origin = 'permanent_drop'
+),
+chosen AS MATERIALIZED (
+  SELECT seat.assignment_id
+  FROM candidate_blocks cb
+  CROSS JOIN LATERAL (
+    SELECT a.assignment_id
+    FROM shift_block_assignments a
+    WHERE a.block_id = cb.block_id
+      AND a.status = 'vacant'
+      AND a.vacancy_origin = 'permanent_drop'
+    ORDER BY a.assignment_id
+    FOR UPDATE SKIP LOCKED
+    LIMIT 1
+  ) seat
+)
 UPDATE shift_block_assignments sba
 SET
   user_id = :picking_user_id,
@@ -1102,18 +1137,24 @@ SET
     WHEN :slot_house_id != :picking_user_home_house_id THEN :picking_user_home_house_id
     ELSE NULL
   END
-WHERE sba.block_id IN :final_queued_block_ids  -- after in-transaction per-week re-check
+FROM chosen, shift_blocks sb
+WHERE sba.assignment_id = chosen.assignment_id
+  AND sb.block_id = sba.block_id
   AND sba.status = 'vacant'
   AND sba.vacancy_origin = 'permanent_drop';
 ```
 
-The `status = 'vacant'` and `vacancy_origin = 'permanent_drop'` predicates ensure concurrent pickups of the same slot are race-safe: once the first transaction commits, the rows no longer satisfy these predicates and the second transaction silently skips them.
+`DISTINCT ON (block_id)` cannot carry the row lock itself (PostgreSQL rejects `FOR UPDATE` alongside `DISTINCT`), hence the LATERAL `LIMIT 1`.
+
+The `status = 'vacant'` and `vacancy_origin = 'permanent_drop'` predicates ensure concurrent pickups of the same slot are race-safe: once the first transaction commits, the rows no longer satisfy these predicates and the second transaction silently skips them. `FOR UPDATE SKIP LOCKED` covers the not-yet-committed half of the same race, and because it locks exactly one seat per block, two workers picking up the two independently dropped seats of one multi-staff block **split** the seats — the second steps over the first's locked row instead of blocking on it and then finding nothing.
+
+Because the update is one row per block, the returned `assigned_count` is a count of **occurrences** (weeks), which is what the confirmation summary of step 5 and the pickup evaluator both reason in.
 
 The `is_cross_house_pickup` and `source_house_id` fields are set conditionally based on whether the slot's house matches the picker's home house.
 
 7. The picked-up blocks now have `status = 'claimed'`. The picking worker is the current owner.
 
-8. **Permanent feed removal.** Immediately after commit, the slot is removed from the permanent openings feed for this house. This applies regardless of whether the pickup was complete or partial. The permanent feed queries on `vacancy_origin = 'permanent_drop'`; once any block in the slot is claimed, the slot's feed entry reflects only remaining unclaimed occurrences. Skipped weeks are not re-exposed in the permanent feed; they surface individually in the weekly feed as they cross the 30-day horizon.
+8. **Permanent feed removal.** Immediately after commit, the slot is removed from the permanent openings feed for this house. This applies regardless of whether the pickup was complete or partial. The permanent feed queries on `vacancy_origin = 'permanent_drop'`; once any block in the slot is claimed, the slot's feed entry reflects only remaining unclaimed occurrences. Skipped weeks are not re-exposed in the permanent feed; they surface individually in the weekly feed as they cross the 30-day horizon. Mechanically, the skipped weeks are re-flagged to `vacancy_origin = 'temporary_drop'` in the same transaction — one seat per block, by the same LATERAL pick as step 6. Scoping that retirement to one seat matters on a multi-staff desk: retiring _every_ `permanent_drop` seat of a skipped block would strand a co-tenant's independent drop, which no one had picked up and which would then be permanently unpickable.
 
 **Key safety properties:**
 
@@ -1304,7 +1345,9 @@ Mitigation: pending floats are visible on three calendars (Section 6.4). Workers
 
 Risk: two workers simultaneously attempt to permanently pick up the same recurring slot. Both see the slot in the permanent openings feed, both review the confirmation popup, both submit. Without protection, one would overwrite the other.
 
-Mitigation: the permanent pickup UPDATE statement (Section 7.2 step 5) includes `vacancy_origin = 'permanent_drop'` and `status = 'vacant'` as predicates. Once the first transaction commits, the rows have `status = 'claimed'` and the second transaction's predicate fails for those rows. The second worker gets a partial-success result, and the UI surfaces a mid-pickup notification: "X of Y blocks were already claimed by another worker; your pickup affected Z blocks." For the most common case (the entire slot was just picked up), the second worker sees zero affected blocks.
+Mitigation: the permanent pickup UPDATE statement (Section 7.2 step 6) includes `vacancy_origin = 'permanent_drop'` and `status = 'vacant'` as predicates. Once the first transaction commits, the rows have `status = 'claimed'` and the second transaction's predicate fails for those rows. The second worker gets a partial-success result, and the UI surfaces a mid-pickup notification: "X of Y blocks were already claimed by another worker; your pickup affected Z blocks." For the most common case (the entire slot was just picked up), the second worker sees zero affected blocks.
+
+The `FOR UPDATE SKIP LOCKED` seat pick of step 6 handles the same race before either side commits, and it changes the outcome on a multi-staff desk holding two independently dropped seats on the same block: the two pickups take one seat each rather than one of them waiting on the other's lock and then finding nothing. Both workers get a full-success result on that block.
 
 A similar issue could occur if a worker permanently drops a slot at the same moment another worker is in the middle of a permanent pickup of an earlier-state version. Mitigation: same predicate-based race guard. The pickup's predicate requires the blocks to currently be in `permanent_drop` state; if they've already been reassigned, the pickup skips them.
 
@@ -1378,6 +1421,8 @@ Enums: `da_sensitivity_enum` (`general` / `internal` / `restricted`), `da_source
 ### 13.3 Retrieval Is One Function
 
 `match_kb_chunks(requester, query_embedding, k, as_of_date)` is the **only** place retrieval happens. It applies the role/house/sensitivity scope predicate and the temporal filter **inside the function**, before ranking, so no caller can accidentally retrieve out of scope or cite an expired rule. The scope matrix it enforces is mirrored exactly by the pure `scope` predicate in core, so the same decision is unit-testable off-database.
+
+**`house_scope` is `text[]`, not a single house id** (revised 2026-07-24, migration `20260724000002_kb_house_scope_multi`). `NULL` still means shared, applies to every house (unchanged, and cheaper than writing out all 13 ids); a non-null array is the explicit set of houses it applies to, one or more. `da_can_read_item` and its pure mirror `canReadItem` match when the requester's home house is `ANY` of the listed houses, or they hold house-admin over any listed house. Postgres cannot FK an array column's elements, so `validate_kb_house_scope` (a BEFORE INSERT OR UPDATE trigger on both `kb_documents` and `kb_chunks`) enforces every id is a real house and a non-null array is never empty, raising a specific "unknown house id" error rather than the opaque FK-violation an invalid id used to surface at commit time.
 
 Embeddings are **Voyage `voyage-3`, 1024-dimensional** (`VOYAGE_API_KEY`). The dimension is fixed by the column type; changing the model requires a re-embed migration.
 
@@ -1460,6 +1505,11 @@ Behavioral spec Section 19. Lives in `packages/core/src/ai-schedule/` and is, li
 Pipeline: `grid` (block grid, contiguous runs, hours per worker) → `prompt` (system prompt, plan and proposal JSON schemas, repair prompt) → `loop` (plan, propose across perspectives, validate, repair) → `validator` → `scorer` → `finalize`.
 
 - **`validator` is the hard gate.** Harnwell training, headcount, block boundaries, hours cap, and availability are validated as violations, not scored as preferences. An invalid candidate is repaired or dropped; it is never surfaced.
+- **`finalize` is the shape gate** (BSpec §19.1). The two shift-shape rules are `warning`-severity violations in the validator, never `hard`: a misshapen candidate is still feasible, the warnings are fed back into the repair prompt, the scorer penalizes them, and `finalizeSchedule` is what _guarantees_ them on the output. Making them hard would fail whole candidates the prune step cannot repair (it only removes assignments), so the pipeline would return no schedule at all.
+  - `alignment.ts` holds the boundary predicates, pure index arithmetic over one day's sorted blocks. A run may start at index `i` when `minuteOfDay % 60 == 0` **or** `i` opens a contiguous coverage segment, and may end at `i` when `(minuteOfDay + 30) % 60 == 0` **or** `i` closes one. Segment edges are exactly the desk's open and close, so the 05:30 summer opening (`operating_seasons.shift_start_bound`) is legal for free, with no config key and nothing hardcoded.
+  - `finalize` runs three per-day passes: grow existing runs to two hours and onto legal boundaries; fill remaining open seats with maximal legal runs (`maxAlignedLen`); then trim any survivor to its largest legal sub-run (`largestLegalSubRun`), dropping it when there is none. Post-conditions: every run is `>= MIN_RUN_BLOCKS` (4 blocks = 2h) and boundary-legal.
+  - The prompt teaches the same rule rather than relying on repair: the per-day slot table carries a `bound` column marking each slot `S` (may start), `E` (may end), `SE`, or `-`, so the model never has to derive the exception.
+  - `AI_SCORE_WEIGHTS.halfHourBoundaryPenalty` (-5, per offending run end) sits above `idealRunBonus` (+2), so a misaligned run always scores below the same run snapped to the hour.
 - **`scorer` + `weights` are the only tuning surface.** `AI_SCORE_WEIGHTS` centralizes every soft objective. The dominance that matters is pinned by a regression test: `fillableUnfilledSeat` at `-25` outweighs any achievable preference gain, so coverage can never be traded away for preference satisfaction.
 - Unfilled seats are classified **fillable** vs **unfillable** and surfaced either way, so the SM sees what the draft could not do.
 - The LLM is injected behind the `ScheduleLlm` interface, which keeps the agent testable without a network call.

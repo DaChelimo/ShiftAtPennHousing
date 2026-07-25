@@ -854,6 +854,8 @@ A worker who wants to claim a permanently-dropped recurring slot for the remaind
 
 After permanent pickup, the slot is removed from the permanent openings feed regardless of whether the pickup was complete or partial. The worker becomes the new owner for the weeks they picked up. Skipped weeks (due to time conflicts or hours cap violations) do not keep the slot in the permanent openings feed — they surface individually in the weekly feed as they approach the 30-day horizon and undergo standard weekly escalation. There is no mechanism for another worker to permanently pick up only the skipped weeks; partial pickups are final, and skipped weeks are handled exclusively through the weekly open-shifts pathway.
 
+**Multi-staff desks: one pickup consumes one dropped slot.** At a desk staffed by more than one worker at a time (Harnwell 2, Quad 3 — Section 1.2), two owners of the _same_ recurring slot can each permanently drop it, so the same recurring pattern stands open twice. A pickup takes one of them: the picker becomes the owner of one position per occurrence, never two on the same 30-minute block, and the other owner's dropped slot stays in the permanent openings feed for someone else to pick up permanently. The same applies to the weeks a pickup skips — retiring the picked-up slot from the permanent feed does not retire the co-tenant's. Two workers who pick up the two open positions at the same moment both succeed, one position each.
+
 The worker may, at any future point, permanently drop the slot themselves (Section 8.4.1), which returns it to the permanent openings feed with ownership reset to "vacant" — no record of prior owners is retained beyond the calendar's current state.
 
 #### 8.4.4 Boundary Cases

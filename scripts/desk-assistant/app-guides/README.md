@@ -56,15 +56,17 @@ done
 
 ## The guides
 
-| File                             | Covers                                                                                                   |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `getting-around.md`              | The five tabs, the More menu, finding the Assistant, calendar Week/Day view, week hours, week navigation |
-| `dropping-a-shift.md`            | Drop whole / partial / permanent, short-notice warning, what happens after                               |
-| `swapping-a-shift.md`            | Propose a swap, give/take amounts, permanent swap, multi-person, swap vs hand off                        |
-| `handing-off-a-shift.md`         | One-way hand off, choosing a recipient, how it looks to the receiver                                     |
-| `responding-to-swap-requests.md` | Swaps tab, Accept/Decline, cancel outgoing, deadlines                                                    |
-| `claiming-open-shifts.md`        | Claim open shifts, partial claim, cap warnings, permanent pickup                                         |
-| `break-shifts.md`                | Break sign-up calendar, claiming/dropping, no-hours opt-out, open/close timing                           |
-| `house-and-contacts.md`          | House grid, house switcher, calling the desk or a coworker                                               |
-| `float-assignments.md`           | What a float is, hours unchanged, accept/acknowledge/decline, deadlines                                  |
-| `using-the-assistant.md`         | What the Assistant answers, how to open it, when to use it vs a manager                                  |
+| File                             | Covers                                                                                            |
+| -------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `getting-around.md`              | The five tabs, the More menu, finding Snoopy, calendar Week/Day view, week hours, week navigation |
+| `dropping-a-shift.md`            | Drop whole / partial / permanent, short-notice warning, what happens after                        |
+| `swapping-a-shift.md`            | Propose a swap, give/take amounts, permanent swap, multi-person, swap vs hand off                 |
+| `handing-off-a-shift.md`         | One-way hand off, choosing a recipient, how it looks to the receiver                              |
+| `responding-to-swap-requests.md` | Swaps tab, Accept/Decline, cancel outgoing, deadlines                                             |
+| `claiming-open-shifts.md`        | Claim open shifts, partial claim, cap warnings, permanent pickup                                  |
+| `break-shifts.md`                | Break sign-up calendar, claiming/dropping, no-hours opt-out, open/close timing                    |
+| `house-and-contacts.md`          | House grid, house switcher, calling the desk or a coworker                                        |
+| `float-assignments.md`           | What a float is, hours unchanged, accept/acknowledge/decline, deadlines                           |
+| `setting-preferences.md`         | Painting Preferred/Available/Cannot, target weekly hours, no-hours opt-out, deadline states       |
+| `settings-and-account.md`        | Notification toggles, light/dark theme, hour caps, replaying tours, sign out                      |
+| `using-the-assistant.md`         | What Snoopy answers, how to open it, when to use it vs a manager                                  |

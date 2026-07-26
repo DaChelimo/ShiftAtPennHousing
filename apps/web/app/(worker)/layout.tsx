@@ -38,7 +38,7 @@ export default async function WorkerLayout({ children }: { children: React.React
     { href: '/home/updates', label: 'Updates', testId: 'wnav-updates', icon: 'bell' },
     { href: '/home/swaps', label: 'Swaps', testId: 'wnav-swaps', icon: 'swap' },
     { href: '/home/house', label: 'House', testId: 'wnav-house', icon: 'grid' },
-    { href: '/home/assistant', label: 'Assistant', testId: 'wnav-assistant', icon: 'chat' },
+    { href: '/home/assistant', label: 'Ask Snoopy', testId: 'wnav-assistant', icon: 'chat' },
     { href: '/home/preferences', label: 'Preferences', testId: 'wnav-preferences', icon: 'check' },
     { href: '/home/breaks', label: 'Breaks', testId: 'wnav-breaks', icon: 'calendar' },
   ];

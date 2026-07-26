@@ -13,11 +13,11 @@ The app has five tabs along the bottom of the screen. From left to right they ar
 
 # What is in the More menu
 
-Tap More (the last tab on the bottom) to open a sheet titled More. It has five rows: Updates, Preferences, Break shifts, Settings, and Assistant. Updates is your notifications feed. Preferences is where you paint the hours you would like to work. Break shifts is the break sign up calendar. Settings has your account, appearance, and sign out. Assistant is the desk question chatbot. When something needs your attention, a dot appears on the More tab.
+Tap More (the last tab on the bottom) to open a sheet titled More. It has five rows: Updates, Preferences, Break shifts, Settings, and Ask Snoopy. Updates is your notifications feed. Preferences is where you paint the hours you would like to work. Break shifts is the break sign up calendar. Settings has your account, appearance, and sign out. Ask Snoopy is the desk question chatbot. When something needs your attention, a dot appears on the More tab.
 
-# Where do I find the Assistant
+# Where do I find Snoopy
 
-The Assistant lives under More. Tap the More tab at the bottom, then tap Assistant in the sheet. You can also open it from the Ask button that floats on the main screens. Use it to ask desk questions and how to questions about the app. Its answers are grounded in the official documentation and the current duty schedule.
+Snoopy lives under More. Tap the More tab at the bottom, then tap Ask Snoopy in the sheet; the screen opens with the title "Ask Snoopy". You can also open it from the Ask button that floats on the My Shifts screen. Use it to ask desk questions and how to questions about the app. Its answers are grounded in the official documentation and the current duty schedule.
 
 # Reading your calendar
 

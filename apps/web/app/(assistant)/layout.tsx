@@ -15,10 +15,10 @@ export default async function AssistantLayout({ children }: { children: React.Re
       <header className="sticky top-0 z-10 border-b border-border-subtle bg-surface px-4 py-3">
         <div className="mx-auto flex max-w-3xl items-center gap-2">
           <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-brand text-sm font-semibold text-text-on-color">
-            DA
+            S
           </span>
           <div className="leading-tight">
-            <div className="text-sm font-semibold">Desk Assistant</div>
+            <div className="text-sm font-semibold">Ask Snoopy</div>
             <div className="text-xs text-text-secondary">{user.name}</div>
           </div>
         </div>

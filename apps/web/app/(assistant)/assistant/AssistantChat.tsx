@@ -59,7 +59,7 @@ export function AssistantChat({ surface, desk = false }: { surface: string; desk
         body: JSON.stringify({ question, conversationId, surface }),
       });
       if (!resp.ok || resp.body === null) {
-        throw new Error('The assistant could not be reached. Try again.');
+        throw new Error('Snoopy could not be reached. Try again.');
       }
 
       const reader = resp.body.getReader();
@@ -116,7 +116,7 @@ export function AssistantChat({ surface, desk = false }: { surface: string; desk
         setMessages((prev) => prev.filter((m) => m.id !== assistantId));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not reach the assistant service.');
+      setError(e instanceof Error ? e.message : 'Could not reach Snoopy.');
       setMessages((prev) => prev.filter((m) => m.id !== assistantId));
     } finally {
       setLoading(false);

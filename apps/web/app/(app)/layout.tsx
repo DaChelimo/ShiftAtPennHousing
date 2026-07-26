@@ -81,7 +81,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     });
     nav.push({
       href: '/assistant',
-      label: 'Assistant',
+      label: 'Ask Snoopy',
       testId: 'nav-assistant',
       icon: 'chat',
       group: 'Operate',

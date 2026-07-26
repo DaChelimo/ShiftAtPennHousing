@@ -137,7 +137,7 @@ export function AssistantView({
         body: JSON.stringify({ question, conversationId, surface: 'web' }),
       });
       if (!resp.ok || resp.body === null) {
-        throw new Error('The assistant could not be reached. Try again.');
+        throw new Error('Snoopy could not be reached. Try again.');
       }
 
       const reader = resp.body.getReader();
@@ -203,7 +203,7 @@ export function AssistantView({
         patchAssistant(assistantId, { streaming: false });
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not reach the assistant service.');
+      setError(e instanceof Error ? e.message : 'Could not reach Snoopy.');
       setMessages((prev) => prev.filter((m) => m.id !== assistantId));
     } finally {
       setStreaming(false);
@@ -328,7 +328,7 @@ export function AssistantView({
               <span className="da-hero-glyph da-hero-glyph-sm" aria-hidden>
                 <Icon name="chat" size={16} />
               </span>
-              Desk Assistant
+              Ask Snoopy
             </div>
             <button
               type="button"
@@ -362,7 +362,7 @@ export function AssistantView({
                     )}
                     <div className="da-bubble">
                       {m.content === '' && m.streaming ? (
-                        <span className="da-typing" aria-label="Assistant is typing">
+                        <span className="da-typing" aria-label="Snoopy is typing">
                           <span />
                           <span />
                           <span />

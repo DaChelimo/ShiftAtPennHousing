@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Status-bar small icon. Android masks setSmallIcon() to a solid colour (usually
+  white) using only the drawable's ALPHA channel — RGB is discarded. ic_launcher is
+  opaque everywhere (it bakes in the #F4F3F0 background layer), so using it there
+  renders as a solid coloured square, not a recognisable glyph. This reuses the
+  brand mark's monochrome geometry (see ic_launcher_monochrome.xml) — opaque glyph,
+  transparent elsewhere — which is exactly the shape a status-bar icon needs.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="0.7391"
+        android:scaleY="0.7391"
+        android:translateX="17.0450"
+        android:translateY="16.0582">
+        <path android:fillColor="#FFFFFFFF" android:pathData="M17.4466 52.6062L50 17.8826L82.5534 52.6062L77.4466 57.3938L50 28.1174L22.5534 57.3938Z"/>
+        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M14.8932 75.2124L50 37.7652L85.1068 75.2124L74.8932 84.7876L50 58.2348L25.1068 84.7876ZM44.8 48a5.2 5.2 0 1 0 10.4 0a5.2 5.2 0 1 0 -10.4 0ZM31.1212 62.5907a5.2 5.2 0 1 0 10.4 0a5.2 5.2 0 1 0 -10.4 0ZM58.4788 62.5907a5.2 5.2 0 1 0 10.4 0a5.2 5.2 0 1 0 -10.4 0Z"/>
+    </group>
+</vector>

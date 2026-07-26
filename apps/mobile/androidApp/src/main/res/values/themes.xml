@@ -2,4 +2,15 @@
 <resources>
 
     <style name="Theme.ShiftPennHousing" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- Cold-start splash (androidx.core.splashscreen, installSplashScreen() in
+         MainActivity.kt). windowSplashScreenBackground matches the app's real light
+         background so there is no color flash before the first Compose frame; the
+         "SHIFT AT PENN" wordmark itself is rendered by an in-app Compose overlay
+         (ui/SplashOverlay.kt) rather than windowSplashScreenAnimatedIcon, because that
+         slot is sized/masked for a small square icon and clips a wide horizontal lockup. -->
+    <style name="Theme.ShiftPennHousing.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="postSplashScreenTheme">@style/Theme.ShiftPennHousing</item>
+    </style>
 </resources>

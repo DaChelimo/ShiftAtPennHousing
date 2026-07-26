@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { IBM_Plex_Mono, IBM_Plex_Sans } from 'next/font/google';
+import { IBM_Plex_Mono, IBM_Plex_Sans, Roboto_Slab } from 'next/font/google';
 import './globals.css';
 
 // IBM Plex — Carbon's type pair: Plex Sans for UI, Plex Mono for times/IDs.
@@ -16,6 +16,17 @@ const ibmPlexMono = IBM_Plex_Mono({
   variable: '--font-ibm-plex-mono',
   subsets: ['latin'],
   weight: ['400', '500', '600'],
+  display: 'swap',
+});
+
+// Roboto Slab — the wordmark next to the crest ("SHIFT", bold), per the
+// locked-in brand decision in docs/design/brand-source/README.md. Same
+// self-hosting pattern as the Plex pair above, exposed as `--font-roboto-slab`
+// and consumed by the `.brand-wordmark` rule in globals.css.
+const robotoSlab = Roboto_Slab({
+  variable: '--font-roboto-slab',
+  subsets: ['latin'],
+  weight: ['700'],
   display: 'swap',
 });
 
@@ -45,7 +56,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${ibmPlexSans.variable} ${ibmPlexMono.variable} h-full antialiased`}
+      className={`${ibmPlexSans.variable} ${ibmPlexMono.variable} ${robotoSlab.variable} h-full antialiased`}
     >
       <body className="min-h-full">
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.ShiftPennHousing" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- Dark-mode cold-start splash. Same structure as values/themes.xml; only
+         @color/splash_background resolves differently here (values-night/colors.xml). -->
+    <style name="Theme.ShiftPennHousing.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="postSplashScreenTheme">@style/Theme.ShiftPennHousing</item>
+    </style>
+</resources>

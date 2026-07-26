@@ -56,12 +56,7 @@
 }
 .login-wordmark {
   font-size: 16px;
-  font-weight: 600;
   letter-spacing: 0.01em;
-}
-.login-wordmark .brand-at {
-  color: #6aa3ff;
-  font-weight: 700;
 }
 
 .login-pitch {
@@ -110,9 +105,6 @@
 }
 .login-form-lockup .login-wordmark {
   color: var(--text-primary);
-}
-.login-form-lockup .login-wordmark .brand-at {
-  color: var(--brand);
 }
 
 .login-heading {

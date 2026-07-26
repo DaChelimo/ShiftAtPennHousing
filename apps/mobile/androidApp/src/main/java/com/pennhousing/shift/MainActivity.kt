@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -80,6 +81,7 @@ import com.pennhousing.shift.ui.ShiftsActions
 import com.pennhousing.shift.ui.ShiftsApp
 import com.pennhousing.shift.ui.ShiftsHostState
 import com.pennhousing.shift.ui.ShiftsViewModels
+import com.pennhousing.shift.ui.SplashOverlay
 import com.pennhousing.shift.ui.kit.SkeletonShiftCard
 import com.pennhousing.shift.ui.theme.ShiftTheme
 import com.pennhousing.shift.ui.theme.ThemePrefs
@@ -106,6 +108,14 @@ import kotlin.time.Instant
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Cold-start splash (Theme.ShiftPennHousing.Splash in the manifest supplies the
+        // background). Kept on screen until the first Compose frame attaches below, at
+        // which point SplashOverlay takes over showing the full lockup wordmark, since
+        // the OS icon slot clips a wide image. See ui/SplashOverlay.kt.
+        val splashScreen = installSplashScreen()
+        var keepNativeSplash = true
+        splashScreen.setKeepOnScreenCondition { keepNativeSplash }
+
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         // The POST_NOTIFICATIONS runtime request is no longer fired cold on launch. It is
@@ -120,7 +130,11 @@ class MainActivity : ComponentActivity() {
         val launchFloatAckId = parseFloatAckDeepLink(intent?.dataString)
 
         setContent {
-            if (backendConfigured) {
+            LaunchedEffect(Unit) { keepNativeSplash = false }
+            var showAppSplash by remember { mutableStateOf(true) }
+            if (showAppSplash) {
+                SplashOverlay(onFinished = { showAppSplash = false })
+            } else if (backendConfigured) {
                 LiveOrLoginRoot(launchFloatAckId)
             } else {
                 DemoRoot(launchFloatAckId)

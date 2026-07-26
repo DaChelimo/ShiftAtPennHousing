@@ -36,6 +36,14 @@
   --color-border-strong: var(--border-strong);
 }
 
+/* The "SHIFT" wordmark next to the crest, everywhere Logo.tsx renders it.
+   Roboto Slab bold, self-hosted via next/font (app/layout.tsx). Call sites
+   layer their own color/size/spacing on top via their own class names. */
+.brand-wordmark {
+  font-family: var(--font-roboto-slab), "Roboto Slab", serif;
+  font-weight: 700;
+}
+
 :root {
   /* Brand / interactive */
   --brand: #0061fc;
@@ -82,9 +90,9 @@
   --st-out-bd: #e8daff;
   --st-pending: #b28600;
   --st-pending-bg: #fcf4d6;
-  --st-allied-bg: #d9fbfb;
-  --st-allied-fg: #007d79;
-  --st-allied-bd: #9ef0f0;
+  --st-allied-bg: #000000;
+  --st-allied-fg: #ffffff;
+  --st-allied-bd: #000000;
   --st-break-bd: #f1c21b;
   --st-vacant-bd: #c6c6c6;
   --st-vacant-fg: #6f6f6f;
@@ -180,9 +188,11 @@
   --st-out-bd: rgba(138, 63, 252, 0.55);
   --st-pending: #f1c21b;
   --st-pending-bg: rgba(241, 194, 27, 0.18);
-  --st-allied-bg: rgba(0, 125, 121, 0.2);
-  --st-allied-fg: #3ddbd9;
-  --st-allied-bd: rgba(0, 125, 121, 0.55);
+  /* Solid black in dark theme too, so Allied reads identically in both. The border
+     is lifted to a light stroke because pure black has no edge against a dark ground. */
+  --st-allied-bg: #000000;
+  --st-allied-fg: #ffffff;
+  --st-allied-bd: rgba(255, 255, 255, 0.45);
   --st-vacant-bd: #525252;
   --st-vacant-fg: #a8a8a8;
   --st-perm-bg: rgba(238, 83, 150, 0.16);
@@ -1189,12 +1199,6 @@ textarea {
   color: #fff;
   text-decoration: none;
 }
-/* The mark reverses out of the near-black header; the wordmark's @ stays the
-   pivot. Penn red has no contrast on this ground, so the accent carries it. */
-.hdr-brand .brand-at {
-  color: var(--brand);
-  font-weight: 700;
-}
 .hdr-sep {
   width: 1px;
   height: 24px;
@@ -1874,6 +1878,120 @@ textarea {
 .statcard-label {
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+/* ---------- Hours report worker cards ---------- */
+.hcards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.hcard {
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+}
+.hcard-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.hcard-worker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.hcard-stats {
+  display: flex;
+  align-items: flex-start;
+  gap: 22px;
+  flex-wrap: wrap;
+}
+.hcard-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 48px;
+}
+.hcard-stat-num {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.hcard-stat-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.hchip-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.hchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 99px;
+  border: 1px solid var(--st-out-bd);
+  background: var(--st-out-bg);
+  color: var(--st-out-fg);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.hchip:hover:not(:disabled) {
+  filter: brightness(0.96);
+}
+.hchip:disabled {
+  cursor: default;
+}
+.hchip-empty {
+  background: var(--surface-3);
+  color: var(--text-secondary);
+  border-color: var(--border-subtle);
+}
+.hchip-count {
+  background: color-mix(in srgb, var(--st-out-fg) 16%, transparent);
+  border-radius: 99px;
+  padding: 1px 6px;
+  font-size: 11px;
+}
+.hcard-detail {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 280px;
+}
+.hcard-shift-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: 13px;
+}
+.hcard-shift-day {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.hcard-shift-time {
+  color: var(--text-secondary);
+}
+.hcard-shift-dur {
+  color: var(--st-out-fg);
+  font-weight: 600;
 }
 
 /* ---------- Upload dropzone + file rows ---------- */
@@ -3097,24 +3215,97 @@ textarea {
   color: var(--brand);
 }
 
-/* Open shifts feed */
-.open-feed {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.open-card {
+/* Open shifts: filter row + "always sorted" note above a fluid day-grouped
+   card grid. */
+.open-toprow {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.open-sort-note {
+  white-space: nowrap;
+}
+
+/* Fluid card grid: as many ~300px columns as the container affords (1 on a
+   phone, 2 on a tablet, 3 at the 1320px page cap), so a long feed reads
+   without a full-width row per shift. Day dividers span every column. */
+.open-feed {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 14px;
+  align-items: start;
+  margin-top: 12px;
+}
+.open-day-divider {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  padding: 14px 2px 4px;
+}
+.open-day-divider:first-child {
+  padding-top: 0;
+}
+
+/* Boarding-pass card: a date/duration strip, then the start-end time as the
+   single largest number on the card. Deliberately rounded, unlike the square
+   structural card default. */
+.open-card {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
 }
 .open-card.is-locked {
   opacity: 0.6;
 }
+.open-card.is-home {
+  border-color: var(--brand-subtle-border);
+  box-shadow: 0 0 0 1px var(--brand-subtle-border) inset;
+}
+.open-card-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: var(--field);
+  border-bottom: 1px dashed var(--border-subtle);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
 .open-card-body {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 8px;
+  padding: 14px 14px 16px;
+  min-width: 0;
+}
+.open-card-time {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.open-card-house {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.open-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 22px;
+}
+/* Pin the action to the bottom so cards of unequal height line up. */
+.open-card-action {
+  margin-top: auto;
 }
 .claim-meter {
   height: 6px;

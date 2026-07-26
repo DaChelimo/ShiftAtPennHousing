@@ -1,65 +1,40 @@
-import {
-  BRAND_COLORS,
-  BRAND_LOWER_PATH,
-  BRAND_UPPER_PATH,
-  BRAND_UPPER_PATH_MONO,
-  BRAND_VIEW_BOX,
-} from '../../lib/brandPaths';
+import Image from 'next/image';
 
 /**
- * The chevronel. Path data is generated from scripts/brand/geometry.mjs, the
- * same source as the favicon, the iOS AppIcon and the Android adaptive icon —
- * so this cannot drift from them. See docs/design/logo.md.
- *
- * Variants exist because Penn red on Penn navy has no usable contrast: on a
- * dark ground the upper chevron lifts to a muted blue and the lower goes white,
- * rather than trying to keep the red.
+ * The Penn shield crest, cropped from source PNGs supplied by the product
+ * owner (no vector source exists yet). See docs/design/brand-source/README.md
+ * for provenance and the crest's use everywhere else (mobile splash, app
+ * icons). The crest is used exactly as supplied, unmodified, on every
+ * background including the dark header chrome, per the locked-in decision
+ * recorded there.
  */
 export type LogoVariant = 'color' | 'reversed' | 'mono';
 
 export function LogoMark({
   size = 24,
-  variant = 'color',
+  variant, // eslint-disable-line @typescript-eslint/no-unused-vars -- kept for call-site compatibility; the crest itself is variant-agnostic (see docs/design/brand-source/README.md)
   className,
 }: {
   size?: number;
   variant?: LogoVariant;
   className?: string;
 }) {
-  const mono = variant === 'mono';
-  const upper = mono
-    ? 'currentColor'
-    : variant === 'reversed'
-      ? BRAND_COLORS.ghost
-      : BRAND_COLORS.red;
-  const lower = mono ? 'currentColor' : variant === 'reversed' ? '#FFFFFF' : BRAND_COLORS.navy;
-
   return (
-    <svg
-      viewBox={BRAND_VIEW_BOX}
+    <Image
+      src="/brand/crest.png"
+      alt="Shift"
       width={size}
       height={size}
       className={className}
-      role="img"
-      aria-label="Shift@PennHousing"
-      focusable="false"
-    >
-      <path fill={upper} d={mono ? BRAND_UPPER_PATH_MONO : BRAND_UPPER_PATH} />
-      <path fill={lower} fillRule="evenodd" d={BRAND_LOWER_PATH} />
-    </svg>
+      style={{ width: size, height: size, objectFit: 'contain' }}
+      priority
+    />
   );
 }
 
-/**
- * The name, set on one line. The `@` is the only red in the wordmark and sits
- * where the name pivots, which is the job the red chevron does in the mark.
- */
+/** The wordmark, set in Roboto Slab bold per the locked-in brand decision. */
 export function Wordmark({ className }: { className?: string }) {
-  return (
-    <span className={className}>
-      Shift<span className="brand-at">@</span>PennHousing
-    </span>
-  );
+  return <span className={`brand-wordmark ${className ?? ''}`.trim()}>SHIFT</span>;
 }
 
 /** Mark plus wordmark, the horizontal lockup. */

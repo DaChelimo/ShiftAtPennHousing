@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Cold-start splash background (Theme.ShiftPennHousing.Splash in themes.xml). Must
+         stay pixel-identical to the app's real light theme background,
+         ui/theme/Color.kt L.bg, so there is no flash between the OS splash and the first
+         Compose frame. Overridden for dark mode in values-night/colors.xml. -->
+    <color name="splash_background">#F6F7F9</color>
+</resources>

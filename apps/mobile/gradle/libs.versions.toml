@@ -7,6 +7,7 @@ agp = "8.13.1"
 kotlin = "2.2.21"
 composeBom = "2025.11.00"
 androidx-activityCompose = "1.11.0"
+androidx-core-splashscreen = "1.0.1"
 androidx-lifecycle = "2.9.4"
 kotlinx-coroutines = "1.10.2"
 kotlinxDatetime = "0.7.1-0.6.x-compat"
@@ -52,6 +53,9 @@ kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotl
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
 # --- androidApp ---
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activityCompose" }
+# Cold-start splash screen (androidx.core.splashscreen) — installSplashScreen() in
+# MainActivity.kt, theme in values/themes.xml + values-night/themes.xml.
+androidx-core-splashscreen = { module = "androidx.core:core-splashscreen", version.ref = "androidx-core-splashscreen" }
 androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "androidx-lifecycle" }
 androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "androidx-lifecycle" }
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }

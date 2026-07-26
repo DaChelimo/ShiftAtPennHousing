@@ -15,21 +15,25 @@ import {
 
 describe('overlay helpers', () => {
   it('isHomeOverlay only for a matching non-null house', () => {
-    expect(isHomeOverlay('quad', 'quad')).toBe(true);
-    expect(isHomeOverlay('quad', 'harnwell')).toBe(false);
+    expect(isHomeOverlay(['quad'], 'quad')).toBe(true);
+    expect(isHomeOverlay(['quad'], 'harnwell')).toBe(false);
     expect(isHomeOverlay(null, 'quad')).toBe(false);
-    expect(isHomeOverlay('quad', null)).toBe(false);
+    expect(isHomeOverlay(['quad'], null)).toBe(false);
+  });
+
+  it('isHomeOverlay matches any house in a multi-house scope', () => {
+    expect(isHomeOverlay(['quad', 'harnwell'], 'harnwell')).toBe(true);
   });
 
   it('overlayBoost is the tolerance for a home overlay, else 0', () => {
-    expect(overlayBoost('quad', 'quad')).toBe(OVERLAY_TOLERANCE);
-    expect(overlayBoost('quad', 'harnwell')).toBe(0);
+    expect(overlayBoost(['quad'], 'quad')).toBe(OVERLAY_TOLERANCE);
+    expect(overlayBoost(['quad'], 'harnwell')).toBe(0);
     expect(overlayBoost(null, 'quad')).toBe(0);
   });
 });
 
 describe('applyOverlayPrecedence', () => {
-  const item = (chunkId: string, similarity: number, houseScope: string | null) => ({
+  const item = (chunkId: string, similarity: number, houseScope: string[] | null) => ({
     chunkId,
     similarity,
     houseScope,
@@ -37,7 +41,7 @@ describe('applyOverlayPrecedence', () => {
 
   it('a home overlay wins over a shared chunk within tolerance', () => {
     const ranked = applyOverlayPrecedence(
-      [item('shared', 0.8, null), item('overlay', 0.76, 'quad')],
+      [item('shared', 0.8, null), item('overlay', 0.76, ['quad'])],
       'quad',
     );
     expect(ranked[0]!.chunkId).toBe('overlay'); // 0.76 + 0.05 = 0.81 > 0.80
@@ -45,7 +49,7 @@ describe('applyOverlayPrecedence', () => {
 
   it('a clearly better shared chunk still wins beyond tolerance', () => {
     const ranked = applyOverlayPrecedence(
-      [item('shared', 0.8, null), item('overlay', 0.74, 'quad')],
+      [item('shared', 0.8, null), item('overlay', 0.74, ['quad'])],
       'quad',
     );
     expect(ranked[0]!.chunkId).toBe('shared'); // 0.74 + 0.05 = 0.79 < 0.80
@@ -53,7 +57,7 @@ describe('applyOverlayPrecedence', () => {
 
   it('a non-home overlay gets no boost', () => {
     const ranked = applyOverlayPrecedence(
-      [item('shared', 0.8, null), item('harnwell', 0.76, 'harnwell')],
+      [item('shared', 0.8, null), item('harnwell', 0.76, ['harnwell'])],
       'quad',
     );
     expect(ranked[0]!.chunkId).toBe('shared');
@@ -61,7 +65,7 @@ describe('applyOverlayPrecedence', () => {
 
   it('no home house → pure similarity order', () => {
     const ranked = applyOverlayPrecedence(
-      [item('overlay', 0.76, 'quad'), item('shared', 0.8, null)],
+      [item('overlay', 0.76, ['quad']), item('shared', 0.8, null)],
       null,
     );
     expect(ranked.map((r) => r.chunkId)).toEqual(['shared', 'overlay']);
@@ -70,7 +74,7 @@ describe('applyOverlayPrecedence', () => {
 
 describe('selectContext with requesterHouseId', () => {
   const shared: ItemScope = { houseScope: null, sensitivity: 'general', allowedRoles: [] };
-  const quadScope: ItemScope = { houseScope: 'quad', sensitivity: 'general', allowedRoles: [] };
+  const quadScope: ItemScope = { houseScope: ['quad'], sensitivity: 'general', allowedRoles: [] };
 
   function quadSw(): RequesterContext {
     return {

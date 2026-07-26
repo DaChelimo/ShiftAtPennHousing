@@ -372,6 +372,7 @@ async function extractPdfConcurrent(
 async function claudeProposeStream(
   text: string,
   anchorDate: string,
+  houseIds: readonly string[],
   onDelta: (chunk: string) => void,
 ): Promise<{
   doc: ProposedDoc | null;
@@ -397,7 +398,7 @@ async function claudeProposeStream(
       // their exact token cap, not a model mistake. 16384 gives real dense
       // documents room to finish while staying well under Sonnet's ceiling.
       max_tokens: 16384,
-      system: proposeSystemPrompt(anchorDate),
+      system: proposeSystemPrompt(anchorDate, houseIds),
       messages: [{ role: 'user', content: text }],
       stream: true,
     }),
@@ -600,12 +601,16 @@ export async function runIntakePipeline(
       ? `Combining ${extractionMetrics.pageCount ?? '?'} page(s) into one proposal`
       : 'Drafting a proposal with the assistant',
   );
+  const { data: houseRows } = await db.from('houses').select('id');
+  const houseIds = ((houseRows as { id: string }[] | null) ?? []).map((h) => h.id);
+
   const proposeStartedAt = Date.now();
   let proposeResult: Awaited<ReturnType<typeof claudeProposeStream>>;
   try {
     proposeResult = await claudeProposeStream(
       normalized.text,
       nyDate(new Date(rec.created_at)),
+      houseIds,
       (delta) => {
         emit({ t: 'propose-delta', text: delta });
       },

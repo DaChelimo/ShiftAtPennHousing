@@ -14,7 +14,7 @@ export interface KbDocMeta {
   title: string;
   sourceType: SourceType;
   sourceRef: string;
-  houseScope: string | null;
+  houseScope: string[] | null;
   sensitivity: Sensitivity;
   allowedRoles: DeskRole[];
   /** Document-level window; defaults to durable. Chunks may carry narrower windows. */
@@ -32,7 +32,7 @@ export interface KbDocumentRow {
   title: string;
   source_type: SourceType;
   source_ref: string;
-  house_scope: string | null;
+  house_scope: string[] | null;
   sensitivity: Sensitivity;
   allowed_roles: DeskRole[];
   temporality: EffectiveWindow['temporality'];
@@ -43,7 +43,7 @@ export interface KbDocumentRow {
 export interface KbChunkRow {
   chunk_index: number;
   content: string;
-  house_scope: string | null;
+  house_scope: string[] | null;
   sensitivity: Sensitivity;
   allowed_roles: DeskRole[];
   token_count: number;

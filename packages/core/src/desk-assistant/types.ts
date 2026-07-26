@@ -16,11 +16,12 @@ export type SourceType =
 
 /**
  * The scope tags every retrievable knowledge item carries (V1_SCOPE §6.3).
- * `houseScope === null` is the shared rule corpus (all 13 houses); a non-null
- * value is the per-house overlay. `allowedRoles` empty = every role may read.
+ * `houseScope === null` is the shared rule corpus (all 13 houses); a non-null,
+ * non-empty array is the set of houses the per-house overlay applies to (one or
+ * more, never zero). `allowedRoles` empty = every role may read.
  */
 export interface ItemScope {
-  houseScope: string | null;
+  houseScope: string[] | null;
   sensitivity: Sensitivity;
   allowedRoles: DeskRole[];
 }

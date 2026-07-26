@@ -23,7 +23,10 @@ export default async function KnowledgePage() {
         sub="Upload guides, binders, and emails. The assistant drafts the metadata and time windows; you review and approve."
       />
       {canManage ? (
-        <KnowledgeIntakeLoader />
+        <KnowledgeIntakeLoader
+          isProjectAdmin={isAdmin(user)}
+          currentUserHouseId={user.homeHouseId}
+        />
       ) : (
         <Notification kind="warning" title="Managers only" testId="knowledge-unauthorized">
           Only Housing Managers, Building Managers, and RSMs may manage the knowledge base.
@@ -33,7 +36,13 @@ export default async function KnowledgePage() {
   );
 }
 
-async function KnowledgeIntakeLoader() {
+async function KnowledgeIntakeLoader({
+  isProjectAdmin,
+  currentUserHouseId,
+}: {
+  isProjectAdmin: boolean;
+  currentUserHouseId: string;
+}) {
   const res = await loadIntakeQueue();
   if (!res.ok) {
     return (
@@ -46,5 +55,12 @@ async function KnowledgeIntakeLoader() {
   // free-typed id) so an operator can't typo a house scope into a silent no-match.
   const svc = createServiceClient();
   const { data: houseRows } = await svc.from('houses').select('id, name').order('name');
-  return <KnowledgeIntake initial={res.data} houses={houseRows ?? []} />;
+  return (
+    <KnowledgeIntake
+      initial={res.data}
+      houses={houseRows ?? []}
+      isProjectAdmin={isProjectAdmin}
+      currentUserHouseId={currentUserHouseId}
+    />
+  );
 }

@@ -30,7 +30,12 @@ export interface ProposedDoc {
   title: string;
   sourceType: SourceType;
   sourceRef: string;
-  houseScope: string | null;
+  /**
+   * null = shared/cross-house; a non-empty array = the houses it applies to. The
+   * proposer only ever guesses at most one house (see proposeSystemPrompt); an
+   * operator may broaden or narrow the set in the review step before approving.
+   */
+  houseScope: string[] | null;
   sensitivity: Sensitivity;
   allowedRoles: DeskRole[];
   items: ProposedItem[];
@@ -55,14 +60,17 @@ const TEMPORALITIES: readonly Temporality[] = ['durable', 'until_superseded', 'e
  * Instruction for the propose pass. `anchorDate` (the source's own date) is injected so
  * relative dates resolve absolutely. Claude must return strict JSON matching ProposedDoc.
  */
-export function proposeSystemPrompt(anchorDate: string): string {
+export function proposeSystemPrompt(anchorDate: string, houseIds: readonly string[]): string {
   return [
     'You prepare housing-desk source documents for a knowledge base. You will receive',
     `normalized text. The source is dated ${anchorDate}; resolve every relative date`,
     '("tomorrow", "next Tuesday", "this weekend") to an absolute YYYY-MM-DD using that',
     'anchor. Return ONLY a JSON object with these fields:',
     '- title, sourceType (one of hm_guide|house_binder|summer_binder|incident_lesson|app_guide|fixture),',
-    '  sourceRef (a short human citation label), houseScope (a house id or null for shared),',
+    '  sourceRef (a short human citation label), houseScope (null for a shared/cross-house',
+    `  document, otherwise EXACTLY one of these house ids: ${houseIds.join('|')}. Never invent`,
+    '  an id, abbreviation, or house name that is not in that exact list -- if the document',
+    '  names a house you cannot map to one of these ids with confidence, use null instead.',
     '  sensitivity (general|internal|restricted), allowedRoles (array; empty = all roles).',
     '- items: array. Split the document into individual facts. For each item set:',
     '  content (the rule text); kind; window {temporality, effectiveFrom, effectiveUntil};',
@@ -126,11 +134,14 @@ export function parseProposedDoc(raw: unknown): ProposedDoc | null {
   }
   if (typeof raw.sourceRef !== 'string' || raw.sourceRef.trim().length === 0) return null;
 
+  // The proposer prompt asks Claude for a single house id or null; the pipeline
+  // wraps that guess into the array shape everything downstream (KbDocMeta,
+  // ItemScope, the review-step house picker) uses.
   const houseScope =
     raw.houseScope === null || raw.houseScope === undefined
       ? null
       : typeof raw.houseScope === 'string'
-        ? raw.houseScope
+        ? [raw.houseScope]
         : undefined;
   if (houseScope === undefined) return null;
 

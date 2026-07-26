@@ -9,7 +9,7 @@ import { type ReactNode, useState } from 'react';
 
 import type { CommittedChunk } from '../../lib/actions/kbIntake';
 import type { IntakeMetrics } from '../../lib/kbIntakePipeline';
-import { DataTable, IconButton, Tag, type Column, type TagKind } from '../ui';
+import { IconButton, Tag, type TagKind } from '../ui';
 
 function formatUsd(v: number): string {
   return `$${v.toFixed(4)}`;
@@ -205,45 +205,25 @@ function ChunkTable({ chunks, deleted }: { chunks: CommittedChunk[]; deleted: bo
       </div>
     );
   }
-  const columns: Column<CommittedChunk>[] = [
-    {
-      key: 'idx',
-      header: '#',
-      render: (r) => <span className="kb-chunk-idx">{chunks.indexOf(r) + 1}</span>,
-    },
-    {
-      key: 'window',
-      header: 'Window',
-      render: (r) => (
-        <div>
-          <Tag kind={WINDOW_TAG[r.temporality] ?? 'gray'}>{r.temporality}</Tag>
-          {r.temporality !== 'durable' && (r.effectiveFrom ?? r.effectiveUntil) ? (
-            <span className="kb-window-note">
-              {r.effectiveFrom ?? '...'} &rarr; {r.effectiveUntil ?? '...'}
-            </span>
-          ) : null}
-        </div>
-      ),
-    },
-    {
-      key: 'content',
-      header: 'Content',
-      render: (r) => <span className="kb-chunk-content">{r.content}</span>,
-    },
-    {
-      key: 'tok',
-      header: 'Tok',
-      numeric: true,
-      render: (r) => <span className="kb-chunk-tok">{r.tokenCount ?? '—'}</span>,
-    },
-  ];
   return (
-    <div className="kb-chunk-table">
-      <DataTable<CommittedChunk>
-        columns={columns}
-        rows={chunks}
-        getRowKey={(r) => r.content.slice(0, 40)}
-      />
+    <div className="kb-chunk-list">
+      {chunks.map((c, i) => (
+        <div className="kb-chunk-card" key={c.content.slice(0, 40) + i} data-testid="kb-chunk-card">
+          <div className="kb-chunk-card-head">
+            <div className="kb-chunk-head-tags">
+              <span className="kb-chunk-index">{i + 1}</span>
+              <Tag kind={WINDOW_TAG[c.temporality] ?? 'gray'}>{c.temporality}</Tag>
+              {c.temporality !== 'durable' && (c.effectiveFrom ?? c.effectiveUntil) ? (
+                <span className="kb-window-note">
+                  {c.effectiveFrom ?? '...'} &rarr; {c.effectiveUntil ?? '...'}
+                </span>
+              ) : null}
+            </div>
+            <span className="kb-chunk-tok">{c.tokenCount ?? 'n/a'} tok</span>
+          </div>
+          <p className="kb-chunk-text">{c.content}</p>
+        </div>
+      ))}
     </div>
   );
 }

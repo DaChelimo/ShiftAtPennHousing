@@ -151,7 +151,7 @@ describe('selectContext ranking + grounding', () => {
         chunkId: 'harn',
         documentId: 'd2',
         similarity: 0.99,
-        scope: { houseScope: 'harnwell', sensitivity: 'general', allowedRoles: [] },
+        scope: { houseScope: ['harnwell'], sensitivity: 'general', allowedRoles: [] },
       }),
     ]);
     expect(result.context.map((c) => c.chunkId)).toEqual(['shared']);

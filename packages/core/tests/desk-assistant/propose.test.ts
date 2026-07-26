@@ -43,7 +43,12 @@ const validDoc = {
 
 describe('proposeSystemPrompt', () => {
   it('injects the anchor date for relative-date resolution', () => {
-    expect(proposeSystemPrompt('2026-07-10')).toContain('2026-07-10');
+    expect(proposeSystemPrompt('2026-07-10', ['harnwell', 'quad'])).toContain('2026-07-10');
+  });
+
+  it('lists the exact valid house ids so the model cannot invent an abbreviation', () => {
+    const prompt = proposeSystemPrompt('2026-07-10', ['harnwell', 'quad']);
+    expect(prompt).toContain('harnwell|quad');
   });
 });
 
@@ -101,6 +106,10 @@ describe('parseProposedDoc', () => {
     })!;
     expect(doc.allowedRoles).toEqual(['sw']);
     expect(doc.sensitivity).toBe('general');
+  });
+
+  it('wraps a single house-id guess into the array shape', () => {
+    expect(parseProposedDoc(validDoc)!.houseScope).toEqual(['harnwell']);
   });
 
   it('keeps a null houseScope (shared corpus) but rejects a non-string one', () => {

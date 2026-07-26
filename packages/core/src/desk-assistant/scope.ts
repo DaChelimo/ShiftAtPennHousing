@@ -27,8 +27,8 @@ export function canReadItem(requester: RequesterContext, scope: ItemScope): bool
 function houseOk(requester: RequesterContext, scope: ItemScope): boolean {
   if (scope.houseScope === null) return true;
   return (
-    requester.homeHouseId === scope.houseScope ||
-    requester.houseAdminOf.includes(scope.houseScope) ||
+    scope.houseScope.includes(requester.homeHouseId) ||
+    scope.houseScope.some((h) => requester.houseAdminOf.includes(h)) ||
     requester.isRsm ||
     requester.isAdmin
   );

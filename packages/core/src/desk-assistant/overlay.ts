@@ -13,14 +13,14 @@
 
 export const OVERLAY_TOLERANCE = 0.05;
 
-/** A chunk is a home overlay when its house scope equals the worker's home house. */
-export function isHomeOverlay(houseScope: string | null, homeHouseId: string | null): boolean {
-  return houseScope !== null && homeHouseId !== null && houseScope === homeHouseId;
+/** A chunk is a home overlay when its house scope includes the worker's home house. */
+export function isHomeOverlay(houseScope: string[] | null, homeHouseId: string | null): boolean {
+  return houseScope !== null && homeHouseId !== null && houseScope.includes(homeHouseId);
 }
 
 /** Additive sort boost for a home-overlay chunk (0 otherwise). */
 export function overlayBoost(
-  houseScope: string | null,
+  houseScope: string[] | null,
   homeHouseId: string | null,
   tolerance = OVERLAY_TOLERANCE,
 ): number {
@@ -32,7 +32,7 @@ export function overlayBoost(
  * retrieval path folds the same boost into its single sort.
  */
 export function applyOverlayPrecedence<
-  T extends { chunkId: string; similarity: number; houseScope: string | null },
+  T extends { chunkId: string; similarity: number; houseScope: string[] | null },
 >(items: readonly T[], homeHouseId: string | null, tolerance = OVERLAY_TOLERANCE): T[] {
   return [...items].sort((a, b) => {
     const ea = a.similarity + overlayBoost(a.houseScope, homeHouseId, tolerance);

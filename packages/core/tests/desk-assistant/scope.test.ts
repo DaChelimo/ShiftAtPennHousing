@@ -46,21 +46,21 @@ describe('house gate', () => {
 
   it('an overlay is readable by the home-house worker', () => {
     expect(
-      canReadItem(requester({ homeHouseId: 'harnwell' }), scope({ houseScope: 'harnwell' })),
+      canReadItem(requester({ homeHouseId: 'harnwell' }), scope({ houseScope: ['harnwell'] })),
     ).toBe(true);
   });
 
   it('an overlay is NOT readable by a worker from another house', () => {
-    expect(canReadItem(requester({ homeHouseId: 'quad' }), scope({ houseScope: 'harnwell' }))).toBe(
-      false,
-    );
+    expect(
+      canReadItem(requester({ homeHouseId: 'quad' }), scope({ houseScope: ['harnwell'] })),
+    ).toBe(false);
   });
 
   it('an overlay is readable by that house HM/BM (house-admin)', () => {
     expect(
       canReadItem(
         requester({ homeHouseId: 'quad', roles: ['hm'], houseAdminOf: ['harnwell'] }),
-        scope({ houseScope: 'harnwell' }),
+        scope({ houseScope: ['harnwell'] }),
       ),
     ).toBe(true);
   });
@@ -69,7 +69,7 @@ describe('house gate', () => {
     expect(
       canReadItem(
         requester({ homeHouseId: 'quad', roles: ['hm'], houseAdminOf: ['quad'] }),
-        scope({ houseScope: 'harnwell' }),
+        scope({ houseScope: ['harnwell'] }),
       ),
     ).toBe(false);
   });
@@ -78,7 +78,7 @@ describe('house gate', () => {
     expect(
       canReadItem(
         requester({ homeHouseId: 'quad', roles: ['rsm'], isRsm: true }),
-        scope({ houseScope: 'harnwell' }),
+        scope({ houseScope: ['harnwell'] }),
       ),
     ).toBe(true);
   });
@@ -87,7 +87,7 @@ describe('house gate', () => {
     expect(
       canReadItem(
         requester({ homeHouseId: 'quad', roles: ['admin'], isAdmin: true }),
-        scope({ houseScope: 'harnwell' }),
+        scope({ houseScope: ['harnwell'] }),
       ),
     ).toBe(true);
   });
@@ -157,7 +157,7 @@ describe('role gate', () => {
 describe('combined gates', () => {
   it('all three gates must pass (overlay + restricted + role)', () => {
     const strict = scope({
-      houseScope: 'harnwell',
+      houseScope: ['harnwell'],
       sensitivity: 'restricted',
       allowedRoles: ['hm'],
     });
@@ -176,8 +176,8 @@ describe('combined gates', () => {
     const sw = requester({ homeHouseId: 'quad', roles: ['sw'] });
     const items = [
       { id: 'shared', scope: scope() },
-      { id: 'quad-overlay', scope: scope({ houseScope: 'quad' }) },
-      { id: 'harnwell-overlay', scope: scope({ houseScope: 'harnwell' }) },
+      { id: 'quad-overlay', scope: scope({ houseScope: ['quad'] }) },
+      { id: 'harnwell-overlay', scope: scope({ houseScope: ['harnwell'] }) },
       { id: 'restricted', scope: scope({ sensitivity: 'restricted' }) },
     ];
     expect(filterReadable(sw, items).map((i) => i.id)).toEqual(['shared', 'quad-overlay']);

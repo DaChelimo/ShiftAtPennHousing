@@ -12,7 +12,7 @@ const meta: KbDocMeta = {
   title: 'Harnwell keys',
   sourceType: 'summer_binder',
   sourceRef: 'Harnwell summer binder, keys',
-  houseScope: 'harnwell',
+  houseScope: ['harnwell'],
   sensitivity: 'internal',
   allowedRoles: ['sw', 'sm'],
 };
@@ -22,7 +22,7 @@ describe('buildKbDocumentRow', () => {
     const row = buildKbDocumentRow(meta);
     expect(row).toMatchObject({
       source_type: 'summer_binder',
-      house_scope: 'harnwell',
+      house_scope: ['harnwell'],
       temporality: 'durable',
       effective_from: null,
       effective_until: null,
@@ -46,7 +46,7 @@ describe('buildKbChunkRows', () => {
       { content: 'b', tokenCount: 2 },
     ]);
     expect(rows.map((r) => r.chunk_index)).toEqual([0, 1]);
-    expect(rows[0]!.house_scope).toBe('harnwell');
+    expect(rows[0]!.house_scope).toEqual(['harnwell']);
     expect(rows[0]!.sensitivity).toBe('internal');
     expect(rows.every((r) => r.temporality === 'durable')).toBe(true);
   });

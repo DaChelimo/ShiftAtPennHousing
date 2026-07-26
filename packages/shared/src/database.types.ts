@@ -1103,6 +1103,7 @@ export type Database = {
         Row: {
           desk_phone: string | null;
           id: string;
+          is_staffable: boolean;
           launch_state: string;
           launched_at: string | null;
           name: string;
@@ -1110,6 +1111,7 @@ export type Database = {
         Insert: {
           desk_phone?: string | null;
           id: string;
+          is_staffable?: boolean;
           launch_state?: string;
           launched_at?: string | null;
           name: string;
@@ -1117,6 +1119,7 @@ export type Database = {
         Update: {
           desk_phone?: string | null;
           id?: string;
+          is_staffable?: boolean;
           launch_state?: string;
           launched_at?: string | null;
           name?: string;
@@ -1134,7 +1137,7 @@ export type Database = {
           effective_from: string | null;
           effective_until: string | null;
           embedding: string | null;
-          house_scope: string | null;
+          house_scope: string[] | null;
           sensitivity: Database['public']['Enums']['da_sensitivity_enum'];
           temporality: Database['public']['Enums']['da_temporality_enum'];
           token_count: number | null;
@@ -1149,7 +1152,7 @@ export type Database = {
           effective_from?: string | null;
           effective_until?: string | null;
           embedding?: string | null;
-          house_scope?: string | null;
+          house_scope?: string[] | null;
           sensitivity?: Database['public']['Enums']['da_sensitivity_enum'];
           temporality?: Database['public']['Enums']['da_temporality_enum'];
           token_count?: number | null;
@@ -1164,7 +1167,7 @@ export type Database = {
           effective_from?: string | null;
           effective_until?: string | null;
           embedding?: string | null;
-          house_scope?: string | null;
+          house_scope?: string[] | null;
           sensitivity?: Database['public']['Enums']['da_sensitivity_enum'];
           temporality?: Database['public']['Enums']['da_temporality_enum'];
           token_count?: number | null;
@@ -1177,20 +1180,6 @@ export type Database = {
             referencedRelation: 'kb_documents';
             referencedColumns: ['document_id'];
           },
-          {
-            foreignKeyName: 'kb_chunks_house_scope_fkey';
-            columns: ['house_scope'];
-            isOneToOne: false;
-            referencedRelation: 'houses';
-            referencedColumns: ['id'];
-          },
-          {
-            foreignKeyName: 'kb_chunks_house_scope_fkey';
-            columns: ['house_scope'];
-            isOneToOne: false;
-            referencedRelation: 'worker_visible_houses';
-            referencedColumns: ['id'];
-          },
         ];
       };
       kb_documents: {
@@ -1200,7 +1189,7 @@ export type Database = {
           document_id: string;
           effective_from: string | null;
           effective_until: string | null;
-          house_scope: string | null;
+          house_scope: string[] | null;
           metadata: Json;
           sensitivity: Database['public']['Enums']['da_sensitivity_enum'];
           source_ref: string;
@@ -1215,7 +1204,7 @@ export type Database = {
           document_id?: string;
           effective_from?: string | null;
           effective_until?: string | null;
-          house_scope?: string | null;
+          house_scope?: string[] | null;
           metadata?: Json;
           sensitivity?: Database['public']['Enums']['da_sensitivity_enum'];
           source_ref: string;
@@ -1230,7 +1219,7 @@ export type Database = {
           document_id?: string;
           effective_from?: string | null;
           effective_until?: string | null;
-          house_scope?: string | null;
+          house_scope?: string[] | null;
           metadata?: Json;
           sensitivity?: Database['public']['Enums']['da_sensitivity_enum'];
           source_ref?: string;
@@ -1239,22 +1228,37 @@ export type Database = {
           title?: string;
           updated_at?: string;
         };
-        Relationships: [
-          {
-            foreignKeyName: 'kb_documents_house_scope_fkey';
-            columns: ['house_scope'];
-            isOneToOne: false;
-            referencedRelation: 'houses';
-            referencedColumns: ['id'];
-          },
-          {
-            foreignKeyName: 'kb_documents_house_scope_fkey';
-            columns: ['house_scope'];
-            isOneToOne: false;
-            referencedRelation: 'worker_visible_houses';
-            referencedColumns: ['id'];
-          },
-        ];
+        Relationships: [];
+      };
+      kb_embedding_cache: {
+        Row: {
+          content_hash: string;
+          created_at: string;
+          embedding: string;
+          hit_count: number;
+          last_hit_at: string | null;
+          model: string;
+          token_count: number;
+        };
+        Insert: {
+          content_hash: string;
+          created_at?: string;
+          embedding: string;
+          hit_count?: number;
+          last_hit_at?: string | null;
+          model: string;
+          token_count?: number;
+        };
+        Update: {
+          content_hash?: string;
+          created_at?: string;
+          embedding?: string;
+          hit_count?: number;
+          last_hit_at?: string | null;
+          model?: string;
+          token_count?: number;
+        };
+        Relationships: [];
       };
       kb_incidents_raw: {
         Row: {
@@ -1479,37 +1483,52 @@ export type Database = {
         Row: {
           acknowledged_at: string | null;
           created_at: string;
+          dead_lettered_at: string | null;
           delivered_at: string | null;
+          delivery_attempts: number;
+          last_attempt_at: string | null;
+          last_delivery_error: string | null;
           notification_id: string;
           payload: Json;
           recipient_user_id: string;
           resolved_at: string | null;
           resolved_by: string | null;
           scheduled_for: string | null;
+          suppressed_at: string | null;
           type: Database['public']['Enums']['notification_type'];
         };
         Insert: {
           acknowledged_at?: string | null;
           created_at?: string;
+          dead_lettered_at?: string | null;
           delivered_at?: string | null;
+          delivery_attempts?: number;
+          last_attempt_at?: string | null;
+          last_delivery_error?: string | null;
           notification_id?: string;
           payload?: Json;
           recipient_user_id: string;
           resolved_at?: string | null;
           resolved_by?: string | null;
           scheduled_for?: string | null;
+          suppressed_at?: string | null;
           type: Database['public']['Enums']['notification_type'];
         };
         Update: {
           acknowledged_at?: string | null;
           created_at?: string;
+          dead_lettered_at?: string | null;
           delivered_at?: string | null;
+          delivery_attempts?: number;
+          last_attempt_at?: string | null;
+          last_delivery_error?: string | null;
           notification_id?: string;
           payload?: Json;
           recipient_user_id?: string;
           resolved_at?: string | null;
           resolved_by?: string | null;
           scheduled_for?: string | null;
+          suppressed_at?: string | null;
           type?: Database['public']['Enums']['notification_type'];
         };
         Relationships: [
@@ -2821,6 +2840,61 @@ export type Database = {
       };
     };
     Views: {
+      dead_lettered_notifications: {
+        Row: {
+          created_at: string | null;
+          dead_lettered_at: string | null;
+          delivery_attempts: number | null;
+          last_attempt_at: string | null;
+          last_delivery_error: string | null;
+          notification_id: string | null;
+          recipient_user_id: string | null;
+          type: Database['public']['Enums']['notification_type'] | null;
+        };
+        Insert: {
+          created_at?: string | null;
+          dead_lettered_at?: string | null;
+          delivery_attempts?: number | null;
+          last_attempt_at?: string | null;
+          last_delivery_error?: string | null;
+          notification_id?: string | null;
+          recipient_user_id?: string | null;
+          type?: Database['public']['Enums']['notification_type'] | null;
+        };
+        Update: {
+          created_at?: string | null;
+          dead_lettered_at?: string | null;
+          delivery_attempts?: number | null;
+          last_attempt_at?: string | null;
+          last_delivery_error?: string | null;
+          notification_id?: string | null;
+          recipient_user_id?: string | null;
+          type?: Database['public']['Enums']['notification_type'] | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'notifications_recipient_user_id_fkey';
+            columns: ['recipient_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'notifications_recipient_user_id_fkey';
+            columns: ['recipient_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'notifications_recipient_user_id_fkey';
+            columns: ['recipient_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
+        ];
+      };
       house_schedule_grid: {
         Row: {
           block_id: string | null;
@@ -3089,22 +3163,7 @@ export type Database = {
           start_at: string | null;
           weeks_remaining: number | null;
         };
-        Relationships: [
-          {
-            foreignKeyName: 'shift_blocks_house_id_fkey';
-            columns: ['house_id'];
-            isOneToOne: false;
-            referencedRelation: 'houses';
-            referencedColumns: ['id'];
-          },
-          {
-            foreignKeyName: 'shift_blocks_house_id_fkey';
-            columns: ['house_id'];
-            isOneToOne: false;
-            referencedRelation: 'worker_visible_houses';
-            referencedColumns: ['id'];
-          },
-        ];
+        Relationships: [];
       };
       worker_pending_floats: {
         Row: {
@@ -3380,6 +3439,10 @@ export type Database = {
           new_break_id: string;
         }[];
       };
+      begin_notification_delivery_attempt: {
+        Args: { p_notification_id: string; p_now: string };
+        Returns: number;
+      };
       block_has_present_worker: {
         Args: { p_block_id: string };
         Returns: boolean;
@@ -3477,13 +3540,30 @@ export type Database = {
             };
             Returns: string;
           };
+      commit_kb_intake: {
+        Args: {
+          p_allowed_roles: string[];
+          p_chunks: Json;
+          p_effective_from: string;
+          p_effective_until: string;
+          p_house_scope: string[];
+          p_intake_id: string;
+          p_metrics: Json;
+          p_sensitivity: Database['public']['Enums']['da_sensitivity_enum'];
+          p_source_ref: string;
+          p_source_type: Database['public']['Enums']['da_source_type_enum'];
+          p_temporality: Database['public']['Enums']['da_temporality_enum'];
+          p_title: string;
+        };
+        Returns: Json;
+      };
       craft_hm_leave_mailto: { Args: { p_leave_id: string }; Returns: string };
       craft_hm_return_mailto: { Args: { p_leave_id: string }; Returns: string };
       da_can_read_item: {
         Args: {
           check_user_id: string;
           p_allowed_roles: string[];
-          p_house_scope: string;
+          p_house_scope: string[];
           p_sensitivity: Database['public']['Enums']['da_sensitivity_enum'];
         };
         Returns: boolean;
@@ -3550,6 +3630,10 @@ export type Database = {
       };
       execute_due_break_transitions: { Args: never; Returns: number };
       expire_pending_swaps: { Args: { p_now: string }; Returns: number };
+      expire_pending_swaps_if_uncronned: {
+        Args: { p_now: string };
+        Returns: number;
+      };
       fail: { Args: never; Returns: string } | { Args: { '': string }; Returns: string };
       findfuncs: { Args: { '': string }; Returns: string[] };
       finish: { Args: { exception_on_failure?: boolean }; Returns: string[] };
@@ -3620,6 +3704,7 @@ export type Database = {
         Returns: boolean;
       };
       house_is_live: { Args: { p_house_id: string }; Returns: boolean };
+      house_is_staffable: { Args: { p_house_id: string }; Returns: boolean };
       house_roster_as_of: {
         Args: { p_as_of: string; p_house_id: string };
         Returns: {
@@ -3670,7 +3755,7 @@ export type Database = {
           document_id: string;
           effective_from: string;
           effective_until: string;
-          house_scope: string;
+          house_scope: string[];
           sensitivity: Database['public']['Enums']['da_sensitivity_enum'];
           similarity: number;
           source_ref: string;
@@ -3678,6 +3763,7 @@ export type Database = {
           temporality: Database['public']['Enums']['da_temporality_enum'];
         }[];
       };
+      max_notification_delivery_attempts: { Args: never; Returns: number };
       membership_house_for_date: {
         Args: { p_date: string; p_user_id: string };
         Returns: string;
@@ -3704,26 +3790,53 @@ export type Database = {
           isSetofReturn: true;
         };
       };
+      notification_retry_backoff: {
+        Args: { p_attempts: number };
+        Returns: string;
+      };
       num_failed: { Args: never; Returns: number };
       offhours_ladder_timeout_minutes: { Args: never; Returns: number };
       open_break_claim_calendar: {
         Args: { p_break_id: string; p_house_id: string };
         Returns: number;
       };
+      operational_retention_days: { Args: never; Returns: number };
+      orchestrator_vacant_seats: {
+        Args: { p_after: string; p_through: string };
+        Returns: {
+          assignment_id: string;
+          block_id: string;
+          block_start_at: string;
+          desk_covered: boolean;
+          house_id: string;
+        }[];
+      };
       os_name: { Args: never; Returns: string };
       pass: { Args: never; Returns: string } | { Args: { '': string }; Returns: string };
+      pending_floats_due_for_no_ack: {
+        Args: { p_lookahead_minutes: number; p_now: string };
+        Returns: {
+          earliest_destination_start: string;
+          float_id: string;
+        }[];
+      };
       pending_notification_deliveries: {
         Args: { p_now: string };
         Returns: {
           acknowledged_at: string | null;
           created_at: string;
+          dead_lettered_at: string | null;
           delivered_at: string | null;
+          delivery_attempts: number;
+          last_attempt_at: string | null;
+          last_delivery_error: string | null;
           notification_id: string;
           payload: Json;
           recipient_user_id: string;
           resolved_at: string | null;
           resolved_by: string | null;
           scheduled_for: string | null;
+          suppressed_at: string | null;
           type: Database['public']['Enums']['notification_type'];
         }[];
         SetofOptions: {
@@ -3825,6 +3938,13 @@ export type Database = {
         };
         Returns: number;
       };
+      purge_expired_operational_records: {
+        Args: { p_now?: string };
+        Returns: {
+          floats_deleted: number;
+          notifications_deleted: number;
+        }[];
+      };
       reconcile_config_blocks: {
         Args: { p_end: string; p_start: string };
         Returns: Json;
@@ -3832,6 +3952,10 @@ export type Database = {
       reconcile_float_source_release: {
         Args: { p_float_id: string };
         Returns: undefined;
+      };
+      record_notification_delivery_failure: {
+        Args: { p_error: string; p_notification_id: string; p_now: string };
+        Returns: boolean;
       };
       remove_break_period: {
         Args: { p_actor_user_id: string; p_break_id: string };
@@ -3964,6 +4088,11 @@ export type Database = {
         Args: { p_swap_id: string };
         Returns: string;
       };
+      swap_expiry_is_cron_scheduled: { Args: never; Returns: boolean };
+      sweep_suppressed_ack_reminders: {
+        Args: { p_now: string };
+        Returns: number;
+      };
       throws_ok: { Args: { '': string }; Returns: string };
       todo:
         | { Args: { how_many: number }; Returns: boolean[] }
@@ -3974,6 +4103,10 @@ export type Database = {
       todo_start:
         | { Args: never; Returns: boolean[] }
         | { Args: { '': string }; Returns: boolean[] };
+      touch_kb_embedding_cache: {
+        Args: { p_content_hashes: string[]; p_model: string; p_now?: string };
+        Returns: number;
+      };
       transfer_worker: {
         Args: {
           p_dest_house_id: string;
@@ -4104,7 +4237,8 @@ export type Database = {
         | 'embedding'
         | 'live'
         | 'rejected'
-        | 'failed';
+        | 'failed'
+        | 'deleted';
       da_sensitivity_enum: 'general' | 'internal' | 'restricted';
       da_source_type_enum:
         | 'hm_guide'
@@ -4303,6 +4437,7 @@ export const Constants = {
         'live',
         'rejected',
         'failed',
+        'deleted',
       ],
       da_sensitivity_enum: ['general', 'internal', 'restricted'],
       da_source_type_enum: [

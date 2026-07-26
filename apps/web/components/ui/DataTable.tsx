@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 
 import { Icon } from './Icon';
 
@@ -17,6 +17,10 @@ export type Column<T> = {
 // `rowChevron` appends a trailing chevron cell to each row — a visible "opens on
 // click" affordance for clickable tables; it slides/brightens on row hover. Only
 // meaningful with `onRowClick`.
+//
+// `expandedKey` + `renderExpanded` add an inline accordion row: the row whose key
+// matches `expandedKey` gets a full-width row directly beneath it holding whatever
+// `renderExpanded` returns. Opt-in per table — omit both and nothing changes.
 export function DataTable<T>({
   columns,
   rows,
@@ -24,6 +28,8 @@ export function DataTable<T>({
   onRowClick,
   rowChevron = false,
   selectedKey,
+  expandedKey,
+  renderExpanded,
   emptyText = 'No rows',
 }: {
   columns: Column<T>[];
@@ -32,6 +38,8 @@ export function DataTable<T>({
   onRowClick?: (row: T) => void;
   rowChevron?: boolean;
   selectedKey?: string | null;
+  expandedKey?: string | null;
+  renderExpanded?: (row: T) => ReactNode;
   emptyText?: ReactNode;
 }) {
   const showChevron = rowChevron && onRowClick != null;
@@ -60,36 +68,43 @@ export function DataTable<T>({
             rows.map((row) => {
               const key = getRowKey(row);
               const clickable = onRowClick != null;
+              const expanded = expandedKey === key && renderExpanded != null;
               return (
-                <tr
-                  key={key}
-                  className={`${clickable ? 'is-clickable' : ''} ${
-                    selectedKey === key ? 'is-sel' : ''
-                  }`.trim()}
-                  tabIndex={clickable ? 0 : undefined}
-                  onClick={clickable ? () => onRowClick(row) : undefined}
-                  onKeyDown={
-                    clickable
-                      ? (e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            onRowClick(row);
+                <Fragment key={key}>
+                  <tr
+                    className={`${clickable ? 'is-clickable' : ''} ${
+                      selectedKey === key ? 'is-sel' : ''
+                    } ${expanded ? 'is-expanded-row' : ''}`.trim()}
+                    tabIndex={clickable ? 0 : undefined}
+                    onClick={clickable ? () => onRowClick(row) : undefined}
+                    onKeyDown={
+                      clickable
+                        ? (e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              onRowClick(row);
+                            }
                           }
-                        }
-                      : undefined
-                  }
-                >
-                  {columns.map((c) => (
-                    <td key={c.key} className={c.numeric ? 'num' : undefined}>
-                      {c.render(row)}
-                    </td>
-                  ))}
-                  {showChevron && (
-                    <td className="dtable-chev">
-                      <Icon name="chevRight" size={16} />
-                    </td>
+                        : undefined
+                    }
+                  >
+                    {columns.map((c) => (
+                      <td key={c.key} className={c.numeric ? 'num' : undefined}>
+                        {c.render(row)}
+                      </td>
+                    ))}
+                    {showChevron && (
+                      <td className="dtable-chev">
+                        <Icon name={expanded ? 'chevDown' : 'chevRight'} size={16} />
+                      </td>
+                    )}
+                  </tr>
+                  {expanded && (
+                    <tr className="dtable-expanded-row">
+                      <td colSpan={colCount}>{renderExpanded(row)}</td>
+                    </tr>
                   )}
-                </tr>
+                </Fragment>
               );
             })
           )}

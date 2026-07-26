@@ -14,6 +14,8 @@
 // Server Actions can't stream progress back to the client, which is why extraction and
 // proposal drafting moved there instead of staying inline in this file.
 
+import { createHash } from 'node:crypto';
+
 import {
   buildKbChunkRows,
   buildKbDocumentRow,
@@ -43,7 +45,7 @@ type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 // Reach the new tables through this untyped view until types are regenerated with
 // `supabase gen types typescript --local` after the migration lands; storage stays typed.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type LooseFrom = { from: (table: string) => any };
+type LooseFrom = { from: (table: string) => any; rpc: (fn: string, args: object) => any };
 
 function formatFromName(name: string): NormalizedFormat {
   const ext = name.toLowerCase().split('.').pop() ?? '';
@@ -89,6 +91,12 @@ export interface IntakeRow {
   statusDetail: string | null;
   documentId: string | null;
   createdAt: string;
+  /** Whether normalize+propose already produced a proposal for this intake.
+   * Distinguishes a pre-proposal failure (extract/propose never finished --
+   * retry re-runs that pipeline) from a post-proposal one (approve/commit
+   * failed, or the row is stuck mid-commit -- retry re-runs approval instead,
+   * so a reviewed-and-edited proposal is never silently discarded). */
+  hasProposal: boolean;
 }
 
 export interface IntakeQueue {
@@ -173,6 +181,25 @@ export async function approveIntake(
   if (proposed === null) return { ok: false, error: 'no proposal to approve' };
   const priorMetrics = (row as { metrics: IntakeMetrics | null }).metrics ?? undefined;
 
+  // Claude's proposal can misguess a house id (e.g. an abbreviation like "HARN" instead
+  // of "harnwell"); catch that here with a clear message rather than letting it reach
+  // commit_kb_intake and surface as a raw kb_documents_house_scope_fkey violation (the
+  // DB-level validate_kb_house_scope trigger is the last line of defense, but this gives
+  // the operator a much more specific message before the write is even attempted).
+  if (proposed.houseScope !== null) {
+    const { data: validHouses } = await db.from('houses').select('id');
+    const validIds = new Set(((validHouses as { id: string }[] | null) ?? []).map((h) => h.id));
+    const unknown = proposed.houseScope.filter((id) => !validIds.has(id));
+    if (unknown.length > 0) {
+      const message = `"${unknown.join('", "')}" is not a valid house id. Edit the proposal's house scope (or clear it for a shared document) and try again.`;
+      await db
+        .from('kb_intake')
+        .update({ status: 'failed', status_detail: message })
+        .eq('intake_id', intakeId);
+      return { ok: false, error: message };
+    }
+  }
+
   await db
     .from('kb_intake')
     .update({ status: 'embedding', status_detail: 'Adding to knowledge base' })
@@ -207,10 +234,80 @@ export async function approveIntake(
   let embedMetrics: IntakeMetrics['embed'];
   const embedStartedAt = Date.now();
   try {
-    const result = await voyageEmbed(chunkInputs.map((c) => c.content));
-    embeddings = result.embeddings;
+    // Cost audit F-16: content-addressed cache in front of the embedding API. Embeddings
+    // are deterministic for a given (text, model), so a cache hit is byte-identical to
+    // what Voyage would return -- this changes spend, never results. Re-approving an
+    // unchanged document, or approving two documents that share boilerplate, now costs
+    // nothing for the chunks that repeat. A cache failure is never fatal: every path
+    // below falls back to embedding the chunk for real.
+    const contentHashes = chunkInputs.map((c) =>
+      createHash('sha256').update(c.content, 'utf8').digest('hex'),
+    );
+
+    const cached = new Map<string, number[]>();
+    const { data: cacheRows } = await db
+      .from('kb_embedding_cache')
+      .select('content_hash, embedding')
+      .eq('model', EMBEDDING_MODEL)
+      .in('content_hash', [...new Set(contentHashes)]);
+    for (const row of cacheRows ?? []) {
+      // pgvector round-trips as a JSON-ish string through PostgREST.
+      const vector = typeof row.embedding === 'string' ? JSON.parse(row.embedding) : row.embedding;
+      if (Array.isArray(vector)) cached.set(row.content_hash, vector as number[]);
+    }
+
+    // Embed only the misses, de-duplicated: a document repeating the same text twice
+    // should pay for it once.
+    const missHashes = [...new Set(contentHashes.filter((h) => !cached.has(h)))];
+    const missIndexByHash = new Map(missHashes.map((h, i) => [h, i]));
+    const missTexts = missHashes.map((h) => chunkInputs[contentHashes.indexOf(h)]!.content);
+
+    const result =
+      missTexts.length > 0
+        ? await voyageEmbed(missTexts)
+        : { embeddings: [] as number[][], tokens: 0 };
+
+    embeddings = contentHashes.map((hash) => {
+      const hit = cached.get(hash);
+      if (hit !== undefined) return hit;
+      return result.embeddings[missIndexByHash.get(hash)!]!;
+    });
+
+    if (missHashes.length > 0) {
+      // Best-effort write-through. A failure here costs a future re-embed, nothing more.
+      const { error: cacheError } = await db.from('kb_embedding_cache').upsert(
+        missHashes.map((hash, i) => ({
+          content_hash: hash,
+          model: EMBEDDING_MODEL,
+          embedding: JSON.stringify(result.embeddings[i]),
+          token_count: estimateTokens(missTexts[i]!),
+        })),
+        { onConflict: 'content_hash,model' },
+      );
+      if (cacheError !== null) {
+        console.warn(`${KB_LOG} embedding cache write skipped: ${cacheError.message}`);
+      }
+    }
+    const hitHashes = [...new Set(contentHashes.filter((h) => cached.has(h)))];
+    if (hitHashes.length > 0) {
+      await db
+        .rpc('touch_kb_embedding_cache', {
+          p_content_hashes: hitHashes,
+          p_model: EMBEDDING_MODEL,
+        })
+        .then(undefined, () => undefined);
+      console.log(
+        `${KB_LOG} embedding cache: ${contentHashes.length - missHashes.length}/${
+          contentHashes.length
+        } chunk(s) served from cache`,
+      );
+    }
+
     embedMetrics = {
       durationMs: Date.now() - embedStartedAt,
+      // Tokens/cost reflect what was ACTUALLY billed this run, so the per-feature spend
+      // attribution the project's API-key convention asks for stays honest -- a run
+      // served entirely from cache correctly reports $0.
       tokens: result.tokens,
       costUsd: estimateVoyageCostUsd(EMBEDDING_MODEL, result.tokens),
       chunkCount: chunkInputs.length,
@@ -236,57 +333,82 @@ export async function approveIntake(
     return { ok: false, error: 'embedding failed' };
   }
 
+  // Document insert, chunk insert, and the final status flip all happen inside
+  // commit_kb_intake (one Postgres function call = one transaction). A crash or
+  // error partway through used to leave an orphaned kb_documents row (with no
+  // chunks, never linked from kb_intake) and the intake stuck at 'embedding'
+  // forever -- see 20260723000001_kb_intake_atomic_commit.sql. Now it's all or
+  // nothing: either the intake goes live with its chunks, or nothing lands and
+  // the row is safe to retry with no manual cleanup.
   const commitStartedAt = Date.now();
   const docRow = buildKbDocumentRow(docMeta);
-  const { data: docData, error: docErr } = await db
-    .from('kb_documents')
-    .insert(docRow)
-    .select('document_id')
-    .single();
-  if (docErr || docData === null) {
+  const chunkRows = buildKbChunkRows(docMeta, chunkInputs).map((r, i) => ({
+    chunkIndex: r.chunk_index,
+    content: r.content,
+    embedding: toVectorLiteral(embeddings[i]!),
+    houseScope: r.house_scope,
+    sensitivity: r.sensitivity,
+    allowedRoles: r.allowed_roles,
+    tokenCount: r.token_count,
+    temporality: r.temporality,
+    effectiveFrom: r.effective_from,
+    effectiveUntil: r.effective_until,
+  }));
+
+  // commit_kb_intake can't be told its own commit duration or document_id up front (it
+  // generates the id itself, inside the transaction), so p_metrics carries only what's
+  // known before the call. Once it returns, we patch the commit/total figures on top --
+  // a second, non-atomic write, but by this point the document+chunks+status are already
+  // safely committed, so the worst case of that second write failing is incomplete
+  // dev-instrumentation numbers, never a stuck or orphaned row.
+  const metricsBeforeCommit = withTotals({
+    extraction: priorMetrics?.extraction,
+    propose: priorMetrics?.propose,
+    embed: embedMetrics,
+  });
+  const { data: rpcData, error: rpcErr } = await db.rpc('commit_kb_intake', {
+    p_intake_id: intakeId,
+    p_title: docRow.title,
+    p_source_type: docRow.source_type,
+    p_source_ref: docRow.source_ref,
+    p_house_scope: docRow.house_scope,
+    p_sensitivity: docRow.sensitivity,
+    p_allowed_roles: docRow.allowed_roles,
+    p_temporality: docRow.temporality,
+    p_effective_from: docRow.effective_from,
+    p_effective_until: docRow.effective_until,
+    p_chunks: chunkRows,
+    p_metrics: metricsBeforeCommit,
+  });
+  if (rpcErr || rpcData === null) {
     await db
       .from('kb_intake')
-      .update({ status: 'failed', status_detail: `commit failed: ${docErr?.message ?? 'unknown'}` })
+      .update({
+        status: 'failed',
+        status_detail: `commit failed: ${rpcErr?.message ?? 'unknown'}`,
+      })
       .eq('intake_id', intakeId);
     return { ok: false, error: 'commit failed' };
   }
-  const documentId = (docData as { document_id: string }).document_id;
 
-  const chunkRows = buildKbChunkRows(docMeta, chunkInputs).map((r, i) => ({
-    ...r,
-    document_id: documentId,
-    embedding: toVectorLiteral(embeddings[i]!),
-  }));
-  const { error: chunkErr } = await db.from('kb_chunks').insert(chunkRows);
-  if (chunkErr) {
-    await db
-      .from('kb_intake')
-      .update({ status: 'failed', status_detail: `chunk write failed: ${chunkErr.message}` })
-      .eq('intake_id', intakeId);
-    return { ok: false, error: 'chunk write failed' };
-  }
-  const commitMetrics: IntakeMetrics['commit'] = {
-    durationMs: Date.now() - commitStartedAt,
-    documentId,
+  const { document_id: documentId, chunk_count: chunkCount } = rpcData as {
+    document_id: string;
+    chunk_count: number;
   };
-
   const metrics = withTotals({
     extraction: priorMetrics?.extraction,
     propose: priorMetrics?.propose,
     embed: embedMetrics,
-    commit: commitMetrics,
+    commit: { durationMs: Date.now() - commitStartedAt, documentId },
   });
   console.log(
-    `${KB_LOG} intake ${intakeId} live: document ${documentId}, ${chunkRows.length} chunk(s) added, ` +
+    `${KB_LOG} intake ${intakeId} live: document ${documentId}, ${chunkCount} chunk(s) added, ` +
       `total ${metrics.totalDurationMs}ms, total $${metrics.totalCostUsd.toFixed(4)}`,
   );
+  await db.from('kb_intake').update({ metrics }).eq('intake_id', intakeId);
 
-  await db
-    .from('kb_intake')
-    .update({ status: 'live', status_detail: 'Live', document_id: documentId, metrics })
-    .eq('intake_id', intakeId);
   revalidatePath('/admin/knowledge');
-  return { ok: true, data: { documentId, chunks: chunkRows.length } };
+  return { ok: true, data: { documentId, chunks: chunkCount } };
 }
 
 export interface IntakeDetail {
@@ -412,7 +534,7 @@ export async function loadIntakeQueue(): Promise<ActionResult<IntakeQueue>> {
   const { data: rows } = await db
     .from('kb_intake')
     .select(
-      'intake_id, original_filename, input_format, status, status_detail, document_id, created_at',
+      'intake_id, original_filename, input_format, status, status_detail, document_id, created_at, proposed_meta',
     )
     .order('created_at', { ascending: false })
     .limit(100);
@@ -426,6 +548,7 @@ export async function loadIntakeQueue(): Promise<ActionResult<IntakeQueue>> {
     statusDetail: (r.status_detail as string | null) ?? null,
     documentId: (r.document_id as string | null) ?? null,
     createdAt: r.created_at as string,
+    hasProposal: r.proposed_meta !== null && r.proposed_meta !== undefined,
   }));
 
   const awaitingReview = queue.filter(

@@ -26,7 +26,13 @@ export async function getLaunchBoard(): Promise<LaunchBoard> {
   const nowIso = (await simNow()).toISOString();
 
   const [{ data: houseRows }, { data: rosterRows }] = await Promise.all([
-    service.from('houses').select('id, name, launch_state, launched_at').order('name'),
+    // Non-staffable houses are not launchable: they have no desk, no schedule and
+    // no workers, so they would show as a permanently "no schedule" row.
+    service
+      .from('houses')
+      .select('id, name, launch_state, launched_at')
+      .eq('is_staffable', true)
+      .order('name'),
     // Active workers' home houses, tallied in code (small set).
     service.from('users').select('home_house_id').eq('is_active', true),
   ]);

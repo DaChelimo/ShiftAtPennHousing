@@ -85,6 +85,14 @@ class WorkerColorsTest {
         lightTextIds.take(50).forEach { assertEquals(0xFFFFFF, workerContrastText(it)) }
     }
 
+    @Test
+    fun alliedIsBlackOnWhiteAndBypassesThePalette() {
+        val allied = "a111ed00-0000-4000-8000-000000000001"
+        assertEquals(0x000000, workerColor(allied))
+        assertEquals(0xFFFFFF, workerContrastText(allied))
+        assertTrue(workerColor(allied) !in WORKER_PALETTE)
+    }
+
     // ── Which blocks wear the color (state colors still win where they carry meaning) ──
 
     private fun block(

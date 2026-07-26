@@ -105,6 +105,20 @@ other hue uses white (`#ffffff`). Recompute this table if the palette ever chang
 The same base palette is used in light and dark; because the fill is 90% `C`, it dominates
 the theme ground and reads the same in both. Do not maintain a second dark palette.
 
+## Allied: the one exemption from the hash
+
+The Allied contractor is a single standing entity rather than a worker, and it is the only
+identity that bypasses the palette entirely. `ALLIED_USER_ID`
+(`a111ed00-0000-4000-8000-000000000001`) always resolves to `C = #000000` with
+`F = #ffffff`, on both platforms and in every surface that applies a worker tint.
+
+Allied covers a desk no student is on, so a fixed black block is what makes that readable at
+a glance against an otherwise multi-hued grid. The constant is declared in **both**
+`apps/web/lib/workerColor.ts` and `apps/mobile/shared/.../house/WorkerColors.kt`; the
+override sits in `workerColor` / `workerContrastText`, **not** in `workerColorIndex`, so the
+hash itself stays a pure function of the id and the reference vectors in `WorkerColorsTest`
+remain valid. If the id ever changes, change it in both files and here.
+
 ## Where it lives
 
 - Web palette + hash: `apps/web/lib/workerColor.ts` (single source on web).

@@ -100,18 +100,18 @@ meaning), for WCAG 2.1 AA. The canonical source is
 [`components/ui/shiftState.ts`](../components/ui/shiftState.ts) (`SHIFT_STATES`);
 the persistent strip is `<StatusLegend>`; swatch classes are `.lg-*`.
 
-| State (key)                     | Tag kind | Tokens (bg / fg / border)                                      | Treatment                                   |
-| ------------------------------- | -------- | -------------------------------------------------------------- | ------------------------------------------- |
-| Scheduled (`scheduled`)         | gray     | `--surface` / `--text-primary` / `--border-subtle`             | Home worker on their own desk               |
-| Float-in (`float-in`)           | green    | `--st-float-bg` / `--st-float-fg #24A148` / `--st-float-bd`    | Worker floated in (shows home house)        |
-| Float-out (`float-out`)         | purple   | `--st-out-bg` / `--st-out-fg #8A3FFC` / `--st-out-bd`          | Personal calendar: away covering elsewhere  |
-| Pending (`pending`)             | amber    | base + `--st-pending #B28600` / `--st-pending-bg`              | Force-triggered float, not yet acknowledged |
-| Allied (`allied`)               | teal     | `--st-allied-bg` / `--st-allied-fg #007D79` / `--st-allied-bd` | External Allied Security                    |
-| Break (`break`)                 | amber    | `--surface` + **golden border `--st-break-bd #F1C21B`**        | Short/winter break shift                    |
-| Open / vacant (`vacant`)        | outline  | dashed `--st-vacant-bd #C6C6C6` / `--st-vacant-fg`             | One-time coverage gap                       |
-| Permanent opening (`permanent`) | magenta  | `--st-perm-bg` / `--st-perm-bd #EE5396` / `--st-perm-fg`       | Owner permanently dropped recurring slot    |
-| Over-cap (`over`)               | red      | `--st-danger #DA1E28` / `--st-danger-bg` / `--st-danger-bd`    | Over-cap / blocked / urgent (needs Allied)  |
-| **Cross-house pickup**          | —        | `--st-pickup` (8px `<PickupDot>`)                              | Modifier on green/purple/home cards         |
+| State (key)                     | Tag kind | Tokens (bg / fg / border)                                              | Treatment                                                                                       |
+| ------------------------------- | -------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Scheduled (`scheduled`)         | gray     | `--surface` / `--text-primary` / `--border-subtle`                     | Home worker on their own desk                                                                   |
+| Float-in (`float-in`)           | green    | `--st-float-bg` / `--st-float-fg #24A148` / `--st-float-bd`            | Worker floated in (shows home house)                                                            |
+| Float-out (`float-out`)         | purple   | `--st-out-bg` / `--st-out-fg #8A3FFC` / `--st-out-bd`                  | Personal calendar: away covering elsewhere                                                      |
+| Pending (`pending`)             | amber    | base + `--st-pending #B28600` / `--st-pending-bg`                      | Force-triggered float, not yet acknowledged                                                     |
+| Allied (`allied`)               | black    | `--st-allied-bg #000000` / `--st-allied-fg #ffffff` / `--st-allied-bd` | External Allied coverage. Solid black in both themes so it reads as "not a student" at a glance |
+| Break (`break`)                 | amber    | `--surface` + **golden border `--st-break-bd #F1C21B`**                | Short/winter break shift                                                                        |
+| Open / vacant (`vacant`)        | outline  | dashed `--st-vacant-bd #C6C6C6` / `--st-vacant-fg`                     | One-time coverage gap                                                                           |
+| Permanent opening (`permanent`) | magenta  | `--st-perm-bg` / `--st-perm-bd #EE5396` / `--st-perm-fg`               | Owner permanently dropped recurring slot                                                        |
+| Over-cap (`over`)               | red      | `--st-danger #DA1E28` / `--st-danger-bg` / `--st-danger-bd`            | Over-cap / blocked / urgent (needs Allied)                                                      |
+| **Cross-house pickup**          | —        | `--st-pickup` (8px `<PickupDot>`)                                      | Modifier on green/purple/home cards                                                             |
 
 Dark theme darkens each surface and brightens each foreground for AA (see the
 `[data-theme="dark"]` block in `globals.css`).

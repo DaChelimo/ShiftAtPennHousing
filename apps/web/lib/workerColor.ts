@@ -38,7 +38,18 @@ export function workerColorIndex(userId: string): number {
   return ((h % n) + n) % n;
 }
 
+// The Allied contractor is a single standing entity, not a worker, so it is the
+// one identity exempted from the hash: it always reads solid black with white
+// text wherever a worker tint would otherwise apply. Allied covers a desk no
+// student is on, and a fixed black block is what makes that legible at a glance
+// on an otherwise multi-hued grid. Mirrored in WorkerColors.kt.
+export const ALLIED_USER_ID = 'a111ed00-0000-4000-8000-000000000001';
+
+const ALLIED_COLOR = '#000000';
+const ALLIED_TEXT = '#ffffff';
+
 export function workerColor(userId: string): string {
+  if (userId === ALLIED_USER_ID) return ALLIED_COLOR;
   return WORKER_PALETTE[workerColorIndex(userId)];
 }
 
@@ -55,6 +66,7 @@ const WORKER_PALETTE_DARK_TEXT: ReadonlySet<number> = new Set([
 ]);
 
 export function workerContrastText(userId: string): string {
+  if (userId === ALLIED_USER_ID) return ALLIED_TEXT;
   const idx = workerColorIndex(userId);
   return WORKER_PALETTE_DARK_TEXT.has(idx) ? '#1a1a1a' : '#ffffff';
 }

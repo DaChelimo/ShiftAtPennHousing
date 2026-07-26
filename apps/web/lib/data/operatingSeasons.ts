@@ -146,8 +146,15 @@ export async function getAuditLog(seasonId: string): Promise<AuditRow[]> {
 
 export type HouseOption = { id: string; name: string };
 
+// Feeds the season editor's "add a house window" menu. Non-staffable houses are
+// excluded: a window here compiles into staffing_patterns and then into generated
+// shift blocks, which is exactly what a pseudo-house must never acquire.
 export async function listHouses(): Promise<HouseOption[]> {
   const service = createServiceClient();
-  const { data } = await service.from('houses').select('id, name').order('name');
+  const { data } = await service
+    .from('houses')
+    .select('id, name')
+    .eq('is_staffable', true)
+    .order('name');
   return (data ?? []).map((h) => ({ id: h.id, name: h.name }));
 }

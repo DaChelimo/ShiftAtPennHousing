@@ -34,11 +34,16 @@ export async function getUnreadCount(userId: string, now: Date = new Date()): Pr
 // D11 — the full house list for the switcher (all 13). `harnwell` is restricted
 // (Harnwell-trained only); the flag drives the switcher chip. Ordered by id so the
 // menu is stable.
+//
+// Non-staffable houses are excluded: they exist only to own a non-worker account
+// (Allied) and are not places anyone is scheduled. This list also gates `?house=`
+// for the calendar, builder, hours and preferences pages, and supplies the
+// transfer-destination menu, so a pseudo-house leaking in here is load-bearing.
 export async function getShellHouses(): Promise<
   { id: string; name: string; restricted: boolean }[]
 > {
   const svc = createServiceClient();
-  const { data } = await svc.from('houses').select('id, name').order('id');
+  const { data } = await svc.from('houses').select('id, name').eq('is_staffable', true).order('id');
   return (data ?? []).map((h) => ({
     id: h.id,
     name: h.name,

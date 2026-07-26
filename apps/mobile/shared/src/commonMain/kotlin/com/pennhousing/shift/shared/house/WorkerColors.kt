@@ -62,15 +62,32 @@ fun workerColorIndex(userId: String): Int {
     return ((h % n) + n) % n
 }
 
+/**
+ * The Allied contractor is a single standing entity, not a worker, so it is the one
+ * identity exempted from the hash: it always reads solid black with white text wherever
+ * a worker tint would otherwise apply. Allied covers a desk no student is on, and a fixed
+ * black block is what makes that legible at a glance on an otherwise multi-hued grid.
+ * Mirrored in `apps/web/lib/workerColor.ts`.
+ */
+const val ALLIED_USER_ID = "a111ed00-0000-4000-8000-000000000001"
+
+private const val ALLIED_COLOR = 0x000000
+private const val ALLIED_TEXT = 0xFFFFFF
+
 /** The worker's full-strength color as 0xRRGGBB. */
-fun workerColor(userId: String): Int = WORKER_PALETTE[workerColorIndex(userId)]
+fun workerColor(userId: String): Int =
+    if (userId == ALLIED_USER_ID) ALLIED_COLOR else WORKER_PALETTE[workerColorIndex(userId)]
 
 /**
  * A legible foreground (0xRRGGBB) for text sitting directly on that worker's
  * full-strength color — the near-opaque card fill. Same table as web.
  */
 fun workerContrastText(userId: String): Int =
-    if (workerColorIndex(userId) in WORKER_PALETTE_DARK_TEXT) CONTRAST_DARK else CONTRAST_LIGHT
+    when {
+        userId == ALLIED_USER_ID -> ALLIED_TEXT
+        workerColorIndex(userId) in WORKER_PALETTE_DARK_TEXT -> CONTRAST_DARK
+        else -> CONTRAST_LIGHT
+    }
 
 /**
  * True when a grid block should wear its occupant's color: it has a real worker AND

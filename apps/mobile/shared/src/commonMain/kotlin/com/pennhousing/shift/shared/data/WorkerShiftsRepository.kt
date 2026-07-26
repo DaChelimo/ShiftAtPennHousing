@@ -40,8 +40,15 @@ import io.github.jan.supabase.realtime.channel
 import io.github.jan.supabase.realtime.postgresChangeFlow
 import io.github.jan.supabase.realtime.realtime
 import kotlin.random.Random
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
@@ -96,6 +103,19 @@ class WorkerShiftsRepository(
     private val supabase: SupabaseClient,
     private val edge: EdgeFunctionClient = EdgeFunctionClient(),
 ) {
+    /**
+     * Scope that owns the shared worker-week subscriptions (cost audit F-02/F-11).
+     *
+     * SupervisorJob so one collector's failure cannot cancel the others sharing the same
+     * upstream. The scope is deliberately never cancelled: the repository lives for the
+     * session, and `SharingStarted.WhileSubscribed` already tears the Realtime channel
+     * down as soon as the last collector leaves, so there is nothing running in it while
+     * the app is idle.
+     */
+    private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /** Live shared flows, keyed so two collectors of the same window share one channel. */
+    private val sharedWorkerWeeks = mutableMapOf<SubscriptionKey, Flow<WorkerSnapshot>>()
     /**
      * Drop a single occurrence of [shift] this week → the phase-05 `drop-shift` Edge
      * Function (`drop_type: 'temporary'`). Best-effort (the UI flips its optimistic
@@ -597,11 +617,12 @@ class WorkerShiftsRepository(
      * pre-filter is UX only.
      */
     suspend fun fetchWorkerDirectory(): List<HandoffWorker> {
+        // Staffable only: a pseudo-house owns the Allied account, never a recipient.
         val houseNames =
             runCatching {
                 supabase
                     .from(TABLE_HOUSES)
-                    .select(Columns.list("id", "name"))
+                    .select(Columns.list("id", "name")) { filter { eq("is_staffable", true) } }
                     .decodeList<DirectoryHouseRow>()
             }.getOrDefault(emptyList())
                 .associate { it.id to it.name }
@@ -614,11 +635,12 @@ class WorkerShiftsRepository(
             }.getOrDefault(emptyList())
         return workers.mapNotNull { row ->
             val houseId = row.homeHouseId ?: return@mapNotNull null
+            val houseName = houseNames[houseId] ?: return@mapNotNull null
             HandoffWorker(
                 userId = row.userId,
                 name = row.name,
                 homeHouseId = houseId,
-                homeHouseName = houseNames[houseId] ?: houseId,
+                homeHouseName = houseName,
             )
         }
     }
@@ -739,7 +761,7 @@ class WorkerShiftsRepository(
         val myShifts =
             supabase
                 .from(VIEW_MY_SHIFTS)
-                .select {
+                .select(MY_SHIFT_COLUMNS) {
                     filter {
                         eq("user_id", userId)
                         gte("start_at", windowStart)
@@ -751,7 +773,7 @@ class WorkerShiftsRepository(
         val openShifts =
             supabase
                 .from(VIEW_OPEN_SHIFTS)
-                .select {
+                .select(OPEN_SHIFT_COLUMNS) {
                     filter {
                         eq("eligible_user_id", userId)
                         gte("start_at", windowStart)
@@ -773,14 +795,53 @@ class WorkerShiftsRepository(
     fun observeWorkerWeek(
         userId: String,
         now: Instant = kotlin.time.Clock.System.now(),
+    ): Flow<WorkerSnapshot> {
+        // Cost audit F-02 + F-11. One SHARED upstream per (userId, now) window, fanned
+        // out to every collector, instead of one Realtime channel + one refetch loop per
+        // collector.
+        //
+        // Why this matters: iOS runs TWO collectors of this flow (ContentView's Shifts
+        // and Calendar observables). Because the topic carries Random.nextLong(), those
+        // were two distinct Realtime connections, each independently refetching on every
+        // change — so an iOS client held 2 connections and, with the Calendar's extra
+        // fetchPendingSwaps(), issued 5 queries per event where Android issued 2. At 12
+        // pilot workers that is 24 concurrent connections instead of 12.
+        //
+        // shareIn with WhileSubscribed(replayExpiration = 0) is refcounted: the first
+        // collector opens the channel, the second joins the SAME emission, and the
+        // channel closes once the last collector goes away. replay = 1 means a late
+        // second collector renders immediately from the last snapshot instead of forcing
+        // a fresh round trip.
+        //
+        // NOTE the Random.nextLong() topic suffix survives, and must. It is not a leak:
+        // supabase.channel() caches by name, so a shared NAME makes the second caller
+        // invoke postgresChangeFlow on an already-joined channel, which throws ("You
+        // cannot call postgresChangeFlow after joining the channel") and crashed the app
+        // right after login. The fix is to share the FLOW, not the topic — there is now
+        // only one subscriber per key, so only one topic is ever created.
+        val key = SubscriptionKey(userId, now)
+        sharedWorkerWeeks[key]?.let { return it }
+        val shared =
+            rawWorkerWeek(userId, now)
+                .shareIn(
+                    scope = repositoryScope,
+                    started = SharingStarted.WhileSubscribed(replayExpirationMillis = 0),
+                    replay = 1,
+                )
+        sharedWorkerWeeks[key] = shared
+        return shared
+    }
+
+    // debounce() is still FlowPreview in kotlinx.coroutines. Opted in deliberately: it is
+    // the operator this fix needs, it has been stable in practice for years, and the
+    // fallback (a hand-rolled timer) would be more code doing the same thing less well.
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
+    private fun rawWorkerWeek(
+        userId: String,
+        now: Instant,
     ): Flow<WorkerSnapshot> =
         flow {
             emit(fetchWorkerWeek(userId, now))
-            // Unique topic per collection. The Shifts AND Calendar observables both
-            // collect this flow concurrently, and supabase.channel() caches by name —
-            // a shared name means the second collector calls postgresChangeFlow on an
-            // already-joined channel and throws ("You cannot call postgresChangeFlow
-            // after joining the channel"), which crashed the app right after login.
             val channel = supabase.channel("worker-shifts-$userId-${Random.nextLong()}")
             val changes =
                 channel.postgresChangeFlow<PostgresAction>(schema = "public") {
@@ -788,11 +849,36 @@ class WorkerShiftsRepository(
                 }
             channel.subscribe()
             try {
-                changes.collect { emit(fetchWorkerWeek(userId, now)) }
+                changes
+                    // F-02: the refetch was 1:1 with Realtime events and undebounced,
+                    // and each refetch is TWO wide view reads. The write amplifiers make
+                    // that dangerous rather than merely wasteful: publish_schedule stamps
+                    // a template week across a whole semester, and apply_compiled_season
+                    // reconciles every future block row-by-row inside a PL/pgSQL loop —
+                    // ~35,000 blocks on current data. Every touched row emits a WAL
+                    // record (REPLICA IDENTITY FULL, so the whole old row), which
+                    // Realtime decodes, RLS-checks per subscriber and delivers, and each
+                    // delivery triggered another full refetch with no backoff. An admin
+                    // applying a season during business hours would put the database into
+                    // a sustained refetch storm.
+                    //
+                    // debounce + conflate collapses a bulk write into ONE refetch per
+                    // client: debounce waits for the burst to stop, conflate drops
+                    // superseded emissions while a refetch is still in flight.
+                    //
+                    // 500 ms is a product decision (2026-07-26), not an arbitrary
+                    // constant: invisible to a human, and well inside the margin for the
+                    // thing that must stay prompt — a float landing at T-2h.
+                    .debounce(REALTIME_REFETCH_DEBOUNCE_MS)
+                    .conflate()
+                    .collect { emit(fetchWorkerWeek(userId, now)) }
             } finally {
                 runCatching { supabase.realtime.removeChannel(channel) }
             }
         }
+
+    /** Identity of a shared worker-week subscription: same worker, same fixed window. */
+    private data class SubscriptionKey(val userId: String, val now: Instant)
 
     /**
      * The worker's notification history for the Updates feed (§10.1). A plain SELECT
@@ -804,7 +890,7 @@ class WorkerShiftsRepository(
     suspend fun fetchNotifications(userId: String): List<NotificationItem> =
         supabase
             .from(TABLE_NOTIFICATIONS)
-            .select { filter { eq("recipient_user_id", userId) } }
+            .select(NOTIFICATION_COLUMNS) { filter { eq("recipient_user_id", userId) } }
             .decodeList<NotificationWireRow>()
             .map { it.toModel() }
 
@@ -1017,6 +1103,36 @@ class WorkerShiftsRepository(
         }
 
     private companion object {
+        /**
+         * Realtime refetch debounce (cost audit F-02). Product decision 2026-07-26:
+         * 500 ms is invisible to a human and still well inside the margin for a float
+         * landing at T-2h, while collapsing a 35,000-row bulk write into one refetch.
+         */
+        const val REALTIME_REFETCH_DEBOUNCE_MS = 500L
+
+        /**
+         * Explicit column lists for the two hot feeds and the notifications read
+         * (cost audit F-12). These were bare `.select()`, i.e. `select *` on wide views,
+         * on the path that every Realtime event re-runs. The narrow pattern was already
+         * established at [fetchIncomingSwaps]; it just was not applied consistently.
+         *
+         * Keep these in sync with [MyShiftRow] / [OpenShiftRow] / [NotificationWireRow]:
+         * a column named here but absent from the row type is wasted egress, and a field
+         * in the row type but missing here decodes to its default and silently changes
+         * behaviour. Every name below is consumed by the corresponding decoder.
+         */
+        val MY_SHIFT_COLUMNS = Columns.list(
+            "id", "house_id", "house_name", "start_at", "end_at", "kind",
+            "cross_house", "pending", "break_shift", "dropped_still_open",
+        )
+        val OPEN_SHIFT_COLUMNS = Columns.list(
+            "id", "house_id", "house_name", "start_at", "end_at", "feed",
+            "home_house", "weeks_remaining", "desk_covered", "coverage_locked",
+        )
+        val NOTIFICATION_COLUMNS = Columns.list(
+            "notification_id", "type", "payload", "created_at", "acknowledged_at",
+        )
+
         const val VIEW_MY_SHIFTS = "worker_my_shifts"
         const val VIEW_OPEN_SHIFTS = "worker_open_shifts"
         const val VIEW_PENDING_FLOATS = "worker_pending_floats"

@@ -21,11 +21,17 @@ import { SEED, login } from './helpers';
 // packages/core/tests/s1-admin-override/admin-override.test.ts; the authoritative
 // RPC behavior is in supabase/tests/s1-admin-override.sql.
 //
+// Panel redesign (2026-07-25): occupied-seat editing now leads with the action
+// choice ("Swap with someone else" copy, same override-action-replace testid /
+// internal 'replace' action) — nothing past that row (range slider, worker
+// cards, scope, Apply) renders until an action is picked. The typed from/to
+// selects are gone; the range slider is the only way to size the sub-range.
+//
 // Selector contract (data-testid):
 //   override-section            — the edit section in the shift detail panel
 //                                 (visible only to sm/hm/bm of the block's house).
-//   override-range-from / -to   — the sub-range start/end selects (multi-block only).
-//   override-action-replace / -remove — the Remove/Replace toggle (occupied seats).
+//   override-action-replace / -remove — the Swap/Remove toggle (occupied seats);
+//                                 nothing below it renders until one is picked.
 //   override-worker-list        — the candidate-card picker (block-house roster).
 //   override-worker-card        — one selectable candidate card (data-worker-id).
 //   override-scope-week / -permanent — the This-week / Permanent scope toggle.
@@ -121,7 +127,9 @@ test.describe('Live-calendar admin override (§4.3) — assign / replace / remov
     await openCard(page, new RegExp(SEED.overrideIncumbent.name, 'i'));
     await expect(page.getByTestId('override-section')).toBeVisible();
 
-    // Replace is the default action for an occupied seat — the worker cards show.
+    // Occupied seats no longer default to an action — pick "Swap with someone
+    // else" before the worker cards appear.
+    await page.getByTestId('override-action-replace').click();
     await workerCard(page, SEED.ben.name).click();
     await page.getByTestId('override-submit').click();
 

@@ -81,5 +81,12 @@ export default async function CalendarPage({
 
   const model = await getHouseCalendar(viewHouse, weekStartDate, now);
 
-  return <HouseCalendar model={model} todayKey={todayKey} thisMondayKey={thisMondayKey} />;
+  return (
+    <HouseCalendar
+      model={model}
+      todayKey={todayKey}
+      thisMondayKey={thisMondayKey}
+      viewerUserId={user.userId}
+    />
+  );
 }

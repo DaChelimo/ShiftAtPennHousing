@@ -17,17 +17,21 @@ export function HouseCalendar({
   model,
   todayKey,
   thisMondayKey,
+  viewerUserId,
 }: {
   model: CalendarModel;
   todayKey: string;
   thisMondayKey: string;
+  viewerUserId: string;
 }) {
+  const isMine = (s: CalShift) => s.userId === viewerUserId;
   const router = useRouter();
   const [view, setView] = useState<'week' | 'day'>('week');
   const [selected, setSelected] = useState<CalShift | null>(null);
   const [pickOpen, setPickOpen] = useState(false);
   const navRef = useRef<HTMLDivElement>(null);
   const weekScrollRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const nowBlock = useNowBlock(model.dayStartMin, model.blocksPerDay);
 
   // When a shift is opened in week view, scroll its day column up to just right
@@ -61,6 +65,20 @@ export function HouseCalendar({
       document.removeEventListener('keydown', onEsc);
     };
   }, [pickOpen]);
+
+  // A shift stays "in focus" (highlighted card + open detail panel) until the user
+  // clicks something outside both the calendar grid and the panel itself. Clicking
+  // another shift card re-targets onSelect directly, so it is excluded here only via
+  // the panel ref — anything outside the panel, including empty calendar space or
+  // page chrome, drops focus.
+  useEffect(() => {
+    if (selected === null) return;
+    const onDoc = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) setSelected(null);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [selected]);
 
   const go = (monday: string) => router.push(`/calendar?week=${monday}&house=${model.houseId}`);
   const colMin = model.lanes >= 3 ? 248 : model.lanes === 2 ? 196 : 168;
@@ -180,6 +198,8 @@ export function HouseCalendar({
             blocksPerDay={model.blocksPerDay}
             nowBlock={nowBlock}
             onSelect={setSelected}
+            isMine={isMine}
+            selectedId={selected?.id ?? null}
           />
         </div>
       ) : view === 'day' ? (
@@ -193,6 +213,8 @@ export function HouseCalendar({
               originMin={model.dayStartMin}
               nowBlock={nowBlock}
               onSelect={setSelected}
+              isMine={isMine}
+              selectedId={selected?.id ?? null}
             />
           </div>
         </div>
@@ -212,6 +234,8 @@ export function HouseCalendar({
                 originMin={model.dayStartMin}
                 nowBlock={nowBlock}
                 onSelect={setSelected}
+                isMine={isMine}
+                selectedId={selected?.id ?? null}
               />
             ))}
           </div>
@@ -221,6 +245,7 @@ export function HouseCalendar({
       {selected && (
         <ShiftDetailPanel
           key={selected.id}
+          panelRef={panelRef}
           shift={selected}
           houseName={model.houseName}
           dayLabel={`${model.days[selected.dayIndex]!.label} ${model.days[selected.dayIndex]!.date}`}

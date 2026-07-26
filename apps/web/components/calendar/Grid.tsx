@@ -65,6 +65,7 @@ export function ShiftCardEl<S extends GridShift>({
   clipTop = false,
   clipBot = false,
   mine = false,
+  selected = false,
 }: {
   shift: S;
   onSelect?: (s: S) => void;
@@ -73,6 +74,7 @@ export function ShiftCardEl<S extends GridShift>({
   clipTop?: boolean;
   clipBot?: boolean;
   mine?: boolean;
+  selected?: boolean;
 }) {
   const meta = CAL_STATE_META[shift.state];
   const h = height ?? (shift.endBlock - shift.startBlock) * BLOCK_H - 2;
@@ -91,7 +93,7 @@ export function ShiftCardEl<S extends GridShift>({
   return (
     <button
       type="button"
-      className={`scard ${meta.cls} ${clipTop ? 'clip-top' : ''} ${clipBot ? 'clip-bot' : ''} ${mine ? 'scard-mine' : ''} ${tinted ? 'scard-worker' : ''}`.trim()}
+      className={`scard ${meta.cls} ${clipTop ? 'clip-top' : ''} ${clipBot ? 'clip-bot' : ''} ${mine ? 'scard-mine' : ''} ${tinted ? 'scard-worker' : ''} ${selected ? 'is-selected' : ''}`.trim()}
       style={
         wc
           ? { top: t, height: h, ['--wc' as string]: wc, ['--wc-fg' as string]: wcFg }
@@ -223,6 +225,7 @@ export function DaySegment<S extends GridShift>({
   nowBlock,
   onSelect,
   isMine,
+  selectedId,
 }: {
   seg: LaneSegment;
   shifts: S[];
@@ -230,6 +233,7 @@ export function DaySegment<S extends GridShift>({
   nowBlock: number | null;
   onSelect?: (s: S) => void;
   isMine?: (s: S) => boolean;
+  selectedId?: string | null;
 }) {
   const rows = seg.endBlock - seg.startBlock;
   const segShifts = shifts.filter(
@@ -256,6 +260,7 @@ export function DaySegment<S extends GridShift>({
                   clipTop={s.startBlock < seg.startBlock}
                   clipBot={s.endBlock > seg.endBlock}
                   mine={isMine?.(s) ?? false}
+                  selected={s.id === selectedId}
                 />
               );
             })}
@@ -278,6 +283,7 @@ export function DayColumn<S extends GridShift>({
   nowBlock,
   onSelect,
   isMine,
+  selectedId,
 }: {
   day: CalendarDay;
   shifts: S[];
@@ -286,6 +292,7 @@ export function DayColumn<S extends GridShift>({
   nowBlock: number | null;
   onSelect?: (s: S) => void;
   isMine?: (s: S) => boolean;
+  selectedId?: string | null;
 }) {
   return (
     <div className={`cal-day ${day.isToday ? 'is-today' : ''}`.trim()} data-col-index={day.index}>
@@ -313,6 +320,7 @@ export function DayColumn<S extends GridShift>({
               nowBlock={day.isToday ? nowBlock : null}
               onSelect={onSelect}
               isMine={isMine}
+              selectedId={selectedId}
             />
           ))}
         </div>
@@ -330,6 +338,7 @@ export function SplitDay<S extends GridShift>({
   nowBlock,
   onSelect,
   isMine,
+  selectedId,
 }: {
   day: CalendarDay;
   shifts: S[];
@@ -338,6 +347,7 @@ export function SplitDay<S extends GridShift>({
   nowBlock: number | null;
   onSelect?: (s: S) => void;
   isMine?: (s: S) => boolean;
+  selectedId?: string | null;
 }) {
   const half = blocksPerDay / 2;
   const halves = [
@@ -386,6 +396,7 @@ export function SplitDay<S extends GridShift>({
                             clipTop={s.startBlock < half.from}
                             clipBot={s.endBlock > half.to}
                             mine={isMine?.(s) ?? false}
+                            selected={s.id === selectedId}
                           />
                         );
                       })}

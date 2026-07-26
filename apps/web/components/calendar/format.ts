@@ -47,9 +47,14 @@ export function shiftOriginMinutes(shift: { startAtIso: string; startBlock: numb
   return nyMinutesOfIso(shift.startAtIso) - shift.startBlock * 30;
 }
 
+// One decimal place, no trailing ".0" — the shared hours format across the calendar
+// (header chips, cap hints, edit-section labels).
+export function fmtH(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
 export function blocksToHours(start: number, end: number): string {
-  const h = (end - start) / 2;
-  return Number.isInteger(h) ? String(h) : h.toFixed(1);
+  return fmtH((end - start) / 2);
 }
 
 // --- date-key (YYYY-MM-DD) math, calendar-only (no time zone needed) ---
@@ -107,7 +112,7 @@ export const CAL_STATE_META: Record<CalState, StateMeta> = {
 
 // Fallback display name for a card with no assigned worker.
 export function emptyCardName(state: CalState): string {
-  if (state === 'allied') return 'Allied Security';
+  if (state === 'allied') return 'Allied';
   if (state === 'perm-gap') return 'Permanent opening';
   return 'Open shift';
 }

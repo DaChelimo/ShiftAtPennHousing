@@ -45,6 +45,13 @@ import com.pennhousing.shift.ui.theme.ShiftTheme
  * scrim, and an optional header (title + close). This IS the dialog pattern in the
  * design; confirmations are [ShiftConfirmSheet]s. (Android uses the M3 modal sheet;
  * iOS uses a native `.sheet` with detents + grabber — the native-chrome difference.)
+ *
+ * [overlay] is a slot for anything that must cover the WHOLE sheet (header included),
+ * such as a tour scrim — it is rendered as a sibling of the header+body column, not
+ * nested inside the scrolling body. A tour scrim passed through [content] instead sits
+ * inside the scrollable column, whose height constraint is unbounded, so its
+ * `fillMaxSize()` collapses to the height of its own content instead of covering the
+ * sheet; see `SheetOverlaySlotTest`.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
 @Composable
@@ -55,6 +62,7 @@ fun ShiftBottomSheet(
     // When non-null, the header shows a leading back chevron (a multi-page sheet pushing a
     // "page" in place rather than presenting a new sheet); the close ✕ still dismisses.
     onBack: (() -> Unit)? = null,
+    overlay: @Composable () -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -67,36 +75,39 @@ fun ShiftBottomSheet(
         scrimColor = ShiftTheme.colors.scrim,
         dragHandle = { Grabber() },
     ) {
-        // A slight fade+rise settles the content in as the sheet slides up. The M3 modal
-        // sheet already animates the container's slide/scrim; this adds a light entrance on
-        // top so the drawer feels lively without fighting the native motion.
-        var appeared by remember { mutableStateOf(false) }
-        val enterAlpha by animateFloatAsState(if (appeared) 1f else 0f, tween(300), label = "sheetContentAlpha")
-        val enterRise by animateFloatAsState(if (appeared) 0f else 10f, tween(300), label = "sheetContentRise")
-        LaunchedEffect(Unit) { appeared = true }
-        Column(
-            Modifier.graphicsLayer {
-                alpha = enterAlpha
-                translationY = enterRise.dp.toPx()
-            },
-        ) {
-            if (title != null) SheetHeader(title, onDismiss, onBack)
+        Box(Modifier.fillMaxWidth()) {
+            // A slight fade+rise settles the content in as the sheet slides up. The M3 modal
+            // sheet already animates the container's slide/scrim; this adds a light entrance on
+            // top so the drawer feels lively without fighting the native motion.
+            var appeared by remember { mutableStateOf(false) }
+            val enterAlpha by animateFloatAsState(if (appeared) 1f else 0f, tween(300), label = "sheetContentAlpha")
+            val enterRise by animateFloatAsState(if (appeared) 0f else 10f, tween(300), label = "sheetContentRise")
+            LaunchedEffect(Unit) { appeared = true }
             Column(
-                Modifier
-                    .fillMaxWidth()
-                    // Scroll the body so tall sheets (e.g. the multi-leg swap composer) can always
-                    // reach their bottom actions — without this the content overflowed the sheet and
-                    // the submit/add buttons were unreachable. (ShiftBanner already pins itself with
-                    // IntrinsicSize.Min for exactly this scrollable context.)
-                    .verticalScroll(rememberScrollState())
-                    // The modal sheet is its own window — re-enable resource-id testTags
-                    // so Maestro's `id:` selectors see the sheet's controls.
-                    .semantics { testTagsAsResourceId = true }
-                    .padding(horizontal = 18.dp)
-                    .padding(top = 8.dp, bottom = 28.dp),
+                Modifier.graphicsLayer {
+                    alpha = enterAlpha
+                    translationY = enterRise.dp.toPx()
+                },
             ) {
-                content()
+                if (title != null) SheetHeader(title, onDismiss, onBack)
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        // Scroll the body so tall sheets (e.g. the multi-leg swap composer) can always
+                        // reach their bottom actions — without this the content overflowed the sheet and
+                        // the submit/add buttons were unreachable. (ShiftBanner already pins itself with
+                        // IntrinsicSize.Min for exactly this scrollable context.)
+                        .verticalScroll(rememberScrollState())
+                        // The modal sheet is its own window — re-enable resource-id testTags
+                        // so Maestro's `id:` selectors see the sheet's controls.
+                        .semantics { testTagsAsResourceId = true }
+                        .padding(horizontal = 18.dp)
+                        .padding(top = 8.dp, bottom = 28.dp),
+                ) {
+                    content()
+                }
             }
+            overlay()
         }
     }
 }

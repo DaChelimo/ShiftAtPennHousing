@@ -1,6 +1,5 @@
 package com.pennhousing.shift.ui.onboarding
 
-import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,11 +31,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -67,92 +63,10 @@ import com.pennhousing.shift.ui.theme.ShiftTheme
  * Compose visibility rather than iOS's spring/stagger motion).
  */
 
-/** Its OWN seen-key store, separate from ShiftTour's and every other tour's (mirrors iOS). */
-object SwapTourPrefs {
-    private const val PREFS = "onboarding"
-    private const val KEY = "swap_tour_seen_keys"
-
-    fun read(context: Context): Set<String> =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getStringSet(KEY, emptySet())?.toSet() ?: emptySet()
-
-    fun write(
-        context: Context,
-        seen: Set<String>,
-    ) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putStringSet(KEY, HashSet(seen)).apply()
-    }
-}
-
-/** Per-device flag: whether the swap composer's "?" has already shown its one-time pointer. */
-object SwapTourPointerStore {
-    private const val PREFS = "onboarding"
-    private const val KEY = "swap_tour_pointer_shown"
-
-    fun hasShown(context: Context): Boolean = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY, false)
-
-    fun markShown(context: Context) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY, true).apply()
-    }
-}
-
 /**
- * The "?" affordance in the swap composer's header that replays the tour. Reports its own
- * on-screen bounds via [onPositioned] so the one-time pointer callout can point at the real
- * button without the two composables needing to know each other's layout.
+ * `SwapTourPrefs`, `SwapTourPointerStore`, `SwapTourHelpButton`, and `SwapTourPointerCallout`
+ * live in `SwapTourChrome.kt`; this file is the overlay rendering only.
  */
-@Composable
-fun SwapTourHelpButton(
-    onClick: () -> Unit,
-    onPositioned: (Rect) -> Unit = {},
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier
-            .size(34.dp)
-            .onGloballyPositioned { coords -> onPositioned(coords.boundsInRoot()) }
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.primaryContainer)
-            .clickable(onClick = onClick)
-            .testTag("swap_tour_help"),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            ShiftIcons.QuestionMark,
-            contentDescription = "Replay the swap tour",
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(16.dp),
-        )
-    }
-}
-
-/**
- * The one-time "look here" pointer at the header "?", shown once right after the tour first
- * finishes so the worker learns where it went. Non-blocking (no click handling), fading on
- * its own timer driven by the caller. [targetRect] is the help button's root-space bounds
- * (from [SwapTourHelpButton]'s [onPositioned]); renders nothing until known.
- */
-@Composable
-fun SwapTourPointerCallout(
-    targetRect: Rect?,
-    modifier: Modifier = Modifier,
-) {
-    if (targetRect == null) return
-    Box(modifier.fillMaxSize().testTag("swap_tour_pointer")) {
-        Column(
-            Modifier
-                .padding(top = with(androidx.compose.ui.platform.LocalDensity.current) { (targetRect.bottom + 10f).toDp() })
-                .align(Alignment.TopEnd)
-                .padding(end = 16.dp)
-                .widthIn(max = 200.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.primary)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-        ) {
-            Text("Find this again here", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-            Text("Tap to replay the tour", color = Color.White.copy(alpha = 0.85f), fontSize = 12.sp)
-        }
-    }
-}
 
 /**
  * The tour overlay — the sample swap composer the worker picks a mode on (step 1), sizes a

@@ -128,81 +128,86 @@ internal fun ManageShiftSheet(
         onDismiss = onDismiss,
         title = if (page == ManagePage.Swap) "Propose a swap" else "Manage shift",
         onBack = if (page == ManagePage.Swap) ({ page = ManagePage.Manage }) else null,
-    ) {
-        Box(Modifier.fillMaxWidth()) {
-            AnimatedContent(
-                targetState = page,
-                transitionSpec = {
-                    // Forward (→ Swap) slides in from the right; Back slides in from the left.
-                    if (targetState == ManagePage.Swap) {
-                        (slideInHorizontally { it / 3 } + fadeIn()) togetherWith (slideOutHorizontally { -it / 3 } + fadeOut())
-                    } else {
-                        (slideInHorizontally { -it / 3 } + fadeIn()) togetherWith (slideOutHorizontally { it / 3 } + fadeOut())
-                    }
-                },
-                label = "manage_page",
-            ) { p ->
-                when (p) {
-                    ManagePage.Manage ->
-                        ManagePageContent(
-                            shift = shift,
-                            vm = vm,
-                            breakProfile = breakProfile,
-                            swapKinds = swapKinds,
-                            onDrop = { sub, permanent ->
-                                onDrop(sub, permanent)
-                                onDismiss()
-                            },
-                            onProposeSwap = { sub, permanent ->
-                                swapGive = sub
-                                swapPermanent = permanent
-                                page = ManagePage.Swap
-                            },
-                        )
-                    ManagePage.Swap ->
-                        swapGive?.let { give ->
-                            SwapCalendarBody(
-                                giveShift = give,
-                                meUserId = swapMeUserId,
-                                demoSeats = swapDemoSeats,
-                                pendingGiveAssignmentIds = swapPendingGiveIds,
-                                initialPermanent = swapPermanent,
-                                onSubmit = { proposals ->
-                                    onSubmitSwap(proposals)
-                                    onDismiss()
-                                },
-                            )
-                        }
+        // The tour scrim must cover the WHOLE sheet (header included), so it rides the
+        // sheet's dedicated overlay slot rather than living inside the scrolling content
+        // Box below — nested there, its `fillMaxSize()` collapsed to its own content
+        // height instead of the sheet's (see `SheetOverlaySlotTest`).
+        overlay = {
+            Box(Modifier.fillMaxWidth()) {
+                // The composer's own help "?", floating top-end since ShiftBottomSheet's own
+                // header has no trailing accessory slot (its close X already owns that spot).
+                if (page == ManagePage.Swap) {
+                    SwapTourHelpButton(
+                        onClick = swapTourVm::replay,
+                        onPositioned = { swapTourHelpRect = it },
+                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 2.dp, end = 2.dp),
+                    )
+                }
+                // Gated on page == Swap too: a Settings "Replay swap tour" flips `active` true
+                // immediately (before the sheet may even be open on this page), and it must stay
+                // invisible until the worker actually reaches the swap page, not show over the
+                // Drop/Swap manage page.
+                if (swapTourState.active && page == ManagePage.Swap) {
+                    SwapTourOverlay(
+                        state = swapTourState,
+                        onNext = swapTourVm::next,
+                        onBack = swapTourVm::back,
+                        onSkip = swapTourVm::skip,
+                        onDismissOutside = {
+                            swapTourVm.skip()
+                            showSwapTourPointer = true
+                        },
+                    )
+                }
+                if (showSwapTourPointer) {
+                    SwapTourPointerCallout(targetRect = swapTourHelpRect)
                 }
             }
-            // The composer's own help "?", floating top-end since ShiftBottomSheet's own
-            // header has no trailing accessory slot (its close X already owns that spot).
-            if (page == ManagePage.Swap) {
-                SwapTourHelpButton(
-                    onClick = swapTourVm::replay,
-                    onPositioned = { swapTourHelpRect = it },
-                    modifier = Modifier.align(Alignment.TopEnd).padding(top = 2.dp, end = 2.dp),
-                )
-            }
-            // Gated on page == Swap too: a Settings "Replay swap tour" flips `active` true
-            // immediately (before the sheet may even be open on this page), and it must stay
-            // invisible until the worker actually reaches the swap page, not show over the
-            // Drop/Swap manage page. Rendered as a sibling in this SAME Box (not a separate
-            // Column row) so it overlaps the page content instead of stacking below it.
-            if (swapTourState.active && page == ManagePage.Swap) {
-                SwapTourOverlay(
-                    state = swapTourState,
-                    onNext = swapTourVm::next,
-                    onBack = swapTourVm::back,
-                    onSkip = swapTourVm::skip,
-                    onDismissOutside = {
-                        swapTourVm.skip()
-                        showSwapTourPointer = true
-                    },
-                )
-            }
-            if (showSwapTourPointer) {
-                SwapTourPointerCallout(targetRect = swapTourHelpRect)
+        },
+    ) {
+        AnimatedContent(
+            targetState = page,
+            transitionSpec = {
+                // Forward (→ Swap) slides in from the right; Back slides in from the left.
+                if (targetState == ManagePage.Swap) {
+                    (slideInHorizontally { it / 3 } + fadeIn()) togetherWith (slideOutHorizontally { -it / 3 } + fadeOut())
+                } else {
+                    (slideInHorizontally { -it / 3 } + fadeIn()) togetherWith (slideOutHorizontally { it / 3 } + fadeOut())
+                }
+            },
+            label = "manage_page",
+        ) { p ->
+            when (p) {
+                ManagePage.Manage ->
+                    ManagePageContent(
+                        shift = shift,
+                        vm = vm,
+                        breakProfile = breakProfile,
+                        swapKinds = swapKinds,
+                        onDrop = { sub, permanent ->
+                            onDrop(sub, permanent)
+                            onDismiss()
+                        },
+                        onProposeSwap = { sub, permanent ->
+                            swapGive = sub
+                            swapPermanent = permanent
+                            page = ManagePage.Swap
+                        },
+                    )
+                ManagePage.Swap ->
+                    swapGive?.let { give ->
+                        SwapCalendarBody(
+                            giveShift = give,
+                            meUserId = swapMeUserId,
+                            demoSeats = swapDemoSeats,
+                            pendingGiveAssignmentIds = swapPendingGiveIds,
+                            initialPermanent = swapPermanent,
+                            onSubmit = { proposals ->
+                                onSubmitSwap(proposals)
+                                onDismiss()
+                            },
+                        )
+                    }
             }
         }
     }

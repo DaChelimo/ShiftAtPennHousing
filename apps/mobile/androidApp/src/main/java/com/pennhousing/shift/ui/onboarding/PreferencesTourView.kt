@@ -1,6 +1,5 @@
 package com.pennhousing.shift.ui.onboarding
 
-import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -34,12 +33,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
@@ -65,92 +61,11 @@ import com.pennhousing.shift.ui.theme.ShiftTheme
  * seen-key store, plain Compose visibility rather than iOS's spring/stagger/wiggle motion).
  */
 
-/** Its OWN seen-key store, separate from `ShiftTourPrefs` / every other tour (mirrors iOS). */
-object PreferencesTourPrefs {
-    private const val PREFS = "onboarding"
-    private const val KEY = "preferences_tour_seen_keys"
-
-    fun read(context: Context): Set<String> =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getStringSet(KEY, emptySet())?.toSet() ?: emptySet()
-
-    fun write(
-        context: Context,
-        seen: Set<String>,
-    ) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putStringSet(KEY, HashSet(seen)).apply()
-    }
-}
-
-/** Per-device flag: whether the header "?" has already shown its one-time post-tour pointer. */
-object PreferencesTourPointerStore {
-    private const val PREFS = "onboarding"
-    private const val KEY = "preferences_tour_pointer_shown"
-
-    fun hasShown(context: Context): Boolean = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY, false)
-
-    fun markShown(context: Context) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY, true).apply()
-    }
-}
-
 /**
- * The "?" affordance in the Preferences header that replays the tour. Reports its own on-screen
- * bounds via [onPositioned] so the one-time pointer callout can point at the real button without
- * the two composables needing to know each other's layout.
+ * `PreferencesTourPrefs`, `PreferencesTourPointerStore`, `PreferencesTourHelpButton`, and
+ * `PreferencesTourPointerCallout` live in `PreferencesTourChrome.kt`; this file is the overlay
+ * rendering only.
  */
-@Composable
-fun PreferencesTourHelpButton(
-    onClick: () -> Unit,
-    onPositioned: (Rect) -> Unit = {},
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier
-            .size(34.dp)
-            .onGloballyPositioned { coords -> onPositioned(coords.boundsInRoot()) }
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.primaryContainer)
-            .clickable(onClick = onClick)
-            .testTag("preferences_tour_help"),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            ShiftIcons.QuestionMark,
-            contentDescription = "Replay the preferences tour",
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(16.dp),
-        )
-    }
-}
-
-/**
- * The one-time "look here" pointer at the header "?", shown once right after the tour first
- * finishes so the worker learns where it went. Non-blocking (no click handling). [targetRect] is
- * the help button's root-space bounds (from [PreferencesTourHelpButton]'s [onPositioned]);
- * renders nothing until known.
- */
-@Composable
-fun PreferencesTourPointerCallout(
-    targetRect: Rect?,
-    modifier: Modifier = Modifier,
-) {
-    if (targetRect == null) return
-    Box(modifier.fillMaxSize().testTag("preferences_tour_pointer")) {
-        Column(
-            Modifier
-                .padding(top = with(LocalDensity.current) { (targetRect.bottom + 10f).toDp() })
-                .align(Alignment.TopEnd)
-                .padding(end = 16.dp)
-                .widthIn(max = 200.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.primary)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-        ) {
-            Text("Find this again here", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-            Text("Tap to replay the tour", color = Color.White.copy(alpha = 0.85f), fontSize = 12.sp)
-        }
-    }
-}
 
 /** Brush styling (color + icon + text), mirroring `brushStyle` in `PreferencesScreen.kt` exactly
  * so the tour never lies about the real screen's information architecture. */

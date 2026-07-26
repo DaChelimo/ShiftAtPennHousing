@@ -420,4 +420,27 @@ object ShiftIcons {
             lineTo(10.6f, 9.4f)
             close()
         }
+
+    /**
+     * Hand-drag — a touch point with a left/right double arrow, the range-slider tours'
+     * "drag me" badge (`RangeSliderDragHint`). Android's approximation of iOS's SF Symbol
+     * `hand.draw.fill`; this codebase draws its own glyphs rather than depending on SF
+     * Symbols, so the shape trades literal fidelity for the same "drag sideways" idea.
+     */
+    val HandDrag: ImageVector =
+        stroked("HandDrag") {
+            circle(12f, 7f, 2.5f)
+            moveTo(9f, 14f)
+            lineTo(4.5f, 14f)
+            moveTo(4.5f, 14f)
+            lineTo(7f, 11.5f)
+            moveTo(4.5f, 14f)
+            lineTo(7f, 16.5f)
+            moveTo(15f, 14f)
+            lineTo(19.5f, 14f)
+            moveTo(19.5f, 14f)
+            lineTo(17f, 11.5f)
+            moveTo(19.5f, 14f)
+            lineTo(17f, 16.5f)
+        }
 }

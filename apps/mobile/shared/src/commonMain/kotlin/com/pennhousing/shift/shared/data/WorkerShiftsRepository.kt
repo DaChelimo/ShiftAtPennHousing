@@ -114,7 +114,16 @@ class WorkerShiftsRepository(
      */
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    /** Live shared flows, keyed so two collectors of the same window share one channel. */
+    /**
+     * Live shared flows, keyed so two collectors of the same window share one channel.
+     *
+     * Not synchronized, and that is a constraint rather than an oversight: both call
+     * sites are main-thread confined (iOS `ShiftsRootView` is `@MainActor`; Android
+     * builds the flow during composition), so [observeWorkerWeek] must be called from the
+     * main dispatcher. Collection itself is free to happen anywhere -- only the lookup is
+     * confined. If a background caller is ever needed, give this a mutex rather than
+     * dropping the sharing.
+     */
     private val sharedWorkerWeeks = mutableMapOf<SubscriptionKey, Flow<WorkerSnapshot>>()
     /**
      * Drop a single occurrence of [shift] this week → the phase-05 `drop-shift` Edge
@@ -819,7 +828,18 @@ class WorkerShiftsRepository(
         // cannot call postgresChangeFlow after joining the channel") and crashed the app
         // right after login. The fix is to share the FLOW, not the topic — there is now
         // only one subscriber per key, so only one topic is ever created.
-        val key = SubscriptionKey(userId, now)
+        // KEY ON THE WINDOW, NOT ON `now`. This is load-bearing and easy to get wrong:
+        // `now` comes from SimClock.now(), a MOVING clock, so the Shifts and Calendar
+        // collectors call it milliseconds apart and get different Instants. Keying on the
+        // raw instant would mint a separate flow per collector and quietly reproduce the
+        // exact two-channels-per-user problem this exists to fix.
+        //
+        // fetchWorkerWeek uses `now` for one thing only -- deriving navigableWindowStart
+        // (Monday of last week, 00:00 NY) -- so two collectors microseconds apart want
+        // byte-identical data. The window start is stable across a whole week, which
+        // makes it the correct identity. A sim-clock jump big enough to move the window
+        // yields a new key and a new subscription, which is what should happen.
+        val key = SubscriptionKey(userId, navigableWindowStart(now))
         sharedWorkerWeeks[key]?.let { return it }
         val shared =
             rawWorkerWeek(userId, now)
@@ -877,8 +897,12 @@ class WorkerShiftsRepository(
             }
         }
 
-    /** Identity of a shared worker-week subscription: same worker, same fixed window. */
-    private data class SubscriptionKey(val userId: String, val now: Instant)
+    /**
+     * Identity of a shared worker-week subscription: same worker, same navigable window.
+     * [windowStart] is `navigableWindowStart(now)`, deliberately NOT the raw `now` -- see
+     * the note in [observeWorkerWeek].
+     */
+    private data class SubscriptionKey(val userId: String, val windowStart: Instant)
 
     /**
      * The worker's notification history for the Updates feed (§10.1). A plain SELECT

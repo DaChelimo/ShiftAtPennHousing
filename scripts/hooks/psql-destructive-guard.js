@@ -17,6 +17,13 @@
 // npm/pnpm script invocations (`pnpm seed:sandbox`, `supabase db reset`, etc.) never
 // contain the literal string `psql` in the Bash command Claude runs, so they are
 // unaffected even though the underlying script does call psql.
+//
+// Also narrowed to REMOTE targets only: a command that resolves to the local
+// Supabase Postgres (127.0.0.1/localhost, the project's local port 54322, or no
+// host at all — psql's own default is local) passes silently even with an
+// unwrapped DELETE/UPDATE. Local data is disposable (`supabase db reset` restores
+// it); the incident this guard exists for was a mutation that could have hit a
+// real/shared environment, not local dev data.
 
 const fs = require('fs');
 const path = require('path');
@@ -46,6 +53,34 @@ function extractDashFPaths(command) {
   return paths;
 }
 
+// Local Supabase Postgres is always 127.0.0.1/localhost on the project's
+// local port (supabase/config.toml -> db.port, 54322 here), or psql invoked
+// with no host/connection-string at all (psql's own default is local). A
+// connection string or -h/-d flag pointing anywhere else is treated as remote.
+const LOCAL_PORT = '54322';
+
+function isLocalTarget(command) {
+  const hasConnString = /postgres(?:ql)?:\/\/[^\s"']+/i.test(command);
+  if (hasConnString) {
+    return new RegExp(
+      `postgres(?:ql)?://[^\\s"']*@?(127\\.0\\.0\\.1|localhost)(?::${LOCAL_PORT})?/`,
+      'i',
+    ).test(command);
+  }
+
+  const hasRemoteHostFlag = /(^|\s)(-h|--host(?:=|\s))\s*(?!(127\.0\.0\.1|localhost)\b)\S+/i.test(
+    command,
+  );
+  if (hasRemoteHostFlag) return false;
+
+  const hasHostEnvVar = /\bPGHOST=(?!['"]?(127\.0\.0\.1|localhost)\b)\S+/i.test(command);
+  if (hasHostEnvVar) return false;
+
+  // No connection string, no -h/--host, no PGHOST override: psql defaults to
+  // the local Unix socket / localhost.
+  return true;
+}
+
 function main() {
   let input;
   try {
@@ -58,6 +93,8 @@ function main() {
   if (typeof command !== 'string' || !/psql/i.test(command)) {
     process.exit(0);
   }
+
+  if (isLocalTarget(command)) process.exit(0);
 
   let scanText = command;
   for (const p of extractDashFPaths(command)) {

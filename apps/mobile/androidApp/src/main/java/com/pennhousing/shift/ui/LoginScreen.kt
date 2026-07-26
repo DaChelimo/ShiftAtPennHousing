@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
@@ -34,6 +35,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -42,6 +45,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -164,6 +168,7 @@ fun LoginScreen(
         val submitting = state.phase == LoginPhase.SUBMITTING
         var showPassword by remember { mutableStateOf(false) }
         var keepSignedIn by remember { mutableStateOf(true) }
+        val passwordFocusRequester = remember { FocusRequester() }
 
         Scaffold(
             modifier = Modifier.fillMaxSize().testTag("login_screen"),
@@ -208,6 +213,8 @@ fun LoginScreen(
                     enabled = !submitting,
                     error = state.errors.email,
                     modifier = Modifier.testTag("login_email"),
+                    imeAction = ImeAction.Next,
+                    onImeAction = { passwordFocusRequester.requestFocus() },
                 )
                 Spacer(Modifier.height(16.dp))
                 LoginField(
@@ -229,7 +236,9 @@ fun LoginScreen(
                             fontWeight = FontWeight.SemiBold,
                         )
                     },
-                    modifier = Modifier.testTag("login_password"),
+                    modifier = Modifier.testTag("login_password").focusRequester(passwordFocusRequester),
+                    imeAction = ImeAction.Go,
+                    onImeAction = { onEvent(LoginEvent.SubmitRequested) },
                 )
 
                 Row(
@@ -349,6 +358,8 @@ private fun LoginField(
     enabled: Boolean = true,
     error: String? = null,
     trailing: (@Composable () -> Unit)? = null,
+    imeAction: ImeAction = ImeAction.Default,
+    onImeAction: (() -> Unit)? = null,
 ) {
     val c = ShiftTheme.colors
     var focused by remember { mutableStateOf(false) }
@@ -380,7 +391,13 @@ private fun LoginField(
                 singleLine = true,
                 textStyle = TextStyle(color = c.ink, fontSize = 16.sp, fontWeight = FontWeight.Medium),
                 visualTransformation = if (isPassword && !passwordVisible) PasswordVisualTransformation() else VisualTransformation.None,
-                keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+                keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
+                keyboardActions =
+                    KeyboardActions(
+                        onNext = { onImeAction?.invoke() },
+                        onGo = { onImeAction?.invoke() },
+                        onDone = { onImeAction?.invoke() },
+                    ),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
             )
             trailing?.invoke()

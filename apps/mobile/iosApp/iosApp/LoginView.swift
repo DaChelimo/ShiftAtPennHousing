@@ -121,6 +121,8 @@ struct LoginScreen: View {
                     )
                     .focused($focused, equals: .email)
                     .keyboardType(.emailAddress).textInputAutocapitalization(.never)
+                    .submitLabel(.next)
+                    .onSubmit { focused = .password }
                     .accessibilityIdentifier("login_email")
 
                     passwordField(c)
@@ -214,6 +216,8 @@ struct LoginScreen: View {
                 .font(ShiftFont.sans(16, .medium)).foregroundColor(c.ink)
                 .textInputAutocapitalization(.never)
                 .focused($focused, equals: .password)
+                .submitLabel(.go)
+                .onSubmit { model.submit() }
                 Button(action: { model.showPassword.toggle() }) {
                     Text(model.showPassword ? "Hide" : "Show").font(ShiftFont.sans(13, .semibold)).foregroundColor(c.blue)
                 }

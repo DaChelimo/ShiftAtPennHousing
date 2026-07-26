@@ -53,8 +53,15 @@ export type AiViolationCode =
   | 'UNKNOWN_BLOCK'
   | 'UNKNOWN_WORKER'
   | 'MALFORMED_RUN'
-  | 'ONE_HOUR_SHIFT';
+  | 'ONE_HOUR_SHIFT'
+  // A run that starts or ends on a half hour without the desk's own
+  // opening/closing boundary forcing it (see alignment.ts).
+  | 'HALF_HOUR_BOUNDARY';
 
+// 'hard' blocks feasibility. 'warning' never does: ONE_HOUR_SHIFT and
+// HALF_HOUR_BOUNDARY are shift-shape rules the finalize pass GUARANTEES on
+// its output, so they are fed back to the LLM as repair feedback and
+// penalized by the scorer rather than failing a candidate outright.
 export type AiViolationSeverity = 'hard' | 'warning';
 
 export type AiViolation = {

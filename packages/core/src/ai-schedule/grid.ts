@@ -13,7 +13,12 @@ export type AiGridDay = {
 
 export type AiGrid = {
   days: AiGridDay[]; // Mon-first, only weekdays that have blocks
+  dayByWeekday: Map<number, AiGridDay>;
   blockById: Map<string, AiScheduleBlock>;
+  // Slot index of a block within its own day (the same index the prompt's
+  // slot table uses). Lets boundary/alignment checks go straight from an
+  // assignment to its position in the day without a scan.
+  indexInDay: Map<string, number>;
   workers: AiRosterWorker[]; // sorted by workerId
   workerById: Map<string, AiRosterWorker>;
   // Stable short keys used in prompts so worker names/UUIDs never reach
@@ -38,6 +43,13 @@ export function buildGrid(input: AiScheduleInput): AiGrid {
     }
   }
 
+  const dayByWeekday = new Map<number, AiGridDay>();
+  const indexInDay = new Map<string, number>();
+  for (const day of days) {
+    dayByWeekday.set(day.weekday, day);
+    day.blocks.forEach((block, i) => indexInDay.set(block.blockId, i));
+  }
+
   const workers = input.roster.map((w) => ({ ...w, prefs: { ...w.prefs } }));
   workers.sort((a, b) => a.workerId.localeCompare(b.workerId));
 
@@ -51,7 +63,16 @@ export function buildGrid(input: AiScheduleInput): AiGrid {
     workerByKey.set(key, worker);
   });
 
-  return { days, blockById, workers, workerById, keyByWorkerId, workerByKey };
+  return {
+    days,
+    dayByWeekday,
+    blockById,
+    indexInDay,
+    workers,
+    workerById,
+    keyByWorkerId,
+    workerByKey,
+  };
 }
 
 // A contiguous same-day stretch of one worker's assigned blocks.

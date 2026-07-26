@@ -8,6 +8,7 @@
 
 import { formatMinuteOfDay } from '../preferences/index.js';
 
+import { isLegalEndIndex, isLegalStartIndex } from './alignment.js';
 import type { AiGrid, AiGridDay } from './grid.js';
 import type { AiAssignment, AiScheduleInput, AiViolation } from './types.js';
 
@@ -76,6 +77,15 @@ export function buildSystemPrompt(input: AiScheduleInput, perspective: AiPerspec
     '2 hours. Getting a worker to the desk is costly, so if a leftover gap cannot',
     'be part of a 2-hour shift, leave it OPEN rather than staffing a stub. Aim for',
     'runs of 2 to 5 hours.',
+    '',
+    'CLOCK-HOUR RULE (as important as the hard rules): every shift must START on',
+    'the hour and END on the hour. Nobody comes in at 8:30; they come in at 8:00',
+    'or at 9:00. The slot table marks which slots are legal: start a run only at a',
+    'slot marked S, and end it only at a slot marked E. Those markers already',
+    'account for the one exception, the desk opening and closing times, which may',
+    'themselves fall on a half hour. A run that starts or ends anywhere else is',
+    'wrong even if it is otherwise perfect; shorten or lengthen it to the nearest',
+    'legal boundary, and leave the remainder OPEN.',
     '',
     'OBJECTIVES, in priority order:',
     'A. Staff every day. Do not leave a whole day empty; fill every seat you legally can.',
@@ -174,12 +184,22 @@ function dayLabel(weekday: number): string {
   return AI_WEEKDAY_LABELS[weekday] ?? `Day${String(weekday)}`;
 }
 
+// Per-slot boundary marker for the CLOCK-HOUR RULE: S = a run may start here,
+// E = a run may end here, SE = both, "-" = neither. Spelling this out per row
+// (rather than making the model derive it from the times) is what makes the
+// rule mechanical to follow, and it carries the desk-open/close exception
+// without the model having to reason about it.
+function boundaryMarker(day: AiGridDay, i: number): string {
+  const marker = `${isLegalStartIndex(day, i) ? 'S' : ''}${isLegalEndIndex(day, i) ? 'E' : ''}`;
+  return marker === '' ? '-' : marker;
+}
+
 function slotTable(day: AiGridDay): string {
   const rows = day.blocks.map(
     (b, i) =>
-      `${String(i).padStart(3)} | ${formatMinuteOfDay(b.minuteOfDay)} | ${String(b.requiredHeadcount)}`,
+      `${String(i).padStart(3)} | ${formatMinuteOfDay(b.minuteOfDay)} | ${String(b.requiredHeadcount)} | ${boundaryMarker(day, i)}`,
   );
-  return ['idx | start | seats', ...rows].join('\n');
+  return ['idx | start | seats | bound (S=may start, E=may end)', ...rows].join('\n');
 }
 
 function prefString(

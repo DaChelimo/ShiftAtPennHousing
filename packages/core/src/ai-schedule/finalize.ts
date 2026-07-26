@@ -2,15 +2,21 @@
 //
 // The LLM builds a preference-aware skeleton; this pure pass turns it into a
 // COMPLETE, CONTINUOUS backbone the SM can edit:
-//   1. extend short existing runs to the 2-hour minimum,
+//   1. grow existing runs onto legal hour boundaries and up to the 2-hour
+//      minimum,
 //   2. fill remaining open seats with fresh >= 2-hour runs (preference- and
 //      fairness-aware, capped, Harnwell-legal, never over headcount),
-//   3. drop any run still under 2 hours, leaving that seat OPEN rather than a
-//      stub shift.
-// Guarantee on the output: every run is >= MIN_RUN_BLOCKS (2h) and the whole
-// schedule stays feasible. Getting a worker to the desk is costly, so a
-// sub-2-hour shift is never worth it; an open seat the SM fills is better.
+//   3. trim any run that is still misaligned or under 2 hours to its largest
+//      legal sub-run, dropping it entirely when there is none, so the seat is
+//      left OPEN rather than staffed by a stub or an 8:30 start.
+// Guarantees on the output: every run is >= MIN_RUN_BLOCKS (2h), every run
+// starts and ends on the hour (or on the desk's own opening/closing boundary,
+// see alignment.ts), and the whole schedule stays feasible. Getting a worker
+// to the desk is costly, so a sub-2-hour shift is never worth it; and a human
+// reasons in whole hours, so a 8:30 start is never worth it either. An open
+// seat the SM fills is better than both.
 
+import { isLegalEndIndex, isLegalStartIndex, largestLegalSubRun } from './alignment.js';
 import { buildGrid, type AiGridDay } from './grid.js';
 import type { AiAssignment, AiScheduleInput } from './types.js';
 
@@ -89,10 +95,11 @@ export function finalizeSchedule(
     const blocks = day.blocks;
     const n = blocks.length;
 
-    // Largest legal fresh run for w starting at index i: consecutive blocks
+    // Longest coverable stretch for w starting at index i: consecutive blocks
     // that are open, not already w's, not cannot, Harnwell-legal, and within
-    // cap as hours accrue.
-    const maxLegalLen = (w: string, i: number): number => {
+    // cap as hours accrue. Boundary legality is applied on top of this by
+    // maxAlignedLen.
+    const maxCoverableLen = (w: string, i: number): number => {
       let extra = 0;
       let len = 0;
       for (let k = i; k < n; k++) {
@@ -109,27 +116,51 @@ export function finalizeSchedule(
       return len;
     };
 
-    // PASS 1: extend short existing runs to the 2h minimum by borrowing
-    // adjacent open, legal blocks (before the start, then after the end).
+    // Longest run w can legally take starting at i: coverable, at least 2h,
+    // starting and ending on the hour (or on a desk boundary). 0 when no such
+    // run exists, which is how an unstaffable leftover gap stays open.
+    const maxAlignedLen = (w: string, i: number): number => {
+      if (!isLegalStartIndex(day, i)) return 0;
+      for (let len = maxCoverableLen(w, i); len >= MIN_RUN_BLOCKS; len--) {
+        if (isLegalEndIndex(day, i + len - 1)) return len;
+      }
+      return 0;
+    };
+
+    // PASS 1: grow existing runs onto legal boundaries and up to the 2h
+    // minimum by borrowing adjacent open, legal blocks. Growing is preferred
+    // over trimming (PASS 3) because it keeps the worker's shift and the
+    // coverage; a run that cannot grow gets trimmed instead.
     for (const worker of grid.workers) {
       const w = worker.workerId;
       for (const [rs, re] of runsOf(w, day)) {
         let s = rs;
         let e = re;
-        while (e - s + 1 < MIN_RUN_BLOCKS) {
+        const growBefore = (): boolean => {
           const before = blocks[s - 1];
+          if (s - 1 < 0 || before === undefined || !canAdd(w, before.blockId)) return false;
+          addAt(w, before.blockId);
+          s -= 1;
+          return true;
+        };
+        const growAfter = (): boolean => {
           const after = blocks[e + 1];
-          if (s - 1 >= 0 && before !== undefined && canAdd(w, before.blockId)) {
-            addAt(w, before.blockId);
-            s -= 1;
-            continue;
-          }
-          if (e + 1 < n && after !== undefined && canAdd(w, after.blockId)) {
-            addAt(w, after.blockId);
-            e += 1;
-            continue;
-          }
-          break;
+          if (e + 1 >= n || after === undefined || !canAdd(w, after.blockId)) return false;
+          addAt(w, after.blockId);
+          e += 1;
+          return true;
+        };
+        // Reach the 2h minimum first (either direction), then settle both
+        // boundaries onto the hour. Settling last means the length growth
+        // cannot re-break an already-legal boundary.
+        while (e - s + 1 < MIN_RUN_BLOCKS && (growAfter() || growBefore())) {
+          /* grown */
+        }
+        while (!isLegalStartIndex(day, s) && growBefore()) {
+          /* aligned start */
+        }
+        while (!isLegalEndIndex(day, e) && growAfter()) {
+          /* aligned end */
         }
       }
     }
@@ -147,7 +178,7 @@ export function finalizeSchedule(
         let best: { w: string; remaining: number; preferred: number } | null = null;
         for (const worker of grid.workers) {
           const w = worker.workerId;
-          if (maxLegalLen(w, i) < MIN_RUN_BLOCKS) continue;
+          if (maxAlignedLen(w, i) < MIN_RUN_BLOCKS) continue;
           const preferred = worker.prefs[block.blockId] === 'preferred' ? 1 : 0;
           const target = worker.targetHours ?? input.capHours;
           const remaining = target - (hoursOf.get(w) ?? 0);
@@ -164,7 +195,7 @@ export function finalizeSchedule(
           }
         }
         if (best === null) continue;
-        const len = maxLegalLen(best.w, i);
+        const len = maxAlignedLen(best.w, i);
         for (let k = 0; k < len; k++) {
           const runBlock = blocks[i + k];
           if (runBlock !== undefined) addAt(best.w, runBlock.blockId);
@@ -173,15 +204,18 @@ export function finalizeSchedule(
       }
     }
 
-    // PASS 3: drop residual sub-2h runs. Better an OPEN seat than a stub shift.
+    // PASS 3: enforce the two shape guarantees on whatever survived. A run
+    // that is too short or off the hour is trimmed to its largest legal
+    // sub-run, and dropped outright when it has none. Better an OPEN seat
+    // than a stub shift or an 8:30 start.
     for (const worker of grid.workers) {
       const w = worker.workerId;
       for (const [s, e] of runsOf(w, day)) {
-        if (e - s + 1 < MIN_RUN_BLOCKS) {
-          for (let i = s; i <= e; i++) {
-            const block = blocks[i];
-            if (block !== undefined) removeAt(w, block.blockId);
-          }
+        const keep = largestLegalSubRun(day, s, e, MIN_RUN_BLOCKS);
+        for (let i = s; i <= e; i++) {
+          if (keep !== null && i >= keep.start && i <= keep.end) continue;
+          const block = blocks[i];
+          if (block !== undefined) removeAt(w, block.blockId);
         }
       }
     }

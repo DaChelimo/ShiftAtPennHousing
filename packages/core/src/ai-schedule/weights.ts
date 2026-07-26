@@ -19,6 +19,11 @@ export const AI_SCORE_WEIGHTS = {
   idealRunBonus: 2, // 2h..5h
   shortRunPenalty: -4, // <= 1h (mirrors the ONE_HOUR_SHIFT warning)
   longRunPenaltyPerHour: -2, // per hour beyond 6h in one run
+  // Off-the-hour start or end (mirrors the HALF_HOUR_BOUNDARY warning). Set
+  // above idealRunBonus so a misaligned "ideal length" run always scores
+  // below the same run snapped to the hour; the finalize pass removes these
+  // outright, so this only ranks pre-finalize skeletons.
+  halfHourBoundaryPenalty: -5, // per offending run end
 
   // Contiguity: fragmented days.
   extraRunPenalty: -1.5, // per run beyond the first in a worker-day

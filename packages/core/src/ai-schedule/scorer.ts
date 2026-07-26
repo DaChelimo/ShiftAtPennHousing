@@ -4,6 +4,7 @@
 // invariant: total === sum of components. Pure arithmetic over the
 // snapshot; weights live in weights.ts only.
 
+import { runBoundaryIssue } from './alignment.js';
 import { buildGrid, hoursByWorker, splitRuns, type AiGrid } from './grid.js';
 import type { AiAssignment, AiScheduleInput, AiScoreBreakdown } from './types.js';
 import { normalizeAssignments, validateWithGrid } from './validator.js';
@@ -67,6 +68,19 @@ export function scoreWithGrid(
     }
     if (runHours > 6) {
       shiftQuality += (runHours - 6) * W.longRunPenaltyPerHour;
+    }
+    // Off-the-hour boundaries: one penalty per offending end, so a run that
+    // is wrong at both ends costs twice a run that is wrong at one.
+    const first = run.blocks[0];
+    const last = run.blocks[run.blocks.length - 1];
+    const day = grid.dayByWeekday.get(run.weekday);
+    if (first === undefined || last === undefined || day === undefined) continue;
+    const startIdx = grid.indexInDay.get(first.blockId);
+    const endIdx = grid.indexInDay.get(last.blockId);
+    if (startIdx === undefined || endIdx === undefined) continue;
+    const issue = runBoundaryIssue(day, startIdx, endIdx);
+    if (issue !== null) {
+      shiftQuality += (issue === 'both' ? 2 : 1) * W.halfHourBoundaryPenalty;
     }
   }
 

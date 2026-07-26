@@ -43,4 +43,11 @@ export {
 } from './prompt.js';
 export type { AiPerspective } from './prompt.js';
 export { finalizeSchedule, MIN_RUN_BLOCKS } from './finalize.js';
+export {
+  isLegalEndIndex,
+  isLegalStartIndex,
+  largestLegalSubRun,
+  runBoundaryIssue,
+} from './alignment.js';
+export type { BoundaryIssue } from './alignment.js';
 export { AI_SCHEDULE_DEFAULTS, pruneToFeasible, runAiSchedule } from './loop.js';

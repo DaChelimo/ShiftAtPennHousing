@@ -6,6 +6,9 @@
 // 'warning' (ONE_HOUR_SHIFT) is fed to repair prompts and penalized by the
 // scorer but never blocks a candidate.
 
+import { formatMinuteOfDay } from '../preferences/index.js';
+
+import { runBoundaryIssue, type BoundaryIssue } from './alignment.js';
 import { MIN_RUN_BLOCKS } from './finalize.js';
 import { buildGrid, splitRuns, type AiGrid } from './grid.js';
 import type {
@@ -159,25 +162,48 @@ export function validateWithGrid(
     }
   }
 
-  // Contiguity warnings: runs shorter than the 2-hour minimum. Advisory here
-  // (fed to the repair prompt); the finalize pass is what guarantees the
-  // output has no sub-2h shift.
+  // Shift-shape warnings: runs shorter than the 2-hour minimum, and runs that
+  // start or end on a half hour. Advisory here (fed to the repair prompt); the
+  // finalize pass is what guarantees the output has neither.
   for (const run of splitRuns(grid, valid)) {
     const first = run.blocks[0];
-    if (first === undefined || run.blocks.length >= MIN_RUN_BLOCKS) continue;
+    const last = run.blocks[run.blocks.length - 1];
+    if (first === undefined || last === undefined) continue;
+    if (run.blocks.length < MIN_RUN_BLOCKS) {
+      violations.push({
+        code: 'ONE_HOUR_SHIFT',
+        severity: 'warning',
+        workerId: run.workerId,
+        blockId: first.blockId,
+        weekday: run.weekday,
+        detail: `${String(run.blocks.length * 0.5)}h run; every shift must be at least 2 hours`,
+      });
+    }
+    const day = grid.dayByWeekday.get(run.weekday);
+    const startIdx = grid.indexInDay.get(first.blockId);
+    const endIdx = grid.indexInDay.get(last.blockId);
+    if (day === undefined || startIdx === undefined || endIdx === undefined) continue;
+    const issue = runBoundaryIssue(day, startIdx, endIdx);
+    if (issue === null) continue;
     violations.push({
-      code: 'ONE_HOUR_SHIFT',
+      code: 'HALF_HOUR_BOUNDARY',
       severity: 'warning',
       workerId: run.workerId,
-      blockId: first.blockId,
+      blockId: issue === 'end' ? last.blockId : first.blockId,
       weekday: run.weekday,
-      detail: `${String(run.blocks.length * 0.5)}h run; every shift must be at least 2 hours`,
+      detail: boundaryDetail(issue, first.minuteOfDay, last.minuteOfDay + 30),
     });
   }
 
   const unfilledSeats = computeUnfilledSeats(input, grid, valid, byBlock, hoursOf);
   const feasible = !violations.some((v) => v.severity === 'hard');
   return { feasible, violations, unfilledSeats };
+}
+
+function boundaryDetail(issue: BoundaryIssue, startMin: number, endMin: number): string {
+  const span = `${formatMinuteOfDay(startMin)}-${formatMinuteOfDay(endMin % 1440)}`;
+  const which = issue === 'both' ? 'starts and ends' : issue === 'start' ? 'starts' : 'ends';
+  return `${span} ${which} on a half hour; shifts begin and end on the hour unless the desk opens or closes then`;
 }
 
 function computeUnfilledSeats(

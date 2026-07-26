@@ -382,6 +382,7 @@ export function AppShell({
                 data-testid={item.testId}
                 className={`nav-item ${isActive(pathname, item.href) ? 'is-active' : ''}`.trim()}
                 title={item.label}
+                onClick={() => setNavCollapsed(true)}
               >
                 {item.icon && <Icon name={item.icon} size={18} />}
                 <span className="nav-label">{item.label}</span>

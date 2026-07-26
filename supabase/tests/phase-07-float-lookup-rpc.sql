@@ -42,7 +42,11 @@ VALUES
   ('e0000508-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 'p07fl-floater@test.local'),
   ('e0000508-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000000',
-   'authenticated', 'authenticated', 'p07fl-stale-floater@test.local')
+   'authenticated', 'authenticated', 'p07fl-stale-floater@test.local'),
+  -- The worker who STAYS BEHIND on each source desk. See the note on the source
+  -- assignments below: without them these scenarios ask the RPC to empty a desk.
+  ('e0000508-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000000',
+   'authenticated', 'authenticated', 'p07fl-holder@test.local')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active)
@@ -50,7 +54,9 @@ VALUES
   ('e0000508-0000-0000-0000-000000000001', 'Float Lookup Floater',
    'p07fl-floater@test.local', 'harnwell', true),
   ('e0000508-0000-0000-0000-000000000002', 'Stale Floater',
-   'p07fl-stale-floater@test.local', 'harnwell', true);
+   'p07fl-stale-floater@test.local', 'harnwell', true),
+  ('e0000508-0000-0000-0000-000000000003', 'Desk Holder',
+   'p07fl-holder@test.local', 'harnwell', true);
 
 -- Anchor at a far-future moment to avoid colliding with seed-generated
 -- blocks for current calendar dates.
@@ -83,6 +89,17 @@ VALUES
   ('f0000508-0000-0000-0000-000000000006', 'lower-quad',
    current_setting('test.phase07fl.anchor')::timestamptz + interval '60 minutes', 1);
 
+-- Every SOURCE block below carries a second scheduled worker (Desk Holder) alongside the
+-- floater. That is not decoration: hard invariant #2 says a source desk never drops below
+-- ONE present worker, so a desk holding only the floater may not source at all. The
+-- fixtures used to hold exactly one worker, and these scenarios passed only because the
+-- floor lived in the pure TypeScript algorithm, which a direct RPC call bypasses
+-- entirely. The 2026-07-26 concurrency audit (F6) moved enforcement to the write point --
+-- two floats pulling from the same 2-worker desk each read "2 present, can spare 1" off an
+-- unlocked snapshot and both committed, emptying the desk -- so the RPC now refuses the
+-- illegal shape these fixtures were describing. Adding the holder makes each scenario a
+-- LEGAL float; what the tests assert about the transactional write is unchanged.
+
 -- Scenario A: floater scheduled at home (harnwell), destination vacant.
 INSERT INTO public.shift_block_assignments
   (assignment_id, block_id, user_id, status, vacancy_origin,
@@ -91,6 +108,10 @@ VALUES
   ('a0000508-0000-0000-0000-000000000001',
    'f0000508-0000-0000-0000-000000000001',
    'e0000508-0000-0000-0000-000000000001',
+   'scheduled', 'none', false, false, NULL, NULL),
+  ('a0000508-0000-0000-0000-00000000000a',
+   'f0000508-0000-0000-0000-000000000001',
+   'e0000508-0000-0000-0000-000000000003',
    'scheduled', 'none', false, false, NULL, NULL),
   ('a0000508-0000-0000-0000-000000000002',
    'f0000508-0000-0000-0000-000000000002',
@@ -106,6 +127,10 @@ VALUES
    'f0000508-0000-0000-0000-000000000003',
    'e0000508-0000-0000-0000-000000000002',
    'scheduled', 'none', false, false, NULL, NULL),
+  ('a0000508-0000-0000-0000-00000000000b',
+   'f0000508-0000-0000-0000-000000000003',
+   'e0000508-0000-0000-0000-000000000003',
+   'scheduled', 'none', false, false, NULL, NULL),
   ('a0000508-0000-0000-0000-000000000004',
    'f0000508-0000-0000-0000-000000000004',
    'e0000508-0000-0000-0000-000000000001',
@@ -119,6 +144,10 @@ VALUES
   ('a0000508-0000-0000-0000-000000000005',
    'f0000508-0000-0000-0000-000000000005',
    'e0000508-0000-0000-0000-000000000001',
+   'scheduled', 'none', false, false, NULL, NULL),
+  ('a0000508-0000-0000-0000-00000000000c',
+   'f0000508-0000-0000-0000-000000000005',
+   'e0000508-0000-0000-0000-000000000003',
    'scheduled', 'none', false, false, NULL, NULL),
   ('a0000508-0000-0000-0000-000000000006',
    'f0000508-0000-0000-0000-000000000006',

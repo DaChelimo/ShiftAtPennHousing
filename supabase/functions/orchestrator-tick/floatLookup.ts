@@ -110,7 +110,10 @@ async function findFloaters(input: FloatLookupInput): Promise<FloatLookupResult>
   return module.findFloaters(input);
 }
 
-export async function loadCoveredBlockIds(supabase: Supabase, blockIds: string[]): Promise<Set<string>> {
+export async function loadCoveredBlockIds(
+  supabase: Supabase,
+  blockIds: string[],
+): Promise<Set<string>> {
   const covered = new Set<string>();
   // Chunk the .in() filter — a full lookahead window of block ids 414s ("URI too
   // long") as one request (mirrors selectByBlockIdChunks on the web side).
@@ -421,20 +424,36 @@ async function buildFloatLookupSnapshot(
 
 // Stamp a block's one-way coverage lock (BEHAVIORAL_SPECIFICATION §5.4/§5.5).
 // Called only from the T-2h coverage-securing steps (float_lookup,
-// hmod_notify_allied) — NEVER from broadcast (T-3h stays claimable). A block
-// reaching these steps is EMPTY (covered blocks are skipped before fireStep), so
-// locking it makes its vacant seats unpickable from here on, even after a
-// floater/Allied later fills the desk. Idempotent + one-way in SQL.
-export async function lockBlockCoverage(supabase: Supabase, blockId: string, asOf: Date): Promise<void> {
-  const { error } = await supabase.rpc('lock_block_coverage', {
+// hmod_notify_allied), NEVER from broadcast (T-3h stays claimable). Locking an
+// empty desk makes its vacant seats unpickable from here on, even after a
+// floater/Allied later fills it. Idempotent + one-way in SQL.
+//
+// Returns whether the desk is STILL EMPTY and the caller should proceed.
+//
+// Audit F4: this used to return void, and the RPC stamped unconditionally because it
+// trusted the desk_covered boolean from the tick's ONE scan. That boolean is read
+// seconds earlier, in a different transaction, before all the per-block round trips
+// below it. A desk staffed inside that window (an SM assigning at T-2h is gated on
+// block_started, not on T-2h) still got the one-way lock, permanently un-picking its
+// remaining vacant seats, and still got a float or an Allied page it did not need.
+// Neither is revocable: invariant #3 (no-takeback) forbids an automated system from
+// undoing either. The RPC now re-evaluates coverage itself, under a row lock on the
+// block's seats, and answers false once the desk has been staffed. Every caller must
+// honour that answer and abort its securing step.
+export async function lockBlockCoverage(
+  supabase: Supabase,
+  blockId: string,
+  asOf: Date,
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc('lock_block_coverage', {
     p_block_id: blockId,
     p_as_of: asOf.toISOString(),
   });
   if (error !== null) {
     throw error;
   }
+  return data === true;
 }
-
 
 export async function floatLookupStep(
   supabase: Supabase,
@@ -442,11 +461,20 @@ export async function floatLookupStep(
   profileName: string,
   firedAt: Date,
   config: RuntimeConfig,
-): Promise<'float_assigned' | 'no_float'> {
-  // §5.5: the desk hit its T-2h float-lookup step while empty → lock its seats
+): Promise<'float_assigned' | 'no_float' | 'covered'> {
+  // §5.5: the desk hit its T-2h float-lookup step while empty, so lock its seats
   // (one-way) before attempting the float, regardless of whether a floater is
   // found. A later float-in / Allied fill never re-opens them to pickup.
-  await lockBlockCoverage(supabase, block.blockId, firedAt);
+  //
+  // Audit F4: the lock is now a check-and-lock. `false` means the desk was staffed
+  // between the tick's scan and this call, so nothing was stamped and there is
+  // nothing left to secure. Returning 'covered' (rather than 'no_float') matters:
+  // 'no_float' is what routes the caller on to hmod_notify_allied, and paging for
+  // Allied cover on a desk that a worker just took is the expensive half of the bug.
+  const stillEmpty = await lockBlockCoverage(supabase, block.blockId, firedAt);
+  if (!stillEmpty) {
+    return 'covered';
+  }
 
   // §7.3 — never assign a float that is ALREADY inside its no-ack window at
   // creation. Such a float is dead on arrival: its acknowledgment deadline
@@ -528,4 +556,3 @@ export async function floatLookupStep(
   // residual gap).
   return anyAssigned ? 'float_assigned' : 'no_float';
 }
-

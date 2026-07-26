@@ -616,9 +616,18 @@ struct ShiftsRootView: View {
     /// — the optimistic My-Shifts move is rolled back to server truth. The task is
     /// `@MainActor`-isolated so UI mutations stay on the main thread; the `await op()`
     /// network call still suspends off the UI. Mirrors Android's `launchWrite`.
+    ///
+    /// `reconcile` re-reads server truth after a SUCCESSFUL write too (audit F9). Relying
+    /// on Realtime alone has a structural hole: `postgres_changes` applies RLS to the NEW
+    /// row, so when a concurrent writer reassigns a seat away from this worker the row
+    /// leaves their scope and no event is delivered at all. The optimistic card would then
+    /// survive indefinitely, showing a shift the server has already handed to someone
+    /// else. A pull after the write sees current truth either way. Left off for writes
+    /// that touch no seat.
     private func liveWrite(
         _ writeOp: WriteOp,
         revert: Bool = true,
+        reconcile: Bool = true,
         onFailure: @escaping () async -> Void = {},
         _ op: @escaping () async -> EdgeResult?
     ) {
@@ -632,6 +641,9 @@ struct ShiftsRootView: View {
                 if revert, let uid = liveUserId {
                     await model.revertToServer(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
                 }
+            } else if reconcile, let uid = liveUserId {
+                await model.revertToServer(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
+                await calendarModel.refreshFromServer(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
             }
         }
     }
@@ -642,10 +654,11 @@ struct ShiftsRootView: View {
     private func liveWriteBool(
         _ writeOp: WriteOp,
         revert: Bool = true,
+        reconcile: Bool = false,
         onFailure: @escaping () async -> Void = {},
         _ op: @escaping () async -> Bool
     ) {
-        liveWrite(writeOp, revert: revert, onFailure: onFailure) {
+        liveWrite(writeOp, revert: revert, reconcile: reconcile, onFailure: onFailure) {
             (await op()) ? EdgeResult(ok: true, status: 200, body: "") : EdgeResult(ok: false, status: 0, body: "")
         }
     }
@@ -802,7 +815,7 @@ struct ShiftsRootView: View {
                             onToggleBroadcast: liveUserId == nil ? nil : { subscribed in
                                 guard let uid = liveUserId else { return }
                                 let repo = WorkerBackend.shared.profileRepository
-                                liveWrite(.broadcast, revert: false, onFailure: { settingsModel.vm.toggleBroadcast() }) {
+                                liveWrite(.broadcast, revert: false, reconcile: false, onFailure: { settingsModel.vm.toggleBroadcast() }) {
                                     try? await repo.setBroadcastSubscription(userId: uid, subscribed: subscribed)
                                 }
                             },
@@ -1194,6 +1207,19 @@ struct ShiftsRootView: View {
                                 } else {
                                     writeError = nil
                                     claimSuccessMessage = toast.message
+                                    // Audit F9. A PARTIAL claim is not an error, but the
+                                    // optimistic move added the WHOLE coalesced span and
+                                    // pulled all of its blocks from the open feed, so the
+                                    // worker would keep seeing blocks they do not hold.
+                                    // claim-shift is one POST per block, so losing FCFS on
+                                    // some of them is the expected concurrent outcome. Pull
+                                    // server truth on every success, partial or not: a seat
+                                    // taken from under this worker emits no Realtime event,
+                                    // because the row leaves their RLS scope.
+                                    await revertCalendar()
+                                    if let uid = liveUserId {
+                                        await model.revertToServer(repo: repo, userId: uid)
+                                    }
                                 }
                             }
                         }
@@ -1940,10 +1966,16 @@ struct ShiftsRootView: View {
                 if !(result.ok && WriteFeedbackKt.swapAccepted(body: result.body)) {
                     writeError = WriteFeedbackKt.edgeErrorMessage(op: .acceptSwap, result: result)
                     await revertSwaps()
+                } else if let uid = liveUserId {
+                    // Audit F9. An accepted swap moves seats BETWEEN two workers, so the
+                    // giver's rows leave their RLS scope and Realtime reports nothing to
+                    // them. Pull both sides of the display back to server truth.
+                    await model.revertToServer(repo: repo, userId: uid)
+                    await calendarModel.refreshFromServer(repo: repo, userId: uid)
                 }
             }
         } else {
-            liveWrite(.declineSwap, revert: false, onFailure: revertSwaps) {
+            liveWrite(.declineSwap, revert: false, reconcile: false, onFailure: revertSwaps) {
                 try? await repo.rejectSwap(swapId: swapId)
             }
         }

@@ -48,6 +48,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
@@ -125,6 +127,15 @@ class WorkerShiftsRepository(
      * dropping the sharing.
      */
     private val sharedWorkerWeeks = mutableMapOf<SubscriptionKey, Flow<WorkerSnapshot>>()
+
+    /**
+     * Edge-triggered refetch signal (audit F9). Call [WorkerWeekRefresh.request] after a
+     * write to reconcile the optimistic move against server truth; Realtime alone cannot,
+     * because a seat reassigned away from this worker leaves their RLS scope and emits no
+     * event. Full rationale lives on [WorkerWeekRefresh].
+     */
+    val refresh: WorkerWeekRefresh = WorkerWeekRefresh()
+
     /**
      * Drop a single occurrence of [shift] this week → the phase-05 `drop-shift` Edge
      * Function (`drop_type: 'temporary'`). Best-effort (the UI flips its optimistic
@@ -889,6 +900,12 @@ class WorkerShiftsRepository(
                     // 500 ms is a product decision (2026-07-26), not an arbitrary
                     // constant: invisible to a human, and well inside the margin for the
                     // thing that must stay prompt — a float landing at T-2h.
+                    .map { }
+                    // Audit F9: merge the manual refresh signal in alongside Realtime.
+                    // A seat reassigned AWAY from this worker leaves their RLS scope, so
+                    // postgres_changes delivers no event at all and the optimistic card
+                    // would never reconcile. See [WorkerWeekRefresh].
+                    .let { realtime -> merge(realtime, refresh.stream) }
                     .debounce(REALTIME_REFETCH_DEBOUNCE_MS)
                     .conflate()
                     .collect { emit(fetchWorkerWeek(userId, now)) }

@@ -176,7 +176,23 @@ VALUES
    'f0000506-0000-0000-0000-0000000000d1',
    'e0000506-0000-0000-0000-000000000001', 'scheduled', 'none'),
   ('a0000506-0000-0000-0000-0000000000d2',  -- D_locked vacant seat
-   'f0000506-0000-0000-0000-0000000000d2', NULL, 'vacant', 'temporary_drop'),
+   'f0000506-0000-0000-0000-0000000000d2', NULL, 'vacant', 'temporary_drop');
+
+-- D_locked is built in the REAL §5.5 order: the desk is locked while it is genuinely
+-- EMPTY (its T-2h securing step), and only then does a worker arrive. The sibling used to
+-- be inserted up here and lock_block_coverage called later, which was a shortcut: as of
+-- the 2026-07-26 concurrency audit (F4) lock_block_coverage is a check-AND-lock and
+-- refuses to stamp a desk that is already staffed, because doing so was the bug -- an SM
+-- assigning at T-2h raced the orchestrator's stale scan and got the desk permanently
+-- un-picked out from under them. Locking-then-filling still produces exactly the state
+-- this section asserts, and now it is reachable the way production reaches it.
+SELECT public.lock_block_coverage(
+  'f0000506-0000-0000-0000-0000000000d2'::uuid,
+  (current_setting('test.phase05c.as_of')::timestamptz));
+
+INSERT INTO public.shift_block_assignments
+  (assignment_id, block_id, user_id, status, vacancy_origin)
+VALUES
   ('a0000506-0000-0000-0000-0000000000e2',  -- D_locked sibling (scheduled, W_harn)
    'f0000506-0000-0000-0000-0000000000d2',
    'e0000506-0000-0000-0000-000000000001', 'scheduled', 'none');
@@ -641,10 +657,8 @@ SELECT lives_ok(
   'claim within T-2h on a STILL-STAFFED desk succeeds (coverage-conditional, §5.4)'
 );
 
-SELECT public.lock_block_coverage(
-  'f0000506-0000-0000-0000-0000000000d2'::uuid,
-  (current_setting('test.phase05c.as_of')::timestamptz));
-
+-- (D_locked was locked in the fixture section, while the desk was still empty. See the
+-- note there: post-audit, lock_block_coverage will not stamp an already-staffed desk.)
 SELECT throws_ok(
   $$ SELECT public.claim_open_shift(
        'a0000506-0000-0000-0000-0000000000d2'::uuid,

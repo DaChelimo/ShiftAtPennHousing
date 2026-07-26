@@ -399,9 +399,20 @@ async function hmodNotifyAlliedStep(
   block: BlockRef,
   firedAt: Date,
   reason = 'escalation_chain',
-): Promise<boolean> {
-  // §5.5: securing-tier step on an empty desk → lock its seats (one-way).
-  await lockBlockCoverage(supabase, block.blockId, firedAt);
+): Promise<'done' | 'skipped' | 'covered'> {
+  // §5.5: securing-tier step on an empty desk locks its seats (one-way).
+  //
+  // Audit F4: check-and-lock. `false` means the desk was staffed between the tick's
+  // scan and now, so the one-way lock was NOT stamped and this step must stand down.
+  // Bailing here is what stops the two expensive outcomes of the stale snapshot:
+  // paging for paid Allied cover on a desk a worker is already on, and permanently
+  // un-picking that desk's remaining vacant seats. The step claim lives inside the
+  // RPC below, so returning now leaves block_step_status untouched and a later
+  // vacancy re-escalates normally.
+  const stillEmpty = await lockBlockCoverage(supabase, block.blockId, firedAt);
+  if (!stillEmpty) {
+    return 'covered';
+  }
 
   const { data, error } = await supabase.rpc('process_hmod_notify_allied_step', {
     p_block_id: block.blockId,
@@ -415,7 +426,30 @@ async function hmodNotifyAlliedStep(
     throw error;
   }
 
-  return (data as { claimed?: boolean } | null)?.claimed === true;
+  return (data as { claimed?: boolean } | null)?.claimed === true ? 'done' : 'skipped';
+}
+
+// Undo a claimStep. Used only when a step was claimed and then declined to act
+// because the desk turned out to be covered (audit F4): leaving it 'fired' would
+// retire the step for good, so a later drop on that block would never re-escalate.
+// 'rolled_back' is the state claimStep itself treats as re-claimable, and the same
+// state drop_shift / apply_house_transfer use when they reopen a seat.
+async function releaseStep(
+  supabase: Supabase,
+  blockId: string,
+  stepName: string,
+  now: Date,
+): Promise<void> {
+  const { error } = await supabase
+    .from('block_step_status')
+    .update({ status: 'rolled_back', updated_at: now.toISOString() })
+    .eq('block_id', blockId)
+    .eq('step_name', stepName)
+    .eq('status', 'fired');
+
+  if (error !== null) {
+    throw error;
+  }
 }
 
 async function hasActiveFloatForBlock(supabase: Supabase, blockId: string): Promise<boolean> {
@@ -457,6 +491,10 @@ async function hasActiveFloatForBlock(supabase: Supabase, blockId: string): Prom
 //                      candidate's destination was concurrently filled.
 //   'done'           — broadcast / hmod completed.
 //   'skipped'        — chain step was already claimed elsewhere (race).
+//   'covered'        — the desk was STAFFED between this tick's scan and the step
+//                      firing (audit F4). Distinct from 'no_float' on purpose: it
+//                      means stop escalating this block entirely, where 'no_float'
+//                      means escalate onward to Allied.
 async function fireStep(params: {
   supabase: Supabase;
   block: VacantAssignment;
@@ -464,7 +502,7 @@ async function fireStep(params: {
   stepName: string;
   firedAt: Date;
   config: RuntimeConfig;
-}): Promise<'float_assigned' | 'no_float' | 'done' | 'skipped'> {
+}): Promise<'float_assigned' | 'no_float' | 'done' | 'skipped' | 'covered'> {
   switch (params.stepName) {
     case 'broadcast': {
       const claimed = await broadcastStep(params.supabase, params.block, params.firedAt);
@@ -478,10 +516,8 @@ async function fireStep(params: {
         params.firedAt,
         params.config,
       );
-    case 'hmod_notify_allied': {
-      const claimed = await hmodNotifyAlliedStep(params.supabase, params.block, params.firedAt);
-      return claimed ? 'done' : 'skipped';
-    }
+    case 'hmod_notify_allied':
+      return await hmodNotifyAlliedStep(params.supabase, params.block, params.firedAt);
     default:
       return 'done';
   }
@@ -599,6 +635,23 @@ async function processVacantBlocks(
       if (outcome === 'skipped') {
         continue;
       }
+
+      // Audit F4: the desk was staffed between this tick's scan and the step firing,
+      // so the securing step stood down and stamped nothing. Abandon the whole chain
+      // for this block: every remaining due step is a securing step too, and firing
+      // one would float a worker or buy Allied hours for a desk that is already
+      // covered. float_lookup claims its step BEFORE fireStep (the algorithm runs in
+      // TypeScript and cannot be wrapped in one SQL transaction), so that claim has to
+      // be handed back, or a later drop on this block would find the step retired and
+      // never re-escalate. hmod_notify_allied claims inside its RPC, after the
+      // coverage check, so it has nothing to release.
+      if (outcome === 'covered') {
+        if (step.stepName === 'float_lookup') {
+          await releaseStep(supabase, block.blockId, step.stepName, now);
+        }
+        break;
+      }
+
       fired += 1;
 
       if (outcome === 'float_assigned') {
@@ -608,8 +661,13 @@ async function processVacantBlocks(
         outcome === 'no_float' &&
         !dueSteps.some((candidate) => candidate.stepName === 'hmod_notify_allied')
       ) {
-        const claimed = await hmodNotifyAlliedStep(supabase, block, now, 'float_lookup_failed');
-        if (claimed) {
+        const alliedOutcome = await hmodNotifyAlliedStep(
+          supabase,
+          block,
+          now,
+          'float_lookup_failed',
+        );
+        if (alliedOutcome === 'done') {
           fired += 1;
         }
       }

@@ -365,14 +365,45 @@ SELECT is(
   'vacant seat within T-2h on a STILL-STAFFED desk is claimable (coverage-conditional)'
 );
 
--- One-way lock the block: now unpickable even though a sibling is still on.
+-- D_locked: a SECOND block, built in the real §5.5 order -- locked while the desk is
+-- genuinely EMPTY (its T-2h securing step), and only then does a worker arrive. It has to
+-- be its own block because D_covered above must already be staffed for the assertion
+-- before this one, and since the 2026-07-26 concurrency audit (F4) lock_block_coverage is
+-- a check-AND-lock that refuses to stamp an already-staffed desk. Stamping one was the
+-- bug: an SM assigning at T-2h raced the orchestrator's stale scan and had the desk
+-- permanently un-picked out from under them. The property under test is unchanged -- once
+-- locked, a later fill never reopens the seat.
+INSERT INTO public.shift_blocks
+  (block_id, house_id, block_start_at, required_headcount)
+VALUES
+  ('f0000005-0000-0000-0000-0000000000d2', 'harnwell',
+   -- 30m: invariant #5 requires a 30-minute boundary (enforced by
+   -- shift_blocks_block_start_boundary_check), and shift_blocks is UNIQUE on
+   -- (house_id, block_start_at), so this has to dodge a5 (+1h), a4 (+2h), a3 (+3h)
+   -- and d1 (+90m). It is well inside T-2h, which is what this section is about.
+   ((current_setting('test.phase05.as_of')::timestamptz) + interval '30 minutes'), 2);
+
+INSERT INTO public.shift_block_assignments
+  (assignment_id, block_id, user_id, status, vacancy_origin)
+VALUES
+  ('e0000005-1000-0000-0000-0000000000d2',
+   'f0000005-0000-0000-0000-0000000000d2', NULL, 'vacant', 'temporary_drop');
+
 SELECT public.lock_block_coverage(
-  'f0000005-0000-0000-0000-0000000000d1'::uuid,
+  'f0000005-0000-0000-0000-0000000000d2'::uuid,
   (current_setting('test.phase05.as_of')::timestamptz));
+
+-- The floater/co-worker arrives AFTER the lock. The seat must stay unpickable.
+INSERT INTO public.shift_block_assignments
+  (assignment_id, block_id, user_id, status, vacancy_origin)
+VALUES
+  ('e0000005-3000-0000-0000-0000000000d2',
+   'f0000005-0000-0000-0000-0000000000d2',
+   'e0000005-0000-0000-0000-000000000099', 'scheduled', 'none');
 
 SELECT is(
   public.is_assignment_claimable(
-    'e0000005-1000-0000-0000-0000000000d1'::uuid,
+    'e0000005-1000-0000-0000-0000000000d2'::uuid,
     (current_setting('test.phase05.as_of')::timestamptz)),
   false,
   'a coverage-locked block is unpickable even while a sibling worker is present (one-way §5.5)'

@@ -3392,6 +3392,15 @@ export type Database = {
         };
         Returns: Json;
       };
+      apply_compiled_season_unguarded: {
+        Args: {
+          p_calling_user_id: string;
+          p_dry_run?: boolean;
+          p_payload: Json;
+          p_season_id: string;
+        };
+        Returns: Json;
+      };
       apply_due_house_transfers: { Args: never; Returns: number };
       apply_house_transfer: {
         Args: { p_membership_id: string; p_now?: string };
@@ -3442,6 +3451,10 @@ export type Database = {
       begin_notification_delivery_attempt: {
         Args: { p_notification_id: string; p_now: string };
         Returns: number;
+      };
+      block_has_escalation_coverage: {
+        Args: { p_block_id: string };
+        Returns: boolean;
       };
       block_has_present_worker: {
         Args: { p_block_id: string };
@@ -3735,7 +3748,7 @@ export type Database = {
       lives_ok: { Args: { '': string }; Returns: string };
       lock_block_coverage: {
         Args: { p_as_of: string; p_block_id: string };
-        Returns: undefined;
+        Returns: boolean;
       };
       mark_notification_read: {
         Args: { p_notification_id: string; p_now: string; p_user_id: string };
@@ -4094,6 +4107,7 @@ export type Database = {
         Returns: number;
       };
       throws_ok: { Args: { '': string }; Returns: string };
+      time_travel_is_allowed: { Args: never; Returns: boolean };
       todo:
         | { Args: { how_many: number }; Returns: boolean[] }
         | { Args: { how_many: number; why: string }; Returns: boolean[] }
@@ -4117,6 +4131,7 @@ export type Database = {
         };
         Returns: Json;
       };
+      try_orchestrator_tick_lock: { Args: never; Returns: boolean };
       url_encode_mailto_component: {
         Args: { p_value: string };
         Returns: string;

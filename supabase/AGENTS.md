@@ -126,6 +126,41 @@ swap-counterparty.
   means the system default (-6h / -2h), **not** suppression; suppression is the separate
   `reminder_6h_enabled` / `reminder_2h_enabled = false` flag.
 
+## Seat writes and lock order
+
+Every write to `shift_block_assignments` must take its row lock **before** the availability
+check and repeat the predicate on the write itself. A `FOR UPDATE` followed by an
+unpredicated `UPDATE ... WHERE assignment_id = ANY(...)` is not a fix; that exact shape is
+what the 2026-07-26 concurrency audit found in `drop_shift`, `accept_swap` and
+`admin_assign_worker`, and it failed silent because nothing in the schema objected.
+
+**Global lock order, do not invert:**
+
+```
+users  ->  shift_block_assignments (ORDER BY assignment_id)  ->  swap_requests
+```
+
+`accept_swap` / `apply_permanent_swap` take seats before `swap_requests` for this reason:
+`drop_shift` fires `void_pending_swaps_for_vacated_seat`, which reaches `swap_requests`
+_after_ seats, so locking swap-first deadlocks a drop racing an accept. `accept_swap`
+pre-reads the swap unlocked purely to learn its id arrays, then locks seats, then locks and
+re-reads the swap authoritatively.
+
+Multi-seat picks use `LATERAL ... LIMIT 1 FOR UPDATE SKIP LOCKED` per block (`DISTINCT ON`
+cannot carry a lock). Use **SKIP LOCKED**, not plain `FOR UPDATE`: a blocked plain
+`FOR UPDATE` wakes, re-checks, finds the row still inside its predicate and overwrites the
+winner anyway, so it does not fix a two-writer collision.
+
+`shift_block_assignments_one_seat_per_worker` (partial unique on `(block_id, user_id)` over
+the occupied statuses) enforces invariant #5. Any new path that assigns a worker to a block
+needs a "worker does not already occupy this block" filter, or a legitimate flow will fail
+with a raw `23505` instead of skipping that block.
+
+Tests: `supabase/tests/concurrency-audit-guards.sql` for the single-session half;
+`scripts/concurrency/race-harness.sh` for the locks, which are only observable with two
+sessions. **A new race test must be shown to FAIL against the pre-fix body** before it is
+worth anything.
+
 ## Coverage lock
 
 A vacant seat locks at T-2h **only when its desk would otherwise be empty** at that block. A
@@ -142,6 +177,19 @@ locked even after a floater or Allied fills the desk. Recorded via
 `shift_blocks.coverage_locked_at`, set at the `float_lookup` / `hmod_notify_allied` step, not
 at `broadcast` (T-3h is still claimable). Claimability is server-authoritative and exposed on
 the open-shifts read path; clients must consume it, never re-derive T-2h.
+
+`lock_block_coverage` is an atomic **check-and-lock returning boolean**, not a stamp. It
+locks the block's seats, re-evaluates `block_has_escalation_coverage` under that lock, and
+returns `false` when the desk has been staffed since the tick's scan; `floatLookupStep` and
+`hmodNotifyAlliedStep` MUST abort on `false`, and `float_lookup` must additionally
+`releaseStep` (it claims `block_step_status` before firing, so leaving it `fired` would
+retire the step and a later drop could never re-escalate). Do not revert this to an
+unconditional stamp driven by `orchestrator_vacant_seats.desk_covered`: that value is read
+once per tick, seconds before the per-block work, and trusting it locked staffed desks and
+bought floats and Allied hours that no automated path may undo (invariant #3).
+
+`block_has_escalation_coverage` (counts `allied`) is a THIRD predicate alongside
+`block_has_present_worker` (excludes it). Same warning as above: do not collapse them.
 
 ## Operating seasons
 

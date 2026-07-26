@@ -518,9 +518,18 @@ private fun LiveShiftsRoot(
             // instead of a single generic "couldn't reach the server". [block] returns the
             // raw [EdgeResult]; on a non-2xx: raise the classified toast and (when [revert])
             // bump [revertKey] so the optimistic move snaps back to server truth.
+            //
+            // [reconcile] additionally pulls a fresh snapshot once the write settles
+            // (audit F9). Realtime cannot be relied on alone: postgres_changes evaluates
+            // RLS against the NEW row, so if a concurrent writer reassigns a seat away
+            // from this worker the row leaves their scope and NO event is delivered. The
+            // optimistic card would then survive forever, showing a shift the server has
+            // already given to somebody else. Left false for writes that touch no seat
+            // (preferences, broadcast opt-in), whose refetch would be pure cost.
             fun launchWrite(
                 op: WriteOp,
                 revert: Boolean = true,
+                reconcile: Boolean = true,
                 block: suspend () -> EdgeResult,
             ) {
                 prefsScope.launch {
@@ -529,6 +538,7 @@ private fun LiveShiftsRoot(
                         writeError = edgeErrorMessage(op, result)
                         if (revert) revertKey++
                     }
+                    if (reconcile) repo.refresh.request()
                 }
             }
 
@@ -538,6 +548,7 @@ private fun LiveShiftsRoot(
             fun launchWriteBool(
                 op: WriteOp,
                 revert: Boolean = true,
+                reconcile: Boolean = false,
                 block: suspend () -> Boolean,
             ) {
                 prefsScope.launch {
@@ -546,6 +557,7 @@ private fun LiveShiftsRoot(
                         writeError = edgeErrorMessage(op, EdgeResult(false, 0, ""))
                         if (revert) revertKey++
                     }
+                    if (reconcile) repo.refresh.request()
                 }
             }
             // Bumped after a manager sets the deadline so the period (and its deadline chip)
@@ -711,7 +723,19 @@ private fun LiveShiftsRoot(
                                 } else {
                                     writeError = null
                                     claimSuccessMessage = toast.message
+                                    // Audit F9: a PARTIAL claim is not an error (the toast
+                                    // says so), but the optimistic move added the WHOLE
+                                    // coalesced span to My-Shifts and pulled every one of
+                                    // its blocks out of the open feed. claim-shift is one
+                                    // POST per block, so losing the FCFS race on some of
+                                    // them is the expected concurrent outcome, not an edge
+                                    // case. Without this the worker keeps seeing blocks
+                                    // they do not hold. Reverting hands the display back to
+                                    // the snapshot, and the refetch below replaces it with
+                                    // what actually landed.
+                                    if (outcome.failed > 0) revertKey++
                                 }
+                                repo.refresh.request()
                             }
                         },
                         onPickUpPermanent = { shift ->
@@ -728,6 +752,10 @@ private fun LiveShiftsRoot(
                                     writeError = edgeErrorMessage(WriteOp.PERMANENT_PICKUP, result)
                                     revertKey++
                                 }
+                                // Audit F9. Doubly needed here: permanent_pickup_slot has
+                                // partial-success semantics by design (§8.4.3), so an `ok`
+                                // response does not mean every week landed.
+                                repo.refresh.request()
                             }
                         },
                         loadPermanentScope = { shift ->
@@ -776,6 +804,7 @@ private fun LiveShiftsRoot(
                                             "Couldn't claim those break shifts. The sign-up window may be closed, or they were just taken."
                                         revertKey++
                                     }
+                                    repo.refresh.request() // audit F9
                                 }
                             }
                         },
@@ -802,7 +831,9 @@ private fun LiveShiftsRoot(
                             // the settings ViewModel already flipped its optimistic toggle. The EF rejects
                             // an HM/BM subscribe (403) → toast + revert (re-read the profile → the toggle
                             // snaps back). This is the ONLY user-toggleable notification channel.
-                            launchWrite(WriteOp.BROADCAST) { profileRepo.setBroadcastSubscription(session.userId, subscribed) }
+                            launchWrite(WriteOp.BROADCAST, reconcile = false) {
+                                profileRepo.setBroadcastSubscription(session.userId, subscribed)
+                            }
                         },
                         onMarkAllRead = { unreadIds ->
                             // Persist the read receipts → loop the worker's unread ids through the
@@ -827,6 +858,10 @@ private fun LiveShiftsRoot(
                                     writeError = edgeErrorMessage(WriteOp.ACCEPT_SWAP, result)
                                     revertKey++
                                 }
+                                // Audit F9. An accepted swap moves seats BETWEEN two
+                                // workers, so one side's rows leave their RLS scope and
+                                // Realtime tells them nothing.
+                                repo.refresh.request()
                             }
                         },
                         onRejectSwap = { swapId ->

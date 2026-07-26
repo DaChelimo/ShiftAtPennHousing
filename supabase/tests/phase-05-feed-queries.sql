@@ -65,10 +65,14 @@ VALUES ('e0000005-0000-0000-0000-000000000099', 'sm', 'harnwell');
 -- the same anchor. The 30-day forward offset guarantees all generated
 -- block_start_at values remain in the future for is_assignment_claimable
 -- and any now()-anchored implementation choice.
+-- as_of is ~75 days out (was 30; moved 2026-07-26). The seeded real-Harnwell schedule
+-- runs to 2026-09-07, and a 30-day anchor put these Harnwell fixtures inside it, so
+-- every insert hit shift_blocks_house_id_block_start_at_key and the file aborted before
+-- a single assertion ran. 75 days clears the seeded range.
 SELECT set_config(
   'test.phase05.as_of',
   ((date_trunc('hour', now() AT TIME ZONE 'America/New_York')
-    + interval '30 days') AT TIME ZONE 'America/New_York')::text,
+    + interval '75 days') AT TIME ZONE 'America/New_York')::text,
   false
 );
 
@@ -438,17 +442,21 @@ SELECT is(
 -- ============================================================
 
 -- Insert a Quad permanent_drop block to verify it does not leak into Harnwell.
+-- ids end in d9, not d1: d1 is already taken by the Harnwell block at section 6. The
+-- duplicate was latent (shift_blocks_pkey) and never surfaced, because this file had
+-- been aborting at its first fixture insert on a seed collision long before reaching
+-- here. Fixed 2026-07-26.
 INSERT INTO public.shift_blocks
   (block_id, house_id, block_start_at, required_headcount)
 VALUES
-  ('f0000005-0000-0000-0000-0000000000d1', 'quad',
+  ('f0000005-0000-0000-0000-0000000000d9', 'quad',
    ((current_setting('test.phase05.as_of')::timestamptz) + interval '8 days'), 3);
 
 INSERT INTO public.shift_block_assignments
   (assignment_id, block_id, user_id, status, vacancy_origin)
 VALUES
-  ('e0000005-1000-0000-0000-0000000000d1',
-   'f0000005-0000-0000-0000-0000000000d1', NULL, 'vacant', 'permanent_drop');
+  ('e0000005-1000-0000-0000-0000000000d9',
+   'f0000005-0000-0000-0000-0000000000d9', NULL, 'vacant', 'permanent_drop');
 
 SELECT is(
   (SELECT count(*) FROM public.permanent_openings_feed('harnwell'))::integer,

@@ -92,14 +92,18 @@ INSERT INTO public.user_roles (user_id, role, scope_house_id) VALUES
 -- The 30-day forward offset keeps every fixture block in the future relative
 -- to real wall-clock time, so behavior that branches on "future vs past"
 -- (T-2h cutoff, claimable check) doesn't depend on machine clock drift.
--- Anchor as_of to a Monday 09:00 ~30 days out. The cap fixture (§9) inserts 80
+-- Anchor as_of to a Monday 09:00 ~75 days out. (Was 30 days; moved 2026-07-26.) The
+-- seeded real-Harnwell schedule runs to 2026-09-07, and a 30-day anchor put these
+-- Harnwell fixtures inside it, so every insert hit
+-- shift_blocks_house_id_block_start_at_key and the whole file aborted before a single
+-- assertion ran. 75 days clears the seeded range. The cap fixture (§9) inserts 80
 -- consecutive 30-min blocks (40h) starting in the as_of+7d week; anchoring to a
 -- Monday guarantees they all fall inside one Mon..Sun calendar week, so the
 -- per-week hard-cap check is exercised deterministically (was flaky when as_of
 -- landed late in a week and the 40h straddled the week boundary).
 SELECT set_config(
   'test.phase05c.as_of',
-  ((date_trunc('week', (now() AT TIME ZONE 'America/New_York') + interval '30 days')
+  ((date_trunc('week', (now() AT TIME ZONE 'America/New_York') + interval '75 days')
     + interval '9 hours') AT TIME ZONE 'America/New_York')::text,
   false
 );

@@ -4,8 +4,21 @@
 -- apps/mobile/docs/worker-read-model/TEST_PLAN.md.
 -- NOTE: the views expose `id = assignment_id::text`, so fixtures use explicit
 -- assignment_id values (the 'a000' namespace) and assertions key off those.
+-- FIXTURE DATES (refreshed 2026-07-26). Two independent constraints, both learned the
+-- hard way, so do not move these casually:
+--   1. They must not collide with the seeded real-Harnwell schedule. The previous
+--      2026-07-01 anchor did (shift_blocks_house_id_block_start_at_key), which made this
+--      whole file abort at fixture-insert time before a single assertion ran.
+--   2. They must sit INSIDE worker_open_shifts' horizons (20260726000001): 6 weeks for
+--      the weekly feed, 26 for permanent openings. The old off-calendar block at
+--      2027-06-01 is beyond both, so the view correctly stops emitting it.
+-- 2026-08-23 is a future regular_school_year day with no seeded blocks. 2026-08-16 is
+-- ~3 weeks out and deliberately OFF the regular calendar (the break / off-calendar
+-- case) while still inside the 6-week weekly horizon, so the weekly feed can emit it --
+-- which is the whole point of the last two assertions.
+
 BEGIN;
-SELECT plan(19);
+SELECT plan(20);
 
 -- ---- Actors (harnwell SW ×2, quad SW, quad BM) ----
 INSERT INTO auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -34,17 +47,17 @@ INSERT INTO user_roles (user_id, role, scope_house_id) VALUES
 
 -- ---- Blocks (future, on 30-min boundaries) ----
 INSERT INTO shift_blocks (block_id, house_id, block_start_at, required_headcount) VALUES
-  ('f0000000-0000-4000-9000-000000000001','harnwell','2026-07-01 20:00:00-04',2),
-  ('f0000000-0000-4000-9000-000000000002','harnwell','2026-07-01 20:30:00-04',2),
-  ('f0000000-0000-4000-9000-000000000003','harnwell','2026-07-01 21:00:00-04',2),
-  ('f0000000-0000-4000-9000-000000000004','harnwell','2026-07-01 21:30:00-04',2),
-  ('f0000000-0000-4000-9000-000000000010','quad','2026-07-01 20:00:00-04',3),
-  ('f0000000-0000-4000-9000-000000000011','quad','2026-07-01 20:30:00-04',3),
+  ('f0000000-0000-4000-9000-000000000001','harnwell','2026-08-23 20:00:00-04',2),
+  ('f0000000-0000-4000-9000-000000000002','harnwell','2026-08-23 20:30:00-04',2),
+  ('f0000000-0000-4000-9000-000000000003','harnwell','2026-08-23 21:00:00-04',2),
+  ('f0000000-0000-4000-9000-000000000004','harnwell','2026-08-23 21:30:00-04',2),
+  ('f0000000-0000-4000-9000-000000000010','quad','2026-08-23 20:00:00-04',3),
+  ('f0000000-0000-4000-9000-000000000011','quad','2026-08-23 20:30:00-04',3),
   -- A future block on a date OUTSIDE the regular_school_year calendar (beyond the
   -- seeded semester) — stands in for a break / off-calendar occurrence of a
   -- permanently-dropped slot. The permanent feed must NOT treat it as a permanent
   -- opening (it mirrors the permanent-pickup candidate filter), else it strands.
-  ('f0000000-0000-4000-9000-000000000012','quad','2027-06-01 20:00:00-04',3);
+  ('f0000000-0000-4000-9000-000000000012','quad','2026-08-16 20:00:00-04',3);
 
 -- ---- Assignments — EXPLICIT assignment_id (= the view's `id`). Constraint-valid:
 -- non-vacant ⇒ vacancy_origin 'none' + user set; vacant ⇒ null user; is_float ⇒ source set. ----
@@ -82,10 +95,22 @@ SELECT ok(EXISTS(SELECT 1 FROM worker_open_shifts WHERE id='f0000000-0000-4000-a
           'open: quad vacant → both quad and harnwell workers eligible');
 SELECT ok(NOT EXISTS(SELECT 1 FROM worker_open_shifts WHERE eligible_user_id='f0000000-0000-4000-8000-000000000004'),
           'open: BM role excluded from eligibility');
-SELECT is((SELECT DISTINCT feed FROM worker_open_shifts WHERE id='f0000000-0000-4000-a000-000000000011'),
-          'permanent_opening', 'open: vacancy_origin permanent_drop → feed permanent_opening');
-SELECT ok((SELECT weeks_remaining IS NOT NULL FROM worker_open_shifts WHERE id='f0000000-0000-4000-a000-000000000011' LIMIT 1),
-          'open: permanent_opening has non-null weeks_remaining');
+-- DUAL EMISSION (20260724000004, BSpec §5.1/§5.3). A permanently-dropped occurrence
+-- INSIDE the 30-day horizon is emitted TWICE by design: once as permanent_opening (claim
+-- the whole remaining recurrence) and once as weekly (claim this week only). The old
+-- single-value assertion here predates that migration; it survived unnoticed only
+-- because this file had been aborting at fixture-insert time. Card identity is
+-- (feed, assignment_id), so both rows are correct and must both be present.
+SELECT is((SELECT array_agg(DISTINCT feed ORDER BY feed) FROM worker_open_shifts
+             WHERE id='f0000000-0000-4000-a000-000000000011'),
+          ARRAY['permanent_opening','weekly'],
+          'open: permanent_drop inside the 30-day horizon is emitted in BOTH feeds');
+SELECT ok((SELECT weeks_remaining IS NOT NULL FROM worker_open_shifts
+             WHERE id='f0000000-0000-4000-a000-000000000011' AND feed='permanent_opening' LIMIT 1),
+          'open: the permanent_opening row has non-null weeks_remaining');
+SELECT ok((SELECT weeks_remaining IS NULL FROM worker_open_shifts
+             WHERE id='f0000000-0000-4000-a000-000000000011' AND feed='weekly' LIMIT 1),
+          'open: its weekly twin has null weeks_remaining (it is a one-week claim)');
 SELECT ok((SELECT bool_and(weeks_remaining IS NULL) FROM worker_open_shifts WHERE id IN ('f0000000-0000-4000-a000-000000000004','f0000000-0000-4000-a000-000000000010')),
           'open: weekly rows have null weeks_remaining');
 SELECT ok((SELECT home_house FROM worker_open_shifts WHERE id='f0000000-0000-4000-a000-000000000010' AND eligible_user_id='f0000000-0000-4000-8000-000000000003'),

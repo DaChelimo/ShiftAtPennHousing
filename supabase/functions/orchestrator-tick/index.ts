@@ -1,5 +1,18 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+// Float-lookup subsystem. Extracted 2026-07-26 during the cost-audit work: index.ts was
+// already 1,346 lines, more than twice the AGENTS.md ceiling, and the "extract the
+// section you touched on your way out" rule applies. loadCoveredBlockIds moved WITH it
+// and is unchanged — it is the coverage-floor-of-one invariant and both of its call
+// sites are non-negotiable (audit §5 item 2).
+import {
+  floatLookupStep,
+  lockBlockCoverage,
+  type BlockRef,
+  type RuntimeConfig,
+  type VacantAssignment,
+} from './floatLookup.ts';
+
 const TIMEZONE = 'America/New_York';
 const LOOKAHEAD_MINUTES = 3 * 60 + 5;
 const DEFAULT_NO_ACK_LOOKAHEAD_MINUTES = 15;
@@ -9,32 +22,6 @@ const DEFAULT_FLOAT_RETENTION_DAYS = 14;
 // acknowledgment before the ladder advances (responsible worker -> SM -> desk).
 // Customizable via system_config('allied_page_rung_timeout_minutes').
 const DEFAULT_LADDER_TIMEOUT_MINUTES = 10;
-// Maximum coverage secured in a single pass (BEHAVIORAL_SPECIFICATION §5.4).
-// A single contiguous vacant gap is only ever handled 8 blocks (4 hours) at a
-// time — both for the float lookup and, transitively, for the Allied-coverage
-// notification a no-ack void emits. Beyond this, the remainder stays vacant and
-// claimable; it re-escalates through the normal chain (broadcast → float →
-// Allied) as its own blocks approach their escalation offsets. This keeps a long
-// empty window (e.g. 8am–midnight) from being secured to paid Allied all at
-// once, which would needlessly lock students out of picking up the later hours.
-const MAX_ALLIED_COVERAGE_BLOCKS = 8;
-
-// Desk-presence statuses. A block whose desk is already (or will be) staffed by at
-// least one assignment in one of these statuses is NOT empty, so the coverage chain
-// (broadcast → float → Allied) must NOT fire for it. Per the coverage rule
-// (BEHAVIORAL_SPECIFICATION §5.4) the chain runs ONLY to keep a desk from being
-// EMPTY — it never backfills extra vacant seats up to the full per-house headcount.
-// On a triple-staffed Quad evening where one worker is still on, the other two
-// seats need no coverage. `floated_out` / `pending_float_out` are NOT present (that
-// seat's worker is staffing another desk); `vacant` is not present.
-const PRESENT_STATUSES = [
-  'scheduled',
-  'claimed',
-  'floated_in',
-  'pending_float_in',
-  'allied',
-] as const;
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -42,12 +29,6 @@ const corsHeaders = {
 };
 
 type Supabase = ReturnType<typeof createClient>;
-type RuntimeConfig = {
-  blockMinutes: number;
-  floatRetentionDays: number;
-  noAckLookaheadMinutes: number;
-  ladderTimeoutMinutes: number;
-};
 type TickSummary = {
   tickedAt: string;
   blocksScanned: number;
@@ -67,51 +48,6 @@ type ChainStep = {
 type ChainStepEvaluation = {
   stepName: string;
   trigger?: 'on_float_failure';
-};
-type BlockRef = {
-  blockId: string;
-  blockStartAt: Date;
-  houseId: string;
-};
-type VacantAssignment = BlockRef & {
-  assignmentId: string;
-};
-type FloatLookupInput = {
-  gap: {
-    destinationHouseId: string;
-    blocks: Array<{ blockId: string; blockStartAt: Date }>;
-  };
-  sources: Array<{
-    sourceHouseId: string;
-    precedenceOrder: number;
-    candidates: Array<{
-      userId: string;
-      homeHouseId: string;
-      roles: Array<'sw' | 'sm' | 'hm' | 'bm'>;
-      isActive: boolean;
-      coveredGapBlockIds: string[];
-      shiftStartAt: Date;
-      shiftEndAt: Date;
-      hasConflictingFloat: boolean;
-      hasConflictingCrossHousePickup: boolean;
-    }>;
-    effectiveHeadcountByBlockId: Record<string, number>;
-  }>;
-  exclusions: Array<{
-    userId: string;
-    destinationHouseId: string;
-    windowStartAt: Date;
-    windowEndAt: Date;
-  }>;
-};
-type FloatLookupResult = {
-  assignments: Array<{ workerId: string; sourceHouseId: string; blocks: string[] }>;
-  alliedBlockIds: string[];
-};
-type FloatLookupSnapshot = {
-  input: FloatLookupInput;
-  destinationAssignmentByBlockId: Map<string, string>;
-  sourceAssignmentByWorkerBlockId: Map<string, string>;
 };
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -162,13 +98,6 @@ async function loadRuntimeConfig(supabase: Supabase): Promise<RuntimeConfig> {
       DEFAULT_LADDER_TIMEOUT_MINUTES,
     ),
   };
-}
-
-function nestedOne<T>(value: T | T[] | null | undefined): T | null {
-  if (Array.isArray(value)) {
-    return value[0] ?? null;
-  }
-  return value ?? null;
 }
 
 function localParts(
@@ -289,17 +218,42 @@ async function evaluateChainSteps(params: {
   return module.evaluateChainSteps(params);
 }
 
-async function findFloaters(input: FloatLookupInput): Promise<FloatLookupResult> {
-  const module = (await import('../../../packages/core/dist/float-lookup/index.js')) as {
-    findFloaters: (input: FloatLookupInput) => FloatLookupResult;
-  };
-  return module.findFloaters(input);
+type BlockProfile = { profileName: string; chain: ChainStep[]; floatEnabled: boolean };
+
+// Per-tick memo for loadProfileForBlock, keyed by the block's NY-local date.
+//
+// Cost audit F-04(ii): the profile lookup is TWO queries (operating_calendar then
+// operating_profiles) and it was issued once per vacant assignment ROW. Every row in a
+// 3h05m window resolves to the same one or two NY dates, so those two queries were being
+// re-run near-identically dozens of times a tick. The answer depends only on the date,
+// so one entry per date is exact, not approximate.
+//
+// Scoped to a single tick (created in the request handler, passed down, discarded when
+// the response is written) so a config change between ticks is picked up immediately.
+// `null` is a real, cacheable answer -- it means "no calendar row for that date" -- so
+// the map stores the promise rather than the value, which also collapses concurrent
+// lookups for the same date into one round trip.
+type ProfileCache = Map<string, Promise<BlockProfile | null>>;
+
+function loadProfileForBlockCached(
+  supabase: Supabase,
+  blockStartAt: Date,
+  cache: ProfileCache,
+): Promise<BlockProfile | null> {
+  const blockDate = localDateIso(blockStartAt);
+  const cached = cache.get(blockDate);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const pending = loadProfileForBlock(supabase, blockStartAt);
+  cache.set(blockDate, pending);
+  return pending;
 }
 
 async function loadProfileForBlock(
   supabase: Supabase,
   blockStartAt: Date,
-): Promise<{ profileName: string; chain: ChainStep[]; floatEnabled: boolean } | null> {
+): Promise<BlockProfile | null> {
   const blockDate = localDateIso(blockStartAt);
   const { data: calendar, error: calendarError } = await supabase
     .from('operating_calendar')
@@ -328,17 +282,43 @@ async function loadProfileForBlock(
   };
 }
 
-async function loadStepStatus(supabase: Supabase, blockId: string): Promise<StepStatusMap> {
-  const { data, error } = await supabase
-    .from('block_step_status')
-    .select('step_name, status')
-    .eq('block_id', blockId);
-
-  if (error !== null) {
-    throw error;
+// Step status for MANY blocks in one pass (cost audit F-04(iii)).
+//
+// The per-block loadStepStatus this replaces was called once per vacant assignment row
+// -- one round trip each, for a
+// table whose primary key is (block_id, step_name). Fetching the whole window up front
+// costs one request per 100 blocks instead of one per row. Chunked at the same CHUNK=100
+// as loadCoveredBlockIds: a full lookahead window of block ids in a single .in() filter
+// returns HTTP 414 ("URI too long"), which is the same trap selectByBlockIdChunks exists
+// for on the web side.
+//
+// A block with no rows yet is absent from the result; callers must treat a missing entry
+// as an empty StepStatusMap, which is exactly what the per-block query returned for it.
+async function loadStepStatusForBlocks(
+  supabase: Supabase,
+  blockIds: string[],
+): Promise<Map<string, StepStatusMap>> {
+  const byBlock = new Map<string, StepStatusMap>();
+  const CHUNK = 100;
+  for (let start = 0; start < blockIds.length; start += CHUNK) {
+    const chunk = blockIds.slice(start, start + CHUNK);
+    if (chunk.length === 0) {
+      continue;
+    }
+    const { data, error } = await supabase
+      .from('block_step_status')
+      .select('block_id, step_name, status')
+      .in('block_id', chunk);
+    if (error !== null) {
+      throw error;
+    }
+    for (const row of data ?? []) {
+      const existing = byBlock.get(row.block_id) ?? {};
+      existing[row.step_name] = row.status as StepStatus;
+      byBlock.set(row.block_id, existing);
+    }
   }
-
-  return Object.fromEntries((data ?? []).map((row) => [row.step_name, row.status as StepStatus]));
+  return byBlock;
 }
 
 async function claimStep(
@@ -414,22 +394,6 @@ async function broadcastStep(supabase: Supabase, block: BlockRef, firedAt: Date)
 // resolve_hm_for_house, resolve_hmod_on_duty, is_hm_working_time)
 // were moved into SQL in migration 20260528000004; the TS-side helpers
 // they replaced have been deleted.
-// Stamp a block's one-way coverage lock (BEHAVIORAL_SPECIFICATION §5.4/§5.5).
-// Called only from the T-2h coverage-securing steps (float_lookup,
-// hmod_notify_allied) — NEVER from broadcast (T-3h stays claimable). A block
-// reaching these steps is EMPTY (covered blocks are skipped before fireStep), so
-// locking it makes its vacant seats unpickable from here on, even after a
-// floater/Allied later fills the desk. Idempotent + one-way in SQL.
-async function lockBlockCoverage(supabase: Supabase, blockId: string, asOf: Date): Promise<void> {
-  const { error } = await supabase.rpc('lock_block_coverage', {
-    p_block_id: blockId,
-    p_as_of: asOf.toISOString(),
-  });
-  if (error !== null) {
-    throw error;
-  }
-}
-
 async function hmodNotifyAlliedStep(
   supabase: Supabase,
   block: BlockRef,
@@ -452,414 +416,6 @@ async function hmodNotifyAlliedStep(
   }
 
   return (data as { claimed?: boolean } | null)?.claimed === true;
-}
-
-// Of the given blocks, the subset whose desk is already covered — at least one
-// assignment row in a PRESENT_STATUSES status. A covered block needs no coverage,
-// so both the chain trigger (processVacantBlocks) and the gap builder
-// (loadVacantGap) skip it. This is also what stops the multi-tick fill-to-headcount
-// loop: once a floater flips one seat to pending_float_in the block reads covered on
-// the next tick, so its remaining vacant seats are never floated.
-async function loadCoveredBlockIds(supabase: Supabase, blockIds: string[]): Promise<Set<string>> {
-  const covered = new Set<string>();
-  // Chunk the .in() filter — a full lookahead window of block ids 414s ("URI too
-  // long") as one request (mirrors selectByBlockIdChunks on the web side).
-  const CHUNK = 100;
-  for (let start = 0; start < blockIds.length; start += CHUNK) {
-    const chunk = blockIds.slice(start, start + CHUNK);
-    if (chunk.length === 0) {
-      continue;
-    }
-    const { data, error } = await supabase
-      .from('shift_block_assignments')
-      .select('block_id')
-      .in('block_id', chunk)
-      .in('status', [...PRESENT_STATUSES]);
-    if (error !== null) {
-      throw error;
-    }
-    for (const row of data ?? []) {
-      covered.add(row.block_id);
-    }
-  }
-  return covered;
-}
-
-async function loadVacantGap(
-  supabase: Supabase,
-  block: VacantAssignment,
-  blockMinutes: number,
-): Promise<Array<VacantAssignment>> {
-  // Cap the window at MAX_ALLIED_COVERAGE_BLOCKS (4 hours). Exclusive upper
-  // bound so the window holds exactly the 8 blocks [start, start + 4h).
-  const windowEnd = addMinutes(
-    block.blockStartAt,
-    MAX_ALLIED_COVERAGE_BLOCKS * blockMinutes,
-  ).toISOString();
-  const { data, error } = await supabase
-    .from('shift_block_assignments')
-    .select('assignment_id, block_id, shift_blocks!inner(block_start_at, house_id)')
-    .eq('status', 'vacant')
-    .is('shift_blocks.voided_at', null)
-    .eq('shift_blocks.house_id', block.houseId)
-    .gte('shift_blocks.block_start_at', block.blockStartAt.toISOString())
-    .lt('shift_blocks.block_start_at', windowEnd)
-    .order('block_start_at', { referencedTable: 'shift_blocks', ascending: true });
-
-  if (error !== null) {
-    throw error;
-  }
-
-  const byBlock = new Map<string, VacantAssignment>();
-  for (const row of data ?? []) {
-    const joinedBlock = nestedOne(
-      row.shift_blocks as { block_start_at: string; house_id: string } | null,
-    );
-    if (joinedBlock === null || byBlock.has(row.block_id)) {
-      continue;
-    }
-    byBlock.set(row.block_id, {
-      assignmentId: row.assignment_id,
-      blockId: row.block_id,
-      blockStartAt: new Date(joinedBlock.block_start_at),
-      houseId: joinedBlock.house_id,
-    });
-  }
-
-  // Only EMPTY blocks (no present staff) belong to the gap — a block where someone
-  // is still on the desk is covered and must not pull its remaining vacant seats
-  // into the float. A non-empty block also breaks the contiguous run (mirrors the
-  // user's example: empty 18:00–20:00, staffed 20:00–22:00, empty 22:00–24:00 →
-  // two separate gaps, not one).
-  const coveredBlockIds = await loadCoveredBlockIds(supabase, [...byBlock.keys()]);
-
-  const sorted = [...byBlock.values()]
-    .filter((row) => !coveredBlockIds.has(row.blockId))
-    .sort((left, right) => left.blockStartAt.getTime() - right.blockStartAt.getTime());
-  const gap: VacantAssignment[] = [];
-  let expectedStart = block.blockStartAt.getTime();
-  for (const row of sorted) {
-    if (row.blockStartAt.getTime() < expectedStart) {
-      continue;
-    }
-    if (row.blockStartAt.getTime() !== expectedStart) {
-      break;
-    }
-    gap.push(row);
-    expectedStart += blockMinutes * 60 * 1000;
-    // Hard cap: never secure more than 4 hours in one pass (§5.4). The query
-    // window already bounds this, but truncate defensively so the invariant
-    // holds regardless of blockMinutes.
-    if (gap.length >= MAX_ALLIED_COVERAGE_BLOCKS) {
-      break;
-    }
-  }
-
-  return gap;
-}
-
-async function buildFloatLookupSnapshot(
-  supabase: Supabase,
-  block: VacantAssignment,
-  profileName: string,
-  blockMinutes: number,
-): Promise<FloatLookupSnapshot> {
-  const gapRows = await loadVacantGap(supabase, block, blockMinutes);
-  const gapBlocks = gapRows.map((row) => ({
-    blockId: row.blockId,
-    blockStartAt: row.blockStartAt,
-  }));
-  const destinationAssignmentByBlockId = new Map(
-    gapRows.map((row) => [row.blockId, row.assignmentId]),
-  );
-  const gapStart = gapBlocks[0]?.blockStartAt ?? block.blockStartAt;
-  const gapEnd = addMinutes(gapBlocks.at(-1)?.blockStartAt ?? block.blockStartAt, blockMinutes);
-
-  const { data: routes, error: routesError } = await supabase
-    .from('float_routing')
-    .select('source_house_id, precedence_order')
-    .eq('profile_name', profileName)
-    .eq('destination_house_id', block.houseId)
-    .order('precedence_order', { ascending: true });
-
-  if (routesError !== null) {
-    throw routesError;
-  }
-
-  const sources: FloatLookupInput['sources'] = [];
-  const sourceAssignmentByWorkerBlockId = new Map<string, string>();
-  const gapBlockByIso = new Map(
-    gapBlocks.map((gapBlock) => [gapBlock.blockStartAt.toISOString(), gapBlock]),
-  );
-
-  for (const route of routes ?? []) {
-    const { data: sourceRows, error: sourceError } = await supabase
-      .from('shift_block_assignments')
-      .select(
-        'assignment_id, user_id, status, shift_blocks!inner(block_id, block_start_at, house_id)',
-      )
-      .in('status', ['scheduled', 'claimed'])
-      .eq('shift_blocks.house_id', route.source_house_id)
-      .gte('shift_blocks.block_start_at', gapStart.toISOString())
-      .lt('shift_blocks.block_start_at', gapEnd.toISOString());
-
-    if (sourceError !== null) {
-      throw sourceError;
-    }
-
-    const userIds = [
-      ...new Set((sourceRows ?? []).map((row) => row.user_id).filter(Boolean) as string[]),
-    ];
-    const { data: users, error: usersError } =
-      userIds.length === 0
-        ? { data: [], error: null }
-        : await supabase
-            .from('users')
-            .select('user_id, home_house_id, is_active')
-            .in('user_id', userIds);
-    if (usersError !== null) {
-      throw usersError;
-    }
-    const usersById = new Map((users ?? []).map((user) => [user.user_id, user]));
-
-    const { data: roles, error: rolesError } =
-      userIds.length === 0
-        ? { data: [], error: null }
-        : await supabase.from('user_roles').select('user_id, role').in('user_id', userIds);
-    if (rolesError !== null) {
-      throw rolesError;
-    }
-    const rolesByUser = new Map<string, Array<'sw' | 'sm' | 'hm' | 'rsm' | 'bm' | 'admin'>>();
-    for (const role of roles ?? []) {
-      const existing = rolesByUser.get(role.user_id) ?? [];
-      existing.push(role.role as 'sw' | 'sm' | 'hm' | 'rsm' | 'bm' | 'admin');
-      rolesByUser.set(role.user_id, existing);
-    }
-
-    const coveredByUser = new Map<string, Array<{ blockId: string; blockStartAt: Date }>>();
-    const effectiveHeadcountByBlockId: Record<string, number> = Object.fromEntries(
-      gapBlocks.map((gapBlock) => [gapBlock.blockId, 0]),
-    );
-
-    for (const row of sourceRows ?? []) {
-      if (row.user_id === null) {
-        continue;
-      }
-      const joinedBlock = nestedOne(
-        row.shift_blocks as { block_id: string; block_start_at: string; house_id: string } | null,
-      );
-      if (joinedBlock === null) {
-        continue;
-      }
-      const gapBlock = gapBlockByIso.get(new Date(joinedBlock.block_start_at).toISOString());
-      if (gapBlock === undefined) {
-        continue;
-      }
-      effectiveHeadcountByBlockId[gapBlock.blockId] =
-        (effectiveHeadcountByBlockId[gapBlock.blockId] ?? 0) + 1;
-      sourceAssignmentByWorkerBlockId.set(`${row.user_id}:${gapBlock.blockId}`, row.assignment_id);
-      const existing = coveredByUser.get(row.user_id) ?? [];
-      existing.push(gapBlock);
-      coveredByUser.set(row.user_id, existing);
-    }
-
-    // C4 (F-07-005): per-candidate conflict flags. A worker already committed
-    // to a float (pending/acknowledged manifests as pending/floated in/out rows)
-    // or to a cross-house pickup overlapping the gap window must not be selected.
-    const floatConflictUserIds = new Set<string>();
-    const crossHousePickupConflictUserIds = new Set<string>();
-    if (userIds.length > 0) {
-      const { data: conflictRows, error: conflictError } = await supabase
-        .from('shift_block_assignments')
-        .select('user_id, status, is_cross_house_pickup, shift_blocks!inner(block_start_at)')
-        .in('user_id', userIds)
-        .gte('shift_blocks.block_start_at', gapStart.toISOString())
-        .lt('shift_blocks.block_start_at', gapEnd.toISOString());
-      if (conflictError !== null) {
-        throw conflictError;
-      }
-      for (const row of conflictRows ?? []) {
-        if (row.user_id === null) {
-          continue;
-        }
-        if (
-          row.status === 'pending_float_in' ||
-          row.status === 'floated_in' ||
-          row.status === 'pending_float_out' ||
-          row.status === 'floated_out'
-        ) {
-          floatConflictUserIds.add(row.user_id);
-        }
-        if (row.is_cross_house_pickup === true) {
-          crossHousePickupConflictUserIds.add(row.user_id);
-        }
-      }
-    }
-
-    const candidates = [...coveredByUser.entries()].flatMap(([userId, coveredBlocks]) => {
-      const user = usersById.get(userId);
-      if (user === undefined || coveredBlocks.length === 0) {
-        return [];
-      }
-      const sortedBlocks = [...coveredBlocks].sort(
-        (left, right) => left.blockStartAt.getTime() - right.blockStartAt.getTime(),
-      );
-      return [
-        {
-          userId,
-          homeHouseId: user.home_house_id,
-          roles: rolesByUser.get(userId) ?? ['sw'],
-          isActive: user.is_active,
-          coveredGapBlockIds: sortedBlocks.map((gapBlock) => gapBlock.blockId),
-          shiftStartAt: sortedBlocks[0]!.blockStartAt,
-          shiftEndAt: addMinutes(sortedBlocks.at(-1)!.blockStartAt, blockMinutes),
-          hasConflictingFloat: floatConflictUserIds.has(userId),
-          hasConflictingCrossHousePickup: crossHousePickupConflictUserIds.has(userId),
-        },
-      ];
-    });
-
-    // Source-floor guard (belt-and-braces; the pure algorithm's sourceHasFloor
-    // enforces the same rule). Float direction is now config-driven: any house the
-    // admin routes here reaches this loop. But a source may only lend while it is
-    // genuinely MULTI-STAFFED — at least one gap block must have >= 2 workers
-    // present so the desk keeps >= 1 after a floater leaves. A source with < 2
-    // present on every block (e.g. a single-staffed house in the first half of
-    // summer) contributes no roster. This is the second enforcement point for the
-    // "never empty a source desk" guard, per the enforce-at-every-write-point rule.
-    const sourceCanSpare = Object.values(effectiveHeadcountByBlockId).some(
-      (present) => present >= 2,
-    );
-    if (!sourceCanSpare) {
-      continue;
-    }
-
-    sources.push({
-      sourceHouseId: route.source_house_id,
-      precedenceOrder: route.precedence_order,
-      candidates,
-      effectiveHeadcountByBlockId,
-    });
-  }
-
-  const { data: exclusions, error: exclusionsError } = await supabase
-    .from('float_exclusions')
-    .select('user_id, destination_house_id, window_start_at, window_end_at')
-    .eq('destination_house_id', block.houseId)
-    .lt('window_start_at', gapEnd.toISOString())
-    .gt('window_end_at', gapStart.toISOString());
-
-  if (exclusionsError !== null) {
-    throw exclusionsError;
-  }
-
-  return {
-    input: {
-      gap: { destinationHouseId: block.houseId, blocks: gapBlocks },
-      sources,
-      exclusions: (exclusions ?? []).map((exclusion) => ({
-        userId: exclusion.user_id,
-        destinationHouseId: exclusion.destination_house_id,
-        windowStartAt: new Date(exclusion.window_start_at),
-        windowEndAt: new Date(exclusion.window_end_at),
-      })),
-    },
-    destinationAssignmentByBlockId,
-    sourceAssignmentByWorkerBlockId,
-  };
-}
-
-async function floatLookupStep(
-  supabase: Supabase,
-  block: VacantAssignment,
-  profileName: string,
-  firedAt: Date,
-  config: RuntimeConfig,
-): Promise<'float_assigned' | 'no_float'> {
-  // §5.5: the desk hit its T-2h float-lookup step while empty → lock its seats
-  // (one-way) before attempting the float, regardless of whether a floater is
-  // found. A later float-in / Allied fill never re-opens them to pickup.
-  await lockBlockCoverage(supabase, block.blockId, firedAt);
-
-  // §7.3 — never assign a float that is ALREADY inside its no-ack window at
-  // creation. Such a float is dead on arrival: its acknowledgment deadline
-  // (T-10m) and no-ack point (T-15m) are already past, so the worker can never
-  // acknowledge it and the no-ack pass voids it immediately — re-opening the gap
-  // into an assign→void→re-assign churn that also burns an unfair no_acknowledgment
-  // exclusion on the floater. A gap discovered or reopened this late routes
-  // straight to HMOD-for-Allied instead (the 'no_float' fallback below — the same
-  // terminal a no-ack void produces). The threshold is the no-ack lookahead
-  // (ack-deadline + no-ack-trigger); a float whose start is beyond it can still be
-  // acknowledged and is unaffected, so normal T-2h floats never hit this guard.
-  const noAckHorizon = addMinutes(firedAt, config.noAckLookaheadMinutes).getTime();
-  if (block.blockStartAt.getTime() <= noAckHorizon) {
-    return 'no_float';
-  }
-
-  const snapshot = await buildFloatLookupSnapshot(
-    supabase,
-    block,
-    profileName,
-    config.blockMinutes,
-  );
-  const result = await findFloaters(snapshot.input);
-
-  if (result.assignments.length === 0) {
-    return 'no_float';
-  }
-
-  let anyAssigned = false;
-  for (const assignment of result.assignments) {
-    const destinationAssignmentIds = assignment.blocks.flatMap((blockId) => {
-      const assignmentId = snapshot.destinationAssignmentByBlockId.get(blockId);
-      return assignmentId === undefined ? [] : [assignmentId];
-    });
-    const sourceAssignmentIds = assignment.blocks.flatMap((blockId) => {
-      const assignmentId = snapshot.sourceAssignmentByWorkerBlockId.get(
-        `${assignment.workerId}:${blockId}`,
-      );
-      return assignmentId === undefined ? [] : [assignmentId];
-    });
-
-    if (destinationAssignmentIds.length === 0 || sourceAssignmentIds.length === 0) {
-      continue;
-    }
-
-    // B-2 audit fix: the four writes (float_assignments INSERT,
-    // destination + source UPDATEs, notification INSERT) run inside a
-    // single plpgsql transaction so partial state — e.g. destination
-    // flipped to pending_float_in while source is still scheduled —
-    // is impossible. The RPC also re-validates the destination is
-    // still vacant under FOR UPDATE; a concurrent claim between the
-    // algorithm's snapshot and this call cleanly returns
-    // assigned=false with no writes.
-    const { data: assignmentResult, error: assignmentError } = await supabase.rpc(
-      'process_float_lookup_assignment',
-      {
-        p_worker_id: assignment.workerId,
-        p_source_house_id: assignment.sourceHouseId,
-        p_source_assignment_ids: sourceAssignmentIds,
-        p_destination_assignment_ids: destinationAssignmentIds,
-        p_destination_house_id: block.houseId,
-        p_now: firedAt.toISOString(),
-        p_retention_days: config.floatRetentionDays,
-      },
-    );
-    if (assignmentError !== null) {
-      throw assignmentError;
-    }
-
-    if ((assignmentResult as { assigned?: boolean } | null)?.assigned === true) {
-      anyAssigned = true;
-    }
-  }
-
-  // Any successful per-worker assignment means the lookup yielded a
-  // float for the orchestrator's purposes. If ALL assignments aborted
-  // because their destinations were no longer vacant, the chain
-  // re-evaluates next tick (or hmod_notify_allied fires for the
-  // residual gap).
-  return anyAssigned ? 'float_assigned' : 'no_float';
 }
 
 async function hasActiveFloatForBlock(supabase: Supabase, blockId: string): Promise<boolean> {
@@ -935,55 +491,74 @@ async function processVacantBlocks(
   supabase: Supabase,
   now: Date,
   config: RuntimeConfig,
+  profileCache: ProfileCache,
 ): Promise<{ blocksScanned: number; stepsFired: number }> {
-  const { data, error } = await supabase
-    .from('shift_block_assignments')
-    .select('assignment_id, block_id, shift_blocks!inner(block_start_at, house_id)')
-    .eq('status', 'vacant')
-    // Blocks retired by an admin config change (house closed / desk hours shrank)
-    // are inert: never escalate them. (Voiding also deletes their vacant seats, so
-    // this is defense-in-depth.)
-    .is('shift_blocks.voided_at', null)
-    .gt('shift_blocks.block_start_at', now.toISOString())
-    .lte('shift_blocks.block_start_at', addMinutes(now, LOOKAHEAD_MINUTES).toISOString())
-    .order('block_start_at', { referencedTable: 'shift_blocks', ascending: true });
+  // Cost audit F-04(i). The scan moved into orchestrator_vacant_seats so it can apply
+  // the staggered-launch gate (house_is_live) that this function never consulted. Under
+  // a Harnwell-only pilot that takes the 30-day window from 10,461 seats across 13
+  // houses to 61 seats in 1 -- and, more importantly, stops the chain firing broadcast /
+  // float / Allied against desks nobody has opened. It is a no-op when
+  // system_config('staggered_launch_enabled') is unset or false, which is every dev seed
+  // and the whole test suite.
+  //
+  // The RPC also returns desk_covered per row, which is why there is no longer a
+  // separate loadCoveredBlockIds round trip HERE. Read carefully: the coverage CHECK is
+  // unchanged and still runs on every row below. Only where the boolean is computed
+  // moved -- from a second PostgREST query into the same scan -- over the identical
+  // present-status set (scheduled/claimed/floated_in/pending_float_in/allied). This is
+  // the coverage-floor-of-one invariant (BSpec §5.4) and it is NOT weakened:
+  // loadCoveredBlockIds itself is untouched and still guards the gap builder in
+  // loadVacantGap, which is its other, independent call site.
+  const { data, error } = await supabase.rpc('orchestrator_vacant_seats', {
+    p_after: now.toISOString(),
+    p_through: addMinutes(now, LOOKAHEAD_MINUTES).toISOString(),
+  });
 
   if (error !== null) {
     throw error;
   }
 
-  // Skip blocks whose desk is already staffed: the coverage chain fires only to
-  // keep a desk from being EMPTY (BEHAVIORAL_SPECIFICATION §5.4), never to backfill
-  // vacant seats to the full headcount. A triple-staffed Quad evening with one
-  // worker still on needs no broadcast/float/Allied for its other two seats.
-  const coveredBlockIds = await loadCoveredBlockIds(supabase, [
-    ...new Set((data ?? []).map((row) => row.block_id)),
-  ]);
+  const rows = (data ?? []) as Array<{
+    assignment_id: string;
+    block_id: string;
+    block_start_at: string;
+    house_id: string;
+    desk_covered: boolean;
+  }>;
+
+  // F-04(iii): one batched read of block_step_status for the whole window, instead of
+  // one round trip per row. Only uncovered blocks can fire a step, so only they are
+  // worth fetching.
+  const actionableBlockIds = [
+    ...new Set(rows.filter((row) => !row.desk_covered).map((row) => row.block_id)),
+  ];
+  const stepStatusByBlock = await loadStepStatusForBlocks(supabase, actionableBlockIds);
 
   let fired = 0;
-  for (const row of data ?? []) {
-    if (coveredBlockIds.has(row.block_id)) {
-      continue;
-    }
-    const joinedBlock = nestedOne(
-      row.shift_blocks as { block_start_at: string; house_id: string } | null,
-    );
-    if (joinedBlock === null) {
+  for (const row of rows) {
+    // Skip blocks whose desk is already staffed: the coverage chain fires only to
+    // keep a desk from being EMPTY (BEHAVIORAL_SPECIFICATION §5.4), never to backfill
+    // vacant seats to the full headcount. A triple-staffed Quad evening with one
+    // worker still on needs no broadcast/float/Allied for its other two seats.
+    if (row.desk_covered) {
       continue;
     }
 
     const block: VacantAssignment = {
       assignmentId: row.assignment_id,
       blockId: row.block_id,
-      blockStartAt: new Date(joinedBlock.block_start_at),
-      houseId: joinedBlock.house_id,
+      blockStartAt: new Date(row.block_start_at),
+      houseId: row.house_id,
     };
-    const profile = await loadProfileForBlock(supabase, block.blockStartAt);
+    // F-04(ii): memoised per NY date for the duration of this tick.
+    const profile = await loadProfileForBlockCached(supabase, block.blockStartAt, profileCache);
     if (profile === null) {
       continue;
     }
 
-    const stepStatus = await loadStepStatus(supabase, block.blockId);
+    // A block with no block_step_status rows yet is absent from the batch, which means
+    // the same thing the per-block query's empty result meant: no step has fired.
+    const stepStatus = stepStatusByBlock.get(block.blockId) ?? {};
     const dueSteps = await evaluateChainSteps({
       blockStartAt: block.blockStartAt,
       now,
@@ -1041,50 +616,7 @@ async function processVacantBlocks(
     }
   }
 
-  return { blocksScanned: data?.length ?? 0, stepsFired: fired };
-}
-
-async function loadAssignmentBlocks(
-  supabase: Supabase,
-  assignmentIds: string[],
-): Promise<
-  Array<{
-    assignmentId: string;
-    blockId: string;
-    blockStartAt: Date;
-    houseId: string;
-    status: string;
-  }>
-> {
-  if (assignmentIds.length === 0) {
-    return [];
-  }
-
-  const { data, error } = await supabase
-    .from('shift_block_assignments')
-    .select('assignment_id, block_id, status, shift_blocks!inner(block_start_at, house_id)')
-    .in('assignment_id', assignmentIds);
-
-  if (error !== null) {
-    throw error;
-  }
-
-  return (data ?? []).flatMap((row) => {
-    const joinedBlock = nestedOne(
-      row.shift_blocks as { block_start_at: string; house_id: string } | null,
-    );
-    return joinedBlock === null
-      ? []
-      : [
-          {
-            assignmentId: row.assignment_id,
-            blockId: row.block_id,
-            blockStartAt: new Date(joinedBlock.block_start_at),
-            houseId: joinedBlock.house_id,
-            status: row.status,
-          },
-        ];
-  });
+  return { blocksScanned: rows.length, stepsFired: fired };
 }
 
 type NoAckRpcResult = {
@@ -1101,35 +633,31 @@ async function processNoAckFloats(
   now: Date,
   config: RuntimeConfig,
 ): Promise<number> {
-  // Pre-filter pending floats by lookahead so the RPC only runs for
-  // floats within the no-ack window. The RPC also re-validates this
-  // under FOR UPDATE as defense-in-depth.
-  const { data: floats, error } = await supabase
-    .from('float_assignments')
-    .select('float_id, destination_assignment_ids')
-    .eq('status', 'pending')
-    .is('acknowledged_at', null)
-    .is('declined_at', null);
+  // Cost audit F-06. This used to select EVERY pending, unacknowledged, undeclined
+  // float with NO time bound, then issue one destination-blocks round trip per float,
+  // and only then apply the lookahead filter in TypeScript — so the cheap temporal
+  // filter that eliminates almost every row was paid for after a round trip each. (The
+  // old comment here claimed it was a "pre-filter by lookahead", which the query did not
+  // do.) It was also a seq scan every 60 seconds: float_assignments' only index leads
+  // with user_id, which this query does not constrain.
+  //
+  // pending_floats_due_for_no_ack does the join to shift_blocks in SQL and returns only
+  // the floats whose EARLIEST destination block is inside the window — the same set the
+  // loop computed — in one indexed query (float_assignments_pending_unacked_idx).
+  //
+  // process_no_ack_float below is unchanged and still re-validates under FOR UPDATE, so
+  // the no-takeback invariant is untouched; only candidate DISCOVERY got cheaper.
+  const { data: floats, error } = await supabase.rpc('pending_floats_due_for_no_ack', {
+    p_now: now.toISOString(),
+    p_lookahead_minutes: config.noAckLookaheadMinutes,
+  });
 
   if (error !== null) {
     throw error;
   }
 
   let processed = 0;
-  for (const floatRow of floats ?? []) {
-    const destinationRows = await loadAssignmentBlocks(
-      supabase,
-      floatRow.destination_assignment_ids,
-    );
-    if (destinationRows.length === 0) {
-      continue;
-    }
-
-    const earliestStart = Math.min(...destinationRows.map((row) => row.blockStartAt.getTime()));
-    if (earliestStart > addMinutes(now, config.noAckLookaheadMinutes).getTime()) {
-      continue;
-    }
-
+  for (const floatRow of (floats ?? []) as Array<{ float_id: string }>) {
     // Atomic write — single transaction in the RPC. After the B-1
     // audit fix the RPC also INSERTs the HMOD-for-Allied notification
     // inside the same transaction (using the SQL recipient-resolution
@@ -1176,12 +704,18 @@ async function processOffhoursLadder(
 }
 
 async function expirePendingSwaps(supabase: Supabase, now: Date): Promise<number> {
-  const { data, error } = await supabase
-    .from('swap_requests')
-    .update({ status: 'expired' })
-    .eq('status', 'pending')
-    .lte('expires_at', now.toISOString())
-    .select('swap_id');
+  // Cost audit F-10. The `swap-expiry` pg_cron job and this function ran the identical
+  // UPDATE every minute; whichever went second updated zero rows. This copy was also
+  // strictly more expensive, because `.select('swap_id')` forced a RETURNING and shipped
+  // the rows back just to populate summary.swapsExpired.
+  //
+  // Deleting this outright would break development, where pg_cron is NOT installed and
+  // this is the only thing expiring a swap. So the RPC decides: it defers to the cron
+  // when the job exists (returning -1), and does the work itself when it does not. Row
+  // count comes from GET DIAGNOSTICS, so nothing is shipped back either way.
+  const { data, error } = await supabase.rpc('expire_pending_swaps_if_uncronned', {
+    p_now: now.toISOString(),
+  });
 
   if (error !== null) {
     // swap_requests is specified in architecture but not introduced by
@@ -1193,7 +727,8 @@ async function expirePendingSwaps(supabase: Supabase, now: Date): Promise<number
     throw error;
   }
 
-  return data?.length ?? 0;
+  // -1 means "the cron owns this", which is not an error and not an expiry.
+  return typeof data === 'number' && data > 0 ? data : 0;
 }
 
 function errorMessage(error: unknown): string {
@@ -1296,8 +831,36 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // read a fresh snapshot that includes the just-created float. Normal T-2h
   // floats are untouched: their start is > now + noAckLookahead, so they fall
   // outside the no-ack window and are never voided early.
+  // Per-tick profile memo (F-04(ii)). Created here and discarded with the response, so a
+  // config change between ticks takes effect on the very next tick.
+  const profileCache: ProfileCache = new Map();
+
+  // Overlap guard (audit §2.1). cron.schedule does not stop a second run starting while
+  // the first is going, and although net.http_post is fire-and-forget — so the cron row
+  // itself cannot overlap — the Edge Function invocations it triggers absolutely can, and
+  // a tick is on the order of a second or more of DB time.
+  //
+  // Correctness never depended on this: block_step_status upserts and the FOR UPDATE
+  // RPCs already make double-firing a step impossible. What overlapping ticks duplicate
+  // is the COST — both scan, both resolve profiles, both read step status.
+  //
+  // Non-blocking on purpose. A blocking lock would queue ticks behind each other and turn
+  // a slow minute into a growing backlog; skipping is correct, because the next tick is
+  // 60 seconds away and re-evaluates everything from scratch. Best-effort: if the RPC is
+  // unavailable the tick proceeds exactly as it did before, since this is an optimisation
+  // and never a gate on escalation firing.
+  try {
+    const { data: acquired, error: lockError } = await supabase.rpc('try_orchestrator_tick_lock');
+    if (lockError === null && acquired === false) {
+      console.log(JSON.stringify({ event: 'orchestrator_tick_skipped', reason: 'tick_in_flight' }));
+      return jsonResponse({ ok: true, skipped: true, reason: 'tick_in_flight', ...summary });
+    }
+  } catch {
+    // fall through and tick
+  }
+
   const [vacantResult, swapsResult] = await Promise.allSettled([
-    processVacantBlocks(supabase, now, runtimeConfig),
+    processVacantBlocks(supabase, now, runtimeConfig, profileCache),
     expirePendingSwaps(supabase, now),
   ]);
   const [noAckResult] = await Promise.allSettled([

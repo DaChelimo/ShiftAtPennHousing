@@ -151,18 +151,65 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // FCM registration token (not a raw APNs device token) — the standard Firebase
     // iOS integration (see AGENTS.md Phase-12 note).
     if (attemptedTokens.length > 0) {
-      const messaging = firebaseMessaging();
-      for (const batch of chunk(attemptedTokens, TOKEN_BATCH_SIZE)) {
-        const result = await messaging.sendEachForMulticast({
-          tokens: batch.map((pushToken) => pushToken.device_token),
-          data: {
-            notification_id: notification.notification_id,
-            type: notification.type,
-            payload: JSON.stringify(notification.payload),
-          },
+      // Cost audit F-03. Everything from here to the end of the block used to be
+      // UNGUARDED. firebaseMessaging() throws outright when FIREBASE_SERVICE_ACCOUNT_JSON
+      // is unset — a documented deploy-time requirement, so exactly the thing that is
+      // missing on day one — and the throw propagated out of Deno.serve. The function
+      // 500'd, deliver_notification below never ran, delivered_at stayed NULL, and the
+      // cron re-POSTed the same notification 60 seconds later. Forever, with the stuck
+      // set only ever growing.
+      //
+      // Two things close the loop, and the ORDER is the point:
+      //
+      //   1. Count the attempt BEFORE sending. If we only counted in the catch, a
+      //      runtime death no catch block can observe (OOM, worker eviction, hard
+      //      timeout) would leave the counter untouched and the loop unbounded again.
+      //   2. Record the failure in the catch, which dead-letters past the ceiling.
+      //
+      // delivered_at is still NOT stamped here. §10.1 personal notifications are
+      // mandatory, so a rare duplicate push beats a lost one — that at-least-once
+      // decision is unchanged and this must never become a stamp-then-send.
+      await supabase.rpc('begin_notification_delivery_attempt', {
+        p_notification_id: notificationId,
+        p_now: new Date().toISOString(),
+      });
+
+      try {
+        const messaging = firebaseMessaging();
+        for (const batch of chunk(attemptedTokens, TOKEN_BATCH_SIZE)) {
+          const result = await messaging.sendEachForMulticast({
+            tokens: batch.map((pushToken) => pushToken.device_token),
+            data: {
+              notification_id: notification.notification_id,
+              type: notification.type,
+              payload: JSON.stringify(notification.payload),
+            },
+          });
+          successCount += result.successCount;
+          failureCount += result.failureCount;
+        }
+      } catch (sendError) {
+        const message = sendError instanceof Error ? sendError.message : String(sendError);
+        const { data: deadLettered } = await supabase.rpc('record_notification_delivery_failure', {
+          p_notification_id: notificationId,
+          p_now: new Date().toISOString(),
+          p_error: message,
         });
-        successCount += result.successCount;
-        failureCount += result.failureCount;
+        // Loud on purpose. The original failure mode was invisible: it only triggers for
+        // users who actually registered a push token, so it never appears in a test
+        // environment and only shows up as a bill.
+        console.error(
+          JSON.stringify({
+            event: 'dispatch_push_send_failed',
+            notification_id: notificationId,
+            dead_lettered: deadLettered === true,
+            error: message,
+          }),
+        );
+        return jsonResponse(
+          { error: message, delivered: false, deadLettered: deadLettered === true },
+          502,
+        );
       }
 
       const { error: touchError } = await supabase

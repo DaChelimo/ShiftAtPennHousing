@@ -529,6 +529,16 @@ The `permanent_drop` value is what powers the permanent openings feed. The feed 
 
 **The two feeds overlap; they are not a partition (corrected 2026-07-24).** Behavioral Spec §5.1 and §8.4.3 require a permanently-dropped occurrence to surface in the **weekly** feed as well, once that specific week crosses the 30-day horizon, so a worker can take one week of it without owning the rest. The client read model `worker_open_shifts` had instead partitioned the feeds with an exclusive `CASE WHEN vacancy_origin = 'permanent_drop' THEN 'permanent_opening' ELSE 'weekly' END`, which made the §5.3 single-occurrence claim unreachable: the occurrence never rendered as a weekly card, so no worker could originate the claim, and every week of an unwanted slot ran the full escalation chain to paid Allied coverage instead. The view now emits such an occurrence **twice** while it is inside the horizon, once per feed, both rows carrying the same `assignment_id` (migration `20260724000004`). The permanent branch is additionally restricted to `regular_school_year` days, mirroring the permanent-pickup candidate filter so the feed never advertises a slot the pickup cannot take; a `permanent_drop` block off the regular calendar falls through to the weekly branch instead.
 
+**Each feed is bounded in time, and by different amounts (migration `20260726000001`).** `vacant_seats` previously selected every future `vacant` assignment across all 13 houses to the end of generated time, with no upper bound — the client supplies only a lower one (`start_at >= Monday-of-last-week`), and supabase-kt silently drops a second filter on the same column, so the bound has to live in the view. Measured under RLS as a real Harnwell worker, one mobile read cost **130,343 shared buffers and ~270 ms** (16,150 rows). The weekly branch is now bounded at **6 weeks**, covering the client's navigable window with headroom; the permanent branch at **26 weeks**, deliberately longer so a permanently-dropped slot whose next regular-school-year occurrence lands beyond six weeks is still pickable as a whole recurrence. Verified by diffing the full projection against the previous definition: identical inside the horizon (1,752,053 rows, zero differing), and the bound drops 27,972 weekly rows and **zero** permanent rows. `weeks_remaining` keeps its own **unbounded** scan (now one `GROUP BY` over the recurring-slot identity rather than a correlated count per output row), so the advertised count still spans the whole remaining recurrence and continues to match what `permanent_pickup_slot` can take.
+
+Three further changes in the same migration, each measured, together taking the read to **1,483 buffers / ~47 ms**:
+
+- `desk_covered` is now an **inline `EXISTS`** rather than a call to `block_has_present_worker()`. Identical predicate; the difference is that PostgreSQL never inlines a `SECURITY DEFINER` function, so the helper stayed an opaque per-row call (60,473 buffers) while the inline form collapses into a hashed SubPlan (817 buffers). The helper is unchanged and still correct everywhere it is a single-row lookup.
+- `candidate_users` is `MATERIALIZED`. Inlined, its role `EXISTS` was pushed into the join and re-evaluated once per output row (31,796 buffers) even though it resolves to one row for a worker's own read.
+- `houses` is joined **inside** `vacant_seats`, before the `CROSS JOIN`, so a 13-row table is hashed once instead of nested-loop probed 15,898 times (another 31,796 buffers).
+
+Two changes that look obvious were tried, **measured, and rejected**; the migration header records them so they are not re-attempted. Hoisting the `regular_school_year` / `weekly_visible` predicates into a per-NY-date CTE looks like a 400x win (16,150 seats, 40 distinct dates) but the planner already turns both into hashed SubPlans, and the CTE only added materialisation (166,178 buffers, worse than baseline). Replacing `desk_covered` with a semi-join CTE was nested-loop-rescanned per output row whether inlined or `MATERIALIZED` (1.9 s), because no statistics exist for a CTE relation. The horizons are also deliberately **not** `system_config` values: the reader would have to be `SECURITY DEFINER` (that table is admin-only RLS), which reintroduces exactly the per-row opaque-call cost, and a non-definer reader would resolve differently for a worker than for an admin.
+
 Because one `assignment_id` can now back two cards, **card identity is (feed, assignment_id), not assignment_id**. Any list that can hold both kinds at once must key on the pair: the cross-house tab groups weekly and permanent cards together (`OtherHousesTab.grouped`), so `OpenShift.feedKey` exists for exactly this purpose and the SwiftUI `ForEach`es and the web `OpenCard` list key on it. The original phase-05 SQL surfaces `weekly_open_shifts_feed` / `permanent_openings_feed` always modelled the overlap correctly and were never the source of the divergence, but nothing outside pgTAP calls them -- the clients read the view, so the function-level tests passing was not evidence that the behavior shipped.
 
 The `vacant` status is what the orchestrator scans for to identify gaps needing escalation. There is no intermediate `awaiting_allied` status; once HMOD is notified and the HMOD confirms Allied is procured, the block flips to `allied`. Between HMOD notification and HMOD confirmation, the block remains `vacant` (the HMOD's pending action is tracked via the notification, not via the block status). Allied is assumed to be reliable: once HMOD has been notified, Allied is treated as a virtual certainty.
@@ -1274,6 +1284,17 @@ A 1-minute tick processing open blocks within the next 3 hours queries a small s
 
 The `notifications` table has a `scheduled_for` column. The scheduler component processes pending notifications when their `scheduled_for` time arrives. This is how acknowledgment cadence reminders work.
 
+**Delivery accounting (migration `20260726000004`).** `deliver_pending_notifications` runs once a minute and fires one `net.http_post` to `dispatch-push` per row returned by `pending_notification_deliveries`. A notification left that set **only** when `delivered_at` was stamped — the last statement of the `dispatch-push` handler — and the Firebase send in between was unguarded. `firebaseMessaging()` throws outright when `FIREBASE_SERVICE_ACCOUNT_JSON` is unset, so the throw propagated out of `Deno.serve`, the function 500'd, and the same notification was re-POSTed 60 seconds later, forever, with the stuck set only ever growing. Four columns and two RPCs close it:
+
+- `delivery_attempts` / `last_attempt_at`, incremented by `begin_notification_delivery_attempt` **before** the send. Pre-send is deliberate: counting only in a `catch` leaves the loop unbounded against a runtime death no catch block observes (OOM, worker eviction, hard timeout).
+- `last_delivery_error` / `dead_lettered_at`, written by `record_notification_delivery_failure` from the Edge Function's `catch`. Past `max_notification_delivery_attempts()` (12) the row is dead-lettered and leaves the queue permanently; `dead_lettered_notifications` surfaces it to an operator, because the failure is otherwise invisible — it can only occur for users with a registered device.
+- `notification_retry_backoff(attempts)` gives capped exponential backoff (1, 2, 4 … 60 minutes). A never-attempted row has zero backoff, so first delivery is unchanged.
+- `suppressed_at`, set by `sweep_suppressed_ack_reminders` in one set-based statement per pass. An ack reminder whose float is no longer pending was excluded from the queue but never stamped, so every acknowledged float left a tombstone the scan re-filtered every minute forever. Suppression is safe to stamp precisely because the row is being deliberately **not** sent, which is a different thing from stamping `delivered_at` before a send.
+
+`delivered_at` is still written only after a successful send. At-least-once delivery is unchanged and non-negotiable (Behavioral Spec §10.4).
+
+`notifications_delivery_queue_idx` is a partial index on `(scheduled_for, notification_id)` over the **live queue only** (`delivered_at IS NULL AND suppressed_at IS NULL AND dead_lettered_at IS NULL`). Its predicate matches the terminal states above, so a finished row physically leaves the index and its size tracks the queue rather than all history. Before it, the every-minute query had no usable index at all: the only candidate led with `recipient_user_id`, which the query does not filter on.
+
 ### 9.4 The Calendar Render
 
 The calendar view at any house for any date range queries `shift_block_assignments` joined to users, filtered by `house_id` and `block_start_at` range. The application layer aggregates contiguous blocks into displayed shift cards.
@@ -1295,9 +1316,9 @@ The calendar view at any house for any date range queries `shift_block_assignmen
 
 ### 9.6 Cleanup Jobs
 
-- **Float assignment cleanup.** Daily job deletes `float_assignments` rows where `expires_for_cleanup_at < now()`. Idempotent.
+- **Operational retention (migration `20260726000005`).** Daily at 03:20, `purge_expired_operational_records` deletes non-pending `float_assignments` past both `expires_for_cleanup_at` and the 28-day `operational_retention_days` floor, and `notifications` in a terminal state (delivered, suppressed, or dead-lettered) older than the same floor. **This description used to appear here as though it were implemented and it was not**: `expires_for_cleanup_at` was `NOT NULL` and indexed, `float_retention_days` was a live config the orchestrator threaded into `process_float_lookup_assignment`, and a repo-wide grep for `DELETE FROM float_assignments` returned nothing. Every part of the mechanism existed except the job, so both tables grew forever and the every-minute scans behind Behavioral Spec §10.4 degraded monotonically. Three guards: a `pending` float is never deleted at any age (deleting one would revoke it, which no automated process may do — Section 6.3); a non-terminal notification is never deleted, because it is evidence of a delivery fault; and deletes are chunked at `retention_delete_batch_size` so the sweep never holds a long lock or emits one huge WAL record for Realtime to fan out. Deleting a float nulls `shift_block_assignments.parent_float_id` (`ON DELETE SET NULL`) — accepted explicitly when the 28-day horizon was chosen.
 - **30-day horizon job.** Daily job scans for fired-worker shifts crossing the 30-day horizon and surfaces them in the open-shifts feed.
-- **Swap expiry.** Handled by the orchestrator on its 1-minute tick.
+- **Swap expiry.** Owned by the `swap-expiry` pg_cron job. `orchestrator-tick` carried a second, identical `UPDATE` on its 1-minute tick — strictly more expensive, because its `.select('swap_id')` forced a `RETURNING` purely to populate a counter — so both ran every minute and whichever went second updated zero rows. The tick now calls `expire_pending_swaps_if_uncronned`, which defers to the cron when the job exists and does the work itself when it does not. The Edge Function copy could not simply be deleted: pg_cron is not installed on the local stack, where it is the only thing expiring a swap.
 
 ---
 
@@ -1539,7 +1560,11 @@ Behavioral spec Section 22. Migration 20260712000001.
 - `is_staggered_launch_enabled()` reads `system_config('staggered_launch_enabled')`; **absent means disabled**, so when the gate is off every house is effectively live.
 - `house_is_live(house_id)` is the single predicate both platforms consult, which is what keeps web and mobile agreeing. Unknown house is not live.
 
-Enforcement is at the **application** layer (a "your house is not live yet" placeholder for workers; admins bypass) per the product decision. The DB helpers are the source of truth both clients read, not a row-level gate — launch state is visibility, not authorization, and no scheduling rule keys off it.
+Enforcement is at the **application** layer (a "your house is not live yet" placeholder for workers; admins bypass) per the product decision. The DB helpers are the source of truth both clients read, not a row-level gate — launch state is visibility, not authorization.
+
+**One server-side rule does key off it, added 2026-07-26 (migration 20260726000003).** `orchestrator_vacant_seats(p_after, p_through)` — the discovery query `orchestrator-tick` now uses instead of an inline PostgREST select — joins `house_is_live(sb.house_id)` into the scan, so a pre-launch house's blocks are never returned and the escalation chain never fires for them. Previously `grep -n "launch" supabase/functions/orchestrator-tick/index.ts` returned nothing: the gate existed and the orchestrator did not consult it, so 12 dark houses' entirely-vacant seats were scanned and escalated every minute. Measured on the seeded stack, a Harnwell-only pilot takes a 30-day window from 10,461 seats across 13 houses to 61 seats in 1. Because `house_is_live` is true for every real house while the master switch is off, this is a no-op in every existing environment and the whole pgTAP suite is unaffected.
+
+The same function returns a `desk_covered` flag per row, computed over the **escalation** present-set (which counts `allied`). That replaced a second round trip, not the check itself: `processVacantBlocks` still skips every covered block, which is the coverage-floor-of-one invariant, and `loadCoveredBlockIds` is unchanged and still guards the gap builder in `loadVacantGap`. Do not collapse this set with the pickup-lock present-set, which excludes `allied`.
 
 ---
 
@@ -1592,6 +1617,50 @@ Two gotchas that have bitten before: the iOS configurable widget requires code s
 Plans and scoping documents under `docs/**` (`docs/desk-assistant/V1_SCOPE.md`, `BUILD_PLAN.md`, `INTAKE_PLAN.md`, `docs/operating-seasons/PLAN.md`, and the rest) are **working documents, not specification**. They record how something was built and what was considered; they are not authoritative about current behavior and may describe options that were never taken.
 
 When a plan lands, its settled behavior is promoted into the behavioral spec and this document, and the plan becomes history. A feature described only in `docs/**` is an undocumented feature. See the spec-governance rule in AGENTS.md.
+
+---
+
+## 20. Read-Path and Delivery Cost Controls
+
+Added 2026-07-26 from the usage audit in `audits/supabase-usage-waste-audit.md`. The rest of that work is documented where it belongs — the open-shifts horizons in Section 3 (the two-feeds passage), push retry and dead-lettering in Section 9.3, retention and swap-expiry ownership in Section 9.6, the orchestrator launch gate in Section 16.2. This section holds what has no other home.
+
+### 20.1 InitPlan Hoisting in the Hot RLS Policies
+
+Migration `20260726000002`. Measured as a real worker under RLS, `worker_my_shifts` returned 394 rows for **30,478 buffers and ~149 ms**, with the house-admin arm of the `shift_block_assignments` SELECT policy executing `loops=5261`.
+
+The expense was packaging, not logic. Every arm of every OR-ed policy re-derived
+`(COALESCE(NULLIF(current_setting('request.jwt.claim.sub', true), ''), (NULLIF(current_setting('request.jwt.claims', true), ''))::jsonb ->> 'sub'))::uuid`
+**per row** — a jsonb parse of the whole JWT claims blob, once per arm, on four permissive policies. `user_is_rsm(auth.uid())` is `SECURITY DEFINER` and was likewise called per row despite depending only on that same constant.
+
+The rewrite wraps each in a scalar subselect the planner hoists into a one-shot InitPlan — `(SELECT auth.uid())`, `(SELECT user_is_rsm((SELECT auth.uid())))` — and turns the home-house `EXISTS` into a comparison against an InitPlan scalar (`users.user_id` is the primary key, so it yields at most one row; a NULL result is not-true, exactly as the `EXISTS` was). `user_can_build_schedule(uid, house_id)` stays correlated because its second argument genuinely varies per row. Result: **~5 ms, 19,223 buffers**, with visibility verified byte-identical across seven role archetypes on three tables.
+
+**All four `shift_block_assignments` SELECT policies remain four separate policies.** The own-assignment arm (`user_id = auth.uid()`) is load-bearing for float-out and cross-house-pickup rows, which attach to blocks outside the worker's home house and would otherwise vanish from the personal calendar. Collapsing them looks like a performance win and is a data-visibility bug. Only the expressions changed.
+
+The same rewrite is applied to `float_assignments` and `float_exclusions`, which carry the identical shape.
+
+### 20.2 Orchestrator Discovery Queries
+
+Migration `20260726000003`. `orchestrator-tick` was the one Edge Function with an N+1: it iterated **assignment rows**, not distinct blocks, and per row issued `loadProfileForBlock` (two queries, unmemoised) plus `loadStepStatus` (one) — three round trips per vacant seat per minute, before any step fired.
+
+- **Profile memo.** `loadProfileForBlockCached` keys on the block's NY-local date. Every row in a 3h05m window resolves to one or two dates, so the memo is exact rather than approximate. It is created per tick and discarded with the response, so a config change takes effect on the next tick. It stores the _promise_, which also collapses concurrent lookups for the same date.
+- **Batched step status.** `loadStepStatusForBlocks` reads the whole window in `.in()` chunks of 100 — the same chunking `loadCoveredBlockIds` uses, because a full window of block ids in one filter returns HTTP 414. A block absent from the batch means no step has fired, which is what the per-block query returned for it.
+- **No-ack discovery.** `processNoAckFloats` selected **every** pending, unacknowledged, undeclined float with no time bound, issued one round trip per float to fetch its destination blocks, and only then applied the lookahead in TypeScript — the cheap filter paid for after a round trip each. (Its comment claimed to pre-filter by lookahead; the query did not.) It was also a seq scan every 60 seconds, since `float_assignments`' only index leads with `user_id`. `pending_floats_due_for_no_ack(now, lookahead)` does the join to `shift_blocks` in SQL and returns only floats whose earliest destination block is inside the window, served by the partial index `float_assignments_pending_unacked_idx`. `process_no_ack_float` is unchanged and still re-validates under `FOR UPDATE`, so no-takeback is untouched; only candidate discovery got cheaper.
+
+Measured end to end against the local edge runtime: an idle tick over 70 vacant blocks went from **210+ DB round trips to 9**.
+
+The float-lookup subsystem (gap builder, DB snapshot, pure-algorithm call, and the step itself, plus `loadCoveredBlockIds` and `lockBlockCoverage`) moved to `supabase/functions/orchestrator-tick/floatLookup.ts` in the same change — `index.ts` was 1,346 lines, more than twice the size ceiling. Nothing changed behaviour in the move.
+
+### 20.3 Overlap Serialization
+
+Migration `20260726000007`. `cron.schedule` does not prevent a second run starting while the first is going. For `orchestrator-tick` the cron row itself cannot overlap (`net.http_post` is fire-and-forget), but the Edge Function invocations it triggers can, and a tick is a second or more of DB time. Correctness never depended on this — `block_step_status` upserts and the `FOR UPDATE` RPCs make double-firing a step impossible — but **the cost was duplicated**: both ticks scan, both resolve profiles, both read step status.
+
+Both the tick and `apply_compiled_season` now take a **non-blocking, transaction-scoped** advisory lock (`pg_try_advisory_xact_lock`). Non-blocking is the point: a blocking lock would queue runs behind each other and turn a slow minute into a growing backlog, whereas skipping is correct because the next tick is 60 seconds away and re-evaluates from scratch. Transaction-scoped means the lock cannot leak — a leaked lock held by a crashed Edge Function would silently stop all escalation.
+
+`apply_compiled_season` is now a thin guarded front over `apply_compiled_season_unguarded`, so the invariant-bearing body (including the headcount-decrease cut order) was not retyped. The **dry run takes the lock too**: a preview is a rolled-back subtransaction doing the same work as an apply — that is deliberate, so preview and apply share identical logic — so an unguarded preview racing a real apply doubles the most expensive operation in the system. A blocked caller gets `{ok: false, error: 'apply_in_progress'}` rather than an exception, because nothing was attempted.
+
+### 20.4 Knowledge-Base Embedding Cache
+
+Migration `20260726000006`. The approve path re-embedded **all** chunks on every approval with no dedupe guard, so re-approving a document re-paid the full bill and two documents sharing boilerplate paid twice. `kb_embedding_cache` is keyed on `(sha256(content), model)`; embeddings are deterministic per (input, model), so a hit is byte-identical to what the API would return — this changes spend, never results. Keying on the model matters: a model swap must not serve old vectors to a new index. There is no expiry, because an entry cannot go stale. `embedMetrics` still reports only tokens **actually billed**, so a fully-cached run correctly reports $0 and per-feature cost attribution stays honest.
 
 ---
 
@@ -1694,6 +1763,18 @@ All values are stored in a `system_config` table (one row per parameter) and may
 | `allied_page_rung_timeout_minutes` | 10             | Rung timeout for the off-hours ladder.                                                                                         |
 
 Every one of these defaults to the **historical behavior** when absent. That is deliberate: `seed.sql` sets none of them, so no development environment or test run is affected by a feature that production has turned on, and a missing config row can never silently change staffing behavior.
+
+### Keys added by the cost-audit remediation (2026-07-26)
+
+| `system_config` key                      | Default        | Effect when absent                                                                                                                |
+| ---------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `max_notification_delivery_attempts`     | 12             | Falls back to 12. Attempts before a push is dead-lettered (§9.3).                                                                 |
+| `notification_retry_backoff_cap_minutes` | 60             | Falls back to 60. Ceiling on the exponential retry interval (§9.3).                                                               |
+| `operational_retention_days`             | 28             | Falls back to 28. Age past which terminal notifications and non-pending floats are deleted (§9.6).                                |
+| `retention_delete_batch_size`            | 5000           | Falls back to 5000. Rows per delete statement in the retention sweep.                                                             |
+| `allow_time_travel`                      | absent = false | **Time travel is DENIED.** The one key here whose absent-default is not the historical behavior, and deliberately so — see below. |
+
+`allow_time_travel` inverts the convention on purpose. `20260611000007_dev_sim_clock.sql` ships to every environment, and `app_now()` is where `orchestrator-tick` sources the entire tick's notion of "now" and where `apply_compiled_season` gates future-block reconciliation — so anything that can set the offset in production moves every escalation deadline at once. The only guard was a build-time flag in `apps/web/lib/actions/devClock.ts`, which anything holding the service-role key bypasses. `enforce_time_travel_gate` (migration `20260726000008`) is a `BEFORE INSERT OR UPDATE` trigger on `dev_sim_clock` that rejects a non-zero offset unless this key is `'true'`, so a production database that was never explicitly told it may time-travel cannot. Resetting the offset to **zero is always permitted**, gate or no gate, so no database can get stuck in a time-travelled state it cannot leave. `seed.sql` sets the key, and the migration self-enables on any database whose clock has evidently already been used for time travel, so existing development environments are unaffected.
 
 ### Deploy-time secrets
 

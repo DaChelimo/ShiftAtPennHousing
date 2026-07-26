@@ -474,6 +474,13 @@ A slot is removed from the permanent openings feed when:
 - Another worker permanently picks it up (Section 8.4).
 - The operating profile ends. New profiles are scheduled fresh; permanent drops do not carry over.
 
+**Feed horizons.** Each feed looks a bounded distance into the future, and the two bounds are deliberately different:
+
+- The **weekly feed** looks ahead **6 weeks**. The calendar a worker can navigate spans last week through four weeks out, so 6 weeks covers everything reachable with headroom. Nothing a worker could have acted on is hidden by this.
+- The **permanent openings feed** looks ahead **26 weeks**, about a semester. It is longer on purpose: a permanently-dropped slot's next regular-school-year occurrence can fall well beyond six weeks, and that card is precisely how a worker claims the whole remaining recurrence. Bounding both feeds together would have made such a slot unpickable.
+
+A slot's advertised "weeks remaining" still counts the entire remaining recurrence, not just the part inside the horizon, so the number a worker sees before picking up continues to match what the pickup actually takes.
+
 ### 5.2 Dropping a Shift
 
 A worker may drop any of their assigned shifts (or any contiguous portion thereof, snapped to 30-minute block boundaries). Drops are always permitted.
@@ -978,6 +985,20 @@ A notification to the HM or HMOD about a coverage gap requiring Allied procureme
 
 This is sufficient for the HM to place the call to Allied without consulting the app for additional information.
 
+### 10.4 Push Delivery, Retry, and Give-Up
+
+A notification exists the moment the event happens; **pushing** it to the worker's device is a separate step that can fail (a device is unreachable, the push provider is misconfigured). The rules governing that step:
+
+**Delivery is at-least-once, and stays that way.** A notification is marked delivered only after a push has actually been sent, never before. A notification whose dispatch straddles a retry boundary may therefore be pushed twice. This is deliberate: personal notifications are mandatory and cannot be silenced, so a rare duplicate is strictly preferable to a lost one.
+
+**Retries back off, and they stop.** A failed push is retried on a widening interval (about a minute, then two, four, and so on, levelling off at an hour). After a configurable number of attempts — 12 by default, roughly seven hours of trying — the notification is **given up on** and stops being retried. It is not marked delivered, because it was not delivered; it moves to a distinct given-up state.
+
+**Giving up is visible, never silent.** Given-up notifications are surfaced to the operator, because the overwhelmingly likely cause is a misconfigured push provider affecting every worker at once, and the failure is otherwise invisible: it can only occur for workers who have successfully registered a device, so it never appears in a test environment.
+
+**A notification that is deliberately not sent is closed out, not left pending.** An acknowledgment reminder whose float has already been acknowledged, declined, or voided is suppressed rather than sent, and is then marked suppressed. This is distinct from being delivered.
+
+**Retention.** Notifications that have reached a terminal state (delivered, suppressed, or given up) are deleted 28 days after creation, as are float assignment records that are no longer pending. A notification that is somehow still undelivered, and a float that is still pending, are never deleted regardless of age — deleting a pending float would revoke it, which no automated process may do (Section 6.3).
+
 ---
 
 ## 11. Visual Indicators
@@ -1116,9 +1137,19 @@ The following govern the surfaces defined in Sections 16 through 22:
 - **Routing rules**: the issue-type-to-tier mapping with its day, time, and season windows (Section 16.4). Data, replaceable without a code change.
 - **Off-hours ladder switch**: enables the Section 16.5 pilot ladder. Default **off**.
 - **Off-hours ladder rung timeout**: how long a rung has to be acknowledged before the alert advances. Default 10 minutes.
-- **Staggered launch switch**: enables the Section 22 per-house gate. Default **off**, meaning every house behaves as live.
+- **Staggered launch switch**: enables the Section 22 per-house gate. Default **off**, meaning every house behaves as live. While it is on, the escalation chain does not run for a pre-launch house (Section 22).
 - **Per-house launch state**: pre-launch or live. New houses default to **pre-launch**.
 - **Preference submission deadline for a season**: authored per operating season by the Administrator, one value covering all houses, on or before the season start date.
+
+The following govern delivery and data lifetime (Sections 10.4 and 5.1):
+
+- **Maximum push delivery attempts**: 12. After this many failed attempts a notification is given up on and stops being retried (Section 10.4).
+- **Push retry backoff cap**: 60 minutes. The retry interval doubles after each failure up to this ceiling.
+- **Operational retention**: 28 days. Terminal-state notifications and non-pending float assignments are deleted this long after creation. A pending float and an undelivered notification are never deleted (Section 10.4).
+- **Retention delete batch size**: 5,000 rows per statement, so the daily sweep never holds a long lock.
+- **Time-travel permission**: whether this environment may move the simulated clock. Default **off**, and it must stay off in production — the simulated clock drives every escalation deadline in the system. Returning the clock to real time is always permitted regardless of this setting.
+
+**Fixed system parameters, changed by deployment rather than configuration.** The open-shift feed horizons — 6 weeks for the weekly feed, 26 weeks for permanent openings (Section 5.1) — are not runtime-configurable. They were deliberately not made config values: reading them from configuration requires an elevated-privilege lookup that either costs more than the bound saves or, if unprivileged, silently resolves differently for a worker than for an administrator. A horizon that depends on who is asking is worse than a fixed one.
 
 Once finalized via project committee feedback, the administrator may update these. All updates apply system-wide and take effect at the start of the next orchestrator tick. Individual users do not have direct control over these values except for the per-worker tweakable acknowledgment reminders (6h and 2h).
 
@@ -1397,7 +1428,9 @@ For a worker whose house is not yet live, the app explains that their house is n
 
 The whole gate sits behind a master switch that is **off by default**. When it is off, every house behaves as live regardless of its own flag, so no non-production environment is affected. Production turns the switch on and launches houses one at a time.
 
-Launch state is a **visibility** gate. It does not change any rule in Sections 1 through 15: a house that is live and a house that is pre-launch are governed identically, and turning a house live neither creates nor alters shifts.
+Launch state is primarily a **visibility** gate: it does not change any coverage, claim, swap, float, or cap rule in Sections 1 through 15, and turning a house live neither creates nor alters shifts.
+
+It has one behavioral consequence, added 2026-07-26. **The automated escalation chain does not run for a pre-launch house.** A pre-launch house still has generated blocks whose seats are entirely vacant, and before this the chain broadcast, floated, and paged Allied against them every minute — pages to real people for desks nobody had opened, and the dominant idle cost of the whole system. A desk that is not launched has nobody to page, so it is skipped outright rather than escalated with its notifications suppressed. Escalation resumes with no special handling the moment the house goes live, and while the master switch is off every house is live and the chain runs exactly as it always did.
 
 ---
 

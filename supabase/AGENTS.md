@@ -19,6 +19,22 @@ triggers, and RLS policies are the enforcement layer; treat them as production c
   not raw `psql`** (the raw path lacks the role grants). Requires `CREATE EXTENSION pgtap`.
 - Before writing a migration, inspect the live schema with the Supabase MCP rather than
   assuming. Never point the MCP at production.
+- **`REVOKE ... FROM PUBLIC` does not lock down a `SECURITY DEFINER` function.** Supabase
+  grants `EXECUTE` to `anon`/`authenticated`/`service_role` as explicit per-role grants at
+  CREATE time via `ALTER DEFAULT PRIVILEGES`, and those survive a `PUBLIC` revoke untouched.
+  A function meant to be service-role-only needs `REVOKE EXECUTE ON FUNCTION <fn> FROM anon,
+authenticated;` naming those roles explicitly, in the same migration that creates or
+  changes it. This bit the project once already: ~40 definers were still callable by any
+  signed-in (or even anonymous) user well after their `REVOKE FROM PUBLIC` had shipped. If a
+  function only calls a wrapper for an advisory lock or similar, check the **inner**
+  function's grants too, not just the wrapper's — revoking the wrapper while leaving an
+  `_unguarded` inner function client-reachable is not a fix. A pgTAP grant assertion must
+  name `anon` and `authenticated` explicitly (`has_function_privilege('public', ...)` alone
+  passes while both still hold `EXECUTE`, which is exactly how this stayed invisible for
+  months). Verify grants against the **live catalog**, not by grepping migrations for
+  `REVOKE` — a later migration may revoke what an earlier one granted, or vice versa. See
+  `scripts/security/attack-surface.sh` (sections `definers`, `noauthz`, `granttests`) and the
+  `security-auditor` subagent / `/security-audit` skill.
 
 ## Houses
 

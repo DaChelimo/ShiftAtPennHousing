@@ -16,10 +16,11 @@ import { SEED, login } from './helpers';
 //
 // Selector contract:
 //   hours-unauthorized — shown to a non-manager (an SW) instead of the report.
-//   heading "Hours report" (h1) + the per-worker table (DataTable <tr> rows).
+//   heading "Hours report" (h1) + one .hcard per worker, each with a Total /
+//   At home stat and a "Floated out" chip that expands into per-shift detail.
 
 test.describe('Hours report (§6.10)', () => {
-  test('a manager sees the decomposed per-worker hours table', async ({ page }) => {
+  test('a manager sees the decomposed per-worker hours cards', async ({ page }) => {
     await login(page, SEED.smQuad);
     await page.goto('/admin/hours');
 
@@ -28,10 +29,11 @@ test.describe('Hours report (§6.10)', () => {
     // The summary strip renders.
     await expect(page.getByText('Total hours')).toBeVisible();
 
-    // The decomposition columns — the report's reason for existing — render.
-    await expect(page.getByRole('columnheader', { name: 'At home' })).toBeVisible();
-    await expect(page.getByRole('columnheader', { name: 'Floated out' })).toBeVisible();
-    await expect(page.getByRole('columnheader', { name: 'Cross-house pickup' })).toBeVisible();
+    // The decomposition — the report's reason for existing — renders as legend +
+    // per-card stats (a table header no longer exists; this is a card list).
+    await expect(page.getByText('At home').first()).toBeVisible();
+    await expect(page.getByText('Floated out').first()).toBeVisible();
+    await expect(page.getByText('Cross-house pickup').first()).toBeVisible();
 
     // Every home-housed Quad worker lists, regardless of hours (the roster is all
     // home-housed shift-workers). Names are stable; specific hours are NOT asserted

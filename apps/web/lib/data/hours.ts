@@ -22,6 +22,17 @@ import { createServiceClient } from '../supabase/server';
 
 const NY = 'America/New_York';
 const COUNTING_STATUSES = ['scheduled', 'claimed', 'floated_in', 'pending_float_in'] as const;
+const BLOCK_MINUTES = 30;
+
+// A run of contiguous 30-min float blocks, coalesced into one displayed shift
+// (mirrors the coalescing worker-facing screens already do for their own cards).
+export type FloatShift = {
+  dayLabel: string; // "Wed"
+  dateLabel: string; // "Jul 23"
+  startLabel: string; // "14:00"
+  endLabel: string; // "17:30"
+  hours: number;
+};
 
 export type HoursRow = {
   userId: string;
@@ -30,6 +41,7 @@ export type HoursRow = {
   floatedOutHours: number;
   pickupHours: number;
   totalHours: number;
+  floatShifts: FloatShift[];
 };
 
 export type HoursReport = {
@@ -64,6 +76,52 @@ function addDays(dateStr: string, days: number): string {
   return at.toISOString().slice(0, 10);
 }
 
+const DAY_FMT = new Intl.DateTimeFormat('en-US', { timeZone: NY, weekday: 'short' });
+const DATE_FMT = new Intl.DateTimeFormat('en-US', { timeZone: NY, month: 'short', day: 'numeric' });
+const TIME_FMT = new Intl.DateTimeFormat('en-US', {
+  timeZone: NY,
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+
+// Coalesces a user's float blocks (sorted, deduped by ISO start) into displayed
+// shifts: a run of blocks is one shift as long as each next block starts exactly
+// BLOCK_MINUTES after the previous one, matching how the worker-facing cards
+// coalesce contiguous blocks (packages/core/src/worker-shifts).
+function coalesceFloatShifts(startTimesIso: string[]): FloatShift[] {
+  const sorted = [...new Set(startTimesIso)].sort();
+  const shifts: FloatShift[] = [];
+  let runStart: Date | null = null;
+  let runEnd: Date | null = null;
+
+  const flush = () => {
+    if (runStart === null || runEnd === null) return;
+    const endAt = new Date(runEnd.getTime() + BLOCK_MINUTES * 60 * 1000);
+    shifts.push({
+      dayLabel: DAY_FMT.format(runStart),
+      dateLabel: DATE_FMT.format(runStart),
+      startLabel: TIME_FMT.format(runStart),
+      endLabel: TIME_FMT.format(endAt),
+      hours: (endAt.getTime() - runStart.getTime()) / (1000 * 60 * 60),
+    });
+  };
+
+  for (const iso of sorted) {
+    const at = new Date(iso);
+    if (runEnd !== null && at.getTime() === runEnd.getTime() + BLOCK_MINUTES * 60 * 1000) {
+      runEnd = at;
+    } else {
+      flush();
+      runStart = at;
+      runEnd = at;
+    }
+  }
+  flush();
+
+  return shifts;
+}
+
 type EmbeddedBlock = { block_start_at: string };
 type AsgRow = {
   user_id: string | null;
@@ -78,7 +136,7 @@ function startAtOf(row: AsgRow): string | null {
   return Array.isArray(sb) ? (sb[0]?.block_start_at ?? null) : sb.block_start_at;
 }
 
-type Tally = { home: number; floatedOut: number; pickup: number };
+type Tally = { home: number; floatedOut: number; pickup: number; floatStarts: string[] };
 
 export async function getHoursReport(
   houseId: string,
@@ -165,9 +223,11 @@ export async function getHoursReport(
     if (startAt === null || row.user_id === null) continue;
     const d = nyDate(startAt);
     if (d < weekStart || d >= weekEnd) continue;
-    const t = tally.get(row.user_id) ?? { home: 0, floatedOut: 0, pickup: 0 };
-    if (row.status === 'floated_in' || row.status === 'pending_float_in') t.floatedOut += 1;
-    else if (row.status === 'claimed' && row.is_cross_house_pickup) t.pickup += 1;
+    const t = tally.get(row.user_id) ?? { home: 0, floatedOut: 0, pickup: 0, floatStarts: [] };
+    if (row.status === 'floated_in' || row.status === 'pending_float_in') {
+      t.floatedOut += 1;
+      t.floatStarts.push(startAt);
+    } else if (row.status === 'claimed' && row.is_cross_house_pickup) t.pickup += 1;
     else t.home += 1; // scheduled, or a same-house claim
     tally.set(row.user_id, t);
   }
@@ -184,7 +244,7 @@ export async function getHoursReport(
   }
 
   base.rows = workers.map((w) => {
-    const t = tally.get(w.user_id) ?? { home: 0, floatedOut: 0, pickup: 0 };
+    const t = tally.get(w.user_id) ?? { home: 0, floatedOut: 0, pickup: 0, floatStarts: [] };
     const homeHours = t.home * 0.5;
     const floatedOutHours = t.floatedOut * 0.5;
     const pickupHours = t.pickup * 0.5;
@@ -195,6 +255,7 @@ export async function getHoursReport(
       floatedOutHours,
       pickupHours,
       totalHours: homeHours + floatedOutHours + pickupHours,
+      floatShifts: coalesceFloatShifts(t.floatStarts),
     };
   });
   base.rows.sort((a, b) => b.totalHours - a.totalHours || a.name.localeCompare(b.name));

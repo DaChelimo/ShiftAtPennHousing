@@ -1,11 +1,11 @@
-import type { HoursReport as HoursReportData, HoursRow } from '../../lib/data/hours';
-import { Avatar, type Column, DataTable, PageHead, Tag } from '../ui';
+'use client';
 
-const BUCKETS = {
-  home: { color: 'var(--brand)', label: 'At home' },
-  float: { color: 'var(--st-out-fg)', label: 'Floated out' },
-  pickup: { color: 'var(--st-allied-fg)', label: 'Cross-house pickup' },
-};
+import { useState } from 'react';
+
+import type { HoursReport as HoursReportData, HoursRow } from '../../lib/data/hours';
+import { Avatar, Icon, PageHead } from '../ui';
+
+const FLOAT_COLOR = 'var(--st-out-fg)';
 
 function LegendItem({ color, label }: { color: string; label: string }) {
   return (
@@ -25,77 +25,76 @@ function LegendItem({ color, label }: { color: string; label: string }) {
   );
 }
 
-function hoursCell(value: number, color?: string) {
-  if (value <= 0) return <span className="t-meta">-</span>;
+function Stat({ value, label }: { value: number; label: string }) {
   return (
-    <span className="t-mono" style={{ color }}>
-      {value}h
+    <span className="hcard-stat">
+      <span className="hcard-stat-num t-mono">{value > 0 ? `${value}h` : '-'}</span>
+      <span className="hcard-stat-label">{label}</span>
     </span>
   );
 }
 
-function CompositionBar({ row, cap }: { row: HoursRow; cap: number }) {
-  const { homeHours: h, floatedOutHours: f, pickupHours: p, totalHours: total } = row;
-  const denom = Math.max(cap, total, 0.0001);
-  const pct = (x: number) => `${(x / denom) * 100}%`;
-  const over = cap > 0 && total > cap;
+// The floated-out chip is the one stat a manager wants to drill into: not just
+// "how many hours" but "covering what, when" (the composition bar and its cap
+// comparison told them neither, so both got cut). Collapsed it reads like any
+// other stat; expanded it lists each coalesced shift with day, time and duration.
+function FloatChip({ row }: { row: HoursRow }) {
+  const [open, setOpen] = useState(false);
+  const hasShifts = row.floatShifts.length > 0;
+
   return (
-    <div className="meter-wrap">
-      <div
-        role="img"
-        aria-label={`${h}h at home, ${f}h floated out, ${p}h cross-house pickup of a ${cap}h cap`}
-        style={{
-          display: 'flex',
-          height: 8,
-          flex: 1,
-          minWidth: 120,
-          borderRadius: 99,
-          overflow: 'hidden',
-          background: 'var(--surface-3)',
-        }}
+    <div className="hchip-wrap">
+      <button
+        type="button"
+        className={`hchip ${hasShifts ? '' : 'hchip-empty'}`.trim()}
+        onClick={() => hasShifts && setOpen((v) => !v)}
+        disabled={!hasShifts}
+        aria-expanded={hasShifts ? open : undefined}
       >
-        <span style={{ width: pct(h), background: BUCKETS.home.color }} />
-        <span style={{ width: pct(f), background: BUCKETS.float.color }} />
-        <span style={{ width: pct(p), background: BUCKETS.pickup.color }} />
-      </div>
-      <span className="meter-val">
-        <b style={over ? { color: 'var(--st-danger)' } : undefined}>{total}</b>/{cap}h
-      </span>
+        <span className="t-mono">{row.floatedOutHours > 0 ? `${row.floatedOutHours}h` : '-'}</span>
+        <span>Floated out</span>
+        {hasShifts && (
+          <>
+            <span className="hchip-count">{row.floatShifts.length}</span>
+            <Icon name={open ? 'chevUp' : 'chevDown'} size={14} />
+          </>
+        )}
+      </button>
+      {open && hasShifts && (
+        <div className="hcard-detail">
+          {row.floatShifts.map((s, i) => (
+            <div className="hcard-shift-row" key={i}>
+              <span className="hcard-shift-day">
+                {s.dayLabel} · {s.dateLabel}
+              </span>
+              <span className="hcard-shift-time t-mono">
+                {s.startLabel}&ndash;{s.endLabel}
+              </span>
+              <span className="hcard-shift-dur t-mono">{s.hours}h</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function columns(cap: number): Column<HoursRow>[] {
-  return [
-    {
-      key: 'worker',
-      header: 'Worker',
-      render: (r) => (
-        <span className="cell-name row gap-3 center">
-          <Avatar name={r.name} size={28} />
-          <b>{r.name}</b>
+function WorkerCard({ row }: { row: HoursRow }) {
+  return (
+    <div className="hcard">
+      <div className="hcard-top">
+        <span className="hcard-worker">
+          <Avatar name={row.name} size={32} />
+          <b>{row.name}</b>
         </span>
-      ),
-    },
-    { key: 'home', header: 'At home', numeric: true, render: (r) => hoursCell(r.homeHours) },
-    {
-      key: 'float',
-      header: 'Floated out',
-      numeric: true,
-      render: (r) => hoursCell(r.floatedOutHours, BUCKETS.float.color),
-    },
-    {
-      key: 'pickup',
-      header: 'Cross-house pickup',
-      numeric: true,
-      render: (r) => hoursCell(r.pickupHours, BUCKETS.pickup.color),
-    },
-    {
-      key: 'composition',
-      header: 'Total vs cap',
-      render: (r) => <CompositionBar row={r} cap={cap} />,
-    },
-  ];
+        <div className="hcard-stats">
+          <Stat value={row.totalHours} label="Total" />
+          <Stat value={row.homeHours} label="At home" />
+          <FloatChip row={row} />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function HoursReport({ data }: { data: HoursReportData }) {
@@ -104,23 +103,19 @@ export function HoursReport({ data }: { data: HoursReportData }) {
   const totalFloat = sum((r) => r.floatedOutHours);
   const totalPickup = sum((r) => r.pickupHours);
   const grand = totalHome + totalFloat + totalPickup;
-  const overCount = data.rows.filter((r) => data.cap > 0 && r.totalHours > data.cap).length;
 
   return (
     <div className="page page-wide">
       <PageHead
         eyebrow={`${data.houseName} · week of ${data.weekStartDate}`}
         title="Hours report"
-        sub="Each worker's weekly hours, decomposed by where the shift was worked, against the week's cap."
+        sub="Each worker's weekly hours, decomposed by where the shift was worked."
       />
 
       <div className="row gap-4 wrap" style={{ margin: '4px 0 16px' }}>
-        <LegendItem color={BUCKETS.home.color} label={BUCKETS.home.label} />
-        <LegendItem color={BUCKETS.float.color} label={BUCKETS.float.label} />
-        <LegendItem color={BUCKETS.pickup.color} label={BUCKETS.pickup.label} />
-        <span className="t-meta">
-          · cap {data.cap}h ({data.capEnforcement})
-        </span>
+        <LegendItem color="var(--brand)" label="At home" />
+        <LegendItem color={FLOAT_COLOR} label="Floated out" />
+        <LegendItem color="var(--st-allied-fg)" label="Cross-house pickup" />
       </div>
 
       <div
@@ -132,40 +127,34 @@ export function HoursReport({ data }: { data: HoursReportData }) {
           <span className="statcard-label">Total hours</span>
         </div>
         <div className="statcard">
-          <span className="statcard-num" style={{ color: BUCKETS.home.color }}>
+          <span className="statcard-num" style={{ color: 'var(--brand)' }}>
             {totalHome}
           </span>
           <span className="statcard-label">At home</span>
         </div>
         <div className="statcard">
-          <span className="statcard-num" style={{ color: BUCKETS.float.color }}>
+          <span className="statcard-num" style={{ color: FLOAT_COLOR }}>
             {totalFloat}
           </span>
           <span className="statcard-label">Floated out</span>
         </div>
         <div className="statcard">
-          <span className="statcard-num" style={{ color: BUCKETS.pickup.color }}>
+          <span className="statcard-num" style={{ color: 'var(--st-allied-fg)' }}>
             {totalPickup}
           </span>
           <span className="statcard-label">Cross-house pickup</span>
         </div>
       </div>
 
-      {overCount > 0 && (
-        <p className="row gap-2 center" style={{ marginBottom: 12 }}>
-          <Tag kind="red" icon="warn">
-            {overCount} over cap
-          </Tag>
-          <span className="t-meta">Workers whose total exceeds the {data.cap}h cap this week.</span>
-        </p>
+      {data.rows.length === 0 ? (
+        <p className="t-helper">No workers are home-housed here yet.</p>
+      ) : (
+        <div className="hcards">
+          {data.rows.map((row) => (
+            <WorkerCard row={row} key={row.userId} />
+          ))}
+        </div>
       )}
-
-      <DataTable
-        columns={columns(data.cap)}
-        rows={data.rows}
-        getRowKey={(r) => r.userId}
-        emptyText="No workers are home-housed here yet."
-      />
     </div>
   );
 }

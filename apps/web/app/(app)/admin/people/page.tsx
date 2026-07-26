@@ -3,7 +3,13 @@ import { resolveCalendarHouse } from '@shift/core';
 import { PeopleRoster } from '../../../../components/people/PeopleRoster';
 import { Notification } from '../../../../components/ui/Notification';
 import { PageHead } from '../../../../components/ui/PageHead';
-import { adminHouseId, getSessionUser, isAdmin, isHouseAdmin } from '../../../../lib/auth';
+import {
+  adminHouseId,
+  getSessionUser,
+  isAdmin,
+  isHouseAdmin,
+  isScheduleAdmin,
+} from '../../../../lib/auth';
 import { isProjectAdministrator } from '../../../../lib/data/config';
 import { getOnDutyHmodId, getShellHouses } from '../../../../lib/data/hmod';
 import { getPeopleData } from '../../../../lib/data/people';
@@ -31,16 +37,19 @@ export default async function PeoplePage({
     );
   }
 
-  // §2.5 cross-house: people admin stays OWN-HOUSE for HM/BM/RSM (standing
-  // invariant), so unlike the schedule surfaces this is NOT gated on the full
-  // schedule-admin tier. The only cross-house viewers are the project administrator
-  // (superuser) and the on-duty HMOD, who covers every house while on duty — for
-  // everyone else the carried ?house= is ignored and they see their own house.
+  // 2026-07-25 ruling: people VIEW follows the house switcher for the elevated
+  // schedule-admin tier (HM/BM/RSM), mirroring their cross-house schedule access
+  // (isScheduleAdmin). SM stays own-house, same as SM's schedule write. This is
+  // VIEW-only; every people WRITE stays pinned to adminHouseId (own house) via
+  // isHouseAdmin, matching the schedule write split (writeHouseId/canBuildForHouse).
   const { house } = await searchParams;
   const now = await simNow();
   const onDutyId = await getOnDutyHmodId(now);
   const canViewOtherHouses =
-    isAdmin(user) || (await isProjectAdministrator(user.userId)) || onDutyId === user.userId;
+    isAdmin(user) ||
+    isScheduleAdmin(user) ||
+    (await isProjectAdministrator(user.userId)) ||
+    onDutyId === user.userId;
   const shellHouses = await getShellHouses();
   const validHouseIds = shellHouses.map((h) => h.id);
   const viewHouse = resolveCalendarHouse({

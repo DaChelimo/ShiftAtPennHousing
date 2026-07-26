@@ -46,14 +46,80 @@
   }
 }
 
-/* toolbar */
+/* toolbar — compact bar + overflow menu. Tier 1 is identity only (title +
+   status). Tier 2 starts a new line, flush left with the title above it: the
+   phase switch on the left, the operational actions (More / Expand /
+   Publish) on the right of that same line. Tier 3 is the helper copy +
+   autosave, least important so it sits last. */
 .bld-toolbar {
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
+  padding: 18px 24px 14px;
+}
+.bld-toolbar-tier1 {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.bld-toolbar-tier2 {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 20px 24px 14px;
   flex-wrap: wrap;
+  margin-top: 14px;
+}
+.bld-toolbar-tier3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+.bld-toolbar-helper {
+  flex: 1;
+  min-width: 240px;
+}
+
+/* "More" overflow menu — collapses Clear all + both export actions, which
+   are reached for far less often than switching phase or publishing. */
+.bld-more-wrap {
+  position: relative;
+}
+.bld-more-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  width: 220px;
+  padding: 4px;
+  background: var(--surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-2);
+  border: 1px solid var(--border-subtle);
+}
+.bld-more-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  text-align: left;
+  padding: 9px 10px;
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.bld-more-item:hover {
+  background: var(--field-hover);
+}
+.bld-more-item.is-danger {
+  color: var(--danger, #da1e28);
 }
 
 /* Scroll container for the AI panel + grid together. The AI panel (Score,
@@ -147,6 +213,13 @@
 }
 .bld-cell.is-hour {
   border-top: 1px solid var(--border-subtle);
+}
+/* A cell already carrying a shift is a click target (single-click focuses that
+   worker to modify/remove, see ScheduleBuilder.tsx's onUp), not a drag-to-assign
+   target — `pointer` says "click this", overriding the vacant-cell `crosshair`
+   above that says "drag across this". */
+.bld-cell.is-assigned {
+  cursor: pointer;
 }
 .bld-cell:hover {
   background: var(--field);
@@ -267,9 +340,16 @@
   background: color-mix(in srgb, var(--text-secondary) 4%, transparent);
 }
 
-/* continuous assignment block — one per contiguous same-worker run. A calm light
-   tint (not the screamy solid brand) with dark text + a soft brand border, so a
-   filled span reads clearly without dominating the grid. */
+/* continuous assignment block — one per contiguous same-worker run. Every worker
+   gets their own hue (`--wc`, set inline from lib/workerColor.ts — the same
+   per-worker palette as the Live calendar and the mobile House grid, see
+   docs/design/worker-colors.md), so runs are tellable apart without reading the
+   name. Dampened for EVERYONE here, unlike the Live calendar's find-mine recede:
+   the builder has no single "viewer's own shift" to spare, every worker's runs
+   need to stay equally legible against each other. Same calm light-tint formula
+   the old single-brand version used (16%/42% mix into the surface), just keyed
+   off --wc instead of --brand, so it stays a soft tint rather than a screamy
+   solid fill. */
 .bld-run {
   box-sizing: border-box;
   position: absolute;
@@ -280,9 +360,9 @@
   justify-content: center;
   gap: 1px;
   padding: 2px 8px;
-  background: color-mix(in srgb, var(--brand) 16%, var(--surface));
+  background: color-mix(in srgb, var(--wc, var(--brand)) 16%, var(--surface));
   color: var(--text-primary);
-  border: 1px solid color-mix(in srgb, var(--brand) 42%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--wc, var(--brand)) 42%, var(--surface));
   border-radius: 5px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
   overflow: hidden;
@@ -334,6 +414,49 @@
   padding: 24px;
 }
 
+/* Top/bottom resize handles on the clicked (is-focus, blue) shift only. Sit as
+   siblings of .bld-run rather than nested inside it, since .bld-run has
+   overflow:hidden and a handle needs to straddle its edge, half in/half out.
+   Rendered at the SAME z-index as .bld-run (2): safely under the sticky
+   .bld-dayhead/.bld-rail (3/4, see the earlier day-header overlap fix) while
+   still painting over plain cells by DOM order. */
+.bld-run-handle {
+  box-sizing: border-box;
+  position: absolute;
+  z-index: 2;
+  height: 10px;
+  margin-top: -5px;
+  border-radius: 5px;
+  background: var(--brand);
+  box-shadow: 0 0 0 2px var(--surface);
+  cursor: ns-resize;
+  pointer-events: auto;
+}
+.bld-run-handle::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 22px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--surface);
+}
+
+/* Live drag preview for a handle in flight: independent of the run's own
+   (unmoved-until-drop) rectangle underneath, so the SM sees the new span
+   forming without the source data changing until mouseup. */
+.bld-run-resize-preview {
+  box-sizing: border-box;
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  border: 2px dashed var(--brand);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--brand) 18%, transparent);
+}
+
 /* ---------- side panel ---------- */
 .builder-side {
   background: var(--surface);
@@ -343,49 +466,47 @@
   display: flex;
   flex-direction: column;
 }
-.side-empty {
-  padding: 40px 24px;
+/* Compact "how to use this" guide. Three short lines, not a paragraph, so the
+   worker roster below (what an SM actually needs to see while building) gets
+   the space instead. */
+.side-guide {
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.side-guide-row {
+  display: flex;
   align-items: center;
-  text-align: center;
   gap: 8px;
   color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.3;
 }
-.side-empty .t-h3 {
-  color: var(--text-primary);
-}
-.side-stat {
-  margin-top: 16px;
-  padding: 12px 16px;
-  background: var(--surface-2);
-  border: 1px solid var(--border-subtle);
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  align-items: center;
+.side-guide-row svg {
+  flex-shrink: 0;
+  color: var(--text-tertiary, var(--text-secondary));
 }
 /* "On this schedule" — the drafted-worker roster in the empty side panel, each row
-   with a per-worker "remove from the whole week" control. Left-aligned (unlike the
-   centered .side-empty hint above it). */
+   with hours vs. target and a per-worker "remove from the whole week" control. This
+   is the dominant surface of the empty panel, so it grows to fill remaining space. */
 .side-workers {
-  border-top: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
-}
-.side-workers-hint {
-  padding: 0 16px 8px;
+  flex: 1;
+  min-height: 0;
 }
 .side-worker-list {
   display: flex;
   flex-direction: column;
+  overflow: auto;
 }
 .side-worker-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 16px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--border-subtle);
 }
 .side-worker-row:last-child {
@@ -394,7 +515,7 @@
 .side-worker-meta {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
   flex: 1;
 }
@@ -403,6 +524,14 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.side-worker-hours {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.side-worker-hours.is-over {
+  color: var(--st-pending);
+  font-weight: 600;
 }
 .side-head {
   display: flex;
@@ -467,23 +596,24 @@
   list-style: none;
 }
 .roster-row {
-  width: 100%;
+  width: calc(100% - 20px);
+  margin: 0 10px 8px;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 16px;
-  background: none;
-  border: none;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
   text-align: left;
-  border-bottom: 1px solid var(--border-subtle);
-  transition: background var(--motion);
+  transition:
+    background var(--motion),
+    border-color var(--motion);
   color: var(--text-primary);
-}
-.roster-li:last-child .roster-row {
-  border-bottom: none;
 }
 .roster-row:hover:not(:disabled) {
   background: var(--brand-subtle-bg);
+  border-color: var(--border-strong);
 }
 .roster-row.is-blocked {
   opacity: 0.6;
@@ -567,8 +697,19 @@
   }
 }
 
+/* The AI panel gets a rounded, tinted-blue card of its own so it reads as an
+   assistive surface layered on top of the builder, not another structural
+   section of the page. */
+.ai-panel {
+  background: var(--brand-subtle-bg);
+  border: 1px solid var(--brand-subtle-border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  margin: 0 24px 24px;
+}
+
 /* The running state (phase text, day stepper, footer caption) gets its own
-   card, distinct from the panel's own square chrome, since it represents a
+   card, distinct from the panel's own tinted chrome, since it represents a
    live process rather than a static container. */
 .ai-processing-card {
   background: var(--surface);
@@ -679,4 +820,221 @@
   .ai-day-chip.is-active .ai-day-dot::after {
     animation: none;
   }
+}
+
+/* ============================================================
+   Full-screen grid.
+   "Expand" lifts the builder out of the app shell entirely (fixed, inset 0)
+   so the week runs corner to corner: no side nav, no toolbar, no AI panel.
+   The AI panel is HIDDEN, never unmounted, so expanding mid-generation does
+   not kill the run in flight. Exit with the floating control or Esc.
+   ============================================================ */
+.builder-main {
+  position: relative;
+}
+.builder-page.is-expanded {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--surface);
+}
+.builder-page.is-expanded .bld-toolbar,
+.builder-page.is-expanded .bld-ai-slot {
+  display: none;
+}
+.builder-page.is-expanded .bld-content {
+  overflow: hidden;
+}
+/* Full screen means the WEEK, corner to corner: the side panel gives up its
+   column and becomes an overlay drawer, so the grid gets the whole width. */
+.builder-page.is-expanded .bld-body {
+  min-height: 0;
+  position: relative;
+  grid-template-columns: minmax(0, 1fr);
+}
+/* ---------- side drawer (full screen only) ----------
+   Out of full screen the dock is layout-transparent and .builder-side stays a
+   plain grid column, exactly as before. Inside full screen the dock is the
+   sliding element: the tab button rides along on its left edge, so the control
+   is always at the drawer's boundary whichever side of the animation it is on.
+   The panel is visibility:hidden while closed (delayed until the slide-out
+   finishes) so an off-screen drawer is not in the tab order or the a11y tree. */
+.builder-side-dock {
+  display: contents;
+}
+.builder-page.is-expanded .builder-side-dock {
+  display: block;
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 340px;
+  z-index: 30;
+  transform: translateX(100%);
+  transition: transform 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+.builder-page.is-expanded .builder-side-dock.is-open {
+  transform: translateX(0);
+}
+.builder-page.is-expanded .builder-side {
+  height: 100%;
+  visibility: hidden;
+  transition: visibility 0s linear 220ms;
+  box-shadow: -10px 0 28px rgb(0 0 0 / 14%);
+}
+.builder-page.is-expanded .builder-side-dock.is-open .builder-side {
+  visibility: visible;
+  transition: visibility 0s;
+}
+.bld-side-tab {
+  position: absolute;
+  top: 50%;
+  left: -30px;
+  width: 30px;
+  height: 64px;
+  margin-top: -32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(4px);
+  box-shadow: -2px 0 10px rgb(0 0 0 / 12%);
+}
+.bld-side-tab:hover {
+  color: var(--text-primary);
+  background: var(--surface);
+}
+.bld-side-tab:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .builder-page.is-expanded .builder-side-dock,
+  .builder-page.is-expanded .builder-side {
+    transition-duration: 0s;
+    transition-delay: 0s;
+  }
+}
+/* Full screen's exit bar. Occupies its own full-width row directly above the
+   day-of-week header, rather than floating as a pill over the grid, so it
+   never sits on top of the week it names. */
+.bld-expand-bar {
+  flex: none;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface);
+}
+
+/* ============================================================
+   Clicked-shift focus.
+   Three states while a worker is focused: the clicked shift (brand, ringed),
+   their other shifts that week (purple, outlined), and everyone else (dimmed
+   back so the person being read stands out). Dragging is unaffected: these are
+   overlays with pointer-events:none, exactly like the base .bld-run.
+   ============================================================ */
+.bld-run.is-focus {
+  background: color-mix(in srgb, var(--brand) 34%, var(--surface));
+  border: 2px solid var(--brand);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--brand) 28%, transparent),
+    0 2px 6px rgb(0 0 0 / 14%);
+  /* Stays at the base .bld-run layer (2), NOT above it: .bld-day/.bld-col don't
+     establish their own stacking context, so a z-index here competes directly
+     with the sticky .bld-dayhead (3) and .bld-rail (4) in the same context. A
+     higher value here used to let a scrolled-past focused/peer run paint over
+     the sticky day header and time rail instead of going under them. The
+     border + box-shadow already carry the "this one pops" signal without
+     needing to out-rank chrome that must always stay on top. */
+  z-index: 2;
+}
+.bld-run.is-peer {
+  background: color-mix(in srgb, var(--st-out-fg) 18%, var(--surface));
+  border: 2px solid var(--st-out-fg);
+  z-index: 2;
+}
+.bld-run.is-peer .bld-run-time {
+  color: var(--st-out-fg);
+}
+.bld-run.is-dimmed {
+  opacity: 0.38;
+}
+.bld-grid.is-focusing .bld-seat {
+  opacity: 0.5;
+}
+
+/* ---------- worker focus panel (side) ---------- */
+.side-focus {
+  display: flex;
+  flex-direction: column;
+}
+.focus-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.focus-card.is-current {
+  background: var(--brand-subtle-bg);
+  border-bottom: 1px solid var(--brand-subtle-border);
+}
+.focus-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+.focus-shift-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.focus-shift-range {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+/* Editable start/end, replacing the old static "12:00-14:00" + block count:
+   the SM types a new time directly instead of needing to know where the
+   underlying 30-min blocks are. Native <input type="time"> already restricts
+   entry to real times and (via step=1800) to the grid's own 30-min atomicity;
+   WorkerFocusPanel.tsx's commit() further snaps to this house's actual
+   open/close boundaries, same as a grid-handle drag would. */
+.focus-time-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.focus-time-input {
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--text-primary);
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+.focus-time-row.is-invalid .focus-time-input {
+  border-color: var(--danger, #da1e28);
+}
+.focus-time-error {
+  color: var(--danger, #da1e28);
+}
+.focus-shift-duration {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
 }

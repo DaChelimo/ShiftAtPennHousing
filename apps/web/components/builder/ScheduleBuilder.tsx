@@ -13,7 +13,7 @@ import {
   type WorkerScheduleInfo,
 } from '@shift/core';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   assignDraft,
@@ -28,50 +28,26 @@ import { buildScheduleExportHtml } from '../../lib/export/scheduleHtml';
 import { Avatar, Button, Icon, IconButton, Modal, Notification, Tag, TextInput } from '../ui';
 
 import { AiSchedulePanel } from './AiSchedulePanel';
+import { BuilderSideDock, useSideDock } from './BuilderSideDock';
+import { BuilderToolbar } from './BuilderToolbar';
+import { Grid } from './Grid';
+import { SideEmptyPanel } from './SideEmptyPanel';
+import { WorkerFocusPanel } from './WorkerFocusPanel';
+import {
+  blocksOfDay,
+  findShiftAt,
+  HOURS_PER_BLOCK,
+  nyTime,
+  workerWeekShifts,
+  type ShiftRun,
+} from './gridModel';
+import { useResizeShift } from './useResizeShift';
 import './builder.css';
-
-const HOURS_PER_BLOCK = 0.5;
-const NY = 'America/New_York';
-const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-function nyTime(date: Date): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone: NY,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(date);
-}
 
 function prettifyHouse(id: string): string {
   const m = /^house-(\d+)$/.exec(id);
   if (m) return `House ${String(Number(m[1]))}`;
   return id.charAt(0).toUpperCase() + id.slice(1);
-}
-
-function dowLabel(dayKey: string): string {
-  return DOW[new Date(`${dayKey}T00:00:00Z`).getUTCDay()] ?? '';
-}
-// "5 AM" / "12 PM" for a pinned time-rail tick (shown only on the hour so the rail stays
-// uncluttered). The per-cell gray time labels were removed in favour of these rails.
-function railHourLabel(iso: string): string {
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: NY,
-    hour: 'numeric',
-    hour12: true,
-  }).format(new Date(iso));
-}
-
-// Like railHourLabel, but includes the minute when the block isn't on the hour —
-// used only for the rail's forced-visible first row, so an odd opening time (e.g.
-// 05:30 for summer Harnwell) reads as "5:30 AM", not a misleading "5 AM".
-function railTimeLabel(iso: string): string {
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: NY,
-    hour: 'numeric',
-    minute: 'numeric',
-    hour12: true,
-  }).format(new Date(iso));
 }
 
 type PendingAssign = {
@@ -98,6 +74,17 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
   const [aiPreview, setAiPreview] = useState<Record<string, string[]> | null>(null);
   const [dragging, setDragging] = useState(false);
   const [selectedBlockIds, setSelectedBlockIds] = useState<string[]>([]);
+  // The shift the SM last CLICKED (as opposed to dragged). Non-null lights up
+  // that shift plus every other shift its worker holds this week, and swaps the
+  // side panel over to the worker-focus cards. Purely a view state: focusing
+  // never writes.
+  const [focus, setFocus] = useState<ShiftRun | null>(null);
+  // Full-screen grid: the week fills the whole page, with the app nav, the
+  // toolbar and the AI panel out of the way, for when the SM just wants to read
+  // the schedule. In full screen the side panel collapses into a drawer too, so
+  // "everything" really is everything — see BuilderSideDock.
+  const [expanded, setExpanded] = useState(false);
+  const sideDock = useSideDock(expanded);
   const [pending, setPending] = useState<PendingAssign | null>(null);
   // Confirm dialogs for the two destructive draft actions (§4.3): removing one worker
   // from the whole week, and wiping the whole week to start over.
@@ -193,36 +180,84 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
     }
   }, []);
 
-  // Finalize a drag on mouse-up anywhere.
+  // Finalize a gesture on mouse-up anywhere. Two outcomes, decided by whether
+  // the pointer moved between cells:
+  //   DRAG  -> selects the span, exactly as before (assign / drop by range).
+  //   CLICK on a drafted shift -> focuses that worker instead of touching the
+  //     draft. Clicking is now a read gesture: it answers "who is this and what
+  //     else are they working", and only a drag ever changes the schedule.
+  //   CLICK on an empty cell -> selects that single block, as before.
+  //
+  // The gesture is tracked in a ref as well as in state: the listener is
+  // registered once on mount and reads the ref, so a mouse-up that lands in the
+  // same task as the mouse-down (a fast click, or an automated one) is still
+  // seen. Keying the listener on the `dragging` STATE instead loses those,
+  // because the effect that would attach it has not run yet.
+  const gesture = useRef<{ anchor: number; hover: number; frac: number } | null>(null);
+
+  const { reveal, handleEscape } = sideDock;
+
   useEffect(() => {
-    if (!dragging) return;
     const onUp = () => {
+      const g = gesture.current;
+      gesture.current = null;
       setDragging(false);
-      if (anchorIdx !== null && hoverIdx !== null) {
-        const lo = Math.min(anchorIdx, hoverIdx);
-        const hi = Math.max(anchorIdx, hoverIdx);
-        setSelectedBlockIds(data.blocks.slice(lo, hi + 1).map((b) => b.blockId));
+      if (g === null) return;
+      const block = data.blocks[g.anchor];
+      if (g.anchor === g.hover && block !== undefined) {
+        const shift = findShiftAt(data.blocks, aiPreview ?? drafts, block.blockId, g.frac);
+        if (shift !== null) {
+          setFocus(shift);
+          // In full screen the panel is collapsed by default; a click that asks
+          // "who is this" has to bring it back or the answer has nowhere to land.
+          reveal();
+          setSelectedBlockIds([]);
+          setAnchorIdx(null);
+          setHoverIdx(null);
+          return;
+        }
       }
+      setFocus(null);
+      const lo = Math.min(g.anchor, g.hover);
+      const hi = Math.max(g.anchor, g.hover);
+      setSelectedBlockIds(data.blocks.slice(lo, hi + 1).map((b) => b.blockId));
     };
     window.addEventListener('mouseup', onUp);
     return () => window.removeEventListener('mouseup', onUp);
-  }, [dragging, anchorIdx, hoverIdx, data.blocks]);
+  }, [data.blocks, drafts, aiPreview, reveal]);
 
-  // Escape deselects: drop the current/dragged blocks so they return to their normal
-  // grey (and abort an in-progress drag). Modals own Escape while they're open.
+  // Escape backs out one layer at a time: first any selection or focused worker
+  // (so the grid returns to its normal grey and an in-progress drag aborts),
+  // then the collapsed side drawer, then full screen. Modals own Escape while
+  // they're open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (pending !== null || publishOpen || clearOpen || removeWorker !== null) return;
+      const hadHighlight = selectedBlockIds.length > 0 || focus !== null || dragging;
+      gesture.current = null;
       setDragging(false);
       setAnchorIdx(null);
       setHoverIdx(null);
       setDragColFrac(null);
       setSelectedBlockIds([]);
+      setFocus(null);
+      if (hadHighlight) return;
+      if (handleEscape()) return;
+      setExpanded(false);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [pending, publishOpen, clearOpen, removeWorker]);
+  }, [
+    pending,
+    publishOpen,
+    clearOpen,
+    removeWorker,
+    selectedBlockIds,
+    focus,
+    dragging,
+    handleEscape,
+  ]);
 
   const workerName = useMemo(() => {
     const map = new Map<string, string>();
@@ -259,6 +294,30 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
     const set = new Set(selectedBlockIds);
     return data.blocks.filter((b) => set.has(b.blockId));
   }, [selectedBlockIds, data.blocks]);
+
+  // What the grid renders: the live AI proposal while one is on screen, the
+  // persisted drafts otherwise. Focus reads from the same source, so clicking a
+  // proposed shift explains it exactly like a drafted one.
+  const activeDrafts = aiPreview ?? drafts;
+
+  // The focused worker's whole week, recomputed from the current drafts so a
+  // removal (from this panel or the grid) is reflected immediately. The focused
+  // shift falls back to their next remaining one when the clicked shift is the
+  // one that just went away; when nothing is left the panel closes itself.
+  const focusShifts = useMemo<ShiftRun[]>(
+    () => (focus === null ? [] : workerWeekShifts(data.blocks, activeDrafts, focus.userId)),
+    [focus, data.blocks, activeDrafts],
+  );
+  const focusCurrent = useMemo<ShiftRun | null>(() => {
+    if (focus === null) return null;
+    return focusShifts.find((s) => s.startAtIso === focus.startAtIso) ?? focusShifts[0] ?? null;
+  }, [focus, focusShifts]);
+  // The focused shift's own day, for the panel's time inputs to snap against
+  // (the house's real open/close boundaries, not an arbitrary free-typed time).
+  const focusDayBlocks = useMemo(
+    () => (focusCurrent === null ? [] : blocksOfDay(data.blocks, focusCurrent.dayKey)),
+    [focusCurrent, data.blocks],
+  );
 
   const span = useMemo<SpanBlock[]>(
     () => selectedBlocks.map((b) => ({ blockId: b.blockId, blockStartAt: new Date(b.startAtIso) })),
@@ -410,37 +469,41 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
     [data.periodId, runWrite],
   );
 
-  // The distinct workers currently drafted anywhere this week, with their block counts —
+  // Dragging the focused shift's grid handle or editing its times in the side
+  // panel both end here (see useResizeShift.ts).
+  const onResizeShift = useResizeShift({
+    blocks: data.blocks,
+    commitAssign,
+    onRemoveSpan,
+    setFocus,
+  });
+
+  // The distinct workers currently drafted anywhere this week, with their hours vs. target —
   // powers the "On this schedule" list + its per-worker "remove from the whole week" control.
+  // Sorted furthest-over-target first: that's the SM's actual triage order when scanning this list.
   const workersOnSchedule = useMemo(() => {
     const count = new Map<string, number>();
     for (const users of Object.values(drafts)) {
       for (const userId of users) count.set(userId, (count.get(userId) ?? 0) + 1);
     }
     return [...count.entries()]
-      .map(([userId, blocks]) => ({ userId, name: workerName.get(userId) ?? userId, blocks }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [drafts, workerName]);
-
-  // Workers drafted anywhere INSIDE the current selection, with the exact blocks each holds
-  // within it. Powers the "In this range" list, which trims a worker out of just the selected
-  // slice (e.g. drop Bob from 4:00-6:00 of his 12:00-20:00 run, splitting the run in two)
-  // without disturbing the rest of the run — the surgical middle-of-a-shift removal the
-  // whole-run "×" and the whole-week "Remove all" can't do.
-  const workersInSelection = useMemo(() => {
-    if (selectedBlockIds.length === 0) return [];
-    const byUser = new Map<string, string[]>();
-    for (const blockId of selectedBlockIds) {
-      for (const userId of drafts[blockId] ?? []) {
-        const list = byUser.get(userId) ?? [];
-        list.push(blockId);
-        byUser.set(userId, list);
-      }
-    }
-    return [...byUser.entries()]
-      .map(([userId, blockIds]) => ({ userId, name: workerName.get(userId) ?? userId, blockIds }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [selectedBlockIds, drafts, workerName]);
+      .map(([userId, blocks]) => {
+        const assignedHours = blocks * HOURS_PER_BLOCK;
+        const target = data.targets[userId] ?? null;
+        return {
+          userId,
+          name: workerName.get(userId) ?? userId,
+          assignedHours,
+          targetHours: target?.targetHours ?? null,
+          optedOut: target?.optedOut ?? false,
+        };
+      })
+      .sort((a, b) => {
+        const overA = a.targetHours !== null ? a.assignedHours - a.targetHours : -Infinity;
+        const overB = b.targetHours !== null ? b.assignedHours - b.targetHours : -Infinity;
+        return overB - overA;
+      });
+  }, [drafts, workerName, data.targets]);
 
   // Remove ONE worker from every block they're drafted in this week (not just one run).
   // A worker's whole-week block set is small (<= a full week of their own shifts), so a
@@ -495,6 +558,7 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
       return;
     }
     void commitAssign(entry.worker.userId, selectedBlockIds);
+    clearSelection();
   };
 
   const onPhase2Click = (entry: Phase2Entry) => {
@@ -518,6 +582,7 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
       return;
     }
     void commitAssign(entry.worker.userId, selectedBlockIds);
+    clearSelection();
   };
 
   const onPublish = async () => {
@@ -539,7 +604,10 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
   // ---- render ------------------------------------------------------------
 
   return (
-    <div data-testid="schedule-builder" className="builder-page">
+    <div
+      data-testid="schedule-builder"
+      className={`builder-page ${expanded ? 'is-expanded' : ''}`.trim()}
+    >
       {/* desktop-only gate — shown ≤680px via CSS (§4.3) */}
       <div data-testid="builder-desktop-only-notice" className="builder-narrow">
         <Icon name="grid" size={32} />
@@ -550,86 +618,22 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
       </div>
 
       <div className="builder-main">
-        <div className="bld-toolbar">
-          <div className="col gap-1">
-            <div className="row gap-2">
-              <h1 className="t-h1">{prettifyHouse(data.houseId)} weekly template</h1>
-              {published ? (
-                <span data-testid="schedule-published-badge">
-                  <Tag kind="green" icon="check">
-                    Published{publishStats !== null && ` · ${publishStats.scheduled} scheduled`}
-                  </Tag>
-                </span>
-              ) : (
-                <Tag kind="amber">Draft</Tag>
-              )}
-              <SaveStatus saving={saving} savedAt={savedAt} />
-            </div>
-            <div className="t-helper">
-              Drag consecutive blocks, then pick who works them. This repeating pattern applies to
-              every week until you edit a specific week.
-            </div>
-          </div>
-          <div className="row gap-2 wrap">
-            <div className="seg">
-              <button
-                type="button"
-                data-testid="builder-phase-1"
-                className={`seg-btn ${phase === 1 ? 'is-on' : ''}`.trim()}
-                onClick={() => setPhase(1)}
-              >
-                Phase 1 · Preferences
-              </button>
-              <button
-                type="button"
-                data-testid="builder-phase-2"
-                className={`seg-btn ${phase === 2 ? 'is-on' : ''}`.trim()}
-                onClick={() => setPhase(2)}
-              >
-                Phase 2 · Manual
-              </button>
-            </div>
-            {!published && aiPreview === null && assignedBlockCount > 0 && (
-              <Button
-                kind="ghost"
-                data-testid="clear-all-button"
-                icon="trash"
-                onClick={() => setClearOpen(true)}
-              >
-                Clear all
-              </Button>
-            )}
-            {(aiPreview !== null || assignedBlockCount > 0) && (
-              <>
-                <Button
-                  kind="ghost"
-                  data-testid="export-html-button"
-                  icon="download"
-                  onClick={onDownloadHtml}
-                >
-                  Download HTML
-                </Button>
-                <Button
-                  kind="ghost"
-                  data-testid="export-pdf-button"
-                  icon="download"
-                  onClick={onPrintPdf}
-                >
-                  Print / Save as PDF
-                </Button>
-              </>
-            )}
-            {!published && (
-              <Button
-                data-testid="publish-button"
-                icon="check"
-                onClick={() => setPublishOpen(true)}
-              >
-                Publish
-              </Button>
-            )}
-          </div>
-        </div>
+        <BuilderToolbar
+          houseLabel={prettifyHouse(data.houseId)}
+          published={published}
+          publishStats={publishStats}
+          saving={saving}
+          savedAt={savedAt}
+          phase={phase}
+          onPhaseChange={setPhase}
+          showClearAll={!published && aiPreview === null && assignedBlockCount > 0}
+          onClearAll={() => setClearOpen(true)}
+          showExport={aiPreview !== null || assignedBlockCount > 0}
+          onDownloadHtml={onDownloadHtml}
+          onPrintPdf={onPrintPdf}
+          onPublish={() => setPublishOpen(true)}
+          onExpand={() => setExpanded(true)}
+        />
 
         {error !== null && (
           <div data-testid="builder-error" className="side-note">
@@ -639,19 +643,38 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
           </div>
         )}
 
+        {/* Full-screen exit bar. Its own full-width row above the day header, so
+            there is always one obvious way back (Esc also works). */}
+        {expanded && (
+          <div className="bld-expand-bar">
+            <span className="t-h3">{prettifyHouse(data.houseId)} weekly template</span>
+            <Button
+              kind="secondary"
+              size="sm"
+              data-testid="builder-collapse-button"
+              icon="collapse"
+              onClick={() => setExpanded(false)}
+            >
+              Exit full screen
+            </Button>
+          </div>
+        )}
+
         <div className="bld-content">
-          <AiSchedulePanel
-            houseId={data.houseId}
-            periodId={data.periodId}
-            published={published}
-            deadlineOpen={data.deadlineOpen}
-            onPreviewChange={setAiPreview}
-          />
+          <div className="bld-ai-slot">
+            <AiSchedulePanel
+              houseId={data.houseId}
+              periodId={data.periodId}
+              published={published}
+              deadlineOpen={data.deadlineOpen}
+              onPreviewChange={setAiPreview}
+            />
+          </div>
 
           <div className="bld-body">
             <Grid
               blocks={data.blocks}
-              drafts={aiPreview ?? drafts}
+              drafts={activeDrafts}
               preview={aiPreview !== null}
               workerName={workerName}
               anchorIdx={anchorIdx}
@@ -659,7 +682,13 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
               dragColFrac={dragColFrac}
               dragging={dragging}
               selectedBlockIds={selectedBlockIds}
+              focus={
+                focusCurrent === null
+                  ? null
+                  : { userId: focusCurrent.userId, blockIds: focusCurrent.blockIds }
+              }
               onCellDown={(idx, colFrac) => {
+                gesture.current = { anchor: idx, hover: idx, frac: colFrac };
                 setDragging(true);
                 setAnchorIdx(idx);
                 setHoverIdx(idx);
@@ -667,61 +696,35 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
                 setSelectedBlockIds([]);
               }}
               onCellEnter={(idx, colFrac) => {
-                if (!dragging) return;
+                if (gesture.current === null) return;
+                gesture.current = { ...gesture.current, hover: idx, frac: colFrac };
                 setHoverIdx(idx);
                 setDragColFrac(colFrac);
               }}
               onRemoveSpan={onRemoveSpan}
+              onResizeShift={onResizeShift}
+              readOnly={aiPreview !== null || published}
             />
 
-            <aside className="builder-side">
-              {selectedBlockIds.length === 0 ? (
-                <>
-                  <div className="side-empty">
-                    <Icon name="drag" size={24} />
-                    <div className="t-h3">Select blocks to assign</div>
-                    <div className="t-helper">
-                      Drag across one or more consecutive cells to pick a span. Press Esc to clear
-                      it.
-                    </div>
-                    <div className="side-stat">
-                      <span className="t-meta">Assigned so far</span>
-                      <b className="t-mono">{assignedBlockCount} blocks</b>
-                    </div>
-                  </div>
-                  {aiPreview === null && !published && workersOnSchedule.length > 0 && (
-                    <div className="side-workers" data-testid="side-workers">
-                      <span className="side-list-label t-label">On this schedule</span>
-                      <div className="t-helper side-workers-hint">
-                        Removes a worker from their whole week. To drop just part of a shift, select
-                        that time range on the grid instead.
-                      </div>
-                      <div className="side-worker-list">
-                        {workersOnSchedule.map((w) => (
-                          <div key={w.userId} className="side-worker-row">
-                            <Avatar name={w.name} size={26} />
-                            <div className="side-worker-meta">
-                              <b>{w.name}</b>
-                              <span className="t-meta">
-                                {w.blocks * HOURS_PER_BLOCK}h · {w.blocks} blocks
-                              </span>
-                            </div>
-                            <Button
-                              kind="ghost"
-                              size="sm"
-                              icon="trash"
-                              data-testid={`remove-worker-${w.userId}`}
-                              aria-label={`Remove ${w.name} from the whole week`}
-                              onClick={() => setRemoveWorker({ userId: w.userId, name: w.name })}
-                            >
-                              Remove all
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </>
+            <BuilderSideDock expanded={expanded} dock={sideDock}>
+              {focusCurrent !== null && selectedBlockIds.length === 0 ? (
+                <WorkerFocusPanel
+                  name={workerName.get(focusCurrent.userId) ?? focusCurrent.userId}
+                  focused={focusCurrent}
+                  shifts={focusShifts}
+                  dayBlocks={focusDayBlocks}
+                  targetHours={data.targets[focusCurrent.userId]?.targetHours ?? null}
+                  readOnly={aiPreview !== null || published}
+                  onResizeShift={onResizeShift}
+                  onRemoveShift={(shift) => void onRemoveSpan(shift.userId, shift.blockIds)}
+                  onClose={() => setFocus(null)}
+                />
+              ) : selectedBlockIds.length === 0 ? (
+                <SideEmptyPanel
+                  workersOnSchedule={workersOnSchedule}
+                  showRoster={aiPreview === null && !published}
+                  onRequestRemove={setRemoveWorker}
+                />
               ) : (
                 <>
                   <div className="side-head">
@@ -735,34 +738,6 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
                     </div>
                     <IconButton icon="close" label="Clear selection" onClick={clearSelection} />
                   </div>
-                  {aiPreview === null && !published && workersInSelection.length > 0 && (
-                    <div className="side-workers" data-testid="side-in-range">
-                      <span className="side-list-label t-label">In this range</span>
-                      <div className="side-worker-list">
-                        {workersInSelection.map((w) => (
-                          <div key={w.userId} className="side-worker-row">
-                            <Avatar name={w.name} size={26} />
-                            <div className="side-worker-meta">
-                              <b>{w.name}</b>
-                              <span className="t-meta">
-                                {w.blockIds.length * HOURS_PER_BLOCK}h in this range
-                              </span>
-                            </div>
-                            <Button
-                              kind="ghost"
-                              size="sm"
-                              icon="close"
-                              data-testid={`remove-in-range-${w.userId}`}
-                              aria-label={`Remove ${w.name} from ${spanLabel}`}
-                              onClick={() => void onRemoveSpan(w.userId, w.blockIds)}
-                            >
-                              Remove
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                   {!spanValid ? (
                     <div className="side-note">
                       <Notification kind="warning" title="Adjust your selection">
@@ -789,7 +764,7 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
                   )}
                 </>
               )}
-            </aside>
+            </BuilderSideDock>
           </div>
         </div>
       </div>
@@ -809,7 +784,10 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
               <Button
                 kind="primary"
                 data-testid="over-target-confirm"
-                onClick={() => void commitAssign(pending.userId, pending.blockIds)}
+                onClick={() => {
+                  void commitAssign(pending.userId, pending.blockIds);
+                  clearSelection();
+                }}
               >
                 Assign anyway
               </Button>
@@ -838,7 +816,10 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
               <Button
                 kind="danger"
                 data-testid="advisory-confirm-accept"
-                onClick={() => void commitAssign(pending.userId, pending.blockIds)}
+                onClick={() => {
+                  void commitAssign(pending.userId, pending.blockIds);
+                  clearSelection();
+                }}
               >
                 Assign anyway
               </Button>
@@ -945,493 +926,9 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
 
 // ---- subcomponents -------------------------------------------------------
 
-// A2: surfaces that every assignment is saved the instant it's made (the
-// builder has no batch "Save" — drafts persist per-action), so the HM can
-// close the tab and resume later without losing work. The indicator is ALWAYS
-// present (even before the first edit) so the autosave contract is discoverable,
-// not something the SM has to be told about.
-function savedTimeLabel(ts: number): string {
-  return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(
-    new Date(ts),
-  );
-}
-
-const tip = 'Every change saves automatically. You can close this and pick up where you left off.';
-function SaveStatus({ saving, savedAt }: { saving: boolean; savedAt: number | null }) {
-  if (saving) {
-    return (
-      <span data-testid="builder-save-status" className="bld-savestate is-saving" title={tip}>
-        <Icon name="refresh" size={13} className="bld-spin" />
-        Saving…
-      </span>
-    );
-  }
-  if (savedAt !== null) {
-    return (
-      <span data-testid="builder-save-status" className="bld-savestate is-saved" title={tip}>
-        <Icon name="check" size={13} />
-        Saved {savedTimeLabel(savedAt)}
-      </span>
-    );
-  }
-  return (
-    <span data-testid="builder-save-status" className="bld-savestate is-idle" title={tip}>
-      <Icon name="check" size={13} />
-      Saves automatically
-    </span>
-  );
-}
-
 function advisoryText(a: Phase2Advisory): string {
   if (a.kind === 'opted_out') return 'Opted out — no hours';
   return `Marked cannot for this block (${nyTime(a.blockStartAt)})`;
-}
-
-// Fixed pixel height of one 30-min block row. The continuous assignment blocks and the
-// selection band are absolutely positioned at `localIndex * CELL_H`, so this MUST match
-// the `.bld-cell` height in builder.css.
-const CELL_H = 34;
-
-type BlockRun = { userId: string; startLocal: number; len: number; blockIds: string[] };
-type LanedRun = BlockRun & { lane: number };
-
-// Coalesce a day's drafts into per-worker contiguous runs (the mobile `Coalesce` pattern):
-// a worker drafted across consecutive 30-min blocks becomes ONE run with a single label,
-// instead of one card per block.
-function computeRuns(dayBlocks: BuilderBlock[], drafts: Record<string, string[]>): BlockRun[] {
-  const has = (idx: number, userId: string) =>
-    (drafts[dayBlocks[idx]!.blockId] ?? []).includes(userId);
-  const workers = new Set<string>();
-  for (const b of dayBlocks) for (const u of drafts[b.blockId] ?? []) workers.add(u);
-
-  const runs: BlockRun[] = [];
-  for (const userId of workers) {
-    let i = 0;
-    while (i < dayBlocks.length) {
-      if (!has(i, userId)) {
-        i += 1;
-        continue;
-      }
-      let j = i;
-      while (j + 1 < dayBlocks.length && has(j + 1, userId)) j += 1;
-      runs.push({
-        userId,
-        startLocal: i,
-        len: j - i + 1,
-        blockIds: dayBlocks.slice(i, j + 1).map((b) => b.blockId),
-      });
-      i = j + 1;
-    }
-  }
-  return runs;
-}
-
-// Greedy lane assignment so overlapping runs (multi-headcount houses: Harnwell 2, Quad 3)
-// sit side by side instead of stacking on top of each other.
-function assignLanes(runs: BlockRun[]): { laned: LanedRun[]; laneCount: number } {
-  const sorted = [...runs].sort(
-    (a, b) => a.startLocal - b.startLocal || a.userId.localeCompare(b.userId),
-  );
-  const laneEnd: number[] = []; // exclusive end (local idx) of the last run placed in each lane
-  const laned: LanedRun[] = sorted.map((r) => {
-    let lane = laneEnd.findIndex((end) => end <= r.startLocal);
-    if (lane === -1) {
-      lane = laneEnd.length;
-      laneEnd.push(0);
-    }
-    laneEnd[lane] = r.startLocal + r.len;
-    return { ...r, lane };
-  });
-  return { laned, laneCount: Math.max(1, laneEnd.length) };
-}
-// An unfilled required seat: a contiguous run of blocks in one lane where the block's
-// required_headcount demands a body but none is drafted. This is what makes the staffing
-// pattern visible — a Harnwell afternoon (required 2) with one worker shows one ghost seat,
-// so the SM sees the second seat is still open (it becomes an open shift on publish).
-type SeatGap = { lane: number; startLocal: number; len: number; req: number };
-
-// Split a run into contiguous segments of constant required_headcount. Each segment renders
-// at its OWN width/lane offset, so a run is full width exactly where the desk is single-staff
-// and narrows to a half/third exactly at the block where the house doubles/triples up — not
-// for the run's whole length. Without this, a run that STARTS single-staff and later crosses
-// into a double-staff stretch (e.g. Ben 10:00-14:00 where only 12:00-14:00 is required=2)
-// would draw half width the whole way, leaving a misleading empty "lane" beside its
-// single-staff portion where no second seat actually exists. Mirrors computeSeatGaps, which
-// already breaks ghost seats at every required-headcount change.
-type RunSegment = { startLocal: number; len: number; req: number };
-function runSegments(dayBlocks: BuilderBlock[], run: BlockRun): RunSegment[] {
-  const segs: RunSegment[] = [];
-  let i = 0;
-  while (i < run.len) {
-    const req = dayBlocks[run.startLocal + i]?.requiredHeadcount ?? 1;
-    let j = i;
-    while (j + 1 < run.len && (dayBlocks[run.startLocal + j + 1]?.requiredHeadcount ?? 1) === req) {
-      j += 1;
-    }
-    segs.push({ startLocal: run.startLocal + i, len: j - i + 1, req });
-    i = j + 1;
-  }
-  return segs;
-}
-
-// Derive the ghost seats for a day. Lanes 0..laneCount-1 are the staffing slots; lane `l`
-// is "required" at a block when that block's required_headcount > l. A seat is a gap wherever
-// a required lane is not covered by a drafted run. Contiguous gaps in the same lane coalesce
-// into one placeholder — but a gap also BREAKS when the required headcount changes (noon on a
-// Harnwell weekday), so each seat spans a single width and the morning ghost is full width
-// while the afternoon ghosts are half width.
-function computeSeatGaps(
-  dayBlocks: BuilderBlock[],
-  laned: LanedRun[],
-  laneCount: number,
-): SeatGap[] {
-  const covered: boolean[][] = Array.from({ length: laneCount }, () =>
-    new Array(dayBlocks.length).fill(false),
-  );
-  for (const run of laned) {
-    for (let k = 0; k < run.len; k += 1) covered[run.lane]![run.startLocal + k] = true;
-  }
-  const reqOf = (idx: number) => dayBlocks[idx]?.requiredHeadcount ?? 1;
-
-  const gaps: SeatGap[] = [];
-  for (let lane = 0; lane < laneCount; lane += 1) {
-    let i = 0;
-    while (i < dayBlocks.length) {
-      const req = reqOf(i);
-      if (req <= lane || covered[lane]![i]) {
-        i += 1;
-        continue;
-      }
-      let j = i;
-      while (
-        j + 1 < dayBlocks.length &&
-        reqOf(j + 1) === req &&
-        reqOf(j + 1) > lane &&
-        !covered[lane]![j + 1]
-      ) {
-        j += 1;
-      }
-      gaps.push({ lane, startLocal: i, len: j - i + 1, req });
-      i = j + 1;
-    }
-  }
-  return gaps;
-}
-
-// "08:00–12:00" for a [startLocal, startLocal+len) span — the END is the last block's
-// start + 30 min, so the span reads as one continuous block and the 11:30-vs-12:00
-// "is that the end?" ambiguity disappears. Shared by both assigned runs and empty seats,
-// so an open slot's start/end time is always visible, not just an assigned one's.
-function rangeLabel(dayBlocks: BuilderBlock[], startLocal: number, len: number): string {
-  const first = dayBlocks[startLocal]!;
-  const last = dayBlocks[startLocal + len - 1]!;
-  const end = nyTime(new Date(new Date(last.startAtIso).getTime() + 30 * 60000));
-  return `${first.timeLabel}-${end}`;
-}
-
-function runRangeLabel(dayBlocks: BuilderBlock[], run: BlockRun): string {
-  return rangeLabel(dayBlocks, run.startLocal, run.len);
-}
-
-// Pinned time axis. One rail is rendered on the LEFT and one on the RIGHT of the grid, both
-// sticky to their edge, so the SM can always read a block's time no matter how far they've
-// scrolled horizontally (§ design: mirrors the live calendar's frozen gutter). Rows align 1:1
-// with each day column's 30-min cells, so the per-cell gray time labels are no longer needed.
-function TimeRail({ cells, side }: { cells: BuilderBlock[]; side: 'left' | 'right' }) {
-  return (
-    <div className={`bld-rail bld-rail-${side}`} aria-hidden="true">
-      <div className="bld-rail-head" />
-      {cells.map((b, i) => {
-        // Always label the very first row with the day's real open time (e.g.
-        // 05:30 for summer Harnwell), even off the hour — then only label
-        // on-the-hour rows after that (06:00, 07:00…), not every 30-min step
-        // relative to an odd origin, which is unreadable.
-        const showLabel = i === 0 || b.timeKey.endsWith('00');
-        const isLast = i === cells.length - 1;
-        return (
-          <div className="bld-tick" key={b.blockId} style={{ height: CELL_H }}>
-            {showLabel && (
-              <span className={`bld-tick-label t-mono ${i === 0 ? 'is-first' : ''}`.trim()}>
-                {i === 0 ? railTimeLabel(b.startAtIso) : railHourLabel(b.startAtIso)}
-              </span>
-            )}
-            {/* The closing boundary (e.g. midnight) isn't the START of any cell, so
-                it never gets a label above — without this the rail's end time is
-                never shown at all. */}
-            {isLast && (
-              <span className="bld-tick-label t-mono is-last">
-                {railTimeLabel(
-                  new Date(new Date(b.startAtIso).getTime() + 30 * 60000).toISOString(),
-                )}
-              </span>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function Grid({
-  blocks,
-  drafts,
-  preview = false,
-  workerName,
-  anchorIdx,
-  hoverIdx,
-  dragColFrac,
-  dragging,
-  selectedBlockIds,
-  onCellDown,
-  onCellEnter,
-  onRemoveSpan,
-}: {
-  blocks: BuilderBlock[];
-  drafts: Record<string, string[]>;
-  // Read-only AI preview mode: renders `drafts` as ghost proposal cells filling
-  // in, with drag/select and the per-run remove control suppressed (CSS).
-  preview?: boolean;
-  workerName: Map<string, string>;
-  anchorIdx: number | null;
-  hoverIdx: number | null;
-  // Fraction (0..1) across a day column's own width, tracking the pointer's
-  // horizontal position during a drag — this is what lets the highlighted seat
-  // track "the side of the row the mouse is currently over" (see the drag
-  // handlers on .bld-cell below).
-  dragColFrac: number | null;
-  dragging: boolean;
-  selectedBlockIds: string[];
-  onCellDown: (idx: number, colFrac: number) => void;
-  onCellEnter: (idx: number, colFrac: number) => void;
-  onRemoveSpan: (userId: string, blockIds: string[]) => void;
-}) {
-  const lo = anchorIdx !== null && hoverIdx !== null ? Math.min(anchorIdx, hoverIdx) : -1;
-  const hi = anchorIdx !== null && hoverIdx !== null ? Math.max(anchorIdx, hoverIdx) : -1;
-  const selected = new Set(selectedBlockIds);
-  const days = [...new Set(blocks.map((b) => b.dayKey))];
-  // The time rails read their rows from the first day's blocks; every day in a period shares
-  // the same 30-min row set (the grid already stacks days on identical rows), so the left and
-  // right rails line up with all columns.
-  const railCells = blocks.filter((b) => b.dayKey === days[0]);
-
-  if (blocks.length === 0) {
-    return (
-      <div data-testid="schedule-builder-grid" className="bld-grid">
-        <div className="bld-grid-empty">
-          <div className="empty empty-neutral">
-            <div className="empty-icon">
-              <Icon name="grid" size={28} />
-            </div>
-            <div className="t-h2">Nothing to build yet</div>
-            <div className="t-helper" style={{ maxWidth: 320, textAlign: 'center' }}>
-              This week’s period has no generated blocks.
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      data-testid="schedule-builder-grid"
-      className={`bld-grid ${preview ? 'is-ai-preview' : ''}`.trim()}
-    >
-      <TimeRail cells={railCells} side="left" />
-      {days.map((day) => {
-        // This day's blocks, paired with their index in the flat `blocks` array (the drag
-        // model keys on the flat index). The local index drives vertical positioning.
-        const dayCells: Array<{ b: BuilderBlock; flatIdx: number }> = [];
-        blocks.forEach((b, flatIdx) => {
-          if (b.dayKey === day) dayCells.push({ b, flatIdx });
-        });
-        const dayBlocks = dayCells.map((c) => c.b);
-        const assigned = assignLanes(computeRuns(dayBlocks, drafts));
-        // Seat lanes = the day's peak required headcount (Harnwell 1 before noon, 2 after;
-        // Quad 3), so every required slot has its own lane even when it's still empty. The
-        // capacity guard keeps drafted lanes <= required, so this never truncates a real run.
-        const maxReq = dayBlocks.reduce((m, b) => Math.max(m, b.requiredHeadcount), 1);
-        const laneCount = Math.max(assigned.laneCount, maxReq);
-        const laned = assigned.laned;
-        const seatGaps = computeSeatGaps(dayBlocks, laned, laneCount);
-
-        // Exactly ONE lane is ever highlighted per row: the single lane directly
-        // under the pointer, never the whole multi-seat row and never a second
-        // lane. Which lane comes from the pointer's live horizontal position
-        // (dragColFrac, a 0..1 fraction of the day column's width) mapped into
-        // THIS row's own seat count — so the highlight tracks the mouse across
-        // lanes and, when a drag crosses from a single-seat row into a two-seat
-        // row, lands on the side the mouse is actually over. A single-seat row
-        // has just one full-width lane, so its highlight naturally spans the row.
-        const selLane: Array<number | null> = dayCells.map(({ b, flatIdx }) => {
-          const on = (dragging && flatIdx >= lo && flatIdx <= hi) || selected.has(b.blockId);
-          if (!on) return null;
-          const req = b.requiredHeadcount;
-          const frac = dragColFrac ?? 0;
-          return Math.min(req - 1, Math.max(0, Math.floor(frac * req)));
-        });
-        // Coalesce contiguous blocks that share a lane (and seat count) into one band.
-        const selSegs: Array<{ seat: number; startLocal: number; len: number; req: number }> = [];
-        {
-          let i = 0;
-          while (i < dayBlocks.length) {
-            const lane = selLane[i];
-            if (lane === null) {
-              i += 1;
-              continue;
-            }
-            const req = dayBlocks[i]!.requiredHeadcount;
-            let j = i;
-            while (
-              j + 1 < dayBlocks.length &&
-              selLane[j + 1] === lane &&
-              dayBlocks[j + 1]!.requiredHeadcount === req
-            ) {
-              j += 1;
-            }
-            selSegs.push({ seat: lane, startLocal: i, len: j - i + 1, req });
-            i = j + 1;
-          }
-        }
-
-        return (
-          <div className="bld-day" key={day}>
-            <div className="bld-dayhead">
-              <span className="cal-dow">{dowLabel(day)}</span>
-            </div>
-            <div className="bld-col">
-              {/* Drag layer: one target per 30-min block (preserves the e2e drag contract).
-                  The assignee name stays in the cell (visually hidden) so each block's
-                  testid still reports who's on it; the visible block is the overlay. */}
-              {dayCells.map(({ b, flatIdx }) => {
-                const isHour = b.timeKey.endsWith('00');
-                const assignees = drafts[b.blockId] ?? [];
-                // The cell is a bare drag target now — the time reference lives in the pinned
-                // left/right rails, not repeated in every cell (that was too crowded). The
-                // assignee name stays here (visually hidden) so each block's testid keeps
-                // reporting who's on it for the e2e drag contract.
-                // Fraction (0..1) across THIS cell's own width — the shared x-position
-                // signal that lets every row (regardless of its own seat count) pick
-                // "the lane under the mouse" independently. Read on down/enter/move so
-                // the highlighted lane keeps tracking the pointer even while it drifts
-                // horizontally without crossing into a new row.
-                const fracX = (e: MouseEvent<HTMLDivElement>): number => {
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  if (rect.width === 0) return 0;
-                  return Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-                };
-                return (
-                  <div
-                    key={b.blockId}
-                    data-testid={`block-${b.cellKey}`}
-                    onMouseDown={(e) => onCellDown(flatIdx, fracX(e))}
-                    onMouseEnter={(e) => onCellEnter(flatIdx, fracX(e))}
-                    onMouseMove={(e) => dragging && onCellEnter(flatIdx, fracX(e))}
-                    className={`bld-cell ${isHour ? 'is-hour' : ''}`.trim()}
-                    style={{ height: CELL_H }}
-                  >
-                    {assignees.length > 0 && (
-                      <span className="bld-cell-assignee" aria-hidden="true">
-                        {assignees.map((u) => workerName.get(u) ?? u).join(', ')}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-
-              {/* Empty seats — one dashed slot per required seat the house's pattern defines
-                  for that span (1 / 2 / 3 = the season's max headcount for the block). A
-                  single-staff span is one full-width slot; a double-staff span splits into two,
-                  a triple into three. Purely visual (pointer-events none) so a drag passes
-                  straight through to the cells beneath; the SM fills a slot by dragging. */}
-              {seatGaps.map((seat) => (
-                <div
-                  key={`seat-${seat.lane}-${seat.startLocal}`}
-                  className="bld-seat"
-                  style={{
-                    top: seat.startLocal * CELL_H,
-                    height: seat.len * CELL_H,
-                    left: `${(seat.lane / seat.req) * 100}%`,
-                    width: `${100 / seat.req}%`,
-                  }}
-                  aria-hidden="true"
-                />
-              ))}
-
-              {/* Selection highlight — one band per contiguous same-lane run, ONE lane wide.
-                  Exactly one lane is highlighted per row: the single lane under the pointer.
-                  Never both sides of a multi-seat row at once. */}
-              {selSegs.map((s) => (
-                <div
-                  key={`sel-${s.seat}-${s.startLocal}`}
-                  className="bld-selection"
-                  style={{
-                    top: s.startLocal * CELL_H,
-                    height: s.len * CELL_H,
-                    left: `${(s.seat / s.req) * 100}%`,
-                    width: `${100 / s.req}%`,
-                  }}
-                  aria-hidden="true"
-                />
-              ))}
-
-              {/* Assignment layer — each contiguous run is ONE continuous block, but rendered
-                  as one rectangle PER required-headcount segment so it's full width where the
-                  desk is single-staff and narrows only where it doubles up (no phantom empty
-                  lane beside a single-staff stretch). The name/time/× live on the tallest
-                  segment; the others are plain tinted rectangles so the run still reads as one
-                  L-shaped block. */}
-              {laned.map((run) => {
-                const name = workerName.get(run.userId) ?? run.userId;
-                const segs = runSegments(dayBlocks, run);
-                // The tallest segment carries the label + remove control (most room to show it).
-                let labelSeg = 0;
-                for (let s = 1; s < segs.length; s += 1) {
-                  if (segs[s]!.len > segs[labelSeg]!.len) labelSeg = s;
-                }
-                return segs.map((seg, si) => {
-                  // A run covering a block never sits in a lane >= that block's seat count, so
-                  // this clamp is just defensive; for a single-staff segment it forces full width.
-                  const laneOffset = Math.min(run.lane, seg.req - 1);
-                  return (
-                    <div
-                      key={`${run.userId}-${seg.startLocal}`}
-                      className="bld-run"
-                      style={{
-                        top: seg.startLocal * CELL_H,
-                        height: seg.len * CELL_H,
-                        left: `${(laneOffset / seg.req) * 100}%`,
-                        width: `${100 / seg.req}%`,
-                      }}
-                    >
-                      {si === labelSeg && (
-                        <>
-                          <span className="bld-run-name">{name}</span>
-                          <span className="bld-run-time t-mono">
-                            {runRangeLabel(dayBlocks, run)}
-                          </span>
-                          <button
-                            type="button"
-                            className="bld-run-x"
-                            aria-label={`Remove ${name}`}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            onClick={() => onRemoveSpan(run.userId, run.blockIds)}
-                          >
-                            ×
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  );
-                });
-              })}
-            </div>
-          </div>
-        );
-      })}
-      <TimeRail cells={railCells} side="right" />
-    </div>
-  );
 }
 
 function HoursRemaining({ hours }: { hours: number }) {

@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { acceptAiSchedule } from '../../lib/actions/aiSchedule';
 import type { AiProposalDto } from '../../lib/ai/proposal';
-import type { AiStreamEvent } from '../../lib/ai/streamTypes';
+import { readNdjsonEvents } from '../../lib/ai/readNdjson';
 import { Button, Icon, Modal, Notification, Tag } from '../ui';
 
 // AI schedule generator panel. Generation streams from a route handler so the
@@ -151,71 +151,60 @@ export function AiSchedulePanel({
       if (!resp.ok || resp.body === null) {
         throw new Error('The generator could not be reached. Try again.');
       }
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = '';
       let streamError: string | null = null;
 
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        let nl = buf.indexOf('\n');
-        while (nl >= 0) {
-          const line = buf.slice(0, nl).trim();
-          buf = buf.slice(nl + 1);
-          nl = buf.indexOf('\n');
-          if (line.length === 0) continue;
-          const ev = JSON.parse(line) as AiStreamEvent;
-          switch (ev.t) {
-            case 'phase':
-              if (ev.phase === 'planning') setPhaseText('Planning the week');
-              else if (ev.phase === 'planned') setPhaseText('Strategy set. Building the schedule.');
-              else {
-                setPhaseText('Finishing up');
-                doneCountRef.current = dayCountRef.current;
-                setDoneCount(dayCountRef.current);
-                setActiveIndex(null);
-              }
-              break;
-            case 'day-start':
-              dayCountRef.current = ev.dayCount;
-              setDayCount(ev.dayCount);
-              setDayLabels((prev) => {
-                const next = [...prev];
-                next[ev.dayIndex] = dayName(ev.weekday);
-                return next;
-              });
-              doneCountRef.current = ev.dayIndex;
-              setDoneCount(ev.dayIndex);
-              setActiveIndex(ev.dayIndex);
-              setActiveKind('active');
-              setPhaseText(`Scheduling ${dayName(ev.weekday)}`);
-              break;
-            case 'day-repair':
-              setActiveKind('repair');
-              setPhaseText(`Adjusting ${dayName(ev.weekday)} to fit the rules`);
-              break;
-            case 'day-fill':
-              for (const a of ev.assignments) {
-                (preview[a.blockId] ??= []).push(a.workerId);
-              }
-              onPreview.current({ ...preview });
-              break;
-            case 'result': {
-              setProposal(ev.data);
-              const finalPreview: Record<string, string[]> = {};
-              for (const a of ev.data.assignments) {
-                (finalPreview[a.blockId] ??= []).push(a.workerId);
-              }
-              onPreview.current(finalPreview);
-              setPhaseText('');
-              break;
+      for await (const ev of readNdjsonEvents(resp.body)) {
+        switch (ev.t) {
+          case 'ping':
+            // Keep-alive only; its arrival is the point, not its content.
+            break;
+          case 'phase':
+            if (ev.phase === 'planning') setPhaseText('Planning the week');
+            else if (ev.phase === 'planned') setPhaseText('Strategy set. Building the schedule.');
+            else {
+              setPhaseText('Finishing up');
+              doneCountRef.current = dayCountRef.current;
+              setDoneCount(dayCountRef.current);
+              setActiveIndex(null);
             }
-            case 'error':
-              streamError = ev.message;
-              break;
+            break;
+          case 'day-start':
+            dayCountRef.current = ev.dayCount;
+            setDayCount(ev.dayCount);
+            setDayLabels((prev) => {
+              const next = [...prev];
+              next[ev.dayIndex] = dayName(ev.weekday);
+              return next;
+            });
+            doneCountRef.current = ev.dayIndex;
+            setDoneCount(ev.dayIndex);
+            setActiveIndex(ev.dayIndex);
+            setActiveKind('active');
+            setPhaseText(`Scheduling ${dayName(ev.weekday)}`);
+            break;
+          case 'day-repair':
+            setActiveKind('repair');
+            setPhaseText(`Adjusting ${dayName(ev.weekday)} to fit the rules`);
+            break;
+          case 'day-fill':
+            for (const a of ev.assignments) {
+              (preview[a.blockId] ??= []).push(a.workerId);
+            }
+            onPreview.current({ ...preview });
+            break;
+          case 'result': {
+            setProposal(ev.data);
+            const finalPreview: Record<string, string[]> = {};
+            for (const a of ev.data.assignments) {
+              (finalPreview[a.blockId] ??= []).push(a.workerId);
+            }
+            onPreview.current(finalPreview);
+            setPhaseText('');
+            break;
           }
+          case 'error':
+            streamError = ev.message;
+            break;
         }
       }
       if (streamError !== null) {
@@ -244,8 +233,24 @@ export function AiSchedulePanel({
           doneCount: doneCountRef.current,
           dayCount: dayCountRef.current,
         });
+      } else if (Object.keys(preview).length > 0) {
+        // The stream broke on its own (dev-server recompile, sleep, a dropped
+        // connection). A run is minutes of real model spend, so the days that
+        // already settled are NOT thrown away: keep them exactly as the Stop
+        // button would, and say so, instead of wiping the grid and offering
+        // only "try again" from zero.
+        setStopped({
+          assignments: Object.entries(preview).flatMap(([blockId, workerIds]) =>
+            workerIds.map((workerId) => ({ blockId, workerId })),
+          ),
+          doneCount: doneCountRef.current,
+          dayCount: dayCountRef.current,
+        });
+        setError(
+          `The connection dropped after ${String(doneCountRef.current)} of ${String(dayCountRef.current)} days. Those days are kept below; you can accept them or generate again.`,
+        );
       } else {
-        setError('Schedule generation failed. Try again.');
+        setError('The connection to the generator dropped before any day was built. Try again.');
         clearPreview();
       }
     } finally {
@@ -333,11 +338,7 @@ export function AiSchedulePanel({
   };
 
   return (
-    <section
-      data-testid="ai-schedule-panel"
-      className="col gap-4"
-      style={{ border: '1px solid var(--border, #d0d0d0)', padding: 16, marginBottom: 24 }}
-    >
+    <section data-testid="ai-schedule-panel" className="ai-panel col gap-4">
       <div className="row gap-2" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
         <div className="col gap-1">
           <div className="row gap-2">
@@ -374,12 +375,7 @@ export function AiSchedulePanel({
           )}
           {running && (
             <>
-              <Button
-                kind="secondary"
-                icon="power"
-                data-testid="ai-stop-button"
-                onClick={onStop}
-              >
+              <Button kind="secondary" icon="power" data-testid="ai-stop-button" onClick={onStop}>
                 Stop
               </Button>
               <Button
@@ -465,9 +461,9 @@ export function AiSchedulePanel({
         <div data-testid="ai-stopped" className="col gap-2">
           <Notification kind="warning" title="Generation stopped">
             You stopped the generator after {stopped.doneCount} of {stopped.dayCount} days.{' '}
-            {stopped.assignments.length} shift{stopped.assignments.length === 1 ? '' : 's'} from
-            the completed days are shown in the grid above. Accept them as your draft, or discard
-            to clear the grid.
+            {stopped.assignments.length} shift{stopped.assignments.length === 1 ? '' : 's'} from the
+            completed days are shown in the grid above. Accept them as your draft, or discard to
+            clear the grid.
           </Notification>
           <div className="row gap-2">
             <Button
@@ -477,7 +473,11 @@ export function AiSchedulePanel({
             >
               Accept as draft
             </Button>
-            <Button kind="secondary" data-testid="ai-stopped-discard-button" onClick={onDiscardStopped}>
+            <Button
+              kind="secondary"
+              data-testid="ai-stopped-discard-button"
+              onClick={onDiscardStopped}
+            >
               Discard
             </Button>
           </div>

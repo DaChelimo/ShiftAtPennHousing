@@ -7,6 +7,11 @@ import type { AiAssignment } from '@shift/core';
 import type { AiProposalDto } from './proposal';
 
 export type AiStreamEvent =
+  // Keep-alive. A single model call can run 50s+ with nothing else to report,
+  // and a connection that sends no bytes for that long is liable to be dropped
+  // by an idle timeout somewhere between the route and the browser. The client
+  // ignores these beyond noting that the run is still alive.
+  | { t: 'ping' }
   // Coarse phase markers.
   | { t: 'phase'; phase: 'planning' | 'planned' | 'finalizing' }
   // A day's build began (dayIndex/dayCount drive the progress bar).

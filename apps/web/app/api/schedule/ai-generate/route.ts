@@ -19,6 +19,9 @@ import { getAiScheduleContext } from '@/lib/data/aiSchedule';
 // The loop is a multi-minute LLM chain; give deployed runtimes headroom.
 export const maxDuration = 300;
 
+// See the heartbeat in the stream body below.
+const PING_INTERVAL_MS = 10_000;
+
 export async function POST(request: Request): Promise<Response> {
   const encoder = new TextEncoder();
   const body: unknown = await request.json().catch(() => ({}));
@@ -48,7 +51,21 @@ export async function POST(request: Request): Promise<Response> {
           /* client disconnected */
         }
       };
+      // Keep-alive. Between a day-start and that day's day-done the route has
+      // nothing to say for as long as the model takes, and a single call has
+      // been measured at 50s+. A connection that carries no bytes for that long
+      // is liable to be dropped by an idle timeout between here and the browser,
+      // which the client can only see as "the stream broke" (it cannot tell that
+      // from a crash). A ping every 10s keeps bytes flowing for the whole run.
+      const heartbeat = setInterval(() => {
+        send({ t: 'ping' });
+      }, PING_INTERVAL_MS);
+      const stopHeartbeat = (): void => {
+        clearInterval(heartbeat);
+      };
+
       const fail = (message: string): void => {
+        stopHeartbeat();
         send({ t: 'error', message });
         try {
           controller.close();
@@ -101,6 +118,7 @@ export async function POST(request: Request): Promise<Response> {
           await wait(900 * 5);
           // No 'result' event: the client just returns to idle, since the point
           // is to watch the day stepper, not to exercise the accept-draft flow.
+          stopHeartbeat();
           controller.close();
           return;
         }
@@ -149,7 +167,10 @@ export async function POST(request: Request): Promise<Response> {
         // The client severed the connection to trigger the stop (there is no
         // other way to reach it mid-stream), so it is gone regardless of what
         // partial result the loop produced; skip building/sending it.
-        if (abortController.signal.aborted) return;
+        if (abortController.signal.aborted) {
+          stopHeartbeat();
+          return;
+        }
 
         const dto = buildProposalDto({
           houseId,
@@ -168,14 +189,20 @@ export async function POST(request: Request): Promise<Response> {
           return fail('The generator could not produce a schedule. Try again.');
         }
 
+        stopHeartbeat();
         send({ t: 'result', data: dto });
         controller.close();
       } catch (e) {
+        // A run costs minutes and real money, so a failure must leave a trace
+        // the next person can read. The client only ever sees the message.
+        console.error('[ai-generate] run failed', e);
         fail(e instanceof Error ? e.message : 'Schedule generation failed. Try again.');
+      } finally {
+        stopHeartbeat();
       }
     },
     // Fires when the client disconnects (its fetch was aborted, or the tab
-    // closed) — the one reliable, runtime-agnostic signal for "stop now".
+    // closed): the one reliable, runtime-agnostic signal for "stop now".
     cancel(reason) {
       abortController.abort(reason);
     },

@@ -152,6 +152,69 @@ test.describe('Schedule builder — Publish → worker visibility (§4.3 Phase 3
   });
 });
 
+test.describe('Schedule builder — full-screen side drawer (§4.3)', () => {
+  // Full screen means the whole week: the side panel collapses into a drawer
+  // behind a tab button on the right edge, and Esc walks back out one layer at
+  // a time. See components/builder/BuilderSideDock.tsx.
+  test.beforeEach(async ({ page }) => {
+    await login(page, SEED.smQuad);
+    await gotoScheduleBuilder(page);
+  });
+
+  const dock = (page: import('@playwright/test').Page) => page.locator('.builder-side-dock');
+
+  test('full screen opens with the side panel collapsed, and the tab toggles it', async ({
+    page,
+  }) => {
+    // Outside full screen the panel is a plain column, always on screen.
+    await expect(page.locator('.builder-side')).toBeVisible();
+    await expect(page.getByTestId('builder-side-toggle')).toHaveCount(0);
+
+    await page.getByTestId('builder-expand-button').click();
+    await expect(dock(page)).not.toHaveClass(/is-open/);
+    await expect(page.locator('.builder-side')).toBeHidden();
+
+    const tab = page.getByTestId('builder-side-toggle');
+    await tab.click();
+    await expect(dock(page)).toHaveClass(/is-open/);
+    await expect(page.locator('.builder-side')).toBeVisible();
+
+    await tab.click();
+    await expect(dock(page)).not.toHaveClass(/is-open/);
+    await expect(page.locator('.builder-side')).toBeHidden();
+  });
+
+  test('Esc leaves an untouched full screen straight away', async ({ page }) => {
+    await page.getByTestId('builder-expand-button').click();
+    await expect(page.getByTestId('builder-collapse-button')).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('builder-collapse-button')).toHaveCount(0);
+  });
+
+  test('once the drawer has been used, Esc brings it back before leaving full screen', async ({
+    page,
+  }) => {
+    await page.getByTestId('builder-expand-button').click();
+    const tab = page.getByTestId('builder-side-toggle');
+    await tab.click();
+    await tab.click();
+    await expect(dock(page)).not.toHaveClass(/is-open/);
+
+    // First press restores the drawer rather than dropping out of full screen.
+    await page.keyboard.press('Escape');
+    await expect(dock(page)).toHaveClass(/is-open/);
+    await expect(page.getByTestId('builder-collapse-button')).toBeVisible();
+
+    // Second press leaves, and the next full screen starts collapsed again.
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('builder-collapse-button')).toHaveCount(0);
+
+    await page.getByTestId('builder-expand-button').click();
+    await expect(dock(page)).not.toHaveClass(/is-open/);
+  });
+});
+
 test.describe('Schedule builder — desktop only (§4.3)', () => {
   // §4.3: "The SM uses a desktop-only drag-picker interface."
   test.use({ viewport: { width: 390, height: 844 } });

@@ -1,3 +1,5 @@
+import { cache } from 'react';
+
 import { createClient } from './supabase/server';
 
 export type AppRole = 'sw' | 'sm' | 'hm' | 'rsm' | 'bm' | 'admin';
@@ -13,7 +15,27 @@ export type SessionUser = {
 };
 
 // Resolve the signed-in user plus their profile + roles, or null if no session.
-export async function getSessionUser(): Promise<SessionUser | null> {
+//
+// Wrapped in React's cache() (cost audit F-07). This is called 84 times across the
+// codebase, and BOTH the layout and the page call it on every render — plus every
+// (app)/admin/* page, every (worker)/home/* page, and multi-call server actions
+// (kbIntake.ts calls it 7 times, builder.ts 5, worker/swaps.ts and worker/shifts.ts 4
+// each). Each unwrapped call was 1 GoTrue HTTP round trip + 2 DB queries, so a single
+// navigation paid 3 GoTrue calls and 4 DB queries before a byte of page data.
+//
+// Next.js does NOT dedupe this on its own: automatic request deduplication in the App
+// Router applies to fetch() calls the framework instruments, and a supabase-js call
+// through @supabase/ssr is not one of them.
+//
+// cache() is PER-REQUEST, which is the only correct granularity here and the reason this
+// is safe. A cross-request cache would be a genuine authorization bug, because
+// writeHouseId() and canBuildForHouse() derive write scope from this object. Do not
+// replace it with a module-level or global cache.
+//
+// The proxy's own supabase.auth.getUser() (proxy.ts) deliberately stays: it is the
+// redirect gate, it runs before the render pass, and its result is not shareable across
+// the proxy/render boundary.
+export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   const supabase = await createClient();
   const {
     data: { user },
@@ -42,7 +64,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       scopeHouseId: r.scope_house_id,
     })),
   };
-}
+});
 
 // §2.7: the top-level administrator (house-agnostic superuser). Operated by the
 // project owner in v1; authors operating configuration (seasons) and holds every

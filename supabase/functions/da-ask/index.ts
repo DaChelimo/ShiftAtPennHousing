@@ -197,11 +197,19 @@ Deno.serve(
       typeof parsed.body.conversationId === 'string' ? parsed.body.conversationId : null;
 
     // Requester house context for the conversation row (scope is enforced in SQL).
+    //
+    // Cost audit F-17 flagged "the users table being read twice (:201, :342)" as a minor
+    // redundancy. On inspection the two reads are NOT the same query: this one resolves
+    // the REQUESTER's home house, the other resolves the name of whoever the duty
+    // routing landed on, which is usually a different person. They cannot be collapsed.
+    // `name` is added here only so the routing branch can skip its own lookup in the one
+    // case where the two do coincide (the router resolves to the asker).
     const { data: profile } = await supabase
       .from('users')
-      .select('home_house_id')
+      .select('home_house_id, name')
       .eq('user_id', userId)
       .single();
+    const requesterName = (profile as { name?: string } | null)?.name ?? null;
     const houseId = (profile as { home_house_id?: string } | null)?.home_house_id ?? null;
     if (houseId === null) return jsonResponse({ error: 'no home house for user' }, 400);
 
@@ -337,7 +345,10 @@ Deno.serve(
         const snapshot = await snapshotDutyState(supabase, asOfTs, houseId);
         const route = resolveRoute({ issueType, dayType, timeHHMM, season }, rules, snapshot);
         let personName: string | null = null;
-        if (route.userId !== null) {
+        if (route.userId === userId) {
+          // The router landed on the asker; their name came back with the house lookup.
+          personName = requesterName;
+        } else if (route.userId !== null) {
           const { data: person } = await supabase
             .from('users')
             .select('name')

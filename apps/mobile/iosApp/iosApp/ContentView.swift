@@ -48,7 +48,39 @@ final class ShiftsObservable: ObservableObject {
         WidgetSync.update(myShifts: s.myShifts.inDisplayOrder(), openShifts: open)
     }
 
+
+    // ---- Foreground lifecycle gate (cost audit F-11) ----
+    // Android has one via collectAsStateWithLifecycle, which stops collection below
+    // STARTED. iOS had NONE: activateLive started a raw Task, the app's scenePhase
+    // handler only re-synced the sim clock, and liveTask?.cancel() appeared only in
+    // deinit. The OS does eventually suspend a backgrounded app's network activity, but
+    // that is the OS's behaviour, not the app's, and it is neither immediate nor
+    // something to rely on for a metered Realtime connection.
+    //
+    // Suspending drops this collector, which (with the repository's shared, refcounted
+    // flow) releases the Realtime channel once the last collector goes. Resuming
+    // re-subscribes and re-fetches — deliberately accepted as slightly slower on resume
+    // and cheaper the rest of the time.
+    private var liveRepo: WorkerShiftsRepository?
+    private var liveUserId: String?
+
+    /// Release the live subscription when the app leaves the foreground.
+    func suspendLive() {
+        liveTask?.cancel()
+        liveTask = nil
+        live = false
+    }
+
+    /// Re-establish the live subscription on return to the foreground. No-op if the
+    /// worker never went live in the first place (demo build).
+    func resumeLive() {
+        guard let repo = liveRepo, let userId = liveUserId else { return }
+        activateLive(repo: repo, userId: userId)
+    }
+
     func activateLive(repo: WorkerShiftsRepository, userId: String) {
+        liveRepo = repo
+        liveUserId = userId
         guard !live else { return }
         live = true
         liveTask = Task { [weak self] in
@@ -113,7 +145,28 @@ final class CalendarObservable: ObservableObject {
     /// Live host: fetch the worker's closed-house day indexes (best-effort; an empty
     /// set keeps the demo VM) and rebuild the calendar VM with them. `DemoFactory`
     /// supplies `now` Kotlin-side; the Set flows Kotlin→Swift→Kotlin opaquely.
+    // Foreground lifecycle gate — see ShiftsObservable.suspendLive (cost audit F-11).
+    // This observable is the reason F-11 mattered most: it collected the SAME
+    // observeWorkerWeek flow as ShiftsObservable, so iOS held two Realtime channels and
+    // ran two refetch loops per worker. The repository now shares one flow between them;
+    // this gate stops both while backgrounded.
+    private var liveRepo: WorkerShiftsRepository?
+    private var liveUserId: String?
+
+    func suspendLive() {
+        liveTask?.cancel()
+        liveTask = nil
+        live = false
+    }
+
+    func resumeLive() {
+        guard let repo = liveRepo, let userId = liveUserId else { return }
+        activateLive(repo: repo, userId: userId)
+    }
+
     func activateLive(repo: WorkerShiftsRepository, userId: String) {
+        liveRepo = repo
+        liveUserId = userId
         guard !live else { return }
         live = true
         liveTask = Task { [weak self] in
@@ -454,6 +507,11 @@ struct ShiftsRootView: View {
     /// The authenticated worker's id on the backend-configured path (nil in demo).
     /// When set, the Preferences tab loads the worker's real period and submits live.
     var liveUserId: String? = nil
+
+    // Drives the foreground gate on the two live worker-week collectors (cost audit
+    // F-11). The app-level scenePhase observer in iOSApp.swift handles only the sim
+    // clock; the teardown belongs here, where the observables live.
+    @Environment(\.scenePhase) private var scenePhase
 
     @StateObject private var model = ShiftsObservable(vm: DemoFactory.shared.shiftsViewModel())
     @StateObject private var calendarModel = CalendarObservable(vm: DemoFactory.shared.calendarViewModelWithSwaps())
@@ -1197,6 +1255,23 @@ struct ShiftsRootView: View {
             guard floatCarouselModel.state.allHandled else { return }
             claimSuccessMessage =
                 floatCarouselModel.state.total > 1 ? "All float requests handled" : "Float request handled"
+        }
+        .onChange(of: scenePhase) { phase in
+            // Cost audit F-11: release the Realtime subscription while backgrounded, and
+            // re-establish it on return. Brings iOS to parity with Android, which already
+            // gates collection through collectAsStateWithLifecycle. Only the two live
+            // worker-week collectors are gated — they are the ones holding Realtime
+            // channels; the rest are one-shot fetches with nothing to suspend.
+            switch phase {
+            case .background:
+                model.suspendLive()
+                calendarModel.suspendLive()
+            case .active:
+                model.resumeLive()
+                calendarModel.resumeLive()
+            default:
+                break
+            }
         }
         .task {
             // Backend-configured path: load the worker's real active period + wire the

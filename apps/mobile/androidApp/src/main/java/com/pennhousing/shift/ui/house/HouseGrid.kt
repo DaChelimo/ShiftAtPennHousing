@@ -50,6 +50,7 @@ import com.pennhousing.shift.shared.house.wearsWorkerColor
 import com.pennhousing.shift.shared.house.workerColor
 import com.pennhousing.shift.shared.house.workerContrastText
 import com.pennhousing.shift.ui.theme.ShiftTheme
+import com.pennhousing.shift.ui.theme.mixedWithWhite
 
 /** A worker's full-strength colour plus the legible foreground that sits on it. */
 internal data class WorkerTint(
@@ -85,11 +86,36 @@ internal val HOUSE_COL_PAD = 6.dp
 
 internal val HOUSE_COL_GAP = 6.dp
 
-/**
- * How far OTHER workers' seats recede on the house grid so mine is findable at a glance.
- * Mirrors iOS's `houseOtherOpacity`; keep the two in step.
+/*
+ * How OTHER workers' seats recede on the house grid so mine is findable at a glance.
+ *
+ * They recede by being MIXED TOWARD WHITE, not by having their alpha cut. Lowering alpha
+ * only looks like lightening on a light background; over the app's dark surfaces the same
+ * move reads as a dim glow, and it quietly invalidates the foreground colour that was
+ * chosen for contrast against the full-strength fill (light-on-vivid text going illegible
+ * once the fill is diluted toward a dark ground). Mixing toward white lands in the same
+ * place in either theme, so receded text can use one fixed dark ink instead of the
+ * per-block `fg`.
+ *
+ * These mirror iOS's `houseOtherWhiteMix` / `houseOtherFinalAlpha` / `houseRecededInk`
+ * in ContentView.swift; keep the two platforms in step (see AGENTS.md, cross-platform
+ * parity) or the same grid recedes differently on each.
  */
-internal const val HOUSE_OTHER_OPACITY = 0.5f
+
+/** How much white is mixed into a receded seat's fill and rail. 0 = untouched, 1 = white. */
+internal const val HOUSE_OTHER_WHITE_MIX = 0.72f
+
+/**
+ * A final, gentle alpha on the already-lightened fill so it settles into the grid instead
+ * of glaring off a dark background. Kept high: the recede is the mix, not this.
+ */
+internal const val HOUSE_OTHER_FINAL_ALPHA = 0.9f
+
+/**
+ * The single ink every receded seat's text uses. Fixed (not per-block) because the
+ * white-mixed fill is always light, in either theme, so one dark ink always reads.
+ */
+internal val HOUSE_RECEDED_INK = Color(0xFF1F2430)
 
 /**
  * The grid: a frozen left [HouseTimeRail] + horizontally-scrolling day columns, with a
@@ -323,11 +349,15 @@ internal fun HouseGridBlockCell(
     // Everyone else's seats recede so mine is findable at a glance: a grid where every seat
     // wears a saturated colour is pretty but useless for the one question a worker actually
     // asks ("where am I?"). Vacant seats are nobody's card and stay full strength (they're
-    // the actionable open-seat affordance for a manager). The dimming applies only to the
-    // background/border fill, never to the text, which must always render at full opacity.
-    val blockAlpha = if (b.mine || b.vacant) 1f else HOUSE_OTHER_OPACITY
-    val recededBg = bg.copy(alpha = bg.alpha * blockAlpha)
-    val recededAccent = accent.copy(alpha = accent.alpha * blockAlpha)
+    // the actionable open-seat affordance for a manager). The recede is a white MIX, not an
+    // alpha cut, so receded text switches to one fixed dark ink (see the constants above).
+    val receded = !(b.mine || b.vacant)
+    val recededBg =
+        if (receded) bg.mixedWithWhite(HOUSE_OTHER_WHITE_MIX).copy(alpha = HOUSE_OTHER_FINAL_ALPHA) else bg
+    val recededAccent = if (receded) accent.mixedWithWhite(HOUSE_OTHER_WHITE_MIX) else accent
+    val displayFg = if (receded) HOUSE_RECEDED_INK else fg
+    val displayTimeFg = if (receded) HOUSE_RECEDED_INK.copy(alpha = 0.65f) else timeFg
+    val displayPendingFg = if (receded) HOUSE_RECEDED_INK.copy(alpha = 0.8f) else c.pending
     Box(
         Modifier
             .offset(x = x, y = top)
@@ -337,10 +367,10 @@ internal fun HouseGridBlockCell(
             .background(recededBg)
             .then(
                 when {
-                    b.vacant -> Modifier.dashedBorder(recededAccent, 8.dp)
-                    emphatic -> Modifier.border(1.5.dp, primary.copy(alpha = primary.alpha * blockAlpha), shape)
+                    b.vacant -> Modifier.dashedBorder(accent, 8.dp)
+                    emphatic -> Modifier.border(1.5.dp, primary, shape)
                     wc != null -> Modifier.border(1.dp, recededAccent, shape)
-                    else -> Modifier.border(1.dp, accent.copy(alpha = 0.45f * blockAlpha), shape)
+                    else -> Modifier.border(1.dp, recededAccent.copy(alpha = 0.45f), shape)
                 },
             ).drawBehind { drawRect(color = recededAccent, size = Size(3.dp.toPx(), size.height)) }
             .clickable(enabled = !b.vacant || vacantTappable) { onTap(b) }
@@ -348,17 +378,17 @@ internal fun HouseGridBlockCell(
             .testTag("house_grid_block"),
     ) {
         Column {
-            Text(b.timeLabel, style = ShiftTheme.type.monoId.copy(fontSize = 10.5.sp), color = timeFg, maxLines = 1)
+            Text(b.timeLabel, style = ShiftTheme.type.monoId.copy(fontSize = 10.5.sp), color = displayTimeFg, maxLines = 1)
             Text(
                 b.workerLabel + if (b.mine && b.floatIn) " ·float" else "",
-                color = fg,
+                color = displayFg,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             if (b.pending) {
-                Text("Pending", color = c.pending, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Text("Pending", color = displayPendingFg, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             }
         }
     }

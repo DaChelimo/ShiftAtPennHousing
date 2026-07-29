@@ -199,6 +199,15 @@ internal fun CalendarTabContent(
             onOpenDetail = onFloatDetail,
             modifier = Modifier.padding(top = 4.dp, bottom = 6.dp),
         )
+        // Pending swaps, both directions, above everything else and NOT week-scoped: a
+        // request that needs an answer has to be visible on the screen the worker opens,
+        // not only on the card for the day it happens to fall on (BSpec §10.1).
+        SwapBannerColumn(
+            banner = state.swapBanner,
+            onIncoming = onSwapClick,
+            onOutgoing = onPendingSwapClick,
+            modifier = Modifier.padding(bottom = 10.dp),
+        )
         // The whole-week overview is the default; the Day segment drills into a single day.
         CalendarViewToggle(
             mode = state.mode,

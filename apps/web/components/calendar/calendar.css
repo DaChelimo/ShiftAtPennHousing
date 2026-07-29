@@ -493,6 +493,24 @@
   background: currentColor;
 }
 
+/* Pending-swap marker on a live-calendar card (BSpec §11.4, 2026-07-28). A corner
+   flag rather than a text label: the card is ~90px wide and already carries time,
+   name and a state tag. The full sentence (who proposed it, who owes an answer, the
+   other side's span) is the card's tooltip and the detail panel. It renders on BOTH
+   shifts in an exchange, so a manager reading coverage can see the pair. */
+.scard-swap {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 0;
+  height: 0;
+  border-top: 9px solid var(--sc-pending-accent, #b45309);
+  border-left: 9px solid transparent;
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+
 /* worker calendar: the signed-in worker's own shifts, at a glance */
 .scard-mine {
   outline: 2px solid var(--brand);

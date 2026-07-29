@@ -23,3 +23,20 @@ export async function selectByBlockIdChunks<R>(
   }
   return out;
 }
+
+// The same guard for assignment_id-scoped reads (the pending-swap marks on the live
+// calendar). A week's worth of seats is the same order of magnitude as its blocks, so
+// it hits the same 414 and the same row cap; the failure mode is identical and just as
+// silent, which is why this reuses the chunk size rather than inventing one.
+export async function selectByAssignmentIdChunks<R>(
+  assignmentIds: string[],
+  run: (chunk: string[]) => PromiseLike<{ data: R[] | null; error: { message: string } | null }>,
+): Promise<R[]> {
+  const out: R[] = [];
+  for (let i = 0; i < assignmentIds.length; i += BLOCK_ID_CHUNK) {
+    const { data, error } = await run(assignmentIds.slice(i, i + BLOCK_ID_CHUNK));
+    if (error !== null) throw new Error(`assignment_id query failed: ${error.message}`);
+    if (data !== null) out.push(...data);
+  }
+  return out;
+}

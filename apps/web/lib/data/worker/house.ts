@@ -38,6 +38,10 @@ function stripShift(s: CalShift): WorkerCalShift {
     workerName: s.workerName,
     workerRole: s.workerRole,
     homeHouse: s.homeHouse,
+    assignmentIds: s.assignmentIds,
+    // A worker looking at the house grid sees the same mid-swap label a manager does
+    // (BSpec §11.4): both shifts in an exchange, who proposed it, who owes an answer.
+    pendingSwap: s.pendingSwap,
     escalationStep: s.escalationStep,
     blockIds: s.blockIds,
     startAtIso: s.startAtIso,

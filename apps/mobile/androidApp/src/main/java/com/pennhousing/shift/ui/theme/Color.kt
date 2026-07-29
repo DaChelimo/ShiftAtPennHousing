@@ -377,3 +377,25 @@ val DarkShiftColors =
 
 /** Provided by [com.pennhousing.shift.ui.theme.ShiftTheme]; read via `ShiftTheme.colors`. */
 val LocalShiftColors = staticCompositionLocalOf { LightShiftColors }
+
+/**
+ * This colour lightened by mixing [amount] of white into it (0 = unchanged, 1 = white),
+ * interpolated per channel in **sRGB**.
+ *
+ * Deliberately NOT `androidx.compose.ui.graphics.lerp(color, Color.White, amount)`. That
+ * interpolates in a perceptual space, so it lands a few points per channel away from a
+ * plain sRGB mix (measured: 0.800/0.804/0.949 vs 0.820/0.802/0.935 for #5B4BC4 at 0.72).
+ * Small, but this app's colour rules are shared across three front ends: the web mixes with
+ * `color-mix(in srgb, ...)` and iOS's `Color.mixedWithWhite` is a plain sRGB channel lerp,
+ * so using Compose's `lerp` here would make the same worker's seat render a slightly
+ * different colour on Android than on iOS or the web. See AGENTS.md, cross-platform parity.
+ */
+internal fun Color.mixedWithWhite(amount: Float): Color {
+    val t = amount.coerceIn(0f, 1f)
+    return Color(
+        red = red * (1 - t) + t,
+        green = green * (1 - t) + t,
+        blue = blue * (1 - t) + t,
+        alpha = alpha,
+    )
+}

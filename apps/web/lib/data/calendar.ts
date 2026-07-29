@@ -1,7 +1,7 @@
 import type { EscalationStep } from '../../components/ui';
 import { createServiceClient } from '../supabase/server';
 
-import { selectByBlockIdChunks } from './blockChunks';
+import { selectByAssignmentIdChunks, selectByBlockIdChunks } from './blockChunks';
 
 // ===========================================================================
 // Live house calendar — READ model (presentation + wiring over EXISTING data).
@@ -58,8 +58,35 @@ export type CalShift = {
   // override RPCs (admin_assign_worker / admin_remove_worker) act on. `id` above
   // is a synthetic span key; these are the load-bearing identifiers (S1).
   blockIds: string[];
+  // The seat (assignment) ids behind this card, in the same order as [blockIds]. A
+  // vacant/allied track has no assignment row per seat, so those entries are absent.
+  assignmentIds: string[];
   startAtIso: string; // first block's start (ISO timestamptz)
   dateKey: string; // the card's NY date (YYYY-MM-DD)
+  // A pending swap this seat is part of (BSpec §11.4, 2026-07-28). Non-null on BOTH
+  // shifts in an exchange, so the grid can show that two shifts are mid-swap, who
+  // proposed it, and who still owes an answer. Null for a seat with no pending swap.
+  pendingSwap: CalSwapMark | null;
+};
+
+/**
+ * The pending-swap label on a live-calendar card. A manager looking at coverage has to
+ * be able to see that a seat is mid-exchange rather than settled, because accepting it
+ * changes who is actually at the desk. Sourced from `pending_swap_seat_marks`.
+ */
+export type CalSwapMark = {
+  swapId: string;
+  swapType: string;
+  /** Which side of the exchange THIS seat is. */
+  side: 'initiator' | 'counterparty';
+  initiatorName: string | null;
+  counterpartyName: string | null;
+  /** Who still owes an answer (always the counterparty while the swap is pending). */
+  awaitingName: string | null;
+  /** The other side's span, so the card can say what this seat would be exchanged for. */
+  initiatorSpan: string | null;
+  counterpartySpan: string | null;
+  expiresAt: string;
 };
 
 // A contiguous block-index range within a day that shares one required_headcount
@@ -242,6 +269,7 @@ function dayLabelParts(dateKey: string): { date: string } {
 }
 
 type AssignmentRow = {
+  assignment_id: string;
   block_id: string;
   status: string;
   user_id: string | null;
@@ -267,6 +295,9 @@ type Atom = {
   homeHouse: string | null;
   escalationStep: EscalationStep | null;
   blockId: string; // the DB block UUID this atom sits on
+  // The seat's assignment_id, so a pending swap can be attached to the exact seat.
+  // Null for a synthesised gap atom (no assignment row exists for an empty seat).
+  assignmentId: string | null;
   startAtIso: string; // that block's start (ISO)
 };
 
@@ -279,7 +310,7 @@ function toAtom(
   escalationStep: EscalationStep | null,
   startAtIso: string,
 ): Atom | null {
-  const id = { blockId: a.block_id, startAtIso };
+  const id = { blockId: a.block_id, assignmentId: a.assignment_id, startAtIso };
   switch (a.status) {
     case 'vacant':
       return {
@@ -405,8 +436,11 @@ export function buildShifts(
           homeHouse: head.homeHouse,
           escalationStep: null,
           blockIds: members.map((m) => m.blockId),
+          assignmentIds: members.map((m) => m.assignmentId).filter((x): x is string => x !== null),
           startAtIso: head.startAtIso,
           dateKey: nyDate(head.startAtIso),
+          // Filled by the caller, which is where the swap read lives (this transform is pure).
+          pendingSwap: null,
         });
         i = j + 1;
       }
@@ -439,9 +473,13 @@ export function buildShifts(
             workerRole: null,
             homeHouse: null,
             blockIds: members.map((m) => m.blockId),
+            assignmentIds: members
+              .map((m) => m.assignmentId)
+              .filter((x): x is string => x !== null),
             startAtIso: members[0]!.startAtIso,
             dateKey: nyDate(members[0]!.startAtIso),
             escalationStep: members[0]!.escalationStep,
+            pendingSwap: null,
           });
           i = j + 1;
         }
@@ -629,7 +667,7 @@ export async function getHouseCalendar(
     supabase
       .from('shift_block_assignments')
       .select(
-        'block_id, status, user_id, vacancy_origin, is_float, is_cross_house_pickup, source_house_id',
+        'assignment_id, block_id, status, user_id, vacancy_origin, is_float, is_cross_house_pickup, source_house_id',
       )
       .in('block_id', chunk),
   )) as AssignmentRow[];
@@ -685,14 +723,48 @@ export async function getHouseCalendar(
   }
 
   const spans = buildShifts(perDay);
-  // Hydrate worker identity onto the spans (kept out of the pure transform).
+
+  // Pending swaps on any of this week's seats (BSpec §11.4). One read over the
+  // `pending_swap_seat_marks` view, which resolves BOTH sides of every pending swap, so
+  // the two shifts in an exchange are both labelled. Keyed by assignment_id.
+  const assignmentIds = assignments.map((a) => a.assignment_id);
+  const swapByAssignment = new Map<string, CalSwapMark>();
+  if (assignmentIds.length > 0) {
+    // Same chunking rule as the block filter: a full week is hundreds of ids and a
+    // single `.in(...)` 414s with "URI too long".
+    const markRows = await selectByAssignmentIdChunks(assignmentIds, (chunk) =>
+      supabase.from('pending_swap_seat_marks').select('*').in('assignment_id', chunk),
+    );
+    for (const r of markRows) {
+      // The view's assignment_id is nullable in the generated types (it comes out of an
+      // unnest), but a row without one cannot be keyed, so skip rather than coerce.
+      if (r.assignment_id === null) continue;
+      swapByAssignment.set(r.assignment_id, {
+        swapId: r.swap_id ?? '',
+        swapType: r.swap_type ?? '',
+        side: r.side === 'initiator' ? 'initiator' : 'counterparty',
+        initiatorName: r.initiator_name,
+        counterpartyName: r.counterparty_name,
+        awaitingName: r.awaiting_name,
+        initiatorSpan: r.initiator_span,
+        counterpartySpan: r.counterparty_span,
+        expiresAt: r.expires_at ?? '',
+      });
+    }
+  }
+
+  // Hydrate worker identity + any pending swap onto the spans (kept out of the pure
+  // transform). A coalesced card is marked when ANY of its seats is in a pending swap:
+  // a partial swap covers a sub-range, and the card must still say so.
   const shifts: CalShift[] = spans.map((s) => {
     const u = s.userId ? usersById.get(s.userId) : undefined;
+    const mark = s.assignmentIds.map((id) => swapByAssignment.get(id)).find((m) => m !== undefined);
     return {
       ...s,
       workerName: u?.name ?? null,
       workerPhone: u?.phone ?? null,
       workerRole: s.userId ? (roleById.get(s.userId) ?? null) : null,
+      pendingSwap: mark ?? null,
     };
   });
 

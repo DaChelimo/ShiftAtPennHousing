@@ -117,6 +117,39 @@ export function ShiftDetailPanel({
             </div>
           )}
 
+          {/* Pending swap (BSpec §11.4, 2026-07-28). The card only carries a corner flag,
+              so this is where the reader actually learns WHAT is being exchanged, who
+              proposed it and who still owes an answer. Rendered on both shifts in the
+              exchange, each describing the other side. */}
+          {shift.pendingSwap && (
+            <div className="detail-esc">
+              <div className="t-label" style={{ marginBottom: 10 }}>
+                {shift.pendingSwap.swapType === 'handoff' ? 'Pending hand-off' : 'Pending swap'}
+              </div>
+              <div className="t-meta">
+                Proposed by <b>{shift.pendingSwap.initiatorName ?? 'a worker'}</b>. Waiting on{' '}
+                <b>{shift.pendingSwap.awaitingName ?? 'the other worker'}</b> to respond.
+              </div>
+              {(shift.pendingSwap.side === 'initiator'
+                ? shift.pendingSwap.counterpartySpan
+                : shift.pendingSwap.initiatorSpan) && (
+                <div className="t-meta" style={{ marginTop: 6 }}>
+                  In exchange for{' '}
+                  <b>
+                    {shift.pendingSwap.side === 'initiator'
+                      ? shift.pendingSwap.counterpartySpan
+                      : shift.pendingSwap.initiatorSpan}
+                  </b>
+                  .
+                </div>
+              )}
+              <div className="t-meta" style={{ marginTop: 6 }}>
+                Nothing has moved yet. This desk is still staffed as shown until the swap is
+                accepted.
+              </div>
+            </div>
+          )}
+
           {showEscalation && (
             <div className="detail-esc">
               <div className="t-label" style={{ marginBottom: 10 }}>

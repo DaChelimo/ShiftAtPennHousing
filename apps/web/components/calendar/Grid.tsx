@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from 'react';
 
-import type { CalendarDay, CalShift, LaneSegment } from '../../lib/data/calendar';
+import type { CalendarDay, CalShift, CalSwapMark, LaneSegment } from '../../lib/data/calendar';
 import { workerColor, workerContrastText } from '../../lib/workerColor';
 import { Icon, PickupDot, StatusLegend, Tag } from '../ui';
 
@@ -88,6 +88,11 @@ export function ShiftCardEl<S extends GridShift>({
   // picked-up) with a real worker on it. Float/allied/vacant/permanent keep their
   // state colors, which carry meaning. See docs/design/worker-colors.md.
   const tinted = shift.userId !== null && meta.cls === 'sc-scheduled';
+  // A seat tied up in a pending swap (BSpec §11.4). Shown on BOTH shifts in the
+  // exchange, because a manager reading coverage needs to know the desk is mid-swap:
+  // who proposed it and who still owes an answer. The label is deliberately terse (the
+  // card is ~90px wide); the full detail is in the title attribute and the side panel.
+  const swap = shift.pendingSwap;
   const wc = tinted ? workerColor(shift.userId!) : undefined;
   const wcFg = tinted ? workerContrastText(shift.userId!) : undefined;
   return (
@@ -100,7 +105,7 @@ export function ShiftCardEl<S extends GridShift>({
           : { top: t, height: h }
       }
       onClick={() => onSelect?.(shift)}
-      title={name}
+      title={swap ? `${name} - ${swapTitle(swap)}` : name}
     >
       <span className="scard-time t-mono">
         {spanLabel(shift.startBlock, shift.endBlock, origin)}
@@ -122,8 +127,25 @@ export function ShiftCardEl<S extends GridShift>({
         </span>
       )}
       {short && meta.tag && <span className="scard-tag-mini" />}
+      {swap && <span className="scard-swap" aria-label={swapTitle(swap)} />}
     </button>
   );
+}
+
+/**
+ * The full pending-swap sentence, for the card's tooltip and the detail panel. Names
+ * both parties and says who is being waited on, so the reader never has to guess which
+ * of the two shifts is "the other one". No em/en dashes (surfaced copy).
+ */
+export function swapTitle(swap: CalSwapMark): string {
+  const kind = swap.swapType === 'handoff' ? 'hand-off' : 'swap';
+  const proposer = swap.initiatorName ?? 'A worker';
+  const other = swap.counterpartyName ?? 'a housemate';
+  const awaiting = swap.awaitingName ?? other;
+  // The span on the OTHER side of the exchange from this seat.
+  const otherSpan = swap.side === 'initiator' ? swap.counterpartySpan : swap.initiatorSpan;
+  const forPart = otherSpan ? ` for ${otherSpan}` : '';
+  return `Pending ${kind}: ${proposer} proposed it${forPart}. Waiting on ${awaiting} to respond.`;
 }
 
 // §3.4/§11.3 closed-house presentation: a column with no shift grid and no

@@ -20,14 +20,11 @@ import com.pennhousing.shift.shared.model.RecentFloatStatus
 import com.pennhousing.shift.shared.network.ClaimOutcome
 import com.pennhousing.shift.shared.network.EdgeFunctionClient
 import com.pennhousing.shift.shared.network.EdgeResult
-import com.pennhousing.shift.shared.notifications.IncomingSwap
 import com.pennhousing.shift.shared.notifications.NotificationItem
 import com.pennhousing.shift.shared.notifications.notificationFromPayload
 import com.pennhousing.shift.shared.shifts.BLOCK
 import com.pennhousing.shift.shared.shifts.NEW_YORK
 import com.pennhousing.shift.shared.swaps.HandoffWorker
-import com.pennhousing.shift.shared.swaps.PendingSwap
-import com.pennhousing.shift.shared.swaps.SwapDirection
 import com.pennhousing.shift.shared.swaps.SwapProposal
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
@@ -921,102 +918,11 @@ class WorkerShiftsRepository(
      */
     private data class SubscriptionKey(val userId: String, val windowStart: Instant)
 
-    /**
-     * The worker's notification history for the Updates feed (§10.1). A plain SELECT
-     * over the worker's own `notifications` rows (RLS-scoped); the pure
-     * `buildUpdatesFeed` groups them. `urgent`/`floatId` are left unset — the live
-     * pending-float linkage is a separate query (see the `AckDeclineViewModel` TODO),
-     * so today the urgent entry comes from the demo/ack path, not this list.
-     */
-    suspend fun fetchNotifications(userId: String): List<NotificationItem> =
-        supabase
-            .from(TABLE_NOTIFICATIONS)
-            .select(NOTIFICATION_COLUMNS) { filter { eq("recipient_user_id", userId) } }
-            .decodeList<NotificationWireRow>()
-            .map { it.toModel() }
-
-    /**
-     * The worker's INCOMING pending swaps (§8.2, T3a) — own `swap_requests` rows where
-     * the worker is the counterparty and the swap is still pending (own-row RLS:
-     * "users can select own swap requests"). `create-swap` inserts no notification row
-     * for the counterparty, so the Updates feed synthesizes entries from these via the
-     * pure `withIncomingSwapEntries`.
-     */
-    suspend fun fetchIncomingSwaps(userId: String): List<IncomingSwap> =
-        supabase
-            .from(TABLE_SWAP_REQUESTS)
-            .select(Columns.list("swap_id", "swap_type", "created_at", "expires_at")) {
-                filter {
-                    eq("counterparty_user_id", userId)
-                    eq("status", "pending")
-                }
-            }
-            .decodeList<SwapRequestRow>()
-            .map {
-                IncomingSwap(
-                    swapId = it.swapId,
-                    swapType = it.swapType,
-                    createdAt = Instant.parse(it.createdAt),
-                    expiresAt = Instant.parse(it.expiresAt),
-                )
-            }
-
-    /**
-     * The worker's OWN outgoing pending swaps (D4 — initiator side; own-row RLS).
-     * The Updates feed synthesizes voidable entries via `withOutgoingSwapEntries`.
-     */
-    suspend fun fetchOutgoingSwaps(userId: String): List<IncomingSwap> =
-        supabase
-            .from(TABLE_SWAP_REQUESTS)
-            .select(Columns.list("swap_id", "swap_type", "created_at", "expires_at")) {
-                filter {
-                    eq("initiator_user_id", userId)
-                    eq("status", "pending")
-                }
-            }
-            .decodeList<SwapRequestRow>()
-            .map {
-                IncomingSwap(
-                    swapId = it.swapId,
-                    swapType = it.swapType,
-                    createdAt = Instant.parse(it.createdAt),
-                    expiresAt = Instant.parse(it.expiresAt),
-                )
-            }
-
-    /**
-     * The worker's pending swaps (BOTH directions), enriched with each side's span — the
-     * `worker_pending_swaps` read model (SECURITY DEFINER, scoped to `auth.uid()`). Powers
-     * the My-Shifts pending-swap indicator and the incoming-swap accept/decline popup.
-     * Best-effort: an unreadable result yields an empty list (the calendar simply shows no
-     * swap marks).
-     */
-    suspend fun fetchPendingSwaps(): List<PendingSwap> =
-        runCatching {
-            supabase.postgrest
-                .rpc("worker_pending_swaps")
-                .decodeList<WorkerPendingSwapRow>()
-                .map { row ->
-                    PendingSwap(
-                        swapId = row.swapId,
-                        swapType = row.swapType,
-                        direction = if (row.direction == "outgoing") SwapDirection.OUTGOING else SwapDirection.INCOMING,
-                        otherUserName = row.otherUserName ?: "A housemate",
-                        createdAt = Instant.parse(row.createdAt),
-                        expiresAt = Instant.parse(row.expiresAt),
-                        initiatorAssignmentIds = row.initiatorAssignmentIds,
-                        counterpartyAssignmentIds = row.counterpartyAssignmentIds ?: emptyList(),
-                        initiatorStart = row.initiatorStart?.let { Instant.parse(it) },
-                        initiatorEnd = row.initiatorEnd?.let { Instant.parse(it) },
-                        initiatorBlocks = row.initiatorBlocks,
-                        initiatorHouseName = row.initiatorHouseName,
-                        counterpartyStart = row.counterpartyStart?.let { Instant.parse(it) },
-                        counterpartyEnd = row.counterpartyEnd?.let { Instant.parse(it) },
-                        counterpartyBlocks = row.counterpartyBlocks,
-                        counterpartyHouseName = row.counterpartyHouseName,
-                    )
-                }
-        }.getOrDefault(emptyList())
+    // Swap + notification READS and their Realtime channel live in
+    // [SwapActivityRepository]. They moved out of this file when swaps gained a live
+    // subscription (2026-07-28): this class is the quarantined God class, and the new
+    // surface is a self-contained concern with its own channel and refetch signal.
+    // The swap WRITES below stay here, next to the other Edge Function calls.
 
     /**
      * Propose a swap (§8.1-§8.4, D2/D3) → the `create-swap` Edge Function. The
@@ -1155,7 +1061,8 @@ class WorkerShiftsRepository(
          * Explicit column lists for the two hot feeds and the notifications read
          * (cost audit F-12). These were bare `.select()`, i.e. `select *` on wide views,
          * on the path that every Realtime event re-runs. The narrow pattern was already
-         * established at [fetchIncomingSwaps]; it just was not applied consistently.
+         * established at SwapActivityRepository's swap reads; it just was not applied
+         * consistently.
          *
          * Keep these in sync with [MyShiftRow] / [OpenShiftRow] / [NotificationWireRow]:
          * a column named here but absent from the row type is wasted egress, and a field
@@ -1481,7 +1388,7 @@ internal data class NotificationWireRow(
     @SerialName("acknowledged_at") val acknowledgedAt: String? = null,
 )
 
-private fun NotificationWireRow.toModel(): NotificationItem =
+internal fun NotificationWireRow.toNotificationItem(): NotificationItem =
     notificationFromPayload(
         id = id,
         rawType = type,

@@ -35,6 +35,34 @@ extension Color {
             opacity: opacity
         )
     }
+
+    /// This colour lightened by mixing [amount] of white into it (0 = unchanged, 1 = white).
+    ///
+    /// The point is that this is a REAL colour change, not a transparency change. Lowering
+    /// a colour's alpha only looks like lightening when it happens to sit on a light
+    /// background; over the app's dark surfaces the same move reads as a dim glow, and it
+    /// quietly invalidates any foreground colour that was chosen for contrast against the
+    /// full-strength original. Mixing toward white lands in the same place in either theme,
+    /// so the caller can pair it with one fixed dark ink. Used by the House grid to recede
+    /// other workers' seats (`houseOtherWhiteMix`).
+    ///
+    /// Hand-rolled rather than SwiftUI's `Color.mix(with:by:)`, which needs iOS 18 while
+    /// this app deploys to 16. Mirrors the channel-lerp already used by
+    /// `WorkerTint.labelColor(_:)`. `UIColor(self)` resolves a dynamic colour against the
+    /// current trait collection, which is what the caller is rendering into anyway; if it
+    /// cannot be resolved (a pattern colour), the original is returned untouched.
+    func mixedWithWhite(_ amount: Double) -> Color {
+        let t = min(max(amount, 0), 1)
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        guard UIColor(self).getRed(&r, green: &g, blue: &b, alpha: &a) else { return self }
+        return Color(
+            .sRGB,
+            red: Double(r) * (1 - t) + t,
+            green: Double(g) * (1 - t) + t,
+            blue: Double(b) * (1 - t) + t,
+            opacity: Double(a)
+        )
+    }
 }
 
 // MARK: - Shift state colors

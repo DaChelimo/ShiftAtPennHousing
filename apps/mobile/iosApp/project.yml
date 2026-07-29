@@ -41,10 +41,22 @@ settings:
     # Open Shifts widget: an unsigned build fails AppIntents intent resolution
     # ("Couldn't communicate with a helper application" / "No AppIntent in
     # timeline(for:with:)") and the widget is stuck on its placeholder. The static
-    # Upcoming widget works unsigned, but the configurable one does not. Device builds
-    # set a real identity in Xcode (TEAM_ID in Config.xcconfig).
+    # Upcoming widget works unsigned, but the configurable one does not.
     CODE_SIGNING_REQUIRED: "NO"
     CODE_SIGN_IDENTITY: "-"
+    # The signing team, checked in ON PURPOSE. It used to be set by hand on the widget
+    # target in Xcode, which meant every `xcodegen generate` silently discarded it (twice
+    # in one day on 2026-07-28) and device builds started failing to sign for no visible
+    # reason. The generator owns project.pbxproj, so anything that must survive belongs
+    # here, not in the .xcodeproj.
+    #
+    # This does NOT change simulator builds: CODE_SIGNING_REQUIRED=NO and the ad-hoc
+    # identity above still win for the iphonesimulator SDK, which is what the configurable
+    # widget needs. It only gives device builds a team to resolve automatic provisioning
+    # against. (`TEAM_ID` in Configuration/Config.xcconfig is NOT the knob for this: it is
+    # gitignored and nothing has ever read it.)
+    DEVELOPMENT_TEAM: 3VC8F74G23
+    CODE_SIGN_STYLE: Automatic
 
 targets:
   iosApp:

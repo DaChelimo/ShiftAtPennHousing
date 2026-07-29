@@ -562,6 +562,36 @@ When two workers attempt to claim the same open seat at effectively the same mom
 
 **Broadcast scope unchanged.** Broadcast notifications (Section 5.4) continue to go only to subscribed SWs at the shift's home house. Cross-house-eligible workers see eligible shifts when they open the Shifts screen (Section 5.6); they do not receive push broadcasts for non-home houses. This avoids notification spam across houses while still surfacing the shift to anyone who looks.
 
+### 5.3a Claim, Drop and Swap Are Confirmed, Never Assumed
+
+_(Added 2026-07-28, from pilot testing. This supersedes the previous optimistic behaviour.)_
+
+When a worker claims, drops, or offers a shift, the app shows the action **in progress**
+until the server has answered, and only then shows the result. It never shows the result
+first and correct itself afterwards.
+
+**While the write is running:**
+
+- The card the worker acted on stays where it is, at its full original span, labelled with
+  what is happening ("Claiming this shift", "Dropping this shift", "Sending your swap
+  request") and a progress indicator.
+- Its action control is withdrawn, so the same write cannot be started twice.
+- A claim's card does not appear in My Shifts, and a drop's shift does not appear in the
+  open feed, until the server confirms it. A shift is not the worker's, or no longer
+  theirs, until the server says so.
+
+**After the write settles:** a success message is shown once, past tense, and the resulting
+state comes from a fresh read of server truth. A failure shows the reason and leaves the
+worker exactly where they were, holding what they held.
+
+**Why the intermediate state must be hidden.** Every operation works in 30-minute blocks
+(Invariant 5), and a claim is written one block at a time. Showing each block as it landed
+rendered a four-hour claim as a card that visibly assembled itself, 16:00-16:30, then
+16:00-17:00, and so on, underneath a success message that had already been shown. That
+reads as a claim falling apart and invites a second tap on a shift the worker already
+holds. A partial outcome (some blocks lost the first-come-first-served race) is still
+reported honestly, once, at the end.
+
 ### 5.4 The Escalation Chain
 
 When a shift is open (unclaimed), it progresses through a timed escalation chain. The chain steps and timings depend on the profile in effect for the shift's date.
@@ -899,6 +929,38 @@ Permanent drop and permanent pickup are distinct from and coexist with:
 - **Temporary shift swap** (Section 8.1): swaps two specific spans; recurring ownership is unchanged.
 - **Permanent shift swap** (Section 8.3): two workers atomically exchange recurring slots. Functionally distinct from permanent drop + permanent pickup: a permanent swap is one atomic operation between two willing parties; permanent drop + permanent pickup are two independent operations with an open period between them during which the slot is available to anyone and may receive Allied coverage on each weekly occurrence.
 
+### 8.6 A Pending Swap Is Visible, To Both Parties, Immediately
+
+_(Added 2026-07-28, from pilot testing.)_
+
+A swap request exists between two people, so both of them must be able to see it without
+being told about it by the other. Three guarantees:
+
+**It appears without a refresh.** A request reaches the counterparty's swaps list and
+their My Shifts screen as it is created, not on their next navigation or app restart.
+The same holds for every later change: an acceptance, a decline, a cancellation or an
+expiry reaches the other party as it happens. Leaving a screen and returning to it is
+not a refresh mechanism and must not be required.
+
+**Both waiting states are visible on My Shifts, not only on the affected day's card.**
+A worker opening the app sees, at the top of My Shifts:
+
+- **"[Name] is waiting on your answer"** for each request sent to them, with the deadline,
+  opening the accept/decline decision.
+- **"Waiting on [Name]"** for each request they sent, with the expiry, opening the
+  cancel-or-keep-waiting notice.
+
+Requests needing this worker's answer rank first, then by soonest deadline. This is a
+status banner derived from live state, so it cannot go stale and it disappears by itself
+when the swap resolves. It is not week-scoped: a request about next Saturday must be
+visible to a worker looking at this week.
+
+**A decline is a real outcome, not a silent one.** Declining tells the initiator, both as
+a notification (Section 10.1) and by clearing the pending state from their shift, so the
+shift becomes droppable and swappable again. The same applies to acceptance, cancellation
+and expiry. Before this, a decline changed nothing the initiator could see: their shift
+stayed marked "swap pending" indefinitely.
+
 ### 8.5 One-Sided Handoff (Directed Give / Take-Over)
 
 A **handoff** is a directed, peer-consented, **one-way** transfer of a single shift span between two specific workers — distinct from a swap (which exchanges two spans) and from drop → open-feed (which offers the span to anyone). It covers the everyday case where one worker covers another's shift by private arrangement ("Bob called me at the desk and I took his shift") and the two later record who actually worked it.
@@ -965,7 +1027,48 @@ Notifications are routed by recipient role and urgency. The system does not deli
 
 **Personal notifications** (your own shift was dropped, you've been assigned a float, your acknowledgment is overdue) are sent immediately to the affected worker. These notifications are mandatory and cannot be silenced.
 
-**Open shift broadcasts** (T-3 hour notifications about an unclaimed shift) are sent only to subscribed SWs and SMs at the shift's home house. Broadcast subscription is opt-in and defaults to off. HMs, RSMs and BMs cannot subscribe: the subscription toggle is not shown to users holding an `hm`, `rsm`, or `bm` role, and the backend rejects any attempt to enable subscription for these roles. An SM promoted to HM has their subscription automatically revoked at the moment of role assignment.
+**Open shift broadcasts** (T-3 hour notifications about an unclaimed shift) go to every worker who is eligible to claim that seat and who has not turned the channel off. Eligibility is the same rule the open-shifts feed uses: the worker is active, holds `sw`/`sm`/`hm`, is not a `bm`, and, for a Harnwell seat, is home-Harnwell (the training constraint applies to notifications as well as to assignment). A worker is notified about their OWN house by default and about OTHER houses only if they opted in (Section 10.1a).
+
+_(Amended 2026-07-28. This notification previously rode on `broadcast_subscribed`, the "General updates / house-wide broadcasts" switch, which is opt-in and defaults to off, so in practice almost nobody was told that a shift had opened. `broadcast_subscribed` keeps its own separate meaning for house-wide announcements and no longer gates the shift-opened notification. HMs, RSMs and BMs still cannot subscribe to house-wide broadcasts: the toggle is not shown to them, the backend rejects the write, and an SM promoted to HM has their subscription revoked at the moment of role assignment.)_
+
+### 10.1a Which Notifications a Worker May Turn Off
+
+_(Added 2026-07-28.)_
+
+A notification is configurable only when ignoring it costs the worker nothing. Everything else is mandatory, because it is either time-critical or it needs an answer from that specific person.
+
+**Mandatory. Cannot be silenced, and no setting is offered:**
+
+- A float assigned to you, and its acknowledgment reminders.
+- **A swap or hand-off request sent to you, and the outcome of one you sent** (accepted, declined, cancelled, expired). A request you are not told about is a request you cannot answer before it expires, and the person who sent it is left waiting on an answer that will never come.
+- Break sign-up opening (first come, first served: a worker who hears late has already lost the choice).
+- Preference-window events and their deadlines.
+- Schedule published.
+- Your own shift being dropped, removed, or cancelled by an operator or by a configuration change.
+
+**Configurable:**
+
+| Channel                     | Default           | Meaning                                                    |
+| --------------------------- | ----------------- | ---------------------------------------------------------- |
+| Shift reminders             | **1 hour before** | A heads-up before each of your own shifts (see below).     |
+| Open shifts at my house     | **On**            | Someone dropped a shift at your home house.                |
+| Open shifts at other houses | **Off**           | A shift you are eligible to pick up opened somewhere else. |
+
+The two open-shift channels are separate because they are different asks: your own house is coverage you are part of, another house is extra work you have volunteered to hear about. A worker who has never opened Settings behaves exactly like one who kept the defaults.
+
+**Shift reminder lead times** _(amended 2026-07-28; this supersedes the statement, made earlier the same day, that shift reminders are mandatory)_. A worker chooses any combination of three lead times, independently:
+
+- 2 hours before the shift starts
+- 1 hour before
+- 30 minutes before
+
+**All three, some, or none.** Turning every one off is a supported choice, not an error state, and the setting says "Off" rather than going blank so it cannot be mistaken for a failure to load. A reminder is unlike a swap request or a float assignment: it asks nothing of the worker and nobody else is waiting on it, so silencing it costs only the person who chose to. The default is 1 hour alone.
+
+A reminder is **per shift, not per block**. Every operation works in 30-minute blocks (Invariant 5), so a four-hour shift is eight underlying records; the worker gets one reminder per lead time for the whole shift, never one per block.
+
+A queued reminder is **not sent if the worker no longer holds the shift**. Reminders are queued days ahead; between queueing and firing the worker may drop the shift, swap it away, or have it cancelled. Whether they still hold it is re-checked at the moment of sending.
+
+The settings screen lists the mandatory channels too, shown on and disabled, rather than hiding them. A worker needs to be able to see that a swap request will always reach them.
 
 **Coverage / Allied-procurement notifications** are sent in real-time to **the house's RSM** when **both** the current time and the affected block's start time fall within HM working hours (Monday-Friday, [08:00, 17:00)). During HM working hours the HM is **not** the in-house recipient — the HM is contacted only in their HMOD capacity (outside HM hours and on weekends, per the HMOD rules below). If the RSM is on leave, the leave-resolution chain (Section 2.6) resolves the acting contact (the RSM's replacement — by default the HM, then the BM). If the house has no acting RSM at all (none assigned, or the chain resolves to no active person), the notification falls back to the HMOD on duty. If either the current time or the block start time is outside HM hours, the notification is routed to the HMOD on duty instead. The RSM/HMOD places the call to Allied.
 
@@ -976,6 +1079,16 @@ Notifications are routed by recipient role and urgency. The system does not deli
 **Outside HM working hours and on weekends, no notifications go to the RSM, HM, or BM.** The HMOD covers all such events. They do not receive a morning digest of overnight events; they may consult the calendar if they want to see what happened.
 
 **HMOD notifications** are sent in real-time during HMOD on-duty hours (Monday-Friday 17:00 to 24:00, all day Friday 17:00 through Monday 08:00) for any event requiring Allied procurement or other immediate action.
+
+**Swap notifications** _(added 2026-07-28)_. Every change of state on a swap request notifies the party who did not cause it, immediately and unconditionally:
+
+- A request is created: the counterparty is told who sent it, which hours are involved on each side, and the deadline to respond.
+- A request is accepted: the initiator is told the exchange is done and their calendar has changed.
+- A request is declined: the initiator is told, and told that their shift is theirs again.
+- A request is cancelled: the other party is told. When the system withdrew it (the underlying seat was vacated, so the swap could no longer be honoured) both parties are told.
+- A request expires unanswered: both parties are told that nothing changed.
+
+This holds no matter which surface caused the change (a worker acting in the app, an operator, or the expiry sweep).
 
 ### 10.2 Specific Routing Cases
 
@@ -1048,6 +1161,25 @@ A worker viewing their own calendar sees their shifts with the following treatme
 
 When viewing the calendar for a closed house (e.g., Lauder during winter break), the house's calendar displays as "Closed" for the closure dates. No shifts are present; no open-shifts feed exists for those dates.
 
+### 11.3a Pending Swaps on a Live Calendar
+
+_(Added 2026-07-28.)_
+
+Anyone reading a live house calendar (web or mobile) sees, on **both** shifts in a pending
+exchange, that the two are mid-swap:
+
+- that a swap or hand-off is pending on that seat,
+- **who proposed it**, and
+- **who still owes an answer**,
+- and the hours on the other side of the exchange.
+
+Both shifts carry the mark, because from a coverage point of view the pair is one fact.
+The mark states explicitly that nothing has moved yet: the desk is staffed exactly as
+shown until the swap is accepted. It disappears when the swap resolves in any way.
+
+This matters for coverage decisions. A manager looking at a settled-looking grid could
+not previously tell that two of the shifts on it were about to change hands.
+
 ### 11.4 Contact Lookup from a Shift Card
 
 Tapping or clicking any shift card reveals details about the shift, including the assigned worker's contact information. This enables a worker at the desk to call a floater (or any other scheduled worker) to confirm their ETA or status. This applies to all shift types — regular, floated, pending, and Allied.
@@ -1077,6 +1209,9 @@ The system does not maintain a separate audit log of state changes. The calendar
 - Acknowledge or decline float assignments to them.
 - Initiate shift swaps, float swaps, and permanent shift swaps with other workers.
 - Subscribe or unsubscribe to broadcast notifications.
+- Turn the two configurable open-shift notification channels on or off for themselves
+  (Section 10.1a). They cannot silence any other notification, and they cannot change
+  anyone else's channels.
 
 **Student Managers** can do everything an SW can do, plus, for their home house only:
 
@@ -1143,6 +1278,16 @@ The following parameters are system-wide configurable by the project administrat
 - **Permanent swap expiry**: 7 days.
 - **Float swap expiry**: 24 hours after float end time.
 - **Shift swap expiry**: T-3h of the earlier shift.
+- **Shift reminder lead times** _(added 2026-07-28)_: the offered set is 2 hours, 1 hour
+  and 30 minutes before a shift. Per worker, any subset including the empty one; default
+  1 hour. Changing the OFFERED set is a system-wide change and must be made in the
+  database constraint, the client's list, and this line together.
+- **Per-worker notification channels** _(added 2026-07-28)_: two open-shift channels, both
+  per worker and not system-wide. "Open shifts at my house" defaults to **on**; "open shifts at other
+  houses" defaults to **off**. A worker with no stored preference behaves as if they held
+  these defaults. Every other notification channel is mandatory and is deliberately absent
+  from this list (Section 10.1a); adding a new mandatory notification must not create a
+  parameter here.
 - **Minimum float chunk size**: 1 block (30 minutes). A single coverable block is floated rather than sent to Allied.
 - **Maximum Allied coverage per securing**: 8 blocks (4 hours). A single contiguous vacant gap is secured at most 4 hours at a time; the remainder stays claimable and re-escalates.
 - **HM working hours**: Monday-Friday 08:00 to 17:00.

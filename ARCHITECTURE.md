@@ -1844,3 +1844,154 @@ The following architectural decisions support the permanent drop and permanent p
 7. **Notifications:** The worker-facing `sw_permanent_removal_alert` carries the in-app passive removal indicator, persistent in the updates tab via the `acknowledged_at` field (Section 3.7). The companion `sm_permanent_drop_alert` type is retired (2026-07-13, enum value kept but unused): SMs receive no passive permanent-drop alert.
 8. **No published-schedule snapshot:** The calendar's current state is the only state. No historical record of "this slot was originally Alice's" is retained beyond the live owner.
 9. **Profile boundary:** Permanent vacancies that go unfilled simply cease to exist at the end of the operating profile. The next profile is scheduled fresh (Section 7.4).
+
+---
+
+## 21. Swap Liveness, Mandatory Swap Notifications, and Confirmed Writes
+
+Added 2026-07-28 from pilot testing. Migration `20260728000001`.
+
+### 21.1 Why Swaps Were Invisible
+
+Three independent gaps compounded into "a swap request does not show up, and a decline
+never reaches the other person":
+
+1. **`swap_requests` was not in the `supabase_realtime` publication.** The only channel the
+   worker app held was `shift_block_assignments`. Creating, accepting, declining,
+   cancelling or expiring a swap touches `swap_requests` and (except on acceptance) no
+   assignment row at all, so nothing on either client could hear any of it.
+2. **The clients read swaps behind a key derived from the viewing worker's own actions.**
+   Android used a `produceState` keyed on local action counters; iOS used a one-shot fetch
+   behind a `!live` guard. Either way, a request somebody else sent was picked up only when
+   an unrelated seat change happened to re-run the read.
+3. **No swap produced a worker-facing notification.** The only `swap_request` notification
+   in the system was the manager-facing corrected-float alert inside `accept_swap`. The two
+   people in the exchange were told nothing.
+
+### 21.2 The Mechanism
+
+**Realtime.** `swap_requests` joins the publication with `REPLICA IDENTITY FULL`. FULL is
+required rather than optional: Realtime RLS-checks each change against the row it ships,
+and on an UPDATE (`pending` to `rejected`) the default identity carries only the primary
+key, so neither party's own-row policy would match and the decline would be dropped.
+
+**Notifications are a TRIGGER, not per-caller inserts.** `notify_swap_request_parties()`
+fires `AFTER INSERT OR UPDATE OF status ON swap_requests`. Six callers move a swap through
+its lifecycle (`create-swap`, `accept-swap` via `accept_swap` / `apply_permanent_swap`,
+`reject-swap`, `void-swap`, the expiry cron, and `void_pending_swaps_for_vacated_seat`),
+so a trigger is the only place the rule can be stated once. The actor is `auth.uid()`,
+which is NULL under cron and service-role cascades: that is exactly the distinction the
+`voided` branch needs, telling "the other party cancelled" apart from "the system withdrew
+it". Copy is built from `format_swap_span(uuid[])`, which renders a side's NY-local span
+(blocks are 30 minutes, so a side's end is `max(block_start_at) + 30 minutes`).
+
+The trigger never consults `notification_preferences`. A swap request requires an answer,
+so it is not an opt-out channel (BSpec §10.1a).
+
+**Client.** `SwapActivityRepository` (mobile `commonMain`) holds ONE shared channel over
+`swap_requests` **and** `notifications`, debounced 500 ms and conflated, fanned out to
+every collector — the same sharing the worker-week flow uses, so an iOS client with two
+collectors does not open two connections. It was extracted out of
+`WorkerShiftsRepository`, which AGENTS.md quarantines as a God class. An edge-triggered
+`refresh` signal is merged in alongside Realtime, because an accepted swap moves seats
+between two people and one side's rows leave their RLS scope, where `postgres_changes`
+reports nothing at all.
+
+### 21.3 Configurable vs Mandatory Notifications
+
+`notification_preferences` (`user_id` PK, `open_shifts_home_house` default true,
+`open_shifts_other_houses` default false) stores the ONLY two configurable channels, and
+stores nothing else on purpose: adding a mandatory notification can never accidentally
+become opt-out-able because there is no column for it.
+
+Read it through `wants_open_shift_notification(user_id, house_id)`, never the raw table, so
+"never opened Settings" and "explicitly kept the defaults" behave identically. Write it
+through `set_notification_preferences(boolean, boolean)`, which targets `auth.uid()` and
+takes no user_id, so a client cannot aim it at somebody else.
+
+`process_broadcast_step` was rewritten to consult it. Previously the shift-opened
+notification rode on `users.broadcast_subscribed`, which defaults to FALSE and is presented
+in Settings as an unrelated "General updates" switch, so in practice nobody was told a
+shift had opened. The recipient set now mirrors `worker_open_shifts` eligibility exactly
+(active, holds `sw`/`sm`/`hm`, not a `bm`) plus the Harnwell training invariant, because a
+notification about a seat the worker cannot claim is worse than no notification. The
+Kotlin defaults in `settings/NotificationPreferences` mirror the column defaults and the
+function; **if you change one, change all three.**
+
+### 21.4 Pending Swaps on the Live Calendars
+
+`pending_swap_seat_marks` is one row per SEAT held in a pending, unexpired swap, resolving
+both sides through `unnest`, so BOTH shifts in an exchange are labelled. It carries both
+parties, both spans, and which side the seat is. Owner-rights, mirroring
+`house_schedule_grid_any`: the grid already shows every occupant's name to any
+authenticated worker, and a swap mark names the same two people.
+
+Web reads it in `getHouseCalendar` keyed by `assignment_id`, chunked by
+`selectByAssignmentIdChunks` for the same reason block ids are chunked (a week's ids in one
+`.in(...)` is a 414 that silently returns zero rows).
+
+### 21.5 Confirmed Writes Replace Optimistic Ones
+
+Claim, drop and swap were optimistic: the ViewModel moved the card on tap and a failure was
+walked back afterwards. `claim-shift` is one POST per 30-minute block and each landed block
+emits a Realtime event that refetches the week, so a four-hour claim rendered as a card
+that visibly assembled itself under an already-shown success toast.
+
+The replacement is a pure projection plus a store:
+
+- `shifts/PendingWrites.kt` (pure): `pendingAwareMyShifts` / `pendingAwareOpenShifts`
+  project a snapshot through the in-flight set. A claim's tapped card is held WHOLE from
+  `PendingWrite.card` while its blocks are consumed, and the half-written rows the read
+  models emit meanwhile are hidden. A drop or swap leaves the shift in place, flagged busy.
+- `data/PendingWriteStore` (state): session-scoped on purpose. Both platforms rebuild their
+  ViewModels from each snapshot, so a store inside one would be destroyed by the very
+  Realtime event the write causes.
+
+`busyKind` lives on `MyShift` / `OpenShift` in `model/` rather than in `shifts/` so both can
+name it without a package cycle, and it is part of both coalescing merge keys: a busy half
+of a run must not merge into its settled neighbour. It is NEVER set from a read model.
+
+The original optimistic movers (`claim`, `drop`, `dropToOpen`, `dropBlocks`, `reclaim`,
+`SwapsViewModel.addOutgoing`) survive for the demo/tour build, which has no server to
+confirm anything. The live hosts no longer call them.
+
+### 21.6 Shift Reminders
+
+Added 2026-07-28. Migrations `20260728000002` (the enum label, alone in its own file
+because a new label cannot be used in the transaction that adds it) and `20260728000003`.
+
+**This channel did not exist.** The Settings screen had listed "Shift reminders, always on
+(before each shift)" since the screen was built, and nothing ever sent one: no
+`notification_type`, no producer, no cron, no storage. `ack_reminder` is the float
+acknowledgment reminder and is unrelated.
+
+**Per shift, not per block.** `worker_shift_runs(from, to)` coalesces each worker's
+contiguous same-house seats into runs, using a window function over `block_start_at` with
+adjacency tested as `previous + 30 minutes = current` (instant arithmetic, so a run across
+a DST transition stays one run). Without this, a four-hour shift would produce eight
+notifications per lead time.
+
+**Enqueue, do not send.** `enqueue_shift_reminders()` inserts each reminder with
+`scheduled_for = run start - lead time` and the existing `deliver-notifications` cron fires
+it at that moment. So the producer runs hourly (`shift-reminders`, `5 * * * *`) and a
+30-minute reminder still lands on time. Idempotency is `shift_reminder_sends`, keyed
+`(user_id, first_assignment_id, offset_minutes)` and mirroring `preference_reminder_sends`
+down to pre-allocating the `notification_id`.
+
+**Re-checked at send time.** `pending_notification_deliveries` gained a second suppression
+arm alongside the ack-reminder one: a `shift_reminder` is withheld when the recipient no
+longer holds that seat in `{scheduled, claimed, floated_in}`. A reminder is queued up to
+eight days ahead, and in between the worker may drop it, swap it away, or have it cancelled
+by a config change. The queued row is a statement about the past.
+
+**Storage and defaults.** `notification_preferences.shift_reminder_offsets integer[]`,
+default `{60}`, constrained to a duplicate-free subset of `{120, 60, 30}` via the IMMUTABLE
+`is_valid_shift_reminder_offsets` (a CHECK constraint may not contain the subquery the
+de-duplication test needs). Empty is a real value meaning "no reminders", which is why the
+column is NOT NULL rather than nullable. Read through `worker_shift_reminder_offsets()`,
+never raw. `set_notification_preferences` gained a third parameter where NULL means
+"leave unchanged" and an empty array means "none" — the client always sends it explicitly,
+because omitting it would make turning every reminder off impossible.
+
+The default exists in three places that must agree: the column default, the
+`worker_shift_reminder_offsets` fallback, and Kotlin's `NotificationPreferences`.

@@ -45,6 +45,16 @@ object WorkerBackend {
 
     val shiftsRepository: WorkerShiftsRepository by lazy { WorkerShiftsRepository(client) }
 
+    /** Live swaps + notifications (their own Realtime channel). See [SwapActivityRepository]. */
+    val swapActivityRepository: SwapActivityRepository by lazy { SwapActivityRepository(client) }
+
+    /**
+     * Seat writes in flight (claim / drop / swap). Session-scoped on purpose: it must
+     * outlive the per-snapshot ViewModels, or the Realtime event a write causes would
+     * destroy the progress state of the write that caused it.
+     */
+    val pendingWrites: PendingWriteStore by lazy { PendingWriteStore() }
+
     val preferencesRepository: PreferencesRepository by lazy { PreferencesRepository(client) }
 
     val profileRepository: ProfileRepository by lazy { ProfileRepository(client) }

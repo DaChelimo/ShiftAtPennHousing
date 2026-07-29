@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -43,6 +44,7 @@ import com.pennhousing.shift.shared.data.ProfileSnapshot
 import com.pennhousing.shift.shared.data.WorkerBackend
 import com.pennhousing.shift.shared.data.WorkerSnapshot
 import com.pennhousing.shift.shared.house.HouseScheduleSnapshot
+import com.pennhousing.shift.shared.live.LiveDefaults
 import com.pennhousing.shift.shared.model.FloatAck
 import com.pennhousing.shift.shared.model.PendingFloat
 import com.pennhousing.shift.shared.model.RecentFloat
@@ -62,6 +64,7 @@ import com.pennhousing.shift.shared.platform.SimClock
 import com.pennhousing.shift.shared.preferences.PreferencePeriod
 import com.pennhousing.shift.shared.samples.DemoData
 import com.pennhousing.shift.shared.shifts.CLAIM_SUCCESS_TOAST
+import com.pennhousing.shift.shared.shifts.DROP_SUCCESS_TOAST
 import com.pennhousing.shift.shared.shifts.weeklyHours
 import com.pennhousing.shift.shared.swaps.PendingSwap
 import com.pennhousing.shift.shared.swaps.swapCandidates
@@ -71,6 +74,7 @@ import com.pennhousing.shift.shared.viewmodel.BreakCalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.HouseScheduleViewModel
 import com.pennhousing.shift.shared.viewmodel.PreferencesViewModel
+import com.pennhousing.shift.shared.settings.NotificationPreferences
 import com.pennhousing.shift.shared.viewmodel.SettingsViewModel
 import com.pennhousing.shift.shared.viewmodel.ShiftsScreenViewModel
 import com.pennhousing.shift.shared.viewmodel.SwapsViewModel
@@ -106,6 +110,12 @@ import kotlin.time.Instant
  * The pure decision surface takes `now` as a parameter; the UI is allowed to read the
  * wall clock to supply it.
  */
+/**
+ * Floor on how long the splash stays up. Not a delay before content: content that is ready
+ * sooner still waits this out, so an instant launch does not flash the lockup for one frame.
+ */
+private const val SPLASH_MIN_VISIBLE_MS = 450L
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         // Cold-start splash (Theme.ShiftPennHousing.Splash in the manifest supplies the
@@ -131,13 +141,34 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             LaunchedEffect(Unit) { keepNativeSplash = false }
-            var showAppSplash by remember { mutableStateOf(true) }
-            if (showAppSplash) {
-                SplashOverlay(onFinished = { showAppSplash = false })
-            } else if (backendConfigured) {
-                LiveOrLoginRoot(launchFloatAckId)
-            } else {
-                DemoRoot(launchFloatAckId)
+            // The splash now stays up until there is something REAL to show: the login
+            // screen, or the signed-in worker's own week. It used to hand off after a fixed
+            // 450ms to the skeleton LoadingScreen, so a cold launch read as brand splash,
+            // then a loading state, then the content.
+            var contentReady by remember { mutableStateOf(false) }
+            var minSplashElapsed by remember { mutableStateOf(false) }
+            var splashCaption by remember { mutableStateOf<String?>(null) }
+            LaunchedEffect(Unit) {
+                delay(SPLASH_MIN_VISIBLE_MS)
+                minSplashElapsed = true
+            }
+            Box(Modifier.fillMaxSize()) {
+                if (backendConfigured) {
+                    LiveOrLoginRoot(
+                        launchFloatAckId = launchFloatAckId,
+                        onContentReady = { contentReady = true },
+                        // A fresh sign-in raises the splash again (this time saying so) while
+                        // the worker's week loads, instead of parking them on a skeleton.
+                        onSigningIn = {
+                            splashCaption = "Signing you in"
+                            contentReady = false
+                        },
+                    )
+                } else {
+                    DemoRoot(launchFloatAckId)
+                    LaunchedEffect(Unit) { contentReady = true }
+                }
+                if (!contentReady || !minSplashElapsed) SplashOverlay(caption = splashCaption)
             }
         }
     }
@@ -233,7 +264,13 @@ private fun DemoRoot(launchFloatAckId: String? = null) {
  * flight we show a loading state.
  */
 @Composable
-private fun LiveOrLoginRoot(launchFloatAckId: String? = null) {
+private fun LiveOrLoginRoot(
+    launchFloatAckId: String? = null,
+    /** Called once this path is showing real content (login, the gate screen, or the week). */
+    onContentReady: () -> Unit = {},
+    /** Called the moment a sign-in succeeds, so the host can raise the splash while it loads. */
+    onSigningIn: () -> Unit = {},
+) {
     // Restore the session off the gateway exactly once. RestoreResult.Loading while in
     // flight; Loaded carries the (maybe-null) session AND the resolved business `now`.
     //
@@ -301,6 +338,7 @@ private fun LiveOrLoginRoot(launchFloatAckId: String? = null) {
                     null -> LoadingScreen()
                     else ->
                         if (!resolvedGate.isLive) {
+                            LaunchedEffect(Unit) { onContentReady() }
                             HouseNotLiveScreen(houseName = resolvedGate.houseName, onSignOut = onSignOut)
                         } else {
                             // Re-keyed on clockEpoch: a foreground clock change tears down +
@@ -313,16 +351,19 @@ private fun LiveOrLoginRoot(launchFloatAckId: String? = null) {
                                     now = now,
                                     launchFloatAckId = launchFloatAckId,
                                     onSignOut = onSignOut,
+                                    onWeekLoaded = onContentReady,
                                 )
                             }
                         }
                 }
             } else {
+                LaunchedEffect(Unit) { onContentReady() }
                 LoginRoute(
                     gateway = WorkerBackend.authGateway,
                     onAuthenticated = { newSession ->
                         // Promote to live shifts; the SHIFTS branch's LaunchedEffect
                         // wires the live worker JWT onto privileged requests.
+                        onSigningIn()
                         authedSession = newSession
                         signedOut = false
                     },
@@ -347,15 +388,26 @@ private fun LiveShiftsRoot(
     now: Instant,
     onSignOut: () -> Unit,
     launchFloatAckId: String? = null,
+    /** Fired on the first real week snapshot, so the host can drop the launch splash. */
+    onWeekLoaded: () -> Unit = {},
 ) {
     val repo = remember { WorkerBackend.shiftsRepository }
+    val swapRepo = remember { WorkerBackend.swapActivityRepository }
+    val writeStore = remember { WorkerBackend.pendingWrites }
     val snapshotState by remember(session.userId) {
         repo.observeWorkerWeek(session.userId, now)
     }.collectAsStateWithLifecycle(initialValue = null)
+    // Seat writes this client has started and the server has not answered. Drives the
+    // in-progress cards that REPLACED the optimistic moves (shifts/PendingWrites.kt).
+    val pendingWrites by writeStore.writes.collectAsStateWithLifecycle()
 
     when (val snapshot: WorkerSnapshot? = snapshotState) {
+        // The launch splash is still covering this (see MainActivity.setContent); the
+        // skeleton is what a POST-launch reload falls back to.
         null -> LoadingScreen()
         else -> {
+            // The worker's own week is on screen: the splash may drop.
+            LaunchedEffect(Unit) { onWeekLoaded() }
             // Best-effort live writes (drop/claim/reclaim/pickup) flip the ViewModel
             // optimistically; a SUCCESSFUL write changes the DB and the next Realtime
             // snapshot reconciles the UI. A FAILED write (edge runtime down, timeout,
@@ -369,10 +421,6 @@ private fun LiveShiftsRoot(
             // server-fetch producers below (ack/updates/settings/opt-out re-read from the
             // server) — so whichever optimistic move failed snaps back to server truth.
             var revertKey by remember { mutableIntStateOf(0) }
-            // Bumped after a SUCCESSFUL swap create so the incoming/outgoing producers
-            // re-read `swap_requests` (there is no Realtime channel on that table) and the
-            // just-proposed leg shows in the Swaps→Outgoing list as the real, voidable row.
-            var swapRefreshKey by remember { mutableIntStateOf(0) }
             LaunchedEffect(writeError) {
                 if (writeError != null) {
                     delay(TOAST_DURATION_MS)
@@ -391,10 +439,16 @@ private fun LiveShiftsRoot(
                 }
             }
             // Rebuild the ViewModel whenever a fresh snapshot arrives (e.g. a float at
-            // T-2h) OR a failed write asks to revert (revertKey).
+            // T-2h), a failed write asks to revert (revertKey), or a write starts/settles
+            // (pendingWrites) so its in-progress card appears and then clears.
             val shiftsVm =
-                remember(snapshot, revertKey) {
-                    ShiftsScreenViewModel(snapshot.myShifts, snapshot.openShifts, now)
+                remember(snapshot, revertKey, pendingWrites) {
+                    ShiftsScreenViewModel(
+                        snapshot.myShifts,
+                        snapshot.openShifts,
+                        now,
+                        pendingWrites = pendingWrites,
+                    )
                 }
             // Float requests: load ALL the worker's outstanding floats (the bounded,
             // RLS-scoped `worker_pending_floats` view — immune to the 1000-row personal-
@@ -413,7 +467,13 @@ private fun LiveShiftsRoot(
                     value = runCatching { repo.fetchRecentFloats(session.userId) }.getOrDefault(emptyList())
                 }
             val livePendingFloat = livePendingFloats.firstOrNull()?.toFloatAck()
-            val ackVm = remember(livePendingFloat) { AckDeclineViewModel(livePendingFloat ?: DemoData.pendingFloat(now), now) }
+            // No live float outstanding = the inert LiveDefaults placeholder, NEVER the demo
+            // float. Nothing routes here without a real float (the carousel is empty and no
+            // Updates entry links to one), so this only ever backs an unreachable surface.
+            val ackVm =
+                remember(livePendingFloat) {
+                    livePendingFloat?.let { AckDeclineViewModel(it, now) } ?: LiveDefaults.ackViewModel()
+                }
             // Feed the home-screen widget from the live week + pending floats.
             val widgetContext = LocalContext.current
             LaunchedEffect(snapshot.myShifts, livePendingFloats) {
@@ -425,28 +485,26 @@ private fun LiveShiftsRoot(
             // opens the ack hero; `withPendingFloatEntry` additionally guarantees the live
             // pending float (from `fetchPendingFloat`) is always represented even if its
             // notification row hasn't landed. Mirrors the live-preferences pattern.
-            val liveNotifications by
-                produceState<List<NotificationItem>?>(initialValue = null, session.userId, revertKey) {
-                    value = runCatching { repo.fetchNotifications(session.userId) }.getOrNull()
-                }
-            // Incoming pending swaps (§8.2): the worker's own counterparty `swap_requests`
-            // rows. They feed BOTH the Swaps tab (full Accept/Decline surface) and the
-            // Updates deep-link mirrors (`withIncomingSwapEntries`).
-            val liveIncomingSwaps by
-                produceState(initialValue = emptyList<IncomingSwap>(), session.userId, revertKey, swapRefreshKey) {
-                    value = runCatching { repo.fetchIncomingSwaps(session.userId) }.getOrDefault(emptyList())
-                }
-            // Pending swaps (BOTH directions) enriched with each side's span + deadline —
-            // the source for the Swaps tab cards (give/get hours), the My-Shifts indicators,
-            // and the incoming accept/decline popup. Re-read on swapRefreshKey so a
-            // propose/accept/decline/cancel reconciles to server truth.
-            val livePendingSwaps by
-                produceState(initialValue = emptyList<PendingSwap>(), session.userId, revertKey, swapRefreshKey) {
-                    value = runCatching { repo.fetchPendingSwaps() }.getOrDefault(emptyList())
-                }
+            // Swaps + notifications, LIVE (2026-07-28). These were three produceStates keyed
+            // on the VIEWING worker's own actions, which meant a request someone else sent,
+            // or a decline someone else made, only appeared when an unrelated seat change
+            // happened to re-run them. `swap_requests` is now in the Realtime publication and
+            // [SwapActivityRepository] holds one shared channel over it + `notifications`, so
+            // every swap event reaches both parties as it happens. `swapRefreshKey` is gone:
+            // a local action needs no special key, the channel carries it like any other.
+            val swapActivity by
+                remember(session.userId) {
+                    swapRepo.observeSwapActivity(session.userId)
+                }.collectAsStateWithLifecycle(initialValue = null)
+            val livePendingSwaps = swapActivity?.pendingSwaps ?: emptyList()
+            val liveIncomingSwaps = swapActivity?.incomingSwaps ?: emptyList()
+            val liveNotifications: List<NotificationItem>? = swapActivity?.notifications
             val updatesVm =
                 remember(liveNotifications, livePendingFloat, liveIncomingSwaps) {
-                    val base = liveNotifications ?: DemoData.notifications(now)
+                    // Empty until the worker's own notifications land. NEVER the demo feed:
+                    // that is what showed a signed-in worker fabricated swaps awaiting their
+                    // action for the first seconds after launch (and forever, if the read failed).
+                    val base = liveNotifications ?: emptyList()
                     UpdatesViewModel(
                         withIncomingSwapEntries(
                             items =
@@ -473,12 +531,11 @@ private fun LiveShiftsRoot(
                 produceState(initialValue = emptySet<Int>(), session.userId) {
                     value = runCatching { repo.fetchCalendarClosedDays(session.userId) }.getOrDefault(emptySet())
                 }
-            // Keyed on revertKey too: a failed optimistic drop/claim (the calendar now
-            // mutates locally) rebuilds the calendar from the unchanged snapshot, exactly
-            // like the shifts VM above, so the agenda snaps back to server truth.
+            // Rebuilt on every new snapshot, on a pending-write change (so a claim/drop shows
+            // its in-progress card and clears it), and on a swap change (the banner + marks).
             val calendarVm =
-                remember(snapshot, closedDays, revertKey, livePendingSwaps) {
-                    CalendarViewModel(snapshot.myShifts, now, closedDays, livePendingSwaps)
+                remember(snapshot, closedDays, revertKey, livePendingSwaps, pendingWrites) {
+                    CalendarViewModel(snapshot.myShifts, now, closedDays, livePendingSwaps, pendingWrites)
                 }
             // The worker's profile (own users / user_roles). Loaded here (above the House
             // VM) so its resolved role can gate the House-grid manager actions; it also
@@ -499,7 +556,8 @@ private fun LiveShiftsRoot(
             val houseVm =
                 remember(liveHouseSchedule, liveProfile) {
                     HouseScheduleViewModel(
-                        liveHouseSchedule ?: DemoData.houseSchedule(now),
+                        // Blank grid while the real week loads, not somebody else's demo house.
+                        liveHouseSchedule ?: LiveDefaults.emptyHouseSchedule(),
                         now,
                         meUserId = session.userId,
                         // Default false while the profile is loading (null role) so the
@@ -570,7 +628,9 @@ private fun LiveShiftsRoot(
             val preferencesVm =
                 remember(livePeriod, liveProfile) {
                     PreferencesViewModel(
-                        livePeriod ?: DemoData.preferencePeriod(now),
+                        // No open period (or still loading) = an empty read-only week, not the
+                        // demo period, whose fake block ids make a submit land nowhere.
+                        livePeriod ?: LiveDefaults.emptyPreferencePeriod(),
                         // Manager (sm/hm/bm/rsm) sees the deadline-setter; a plain worker never does.
                         isManager = liveProfile?.profile?.role?.let { it != "sw" } ?: false,
                     )
@@ -623,13 +683,23 @@ private fun LiveShiftsRoot(
             // the ONLY interactive notification channel (§10.1: personal float / shift-reminder
             // / schedule-published notifications are mandatory, shown always-on/disabled).
             val settingsContext = LocalContext.current
+            // The two configurable open-shift channels (BSpec §10.1). A worker with no row
+            // gets the defaults, which is also what the server assumes, so "never opened
+            // Settings" and "kept the defaults" are the same state everywhere.
+            val liveNotificationPrefs by
+                produceState(initialValue = NotificationPreferences(), session.userId, revertKey) {
+                    value = profileRepo.fetchNotificationPreferences(session.userId)
+                }
             val settingsVm =
-                remember(liveProfile) {
+                remember(liveProfile, liveNotificationPrefs) {
                     // Seed the in-session theme from the persisted choice (survives relaunch).
                     SettingsViewModel(
-                        liveProfile?.profile ?: DemoData.settingsProfile(),
-                        liveProfile?.broadcastSubscribed ?: DemoData.DEMO_BROADCAST_SUBSCRIBED,
+                        // A blank profile card until the real one loads. The demo profile put a
+                        // different person's name, email and house in front of the worker.
+                        liveProfile?.profile ?: LiveDefaults.emptySettingsProfile(),
+                        liveProfile?.broadcastSubscribed ?: false,
                         DemoData.DEMO_APP_VERSION,
+                        liveNotificationPrefs,
                     ).apply { setTheme(ThemePrefs.read(settingsContext)) }
                 }
             ShiftsApp(
@@ -694,48 +764,65 @@ private fun LiveShiftsRoot(
                             }
                         },
                         onDropShift = { shift, permanent ->
-                            // POST the real drop while the ViewModel does the optimistic local move.
-                            // Occurrence → `drop-shift`; the recurring slot → `permanent-drop`. On a
-                            // SUCCESSFUL drop the next Realtime snapshot reconciles the UI; on FAILURE
-                            // [launchWrite] toasts and reverts the card to server truth.
-                            launchWrite(if (permanent) WriteOp.PERMANENT_DROP else WriteOp.DROP) {
-                                if (permanent) repo.permanentDrop(shift) else repo.dropShift(shift)
+                            // CONFIRMED, not optimistic (2026-07-28). The card stays where it is,
+                            // marked busy, until `drop-shift` / `permanent-drop` answers. It used to
+                            // leave the calendar the instant the worker tapped, which told them the
+                            // shift was released before anything had been written.
+                            val token = writeStore.beginDrop(shift.blockIds)
+                            prefsScope.launch {
+                                try {
+                                    val op = if (permanent) WriteOp.PERMANENT_DROP else WriteOp.DROP
+                                    val result =
+                                        runCatching {
+                                            if (permanent) repo.permanentDrop(shift) else repo.dropShift(shift)
+                                        }.getOrElse { EdgeResult(false, 0, "") }
+                                    if (result.ok) {
+                                        claimSuccessMessage = DROP_SUCCESS_TOAST
+                                    } else {
+                                        writeError = edgeErrorMessage(op, result)
+                                    }
+                                    // Pull server truth BEFORE releasing the busy state, so the card
+                                    // goes straight from "dropping" to the settled result. Releasing
+                                    // first would flash the pre-write state in between.
+                                    repo.refresh.request()
+                                } finally {
+                                    writeStore.end(token)
+                                }
                             }
                         },
                         onClaimSuccessMessage = { claimSuccessMessage = it },
                         onClaimShift = { shift ->
-                            // POST the real claim → `claim-shift` while the ViewModel does the optimistic
-                            // local pickup. The server is authoritative for the hours-cap, T-2h cutoff,
-                            // cross-house eligibility and FCFS; the client gating was a pre-check. WEEKLY
-                            // openings only — permanent openings route through onPickUpPermanent.
+                            // CONFIRMED, not optimistic (2026-07-28). `claim-shift` is ONE POST PER
+                            // 30-MINUTE BLOCK, and each landed block emits a Realtime event that
+                            // refetches the week, so the old optimistic path rendered a claimed shift
+                            // ASSEMBLING ITSELF (16:00-16:30, then 16:00-17:00, ...) under an
+                            // already-shown success toast. Registering the write instead holds the
+                            // tapped card whole and busy, hides the half-written rows, and shows the
+                            // outcome once every block has actually been answered for.
                             //
-                            // claim-shift is per-block, so a coalesced card can land PARTIALLY (e.g. a
-                            // sub-range overlapping an existing shift): full → accurate success toast,
-                            // partial → an informative "claimed part of this shift" note (NOT a red
-                            // failure — the bug this fixes), none → the classified error + revert.
+                            // The server stays authoritative for the hours cap, the T-2h cutoff,
+                            // cross-house eligibility and FCFS. A coalesced card can still land
+                            // PARTIALLY (a sub-range lost the race): full is a clean success, partial
+                            // is the informative "claimed part of this shift" note, not a red failure.
+                            val token = writeStore.beginClaim(shift)
                             prefsScope.launch {
-                                val outcome = runCatching { repo.claimShift(shift) }.getOrElse { ClaimOutcome.offline() }
-                                val toast = claimToast(WriteOp.CLAIM, outcome, CLAIM_SUCCESS_TOAST)
-                                if (toast.isError) {
-                                    claimSuccessMessage = null
-                                    writeError = toast.message
-                                    revertKey++
-                                } else {
-                                    writeError = null
-                                    claimSuccessMessage = toast.message
-                                    // Audit F9: a PARTIAL claim is not an error (the toast
-                                    // says so), but the optimistic move added the WHOLE
-                                    // coalesced span to My-Shifts and pulled every one of
-                                    // its blocks out of the open feed. claim-shift is one
-                                    // POST per block, so losing the FCFS race on some of
-                                    // them is the expected concurrent outcome, not an edge
-                                    // case. Without this the worker keeps seeing blocks
-                                    // they do not hold. Reverting hands the display back to
-                                    // the snapshot, and the refetch below replaces it with
-                                    // what actually landed.
-                                    if (outcome.failed > 0) revertKey++
+                                try {
+                                    val outcome = runCatching { repo.claimShift(shift) }.getOrElse { ClaimOutcome.offline() }
+                                    val toast = claimToast(WriteOp.CLAIM, outcome, CLAIM_SUCCESS_TOAST)
+                                    if (toast.isError) {
+                                        claimSuccessMessage = null
+                                        writeError = toast.message
+                                    } else {
+                                        writeError = null
+                                        claimSuccessMessage = toast.message
+                                    }
+                                    // Audit F9, and now also what ENDS the in-progress card: a claim
+                                    // moves rows into this worker's RLS scope one at a time, so only
+                                    // a positive pull can tell us what actually landed.
+                                    repo.refresh.request()
+                                } finally {
+                                    writeStore.end(token)
                                 }
-                                repo.refresh.request()
                             }
                         },
                         onPickUpPermanent = { shift ->
@@ -826,6 +913,13 @@ private fun LiveShiftsRoot(
                                 }
                             }
                         },
+                        onToggleNotification = { prefs ->
+                            // Persist both open-shift channels through
+                            // `set_notification_preferences` (own-row, no user_id parameter).
+                            // The switch already moved; a failure toasts and re-reads, so the
+                            // toggle snaps back rather than lying about what the server holds.
+                            launchWriteBool(WriteOp.PREFERENCES) { profileRepo.setNotificationPreferences(prefs) }
+                        },
                         onToggleBroadcast = { subscribed ->
                             // PATCH the real broadcast subscription → `users-broadcast-subscription` while
                             // the settings ViewModel already flipped its optimistic toggle. The EF rejects
@@ -844,60 +938,64 @@ private fun LiveShiftsRoot(
                         },
                         onAcceptSwap = { swapId ->
                             // POST the real acceptance → `accept-swap`. EVERY type is acceptable now:
-                            // permanent swaps auto-resolve their affected occurrences server-side. The
-                            // server re-checks pending/expiry atomically (§8.2). On success bump
-                            // swapRefreshKey so the swaps lists + calendar marks reconcile; on failure
-                            // toast + revert (re-read → the entry returns as actionable).
+                            // permanent swaps auto-resolve their affected occurrences server-side, and
+                            // the server re-checks pending/expiry atomically (§8.2). Both lists now
+                            // reconcile over Realtime (`swap_requests` is published), so there is no
+                            // refresh key to bump; the explicit pulls below cover the rows that LEAVE
+                            // each party's RLS scope, which Realtime structurally cannot report.
                             prefsScope.launch {
                                 val result = runCatching { repo.acceptSwap(swapId) }.getOrElse { EdgeResult(false, 0, "") }
                                 // accept-swap returns 200 even on a logical no-op ({accepted:false,reason}),
                                 // so confirm the body actually applied — otherwise classify the reason.
-                                if (result.ok && swapAccepted(result.body)) {
-                                    swapRefreshKey++
-                                } else {
+                                if (!(result.ok && swapAccepted(result.body))) {
                                     writeError = edgeErrorMessage(WriteOp.ACCEPT_SWAP, result)
                                     revertKey++
                                 }
-                                // Audit F9. An accepted swap moves seats BETWEEN two
-                                // workers, so one side's rows leave their RLS scope and
-                                // Realtime tells them nothing.
+                                // Audit F9. An accepted swap moves seats BETWEEN two workers, so one
+                                // side's rows leave their RLS scope and Realtime tells them nothing.
                                 repo.refresh.request()
+                                swapRepo.refresh.request()
                             }
                         },
                         onRejectSwap = { swapId ->
                             // POST the real decline → `reject-swap` (idempotent — a non-pending swap 409s
-                            // `not_pending`). On success reconcile via swapRefreshKey; on failure surface
-                            // the classified reason + revert.
+                            // `not_pending`). The INITIATOR now learns about this without polling: the
+                            // status flip is published on `swap_requests` and the DB trigger also files
+                            // them a `swap_declined` notification. Previously neither happened, which is
+                            // why a decline never reached the other side.
                             prefsScope.launch {
                                 val result = runCatching { repo.rejectSwap(swapId) }.getOrElse { EdgeResult(false, 0, "") }
-                                if (result.ok) {
-                                    swapRefreshKey++
-                                } else {
+                                if (!result.ok) {
                                     writeError = edgeErrorMessage(WriteOp.DECLINE_SWAP, result)
                                     revertKey++
                                 }
+                                swapRepo.refresh.request()
                             }
                         },
                         onCreateSwap = { proposal ->
                             // POST the real proposal → `create-swap`. The server is authoritative for §8
-                            // eligibility/conflicts; a rejection creates nothing. On SUCCESS reflect the
-                            // leg in the Swaps→Outgoing list immediately (optimistic) and bump
-                            // swapRefreshKey to reconcile to the real voidable row (there's no Realtime
-                            // on swap_requests). On FAILURE surface a swap-specific error toast. Returns
-                            // the outcome so the sheet shows "Swap proposed" only on a real success.
-                            val result = runCatching { repo.createSwap(proposal) }.getOrElse { EdgeResult(false, 0, "") }
-                            if (result.ok) {
-                                swapsVm.addOutgoing(proposal)
-                                swapRefreshKey++
-                            } else {
-                                writeError = edgeErrorMessage(WriteOp.PROPOSE_SWAP, result)
+                            // eligibility/conflicts; a rejection creates nothing. The worker's own side is
+                            // held BUSY for the duration instead of being shown as already proposed, and
+                            // the real row arrives over Realtime, so the synthetic "Your housemate"
+                            // placeholder that used to be inserted here is gone. Returns the outcome so
+                            // the sheet shows "Swap proposed" only on a real success.
+                            val token = writeStore.beginSwap(proposal.initiatorAssignmentIds)
+                            try {
+                                val result = runCatching { repo.createSwap(proposal) }.getOrElse { EdgeResult(false, 0, "") }
+                                if (!result.ok) {
+                                    writeError = edgeErrorMessage(WriteOp.PROPOSE_SWAP, result)
+                                }
+                                swapRepo.refresh.request()
+                                result.ok
+                            } finally {
+                                writeStore.end(token)
                             }
-                            result.ok
                         },
                         onVoidSwap = { swapId ->
                             // POST the real void → `void-swap` (pending-only, own-party). On failure surface
                             // the classified reason + revert (re-read outgoing swaps → the entry returns).
                             launchWrite(WriteOp.CANCEL_SWAP) { repo.voidSwap(swapId) }
+                            swapRepo.refresh.request()
                         },
                     ),
             )

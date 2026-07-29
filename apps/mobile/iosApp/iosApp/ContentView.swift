@@ -16,14 +16,19 @@ import Shared
 final class ShiftsObservable: ObservableObject {
     private(set) var vm: ShiftsScreenViewModel
     @Published var state: ShiftsUiState
-    /// The live "This week — Xh" total (demo constant until live activates).
-    @Published var weeklyHours: Double = DemoFactory.shared.demoWeeklyHours
+    /// The "This week — Xh" total. Seeded by the host: the demo constant on the demo build,
+    /// 0 on the live build (where a fabricated total would be a lie until the week lands).
+    @Published var weeklyHours: Double
+    /// Flips true on the FIRST live snapshot and never back. The host holds the launch splash
+    /// until this is true, so a signed-in worker's first painted screen is their own week.
+    @Published private(set) var hasLiveSnapshot = false
     private var task: Task<Void, Never>?
     private var liveTask: Task<Void, Never>?
     private var live = false
 
-    init(vm: ShiftsScreenViewModel) {
+    init(vm: ShiftsScreenViewModel, weeklyHours: Double = 0) {
         self.vm = vm
+        self.weeklyHours = weeklyHours
         self.state = vm.uiState.value
         subscribe()
     }
@@ -91,6 +96,8 @@ final class ShiftsObservable: ObservableObject {
                 guard let self else { return }
                 self.vm = DemoFactory.shared.shiftsViewModel(snapshot: snapshot)
                 self.weeklyHours = DemoFactory.shared.weeklyHoursFor(snapshot: snapshot)
+                // The worker's own week is now on screen, so the host may drop the splash.
+                self.hasLiveSnapshot = true
                 // subscribe() pushes the fresh shifts to the home-screen widgets.
                 self.subscribe()
             }
@@ -124,7 +131,19 @@ final class ShiftsObservable: ObservableObject {
 final class CalendarObservable: ObservableObject {
     private(set) var vm: CalendarViewModel
     @Published var state: CalendarUiState
+    /// Flips true once the worker's REAL week has been built into this VM, and never back.
+    /// The launch splash waits on this as well as the shifts model's: My Shifts (the landing
+    /// tab) renders from the CALENDAR, and the calendar lands two round trips later (closed
+    /// days, then pending swaps per snapshot). Gating on the shifts model alone dropped the
+    /// splash onto a still-empty agenda for about a second and a half.
+    @Published private(set) var hasLiveSnapshot = false
     private var task: Task<Void, Never>?
+    private var swapTask: Task<Void, Never>?
+    // The two live collectors (week, swaps) arrive independently, so each keeps its own
+    // last value and `rebuild()` combines them.
+    private var lastSnapshot: WorkerSnapshot?
+    private var lastSwaps: [PendingSwap] = []
+    private var closedDays: Set<KotlinInt> = Set()
     private var live = false
 
     init(vm: CalendarViewModel) {
@@ -156,6 +175,8 @@ final class CalendarObservable: ObservableObject {
     func suspendLive() {
         liveTask?.cancel()
         liveTask = nil
+        swapTask?.cancel()
+        swapTask = nil
         live = false
     }
 
@@ -165,6 +186,7 @@ final class CalendarObservable: ObservableObject {
     }
 
     func activateLive(repo: WorkerShiftsRepository, userId: String) {
+        let swapRepo = WorkerBackend.shared.swapActivityRepository
         liveRepo = repo
         liveUserId = userId
         guard !live else { return }
@@ -172,25 +194,49 @@ final class CalendarObservable: ObservableObject {
         liveTask = Task { [weak self] in
             // D8 — the calendar reads the REAL week too (closed days overlaid once).
             let closed = (try? await repo.fetchCalendarClosedDays(userId: userId)) ?? Set()
+            self?.closedDays = closed
             for await snapshot in repo.observeWorkerWeek(userId: userId, now: DemoFactory.shared.now()) {
                 guard let self else { return }
-                // Re-read pending swaps per tick so an accept/decline (which fires a realtime
-                // assignment change) reconciles the My-Shifts swap marks to server truth.
-                let swaps = (try? await repo.fetchPendingSwaps()) ?? []
-                self.vm = DemoFactory.shared.calendarViewModel(snapshot: snapshot, closedDayIndexes: closed, pendingSwaps: swaps)
-                self.subscribe()
+                self.lastSnapshot = snapshot
+                self.rebuild()
+                // The agenda now holds the worker's real week, so the splash may drop.
+                self.hasLiveSnapshot = true
             }
         }
+        // A pure swap change (someone sent, accepted or declined a request) touches NO
+        // assignment row, so the week flow above never ticks for it. Without this second
+        // collector the My-Shifts swap banner and the card marks would sit stale until an
+        // unrelated seat change happened to refresh them, which is the pilot bug on iOS.
+        swapTask = Task { [weak self] in
+            for await activity in swapRepo.observeSwapActivity(userId: userId) {
+                guard let self else { return }
+                self.lastSwaps = activity.pendingSwaps
+                self.rebuild()
+            }
+        }
+    }
+
+    /// Rebuild the calendar VM from the latest week + swaps + closed days. Both live
+    /// collectors funnel through here so whichever arrives second does not discard what
+    /// the first one delivered.
+    private func rebuild() {
+        guard let snapshot = lastSnapshot else { return }
+        vm = DemoFactory.shared.calendarViewModel(
+            snapshot: snapshot,
+            closedDayIndexes: closedDays,
+            pendingSwaps: lastSwaps
+        )
+        subscribe()
     }
 
     /// Re-read the worker's week from server truth after a failed optimistic drop/swap, so the
     /// card returns to the agenda. Best-effort: a failed fetch leaves the optimistic move.
     func refreshFromServer(repo: WorkerShiftsRepository, userId: String) async {
-        let closed = (try? await repo.fetchCalendarClosedDays(userId: userId)) ?? Set()
-        let swaps = (try? await repo.fetchPendingSwaps()) ?? []
+        closedDays = (try? await repo.fetchCalendarClosedDays(userId: userId)) ?? Set()
+        lastSwaps = (try? await WorkerBackend.shared.swapActivityRepository.fetchPendingSwaps()) ?? []
         guard let snapshot = try? await repo.fetchWorkerWeek(userId: userId, now: DemoFactory.shared.now()) else { return }
-        self.vm = DemoFactory.shared.calendarViewModel(snapshot: snapshot, closedDayIndexes: closed, pendingSwaps: swaps)
-        self.subscribe()
+        lastSnapshot = snapshot
+        rebuild()
     }
 
     /// The accept/decline popup model for a tapped INCOMING-swap card (nil for outgoing).
@@ -218,6 +264,7 @@ final class CalendarObservable: ObservableObject {
 final class UpdatesObservable: ObservableObject {
     @Published private(set) var feed: UpdatesFeed
     private var vm: UpdatesViewModel
+    private var liveTask: Task<Void, Never>?
     private var live = false
 
     var hasUnread: Bool { vm.uiState.value.hasUnread }
@@ -232,24 +279,36 @@ final class UpdatesObservable: ObservableObject {
     /// entries), republish the feed. Falls back to the demo feed (no swap) when the
     /// notifications fetch fails. `DemoFactory` supplies `now` Kotlin-side so we avoid
     /// bridging a `kotlin.time.Instant`.
-    func activateLive(repo: WorkerShiftsRepository, userId: String) async {
+    /// LIVE (2026-07-28). Notifications and incoming swaps now arrive over the shared
+    /// `SwapActivityRepository` channel instead of a one-shot fetch, so a swap request
+    /// (which is a MANDATORY notification as of the same change) lands in this feed as it
+    /// is sent rather than whenever the worker next did something. The pending float is
+    /// still a separate read on the shifts repository.
+    func activateLive(
+        repo: WorkerShiftsRepository,
+        swapRepo: SwapActivityRepository,
+        userId: String
+    ) {
         guard !live else { return }
         live = true
-        guard let items = try? await repo.fetchNotifications(userId: userId) else { return }
-        let float = try? await repo.fetchPendingFloat(userId: userId)
-        let swaps = (try? await repo.fetchIncomingSwaps(userId: userId)) ?? []
-        vm = DemoFactory.shared.updatesViewModel(notifications: items, float: float ?? nil, swaps: swaps)
-        feed = vm.uiState.value.feed
+        liveTask = Task { [weak self] in
+            for await activity in swapRepo.observeSwapActivity(userId: userId) {
+                guard let self else { return }
+                guard let items = activity.notifications else { continue }
+                let float = try? await repo.fetchPendingFloat(userId: userId)
+                self.vm = DemoFactory.shared.updatesViewModel(
+                    notifications: items,
+                    float: float ?? nil,
+                    swaps: activity.incomingSwaps
+                )
+                self.feed = self.vm.uiState.value.feed
+            }
+        }
     }
 
-    /// Re-read the feed from server truth (e.g. after acting on a swap in the Swaps tab so
-    /// the mirror clears). Same fetch as `activateLive`, minus the `!live` guard.
-    func refreshFromServer(repo: WorkerShiftsRepository, userId: String) async {
-        guard let items = try? await repo.fetchNotifications(userId: userId) else { return }
-        let float = try? await repo.fetchPendingFloat(userId: userId)
-        let swaps = (try? await repo.fetchIncomingSwaps(userId: userId)) ?? []
-        vm = DemoFactory.shared.updatesViewModel(notifications: items, float: float ?? nil, swaps: swaps)
-        feed = vm.uiState.value.feed
+    /// Ask the shared flow to re-read now (a write whose rows may have left RLS scope).
+    func refreshFromServer(swapRepo: SwapActivityRepository) {
+        swapRepo.refresh.request()
     }
 
     /// Optimistic "Mark all read" (T2-8): flip every unread item to read in the shared VM,
@@ -287,6 +346,7 @@ final class SwapsObservable: ObservableObject {
     private(set) var vm: SwapsViewModel
     @Published var state: SwapsUiState
     private var task: Task<Void, Never>?
+    private var liveTask: Task<Void, Never>?
     private var live = false
 
     init(vm: SwapsViewModel) {
@@ -304,27 +364,41 @@ final class SwapsObservable: ObservableObject {
         }
     }
 
-    func activateLive(repo: WorkerShiftsRepository, userId: String) async {
+    /// LIVE (2026-07-28). This used to be a ONE-SHOT fetch behind a `!live` guard, so a
+    /// swap somebody else sent, accepted or declined never reached this tab on its own;
+    /// it appeared only when the worker happened to act and trigger `refreshFromServer`.
+    /// That is the "it did not show up until much later" in the pilot report.
+    ///
+    /// `swap_requests` is now in the Realtime publication and `SwapActivityRepository`
+    /// holds one shared channel over it plus `notifications`, so this collects and
+    /// rebuilds on every swap event, for both parties.
+    func activateLive(repo: SwapActivityRepository, userId: String) {
         guard !live else { return }
         live = true
-        let pending = (try? await repo.fetchPendingSwaps()) ?? []
-        vm = DemoFactory.shared.swapsViewModel(pendingSwaps: pending)
-        subscribe()
+        liveTask = Task { [weak self] in
+            for await activity in repo.observeSwapActivity(userId: userId) {
+                guard let self else { return }
+                self.vm = DemoFactory.shared.swapsViewModel(pendingSwaps: activity.pendingSwaps)
+                self.subscribe()
+            }
+        }
     }
 
-    /// Re-read the enriched pending swaps after an action so the lists reconcile.
-    func refreshFromServer(repo: WorkerShiftsRepository, userId: String) async {
-        let pending = (try? await repo.fetchPendingSwaps()) ?? []
-        vm = DemoFactory.shared.swapsViewModel(pendingSwaps: pending)
-        subscribe()
+    /// Ask the shared flow to re-read now. Realtime covers everything the worker can still
+    /// SEE; an accepted swap moves seats between two people, so one side's rows leave
+    /// their RLS scope and `postgres_changes` reports nothing to them.
+    func refreshFromServer(repo: SwapActivityRepository) {
+        repo.refresh.request()
     }
 
     func selectTab(_ t: SwapsTab) { vm.selectTab(tab: t) }
     func resolveIncoming(_ id: String) { vm.resolveIncoming(swapId: id) }
     func cancelOutgoing(_ id: String) { vm.cancelOutgoing(swapId: id) }
-    func addOutgoing(_ proposal: SwapProposal) { vm.addOutgoing(proposal: proposal) }
 
-    deinit { task?.cancel() }
+    deinit {
+        task?.cancel()
+        liveTask?.cancel()
+    }
 }
 
 /// Holds the float-ack `AckDeclineViewModel`. Demo by default; the backend-configured
@@ -337,8 +411,11 @@ final class AckHostObservable: ObservableObject {
     @Published private(set) var vm: AckDeclineViewModel
     private var live = false
 
-    init() {
-        self.vm = DemoFactory.shared.ackViewModel()
+    /// [vm] is the seed the host chooses: the demo float on the demo build, `LiveDefaults`'
+    /// inert placeholder on the live build. NEVER the demo float on live — a real worker
+    /// must not be shown a float request that does not exist.
+    init(vm: AckDeclineViewModel = DemoFactory.shared.ackViewModel()) {
+        self.vm = vm
     }
 
     /// Live host: load the worker's pending float, rebuild the VM. `DemoFactory`
@@ -507,15 +584,51 @@ struct ShiftsRootView: View {
     /// The authenticated worker's id on the backend-configured path (nil in demo).
     /// When set, the Preferences tab loads the worker's real period and submits live.
     var liveUserId: String? = nil
+    /// True when we got here from a sign-in the worker just performed (rather than a cold
+    /// launch with a restored session) — the warm-up splash then says so.
+    var signingIn: Bool = false
+
+    /// On the LIVE path every screen is seeded EMPTY, not with `DemoData`.
+    ///
+    /// This is load-bearing, not tidiness. Every `@StateObject` below defaults to a
+    /// DemoFactory ViewModel, which is right for the login-bypass demo build and was WRONG
+    /// on the live build: a signed-in worker saw a fabricated week (demo shifts, demo float
+    /// requests, demo swaps "awaiting your action") for the seconds between launch and each
+    /// tab's first server read, and any read that FAILED left that fiction on screen
+    /// indefinitely. Seeding from `LiveDefaults` makes every one of those states honest:
+    /// empty until the worker's own data arrives, and empty if it never does. Combined with
+    /// the warm-up splash below, the first thing a signed-in worker sees is their own data.
+    init(onSignOut: @escaping () -> Void = {}, liveUserId: String? = nil, signingIn: Bool = false) {
+        self.onSignOut = onSignOut
+        self.liveUserId = liveUserId
+        self.signingIn = signingIn
+        guard liveUserId != nil else { return } // demo build keeps the DemoFactory seeds
+        _model = StateObject(wrappedValue: ShiftsObservable(vm: LiveDefaults.shared.shiftsViewModel(), weeklyHours: 0))
+        _calendarModel = StateObject(wrappedValue: CalendarObservable(vm: LiveDefaults.shared.calendarViewModel()))
+        _houseModel = StateObject(
+            wrappedValue: HouseObservable(vm: LiveDefaults.shared.houseScheduleViewModel(meUserId: liveUserId)))
+        _prefsModel = StateObject(wrappedValue: PreferencesObservable(vm: LiveDefaults.shared.preferencesViewModel(isManager: false)))
+        _breakModel = StateObject(
+            wrappedValue: BreakCalendarObservable(vm: LiveDefaults.shared.breakCalendarViewModel(meUserId: liveUserId)))
+        _settingsModel = StateObject(wrappedValue: SettingsObservable(vm: LiveDefaults.shared.settingsViewModel()))
+        _ackModel = StateObject(wrappedValue: AckHostObservable(vm: LiveDefaults.shared.ackViewModel()))
+        _updatesModel = StateObject(wrappedValue: UpdatesObservable(vm: LiveDefaults.shared.updatesViewModel()))
+        _swapsModel = StateObject(wrappedValue: SwapsObservable(vm: LiveDefaults.shared.swapsViewModel()))
+        _floatCarouselModel = StateObject(wrappedValue: FloatCarouselObservable(floats: [], recentFloats: []))
+    }
 
     // Drives the foreground gate on the two live worker-week collectors (cost audit
     // F-11). The app-level scenePhase observer in iOSApp.swift handles only the sim
     // clock; the teardown belongs here, where the observables live.
     @Environment(\.scenePhase) private var scenePhase
 
-    @StateObject private var model = ShiftsObservable(vm: DemoFactory.shared.shiftsViewModel())
-    @StateObject private var calendarModel = CalendarObservable(vm: DemoFactory.shared.calendarViewModelWithSwaps())
-    @StateObject private var houseModel = HouseObservable(vm: DemoFactory.shared.houseScheduleViewModel())
+    @StateObject private var model =
+        ShiftsObservable(vm: DemoFactory.shared.shiftsViewModel(), weeklyHours: DemoFactory.shared.demoWeeklyHours)
+    // `internal`, not `private`: SwapBannerView.swift is an extension on this type and
+    // Swift extensions in another file cannot reach private storage (same reason the
+    // House-grid split relaxed its state).
+    @StateObject var calendarModel = CalendarObservable(vm: DemoFactory.shared.calendarViewModelWithSwaps())
+    @StateObject var houseModel = HouseObservable(vm: DemoFactory.shared.houseScheduleViewModel())
     @StateObject private var prefsModel = PreferencesObservable(vm: DemoFactory.shared.preferencesViewModel())
     @StateObject private var breakModel = BreakCalendarObservable(vm: DemoFactory.shared.breakCalendarViewModel())
     @StateObject private var settingsModel = SettingsObservable(vm: DemoFactory.shared.settingsViewModel())
@@ -542,7 +655,7 @@ struct ShiftsRootView: View {
     @State private var showBreakTourPointer = false
     @StateObject private var swapTourModel = SwapTourObservable()
     @State private var showSwapTourPointer = false
-    @StateObject private var houseGridTourModel = HouseGridTourObservable()
+    @StateObject var houseGridTourModel = HouseGridTourObservable()
     @State private var showHouseGridTourPointer = false
     @StateObject private var openClaimTourModel = OpenClaimTourObservable()
     @State private var showOpenClaimTourPointer = false
@@ -552,7 +665,19 @@ struct ShiftsRootView: View {
     @StateObject private var floatCarouselModel = FloatCarouselObservable(
         floats: DemoData().pendingFloats(now: DemoFactory.shared.now()),
         recentFloats: DemoData().recentFloats(now: DemoFactory.shared.now()))
-    @Environment(\.colorScheme) private var scheme
+    // `internal`, not `private`: HouseGridView.swift and SwapCalendarView.swift are
+    // extensions on this type in other files, and a Swift extension cannot reach the
+    // extended type's private storage. Every other `scheme` in this file stays private.
+    @Environment(\.colorScheme) var scheme
+
+    /// LIVE path only: false until the worker's own first week has landed (or the bounded
+    /// wait below expires). Holds the launch splash over the still-empty tree, so the app
+    /// goes splash → your schedule, with no loading chrome and nothing fake in between.
+    @State private var liveWarmupDone = false
+    /// Fail-safe on the warm-up hold. If the first snapshot never arrives (no network, a
+    /// failed read, an RLS surprise) the worker must land on the honest empty screen rather
+    /// than be stranded on a splash forever.
+    private static let liveWarmupMaxSeconds: Double = 8
 
     @State private var tab: Tab = .mine
     // Open-Shifts sub-tab: 0 = My House, 1 = Others.
@@ -577,21 +702,21 @@ struct ShiftsRootView: View {
     @State private var floatDetail: IdentifiedFloatDetail?
     // The success toast after a claim / permanent pickup; carries the "Picked up X of Y
     // weeks" message for a pickup, the fixed claim message otherwise. Nil = no toast.
-    @State private var claimSuccessMessage: String?
+    @State var claimSuccessMessage: String?
     // Non-nil when a best-effort live write (drop/claim/reclaim/pickup) failed to reach
     // the server. Surfaced as a top error toast (so a swallowed EF failure no longer
     // masquerades as success) and auto-cleared; the optimistic card is reverted to
     // server truth via `model.revertToServer`.
-    @State private var writeError: String?
+    @State var writeError: String?
     @State private var swapProposed = false
     /// How long a transient toast stays on screen, in nanoseconds — derived from the shared
     /// `TOAST_DURATION_MS` single source of truth so both platforms match.
     private var toastDurationNanos: UInt64 { UInt64(WriteFeedbackKt.TOAST_DURATION_MS) * 1_000_000 }
     // Incoming-swap accept/decline popup, opened from a flagged My-Shifts card.
-    @State private var decisionTarget: IdentifiedSwapDecision?
+    @State var decisionTarget: IdentifiedSwapDecision?
     // OUTGOING-swap "swap pending" notice (cancel / keep waiting), opened from a flagged
     // My-Shifts card — replaces the drop sheet for a shift tied up in a swap you proposed.
-    @State private var pendingNotice: IdentifiedPendingSwapNotice?
+    @State var pendingNotice: IdentifiedPendingSwapNotice?
     // D5 — week-picker sheet (Calendar tab).
     @State private var showWeekPicker = false
     // Open-Shifts week-picker sheet + the collapsed "Earlier this week" past card.
@@ -679,10 +804,10 @@ struct ShiftsRootView: View {
         await ackModel.refreshFromServer(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
     }
 
-    /// Revert a failed swap accept/reject/void by re-reading the Updates feed.
+    /// Pull server truth for the Updates feed after a failed swap accept/reject/void.
     private func revertUpdates() async {
-        guard let uid = liveUserId else { return }
-        await updatesModel.refreshFromServer(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
+        guard liveUserId != nil else { return }
+        WorkerBackend.shared.swapActivityRepository.refresh.request()
     }
 
     /// Revert a failed drop by re-reading the calendar week (the dropped card returns to
@@ -768,7 +893,105 @@ struct ShiftsRootView: View {
         }
     }
 
+    /// True while the live tree is still empty and must not be shown.
+    private var showWarmupSplash: Bool { liveUserId != nil && !liveWarmupDone }
+
+    /// Both landing surfaces hold real data: the calendar (the My-Shifts agenda the app
+    /// opens on) and the shifts model (the week chip + the Open feeds one tap away).
+    private var liveDataLanded: Bool { model.hasLiveSnapshot && calendarModel.hasLiveSnapshot }
+
     var body: some View {
+        ZStack {
+            // `content` stays in the hierarchy the whole time — its `.task` is what performs
+            // the live activation, so it must never be conditionally removed, or the splash
+            // would wait on loads that were never started.
+            content
+            if showWarmupSplash {
+                // Same lockup, same background as the OS launch screen: from the worker's
+                // side the splash simply stays up until their schedule is ready.
+                ShiftSplashView(caption: signingIn ? "Signing you in" : nil)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: showWarmupSplash)
+        .onChange(of: liveDataLanded) { landed in
+            if landed { liveWarmupDone = true }
+        }
+        .task {
+            // Bounded hold (see liveWarmupMaxSeconds). Also covers the race where the data
+            // lands before `onChange` is installed.
+            guard liveUserId != nil, !liveWarmupDone else { return }
+            if liveDataLanded {
+                liveWarmupDone = true
+                return
+            }
+            try? await Task.sleep(nanoseconds: UInt64(Self.liveWarmupMaxSeconds * 1_000_000_000))
+            liveWarmupDone = true
+        }
+    }
+
+
+    /// The Settings tab, extracted out of `content` (2026-07-28).
+    ///
+    /// Not cosmetic: `content` is one expression and Swift type-checks it as one. Adding
+    /// the notification-preferences closure tipped it past the solver's budget and the
+    /// build failed with "unable to type-check this expression in reasonable time".
+    /// Pulling a leaf out is the fix, and it keeps the switch arm readable.
+    private var settingsTab: some View {
+                    SettingsScreen(
+                        model: settingsModel,
+                        onSignOut: onSignOut,
+                        // Live host PATCHes `users-broadcast-subscription` while the settings
+                        // VM does the optimistic local toggle; demo (liveUserId == nil) =
+                        // local-only. The EF 403s an HM/BM subscribe → toast + flip back.
+                        onToggleBroadcast: liveUserId == nil ? nil : { subscribed in
+                            guard let uid = liveUserId else { return }
+                            let repo = WorkerBackend.shared.profileRepository
+                            liveWrite(.broadcast, revert: false, reconcile: false, onFailure: { settingsModel.vm.toggleBroadcast() }) {
+                                try? await repo.setBroadcastSubscription(userId: uid, subscribed: subscribed)
+                            }
+                        },
+                        // Persist the configurable channels through
+                        // `set_notification_preferences` (own-row, no user_id). The
+                        // switch already moved; a failure toasts and re-reads, so the
+                        // control snaps back rather than lying about what is stored.
+                        onToggleNotification: liveUserId == nil ? nil : { prefs in
+                            let repo = WorkerBackend.shared.profileRepository
+                            liveWriteBool(.preferences, revert: false, reconcile: false) {
+                                ((try? await repo.setNotificationPreferences(prefs: prefs)) ?? false) as! Bool
+                            }
+                        },
+                        onReplayTour: { onboardingModel.replay() },
+                        onReplayShiftTour: {
+                            requestTab(.mine)
+                            shiftTourModel.replay()
+                        },
+                        onReplayPreferencesTour: {
+                            requestTab(.preferences)
+                            preferencesTourModel.replay()
+                        },
+                        onReplayBreakTour: {
+                            requestTab(.breakShifts)
+                            breakTourModel.replay()
+                        },
+                        onReplaySwapTour: {
+                            // The swap composer lives in a sheet, not a tab — priming it
+                            // here means it fires the next time the worker reaches the
+                            // swap page (see ManageShiftSheet's page==.swap gating).
+                            requestTab(.mine)
+                            swapTourModel.replay()
+                        },
+                        onReplayHouseGridTour: {
+                            requestTab(.house)
+                            houseGridTourModel.replay()
+                        },
+                        onReplayOpenClaimTour: {
+                            requestTab(.openShifts)
+                            openClaimTourModel.replay()
+                        }
+                    )
+    }
+    private var content: some View {
         VStack(spacing: 0) {
             // §4.4 — while a break's claim window is open, promote the Break calendar with a
             // visible banner from every other tab (it otherwise lives in the More overflow).
@@ -806,48 +1029,7 @@ struct ShiftsRootView: View {
                         case .preferences: EmptyView() // rendered above, outside the ScrollView
                         case .breakShifts: EmptyView() // rendered above, outside the ScrollView
                         case .assistant: EmptyView() // rendered above, outside the ScrollView
-                        case .settings: SettingsScreen(
-                            model: settingsModel,
-                            onSignOut: onSignOut,
-                            // Live host PATCHes `users-broadcast-subscription` while the settings
-                            // VM does the optimistic local toggle; demo (liveUserId == nil) =
-                            // local-only. The EF 403s an HM/BM subscribe → toast + flip back.
-                            onToggleBroadcast: liveUserId == nil ? nil : { subscribed in
-                                guard let uid = liveUserId else { return }
-                                let repo = WorkerBackend.shared.profileRepository
-                                liveWrite(.broadcast, revert: false, reconcile: false, onFailure: { settingsModel.vm.toggleBroadcast() }) {
-                                    try? await repo.setBroadcastSubscription(userId: uid, subscribed: subscribed)
-                                }
-                            },
-                            onReplayTour: { onboardingModel.replay() },
-                            onReplayShiftTour: {
-                                requestTab(.mine)
-                                shiftTourModel.replay()
-                            },
-                            onReplayPreferencesTour: {
-                                requestTab(.preferences)
-                                preferencesTourModel.replay()
-                            },
-                            onReplayBreakTour: {
-                                requestTab(.breakShifts)
-                                breakTourModel.replay()
-                            },
-                            onReplaySwapTour: {
-                                // The swap composer lives in a sheet, not a tab — priming it
-                                // here means it fires the next time the worker reaches the
-                                // swap page (see ManageShiftSheet's page==.swap gating).
-                                requestTab(.mine)
-                                swapTourModel.replay()
-                            },
-                            onReplayHouseGridTour: {
-                                requestTab(.house)
-                                houseGridTourModel.replay()
-                            },
-                            onReplayOpenClaimTour: {
-                                requestTab(.openShifts)
-                                openClaimTourModel.replay()
-                            }
-                        )
+                        case .settings: settingsTab
                         }
                     }
                 }
@@ -1106,14 +1288,14 @@ struct ShiftsRootView: View {
                         let repo = WorkerBackend.shared.shiftsRepository
                         for proposal in proposals {
                             Task { @MainActor in
-                                // "Swap proposed" + the Outgoing row show ONLY when the write
-                                // actually lands; a failed write raises the red writeError toast.
-                                // There is no Realtime on swap_requests, so refetch to surface
-                                // the real, voidable row after the optimistic add.
+                                // "Swap proposed" shows ONLY when the write actually lands;
+                                // a failed write raises the red writeError toast. The real,
+                                // voidable Outgoing row now arrives over the swap_requests
+                                // Realtime channel, so the synthetic "Your housemate"
+                                // placeholder that used to be inserted here is gone.
                                 let result = (try? await repo.createSwap(proposal: proposal)) ?? EdgeResult(ok: false, status: 0, body: "")
                                 if result.ok {
-                                    swapsModel.addOutgoing(proposal)
-                                    await swapsModel.refreshFromServer(repo: repo, userId: uid)
+                                    WorkerBackend.shared.swapActivityRepository.refresh.request()
                                     swapProposed = true
                                 } else {
                                     writeError = WriteFeedbackKt.edgeErrorMessage(op: .proposeSwap, result: result)
@@ -1121,8 +1303,9 @@ struct ShiftsRootView: View {
                             }
                         }
                     } else {
-                        // Demo: optimistically reflect each leg in the Swaps tab.
-                        proposals.forEach { swapsModel.addOutgoing($0) }
+                        // Demo has no server to confirm anything, so it still reflects each
+                        // leg locally. This is the ONLY remaining optimistic swap path.
+                        proposals.forEach { swapsModel.vm.addOutgoing(proposal: $0) }
                         swapProposed = true
                     }
                 },
@@ -1300,42 +1483,53 @@ struct ShiftsRootView: View {
             }
         }
         .task {
-            // Backend-configured path: load the worker's real active period + wire the
-            // live submit. Demo (liveUserId == nil) keeps the DemoFactory period.
-            if let uid = liveUserId {
-                // D8 — live READS for the week + calendar (writes were already live).
-                model.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
-                // The worker's highest role gates the manager surfaces (House open-seat
-                // actions + the preferences deadline-setter). Best-effort; defaults to worker.
-                let role = (try? await WorkerBackend.shared.profileRepository.fetchProfile(userId: uid))?.profile.role
-                let isManager = (role ?? "sw") != "sw"
-                await prefsModel.activateLive(
-                    repo: WorkerBackend.shared.preferencesRepository, userId: uid, isManager: isManager
-                )
-                await updatesModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
-                await swapsModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
-                await ackModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
-                // §7.1 — load ALL the worker's outstanding floats (bounded, RLS-scoped
-                // `worker_pending_floats` view) for the My-Shifts carousel and rebuild the VM.
-                // Empty list on live with none outstanding → the carousel hides (NO demo
-                // fallback on live, so a worker without a float never sees a phantom one).
-                let liveFloats = (try? await WorkerBackend.shared.shiftsRepository.fetchPendingFloats(userId: uid)) ?? []
-                let liveRecentFloats = (try? await WorkerBackend.shared.shiftsRepository.fetchRecentFloats(userId: uid)) ?? []
-                floatCarouselModel.rebuild(floats: liveFloats, recentFloats: liveRecentFloats)
-                await settingsModel.activateLive(repo: WorkerBackend.shared.profileRepository, userId: uid)
-                // Closed-house days + the live week for the calendar (§3.4/§11.3 + D8).
-                calendarModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid)
-                // The home-house grid + contacts (§11.4, T3b). A manager (sm/hm/bm/rsm) also
-                // gets the open-seat actions on the home house (reusing `isManager` above).
-                await houseModel.activateLive(repo: WorkerBackend.shared.shiftsRepository, userId: uid, isManager: isManager)
-                // Live break CALENDAR (Break redesign): the home-house grid scoped to the
-                // active break window + phase + §4.4 opt-out.
-                await breakModel.activateLive(
-                    shiftsRepo: WorkerBackend.shared.shiftsRepository,
-                    breakRepo: WorkerBackend.shared.breakRepository,
-                    userId: uid
-                )
-            }
+            // Backend-configured path: load every tab's real data. Demo (liveUserId == nil)
+            // keeps the DemoFactory seeds.
+            //
+            // These reads are CONCURRENT and that is the point. They used to be a chain of
+            // sequential `await`s — one round trip after another, ~5 seconds end to end on a
+            // real connection — during which each not-yet-loaded tab still showed DemoData.
+            // The demo seeding is gone (see this view's `init`), but the wall clock still
+            // matters: the whole set now costs about one round trip, not ten.
+            guard let uid = liveUserId else { return }
+            let repo = WorkerBackend.shared.shiftsRepository
+            let profileRepo = WorkerBackend.shared.profileRepository
+
+            // D8 — the two Realtime collectors (week + calendar). Not `await`ed: they are
+            // long-lived streams, and the first week emission is what drops the splash.
+            model.activateLive(repo: repo, userId: uid)
+            calendarModel.activateLive(repo: repo, userId: uid)
+
+            // The worker's highest role gates the manager surfaces (House open-seat actions +
+            // the preferences deadline-setter). Best-effort; defaults to plain worker.
+            async let profile = profileRepo.fetchProfile(userId: uid)
+            // Swaps + Updates are long-lived Realtime collectors now (not one-shot
+            // fetches), so they start rather than being awaited, like the two above.
+            let swapRepo = WorkerBackend.shared.swapActivityRepository
+            updatesModel.activateLive(repo: repo, swapRepo: swapRepo, userId: uid)
+            swapsModel.activateLive(repo: swapRepo, userId: uid)
+            async let ack: Void = ackModel.activateLive(repo: repo, userId: uid)
+            async let settings: Void = settingsModel.activateLive(repo: profileRepo, userId: uid)
+            // Live break CALENDAR (Break redesign): the home-house grid scoped to the active
+            // break window + phase + §4.4 opt-out.
+            async let breaks: Void = breakModel.activateLive(
+                shiftsRepo: repo, breakRepo: WorkerBackend.shared.breakRepository, userId: uid)
+            // §7.1 — ALL the worker's outstanding floats (bounded, RLS-scoped
+            // `worker_pending_floats` view) for the My-Shifts carousel, plus the resolved
+            // history below it. Empty on live with none outstanding → the carousel hides.
+            async let floats = repo.fetchPendingFloats(userId: uid)
+            async let recentFloats = repo.fetchRecentFloats(userId: uid)
+
+            let isManager = ((try? await profile)?.profile.role ?? "sw") != "sw"
+            async let prefs: Void = prefsModel.activateLive(
+                repo: WorkerBackend.shared.preferencesRepository, userId: uid, isManager: isManager)
+            // The home-house grid + contacts (§11.4, T3b). A manager (sm/hm/bm/rsm) also gets
+            // the open-seat actions on the home house.
+            async let house: Void = houseModel.activateLive(repo: repo, userId: uid, isManager: isManager)
+
+            floatCarouselModel.rebuild(
+                floats: (try? await floats) ?? [], recentFloats: (try? await recentFloats) ?? [])
+            _ = await (ack, settings, breaks, prefs, house)
         }
     }
 
@@ -1981,12 +2175,11 @@ struct ShiftsRootView: View {
         }
     }
 
-    /// Revert a failed swap accept/reject/void by re-reading the Swaps tab + Updates feed.
+    /// Pull server truth for the Swaps tab + Updates feed. One request on the shared
+    /// channel refreshes both, since they collect the same flow.
     private func revertSwaps() async {
-        guard let uid = liveUserId else { return }
-        let repo = WorkerBackend.shared.shiftsRepository
-        await swapsModel.refreshFromServer(repo: repo, userId: uid)
-        await updatesModel.refreshFromServer(repo: repo, userId: uid)
+        guard liveUserId != nil else { return }
+        WorkerBackend.shared.swapActivityRepository.refresh.request()
     }
 
     private func notificationVisual(_ category: NotificationCategory, _ c: ShiftColors) -> (String, Color) {
@@ -2274,561 +2467,42 @@ struct ShiftsRootView: View {
 
     // MARK: House — §11.4 home-house schedule (Excel-style week grid) + contact lookup (T3b)
 
-    @State private var contactTarget: HouseGridBlock?
+    @State var contactTarget: HouseGridBlock?
     // Manager (sm/hm/bm/rsm on the home house) open-seat actions. `houseActionTarget` is the
     // vacant block tapped → the action chooser; picking an action routes to the assign sheet
     // (`assignTarget`) or the "get coverage now" confirm (`coverageTarget`).
-    @State private var houseActionTarget: HouseGridBlock?
-    @State private var assignTarget: HouseGridBlock?
-    @State private var coverageTarget: HouseGridBlock?
-    @State private var showHouseWeekPicker = false
-    @State private var showHousePicker = false
+    @State var houseActionTarget: HouseGridBlock?
+    @State var assignTarget: HouseGridBlock?
+    @State var coverageTarget: HouseGridBlock?
+    @State var showHouseWeekPicker = false
+    @State var showHousePicker = false
     /// The day columns' horizontal scroll offset (≤ 0), mirrored to the frozen header row.
-    @State private var houseHOffset: CGFloat = 0
+    @State var houseHOffset: CGFloat = 0
 
-    // Grid metrics (design `HouseScheduleScreen`).
-    private static let houseRailW: CGFloat = 42
-    private static let houseHeaderH: CGFloat = 46
-    private static let housePxPerHour: CGFloat = 46
-    private static let houseLaneW: CGFloat = 92
-    private static let houseLaneGap: CGFloat = 4
-    private static let houseColPad: CGFloat = 6
-    private static let houseColGap: CGFloat = 6
-    /// How far OTHER workers' seats recede so mine is findable at a glance. Mirrors
-    /// Android's `HOUSE_OTHER_OPACITY`; keep the two in step.
-    private static let houseOtherOpacity: Double = 0.5
+    // Grid metrics (design `HouseScheduleScreen`). INTERNAL, not private: the House tab
+    // lives in HouseGridView.swift as an `extension ShiftsRootView`, and `private` is
+    // file-scoped, so an extension in another file cannot see them.
+    static let houseRailW: CGFloat = 42
+    static let houseHeaderH: CGFloat = 46
+    static let housePxPerHour: CGFloat = 46
+    static let houseLaneW: CGFloat = 92
+    static let houseLaneGap: CGFloat = 4
+    static let houseColPad: CGFloat = 6
+    static let houseColGap: CGFloat = 6
 
-    /// The home-house schedule as a week grid: a fixed left time rail + Mon–Sun day
-    /// columns that scroll sideways (the rail stays put), concurrent desks side-by-side.
-    /// The week navigator (last week … +4) pages the grid; tapping a staffed block opens
-    /// the contact sheet — the "who do I swap with" affordance.
-    private var houseTab: some View {
-        let c = ShiftColors.resolve(scheme)
-        let st = houseModel.state
-        return VStack(alignment: .leading, spacing: 0) {
-            PageTitle(title: "House") {
-                HouseGridTourHelpButton { houseGridTourModel.replay() }
-            }
-            houseHeaderCard(st, c)
-            houseLegend(c)
-            houseGrid(st.grid, st, c)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            houseWeekNavBar(st, c)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .accessibilityIdentifier("house_screen")
-        .task { await houseModel.loadHouses() }
-        // Reload whenever the shown house OR week changes (switching re-centres on today).
-        .task(id: "\(st.selectedHouseId ?? "")#\(st.weekOffset)") { await houseModel.loadWeek() }
-        .sheet(isPresented: $showHouseWeekPicker) { houseWeekPickerSheet(st, c) }
-        .sheet(isPresented: $showHousePicker) { housePickerSheet(st, c) }
-        .sheet(item: $contactTarget) { block in
-            ContactSheetView(
-                block: block,
-                deskPhone: houseModel.state.deskPhone,
-                deskHouseName: houseModel.state.houseName
-            )
-        }
-        // Manager tap on an OPEN seat (canManage) → choose an action.
-        .confirmationDialog(
-            "Open seat",
-            isPresented: Binding(get: { houseActionTarget != nil }, set: { if !$0 { houseActionTarget = nil } }),
-            titleVisibility: .visible,
-            presenting: houseActionTarget
-        ) { block in
-            Button("Assign a worker") { assignTarget = block }
-            Button("Get coverage now") { coverageTarget = block }
-            Button("Cancel", role: .cancel) { }
-        } message: { block in
-            Text("\(st.houseName) · \(block.timeLabel)")
-        }
-        // "Assign a worker" — roster picker; the sheet owns the assign call + soft-advisory
-        // confirm and reports the terminal result back here for the toast + grid refetch.
-        .sheet(item: $assignTarget) { block in
-            AssignWorkerSheet(
-                houseName: st.houseName,
-                houseId: st.selectedHouseId ?? st.homeHouseId ?? "",
-                block: block,
-                onAssigned: { count in
-                    assignTarget = nil
-                    claimSuccessMessage = count == 1 ? "Worker assigned" : "Worker assigned to \(count) blocks"
-                    Task { await houseModel.loadWeek() }
-                },
-                onRejected: { message in assignTarget = nil; writeError = message },
-                onFailed: { assignTarget = nil; writeError = "That could not be done. Try again." }
-            )
-        }
-        // "Get coverage now" — force-trigger a float lookup for the vacant run.
-        .confirmationDialog(
-            "Get coverage now",
-            isPresented: Binding(get: { coverageTarget != nil }, set: { if !$0 { coverageTarget = nil } }),
-            titleVisibility: .visible,
-            presenting: coverageTarget
-        ) { block in
-            Button("Run float lookup") { triggerCoverage(block) }
-            Button("Cancel", role: .cancel) { }
-        } message: { _ in
-            Text("Run a float lookup to cover this seat now?")
-        }
-    }
-
-    /// Force-trigger a float lookup for the tapped vacant run (BSpec §6.6). Best-effort:
-    /// on success show the confirmation toast + refetch the grid; a server rejection or a
-    /// network failure surfaces the error toast. Own-house is enforced server-side.
-    private func triggerCoverage(_ block: HouseGridBlock) {
-        let houseId = houseModel.state.selectedHouseId ?? houseModel.state.homeHouseId ?? ""
-        let ids = block.assignmentIds
-        Task { @MainActor in
-            do {
-                let outcome = try await WorkerBackend.shared.managerRepository.forceTrigger(houseId: houseId, assignmentIds: ids)
-                switch onEnum(of: outcome) {
-                case .triggered:
-                    claimSuccessMessage = "Coverage requested"
-                    await houseModel.loadWeek()
-                case .rejected(let r):
-                    writeError = r.message
-                case .failed:
-                    writeError = "That could not be done. Try again."
-                }
-            } catch {
-                writeError = "That could not be done. Try again."
-            }
-        }
-    }
-
-    /// The house header — a DROPDOWN (2026-06-23 cross-house ruling): tapping the card opens
-    /// the switcher, EXCEPT the desk-phone line, which dials the desk (the device dialer
-    /// opens with the number prefilled; it does not auto-call).
-    private func houseHeaderCard(_ st: HouseScheduleUiState, _ c: ShiftColors) -> some View {
-        HStack(spacing: 12) {
-            HouseBadge(initial: String(st.houseName.prefix(1)), bg: c.blueContainer, fg: c.blue)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(st.houseName).font(ShiftFont.sans(15, .semibold)).foregroundColor(c.ink)
-                    if st.isHomeHouse {
-                        Text("Your house")
-                            .font(ShiftFont.sans(10.5, .semibold)).foregroundColor(c.blue)
-                            .padding(.horizontal, 6).padding(.vertical, 1)
-                            .background(c.blueContainer)
-                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    }
-                }
-                if let desk = st.deskPhone {
-                    Button(action: { dial(desk) }) {
-                        HStack(spacing: 5) {
-                            Image(systemName: ShiftIcons.phone).font(.system(size: 12)).foregroundColor(c.blue)
-                            Text("Desk · \(desk)").font(ShiftFont.sans(13, .medium)).foregroundColor(c.blue)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("house_call_desk")
-                } else {
-                    Text("House schedule").font(ShiftFont.sans(13)).foregroundColor(c.sec)
-                }
-            }
-            Spacer(minLength: 0)
-            if st.canSwitchHouse {
-                Image(systemName: "chevron.down").font(.system(size: 14, weight: .semibold)).foregroundColor(c.ter)
-            }
-        }
-        .padding(.horizontal, 14).padding(.vertical, 12)
-        .background(c.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(c.divider, lineWidth: 1))
-        .contentShape(Rectangle())
-        .onTapGesture { if st.canSwitchHouse { showHousePicker = true } }
-        .padding(.horizontal, 16).padding(.vertical, 8)
-        .accessibilityIdentifier("house_picker_open")
-    }
-
-    /// The house switcher (cross-house view): pick any house to read its schedule.
-    private func housePickerSheet(_ st: HouseScheduleUiState, _ c: ShiftColors) -> some View {
-        ShiftSheet(title: "View a house", onClose: { showHousePicker = false }) {
-            VStack(spacing: 8) {
-                ForEach(st.houses, id: \.id) { house in
-                    let selected = house.id == st.selectedHouseId
-                    Button(action: {
-                        houseModel.selectHouse(house.id)
-                        showHousePicker = false
-                    }) {
-                        HStack(spacing: 10) {
-                            HouseBadge(initial: String(house.name.prefix(1)), bg: c.surfaceVar, fg: c.ink)
-                            VStack(alignment: .leading, spacing: 1) {
-                                HStack(spacing: 6) {
-                                    Text(house.name).font(ShiftFont.sans(14.5, .semibold)).foregroundColor(c.ink)
-                                    if house.id == st.homeHouseId {
-                                        Text("Your house").font(ShiftFont.sans(10, .semibold)).foregroundColor(c.blue)
-                                    }
-                                }
-                                Text(house.deskPhone.map { "Desk · \($0)" } ?? "No desk phone")
-                                    .font(ShiftFont.sans(12)).foregroundColor(c.sec)
-                            }
-                            Spacer(minLength: 0)
-                            if selected {
-                                Image(systemName: "checkmark").font(.system(size: 14, weight: .semibold)).foregroundColor(c.blue)
-                            }
-                        }
-                        .padding(.horizontal, 13).padding(.vertical, 12)
-                        .background(selected ? c.blueContainer.opacity(0.45) : c.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(selected ? c.blue : c.divider, lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("house_picker_option")
-                }
-            }
-            .accessibilityIdentifier("house_picker_sheet")
-        }
-    }
-
-    /// Legend strip (design): You / Float-in / Open + the swipe-sideways hint.
-    private func houseLegend(_ c: ShiftColors) -> some View {
-        HStack(spacing: 10) {
-            houseLegendSwatch(c.blueContainer, c.blue, "You", dashed: false, c)
-            houseLegendSwatch(c.floatIn.tint, c.floatIn.accent, "Float-in", dashed: false, c)
-            houseLegendSwatch(c.surface, c.outline, "Open", dashed: true, c)
-            Spacer(minLength: 0)
-            Text("Swipe").font(ShiftFont.sans(11)).foregroundColor(c.ter)
-            Image(systemName: ShiftIcons.chevronRight).font(.system(size: 11, weight: .semibold)).foregroundColor(c.ter)
-        }
-        .padding(.horizontal, 16).padding(.vertical, 4)
-    }
-
-    private func houseLegendSwatch(_ fill: Color, _ accent: Color, _ label: String, dashed: Bool, _ c: ShiftColors) -> some View {
-        HStack(spacing: 4) {
-            RoundedRectangle(cornerRadius: 3, style: .continuous).fill(fill)
-                .frame(width: 10, height: 10)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .strokeBorder(accent, style: StrokeStyle(lineWidth: dashed ? 1.5 : 1, dash: dashed ? [3, 2] : []))
-                )
-            Text(label).font(ShiftFont.sans(11.5)).foregroundColor(c.ter)
-        }
-    }
-
-    /// The grid: a frozen left time rail + horizontally-scrolling day columns, with a
-    /// frozen day-header row above. The body's horizontal offset is mirrored to the header
-    /// (`houseHOffset`) so the headers track the columns; the rail sits outside the
-    /// horizontal scroll, so it stays put when the days scroll sideways — the requirement.
-    private func houseGrid(_ grid: HouseGridWeek, _ st: HouseScheduleUiState, _ c: ShiftColors) -> some View {
-        let lanes = max(Int(grid.laneCount), 1)
-        let colW = CGFloat(lanes) * Self.houseLaneW + CGFloat(lanes - 1) * Self.houseLaneGap + Self.houseColPad * 2
-        let startMin = Int(grid.startMin)
-        let endMin = Int(grid.endMin)
-        let gridHeight = Self.housePxPerHour * CGFloat(endMin - startMin) / 60
-        let focusDayIndex = Int(st.todayIndex)
-        let nowMin = Int(st.nowMinOfDay)
-        // Re-centre the scroll on open / house-switch / week-change (and when seats land and
-        // expand the bounds): the today column scrolls into view + the body drops to "now".
-        let scrollTrigger = "\(st.selectedHouseId ?? "")#\(st.weekOffset)#\(startMin)#\(lanes)"
-        return ScrollViewReader { proxy in
-            VStack(spacing: 0) {
-                // Frozen day-header row — horizontally synced to the body via houseHOffset.
-                HStack(spacing: 0) {
-                    Color.clear.frame(width: Self.houseRailW, height: Self.houseHeaderH)
-                    GeometryReader { _ in
-                        HStack(spacing: Self.houseColGap) {
-                            ForEach(grid.days, id: \.index) { day in houseDayHeader(day, colW, c) }
-                        }
-                        .offset(x: houseHOffset)
-                    }
-                    .frame(height: Self.houseHeaderH, alignment: .leading)
-                    .clipped()
-                }
-                .padding(.leading, 12)
-                // Body: rail (frozen horizontally) + horizontally-scrolling columns.
-                ScrollView(.vertical, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: 0) {
-                        houseTimeRail(startMin, endMin, gridHeight, nowMin, c)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: Self.houseColGap) {
-                                ForEach(grid.days, id: \.index) { day in
-                                    houseDayColumn(day, colW, gridHeight, startMin, endMin, c)
-                                        .id("house-day-\(day.index)")
-                                }
-                            }
-                            .padding(.trailing, 8)
-                            .background(
-                                GeometryReader { g in
-                                    Color.clear.preference(key: HouseHScrollKey.self, value: g.frame(in: .named("houseHBody")).minX)
-                                }
-                            )
-                        }
-                        .coordinateSpace(name: "houseHBody")
-                        // Mirror the body's live horizontal offset to the frozen header row so the
-                        // dates track the columns. `onScrollGeometryChange` (iOS 18+) reads the
-                        // scroll's `contentOffset` continuously during the gesture — reliable where
-                        // the preference-frame read below silently fails to update mid-scroll. The
-                        // preference path stays as the pre-iOS-18 fallback.
-                        .onPreferenceChange(HouseHScrollKey.self) { houseHOffset = $0 }
-                        .houseTrackHScroll { houseHOffset = $0 }
-                    }
-                    .padding(.leading, 12).padding(.top, 2).padding(.bottom, 8)
-                }
-            }
-            .onChange(of: scrollTrigger) { _ in scrollToToday(proxy, focusDayIndex) }
-            .onAppear { scrollToToday(proxy, focusDayIndex) }
-        }
-    }
-
-    /// Scroll the grid so today's column is visible (it may sit at the end of the week) and
-    /// the body drops to the current hour. No-op when the shown week has no "today".
-    private func scrollToToday(_ proxy: ScrollViewProxy, _ focusDayIndex: Int) {
-        guard focusDayIndex >= 0 else { return }
-        DispatchQueue.main.async {
-            withAnimation(.easeInOut(duration: 0.25)) {
-                proxy.scrollTo("house-day-\(focusDayIndex)", anchor: .leading)
-                proxy.scrollTo("house-now", anchor: .center)
-            }
-        }
-    }
-
-    /// The 2-hour clock marks (e.g. 06:00, 08:00, …) strictly between `startMin` and `endMin`
-    /// — shared by the rail's labels and each day column's gridlines.
-    private func houseHourMarks(_ startMin: Int, _ endMin: Int) -> [Int] {
-        var marks: [Int] = []
-        var h = (startMin / 120 + 1) * 120
-        while h < endMin {
-            marks.append(h)
-            h += 120
-        }
-        return marks
-    }
-
-    private func fmtHm(_ min: Int) -> String { String(format: "%02d:%02d", min / 60, min % 60) }
-
-    /// The fixed left time rail — frozen during sideways scroll. The top label is the EXACT
-    /// grid origin (e.g. "05:30" when that's the week's earliest actual shift start, not
-    /// rounded to an hour), then a label at every 2-hour clock mark, and a final label at the
-    /// bottom bound. Carries a hidden "house-now" anchor at the current time so the body can
-    /// scroll to it.
-    private func houseTimeRail(_ startMin: Int, _ endMin: Int, _ gridHeight: CGFloat, _ nowMin: Int, _ c: ShiftColors) -> some View {
-        let labels = Array(Set([startMin, endMin] + houseHourMarks(startMin, endMin))).sorted()
-        return ZStack(alignment: .topTrailing) {
-            Color.clear.frame(width: Self.houseRailW, height: gridHeight)
-            Color.clear.frame(width: Self.houseRailW, height: 1)
-                .offset(y: max(Self.housePxPerHour * CGFloat(nowMin - startMin) / 60, 0))
-                .id("house-now")
-            ForEach(labels, id: \.self) { m in
-                Text(fmtHm(m))
-                    .font(ShiftFont.mono(10)).monospacedDigit().foregroundColor(c.ter)
-                    .offset(y: max(Self.housePxPerHour * CGFloat(m - startMin) / 60 - 5, 0))
-                    .padding(.trailing, 6)
-            }
-        }
-        .frame(width: Self.houseRailW, height: gridHeight, alignment: .topTrailing)
-        .accessibilityIdentifier("house_time_rail")
-    }
-
-    /// One Mon–Sun header cell (day + date), highlighted when it is today.
-    private func houseDayHeader(_ day: HouseGridDay, _ colW: CGFloat, _ c: ShiftColors) -> some View {
-        VStack(spacing: 0) {
-            Text(day.dayLabel).font(ShiftFont.sans(11, .semibold)).foregroundColor(day.isToday ? c.blue : c.ter)
-            Text(day.dateLabel).font(ShiftFont.mono(13)).monospacedDigit().fontWeight(.semibold)
-                .foregroundColor(day.isToday ? c.blue : c.ink)
-        }
-        .frame(width: colW, height: Self.houseHeaderH)
-        .background(day.isToday ? c.blue.opacity(0.10) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-
-    /// One day column: the surface card + 2-hour gridlines + the lane-placed blocks.
-    private func houseDayColumn(
-        _ day: HouseGridDay, _ colW: CGFloat, _ gridHeight: CGFloat, _ startMin: Int, _ endMin: Int, _ c: ShiftColors
-    ) -> some View {
-        ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(c.surface)
-                .frame(width: colW, height: gridHeight)
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(c.divider, lineWidth: 1))
-            ForEach(houseHourMarks(startMin, endMin), id: \.self) { h in
-                Rectangle().fill(c.divider.opacity(0.6))
-                    .frame(width: colW, height: 1)
-                    .offset(y: Self.housePxPerHour * CGFloat(h - startMin) / 60)
-            }
-            ForEach(day.blocks, id: \.id) { b in houseBlockView(b, colW, startMin, day.isToday, c) }
-        }
-        .frame(width: colW, height: gridHeight, alignment: .topLeading)
-        .accessibilityIdentifier("house_day_column")
-    }
-
-    /// One positioned desk block, coloured by its state (design `HouseBlock`).
-    ///
-    /// Two colour systems, in this order:
-    ///
-    /// 1. **Per-worker colour** (docs/design/worker-colors.md) — a plain SCHEDULED seat
-    ///    wears its occupant's own colour, a pure hash of their `user_id`, so the same
-    ///    person reads the same here and on the web calendars. Fill is that colour at
-    ///    90%, the leading rail and border full strength, the name its contrast foreground.
-    /// 2. **State colour** — float-in, pending and vacant seats KEEP their state colours,
-    ///    because those carry meaning (a float must still read as a float).
-    ///
-    /// The "mine" emphasis rides on top of either: my shift TODAY keeps its solid brand
-    /// ring so it's still the one block that pops.
-    ///
-    /// 3. **Find-mine dimming** — a grid where every seat wears a saturated colour is
-    ///    pretty but useless for the one question a worker actually asks ("where am I?").
-    ///    So every seat that is NOT mine renders at `houseOtherOpacity`; mine stays at
-    ///    full strength in its own colour. Vacant seats are not anyone's card and are not
-    ///    dimmed (they're the actionable open-seat affordance for a manager).
-    private func houseBlockView(_ b: HouseGridBlock, _ colW: CGFloat, _ startMin: Int, _ isToday: Bool, _ c: ShiftColors) -> some View {
-        let top = Self.housePxPerHour * CGFloat(Int(b.startMin) - startMin) / 60
-        let h = max(Self.housePxPerHour * CGFloat(Int(b.endMin) - Int(b.startMin)) / 60 - 3, 18)
-        // A desk that's never concurrent with another during this run (segmentLanes == 1)
-        // collapses to one full-width column instead of a narrow lane next to empty space.
-        let collapsed = Int(b.segmentLanes) <= 1
-        let width = collapsed ? colW - Self.houseColPad * 2 : Self.houseLaneW
-        let x = collapsed ? Self.houseColPad : Self.houseColPad + (Self.houseLaneW + Self.houseLaneGap) * CGFloat(Int(b.lane))
-        let bg: Color
-        let accent: Color
-        let fg: Color
-        // mine + today → solid blue ring (the one block that should pop).
-        var emphatic = false
-        let wc = WorkerTint.forBlock(b)
-        if b.vacant {
-            bg = c.surface; accent = c.outline; fg = c.ter
-        } else if let wc {
-            bg = wc.color.opacity(0.90); accent = wc.color; fg = wc.onColor
-            emphatic = b.mine && isToday
-        } else if b.mine && b.floatIn {
-            bg = c.floatIn.tint; accent = c.floatIn.accent; fg = c.floatIn.deep
-        } else if b.mine && isToday {
-            bg = c.today; accent = c.blue; fg = c.onBlueContainer; emphatic = true
-        } else if b.mine {
-            bg = c.blueContainer.opacity(0.5); accent = c.blue.opacity(0.5); fg = c.onBlueContainer
-        } else if b.pending {
-            bg = c.surfaceVar; accent = c.pending; fg = c.ink
-        } else if b.floatIn {
-            bg = c.floatIn.tint; accent = c.floatIn.accent; fg = c.floatIn.deep
-        } else {
-            bg = c.surfaceVar; accent = c.outline; fg = c.ink
-        }
-        // The time label keeps a hint of the worker's hue without losing contrast (web:
-        // `color-mix(in srgb, F 75%, C 25%)`); on a state-coloured block it's just `fg`.
-        let timeFg = wc.map { $0.labelColor(0.25) } ?? fg
-        // Everyone else's seats recede so mine is findable at a glance (see doc comment #3).
-        // The dimming applies only to the background/border fill, never to the text, which
-        // must always render at full opacity.
-        let blockAlpha = (b.mine || b.vacant) ? 1.0 : Self.houseOtherOpacity
-        let recededBg = bg.opacity(blockAlpha)
-        let recededAccent = accent.opacity(blockAlpha)
-        return VStack(alignment: .leading, spacing: 1) {
-            Text(b.timeLabel).font(ShiftFont.mono(10.5)).monospacedDigit().foregroundColor(timeFg).lineLimit(1)
-            Text(b.workerLabel + (b.mine && b.floatIn ? " ·float" : ""))
-                .font(ShiftFont.sans(12, .semibold)).foregroundColor(fg).lineLimit(1)
-            if b.pending {
-                Text("Pending").font(ShiftFont.sans(10, .semibold)).foregroundColor(c.pending).lineLimit(1)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.leading, 7).padding(.trailing, 5).padding(.top, 4).padding(.bottom, 3)
-        .frame(width: width, height: h, alignment: .topLeading)
-        .background(recededBg)
-        .overlay(alignment: .leading) { Rectangle().fill(recededAccent).frame(width: 3) }
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(
-                    b.vacant ? recededAccent : (emphatic ? c.blue.opacity(blockAlpha) : (wc != nil ? recededAccent : accent.opacity(0.45 * blockAlpha))),
-                    style: StrokeStyle(lineWidth: b.vacant ? 1.5 : (emphatic ? 1.5 : 1), dash: b.vacant ? [6, 4] : [])
-                )
-        )
-        // Hit region and gesture MUST be attached BEFORE `.offset`, never after.
-        // `.offset` is a render-only transform: it moves the drawn result but leaves the
-        // view's LAYOUT bounds at the ZStack's top-leading origin. A `.contentShape`
-        // applied after it therefore builds the tap target from those un-offset bounds,
-        // so every block in a column stacks its hit rect at (0,0) while drawing at
-        // (x, top) — taps then resolve by z-order to some OTHER block (wrong contact
-        // card), or to a vacant one whose handler no-ops (nothing opens at all).
-        // Declared here, the shape is the block's own bounds and `.offset` transforms
-        // the rendering and the hit region together.
-        .contentShape(Rectangle())
-        // `.highPriorityGesture`, not `.onTapGesture`: the block sits inside nested
-        // vertical + horizontal `ScrollView`s (the House grid body), whose pan gesture
-        // recognizers otherwise win the race for a stationary tap. High-priority still
-        // lets a genuine drag pass through once it exceeds the tap gesture's slop.
-        .highPriorityGesture(
-            TapGesture().onEnded {
-                if b.vacant {
-                    // A manager on the home house gets the open-seat actions; everyone else
-                    // sees an open seat as passive (view-only).
-                    if houseModel.state.canManage { houseActionTarget = b }
-                } else {
-                    contactTarget = b
-                }
-            }
-        )
-        .offset(x: x, y: top)
-        .accessibilityIdentifier("house_grid_block")
-    }
-
-    /// The week navigator (last week … +4) — the same slim bottom bar as My Shifts.
-    private func houseWeekNavBar(_ st: HouseScheduleUiState, _ c: ShiftColors) -> some View {
-        VStack(spacing: 0) {
-            Divider()
-            HStack(spacing: 0) {
-                if st.canPreviousWeek {
-                    Button(action: { houseModel.prevWeek() }) {
-                        Image(systemName: "chevron.left").font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(c.sec).frame(width: 40, height: 40)
-                    }.buttonStyle(.plain).accessibilityIdentifier("house_prev_week")
-                } else {
-                    Spacer().frame(width: 40)
-                }
-                Button(action: { showHouseWeekPicker = true }) {
-                    HStack(spacing: 7) {
-                        Image(systemName: ShiftIcons.calendar).font(.system(size: 18)).foregroundColor(c.blue)
-                        Text(st.weekRelative).font(ShiftFont.sans(15.5, .semibold)).foregroundColor(c.ink)
-                        Text("·  \(st.weekRange)").font(ShiftFont.sans(14)).foregroundColor(c.sec)
-                    }
-                    .frame(maxWidth: .infinity).contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityIdentifier("house_week_picker_open")
-                if st.canNextWeek {
-                    Button(action: { houseModel.nextWeek() }) {
-                        Image(systemName: "chevron.right").font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(c.sec).frame(width: 40, height: 40)
-                    }.buttonStyle(.plain).accessibilityIdentifier("house_next_week")
-                } else {
-                    Spacer().frame(width: 40)
-                }
-            }
-            .padding(.horizontal, 10).padding(.vertical, 9).background(c.surface)
-        }
-    }
-
-    /// The week-picker sheet (last week … +4) — mirrors the calendar's picker.
-    private func houseWeekPickerSheet(_ st: HouseScheduleUiState, _ c: ShiftColors) -> some View {
-        ShiftSheet(title: "Pick a week", onClose: { showHouseWeekPicker = false }) {
-            VStack(spacing: 8) {
-                ForEach(st.weekOptions, id: \.offset) { option in
-                    Button(action: {
-                        houseModel.selectWeek(Int(option.offset))
-                        showHouseWeekPicker = false
-                    }) {
-                        HStack {
-                            Text(option.label).font(ShiftFont.sans(14, .semibold)).foregroundColor(c.ink)
-                            Spacer(minLength: 0)
-                            Text(option.rangeLabel).font(ShiftFont.mono(12.5)).monospacedDigit().foregroundColor(c.sec)
-                        }
-                        .padding(.horizontal, 13).padding(.vertical, 11)
-                        .background(Int(st.weekOffset) == Int(option.offset) ? c.today : c.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(option.offset == 0 ? c.blue : c.divider, lineWidth: option.offset == 0 ? 1.5 : 1))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("house_week_picker_option")
-                }
-            }
-            .accessibilityIdentifier("house_week_picker_sheet")
-        }
-    }
-
-    private func dial(_ phone: String) {
-        let digits = phone.filter { !$0.isWhitespace }
-        if let url = URL(string: "tel://\(digits)") {
-            UIApplication.shared.open(url)
-        }
-    }
+    // How OTHER workers' seats recede so mine is findable at a glance (see the doc comment
+    // on `houseBlockView` in HouseGridView.swift). They recede by being MIXED TOWARD WHITE,
+    // not by having their alpha cut: a diluted saturated fill over a dark ground reads as a
+    // glow and breaks the block's own foreground-contrast decision. Because the mix always
+    // lands light, receded text uses one fixed dark ink rather than the per-block colour.
+    /// How much white is mixed into a receded seat's fill and rail. 0 = untouched, 1 = white.
+    static let houseOtherWhiteMix: Double = 0.72
+    /// A final, gentle alpha on the already-lightened fill so it settles into the grid
+    /// instead of glaring off a dark background. Kept high: the recede is the mix, not this.
+    static let houseOtherFinalAlpha: Double = 0.9
+    /// The single ink every receded seat's text uses. Fixed (not per-block) because the
+    /// white-mixed fill is always light, in either theme, so one dark ink always reads.
+    static let houseRecededInk = Color(hex: 0x1F2430)
 
     // MARK: Calendar — agenda-first Personal Calendar (current week only)
 
@@ -2903,6 +2577,10 @@ struct ShiftsRootView: View {
                 }
             )
             .padding(.top, 4).padding(.bottom, 6)
+            // Pending swaps, both directions, above everything and NOT week-scoped: a
+            // request that needs an answer has to be visible on the screen the worker
+            // opens, not only on the card for the day it happens to fall on (BSpec §10.1).
+            swapBannerColumn(st.swapBanner, c)
             // The whole-week overview is the default; the Day segment drills into a single day.
             calendarViewToggle(st.mode, c)
             if st.mode == .day {
@@ -4538,86 +4216,17 @@ private struct SwapSheetView: View {
 
 // MARK: - Calendar swap (CALENDAR_REDESIGN.md) — week-paged give/take picker
 
-/// Holds the `SwapCalendarViewModel`; created with the tapped shift as the pinned "give".
-/// On the live path it fetches each navigated week's house grid (`fetchHouseScheduleForWeek`)
-/// and feeds it to the VM (`setWeekSeats`); the demo path feeds the current week's seats once.
-@MainActor
-final class SwapCalendarObservable: ObservableObject {
-    let vm: SwapCalendarViewModel
-    @Published var state: SwapCalendarUiState
-    private var task: Task<Void, Never>?
-    private let repo: WorkerShiftsRepository?
-    private let userId: String?
-
-    init(giveShift: MyShift, meUserId: String?, repo: WorkerShiftsRepository?, demoSeats: [HouseSeat], pendingGiveAssignmentIds: Set<String> = [], initialPermanent: Bool = false) {
-        let model = DemoFactory.shared.swapCalendarViewModel(giveShift: giveShift, meUserId: meUserId ?? "demo", breakProfile: false, pendingGiveAssignmentIds: pendingGiveAssignmentIds, initialPermanent: initialPermanent)
-        self.vm = model
-        self.state = model.uiState.value
-        self.repo = repo
-        self.userId = meUserId
-        subscribe()
-        if repo != nil, meUserId != nil {
-            Task { await loadWeek() }
-            Task { await loadDirectory() }
-        } else {
-            model.setWeekSeats(forOffset: model.uiState.value.weekOffset, seats: demoSeats)
-            model.setWorkerDirectory(workers: DemoFactory.shared.workerDirectory())
-        }
-    }
-
-    private func subscribe() {
-        task?.cancel()
-        state = vm.uiState.value
-        task = Task { [weak self] in
-            guard let self else { return }
-            for await s in self.vm.uiState { self.state = s }
-        }
-    }
-
-    func loadWeek() async {
-        guard let repo, let uid = userId else { return }
-        let off = vm.uiState.value.weekOffset
-        let anchor = vm.uiState.value.anchor
-        let snap = try? await repo.fetchHouseScheduleForWeek(userId: uid, anchor: anchor)
-        vm.setWeekSeats(forOffset: off, seats: snap?.seats ?? [])
-    }
-
-    /// The §8.5 hand-off recipient directory (cross-house) — fetched once; a people
-    /// roster, independent of which week the give shift sits in.
-    func loadDirectory() async {
-        guard let repo else { return }
-        let dir = (try? await repo.fetchWorkerDirectory()) ?? []
-        vm.setWorkerDirectory(workers: dir)
-    }
-
-    func prevWeek() { vm.previousWeek(); Task { await loadWeek() } }
-    func nextWeek() { vm.nextWeek(); Task { await loadWeek() } }
-    func selectDay(_ i: Int) { vm.selectDay(index: Int32(i)) }
-    func pickTake(_ c: SwapDayCard) { vm.pickTake(card: c) }
-    func togglePermanent() { vm.togglePermanent() }
-    func setHandoff(_ on: Bool) { vm.setHandoff(on: on) }
-    func setHandoffQuery(_ q: String) { vm.setHandoffQuery(query: q) }
-    func pickRecipient(_ w: HandoffWorker) { vm.pickRecipient(worker: w) }
-    func setGiveRange(_ from: Int, _ to: Int) { vm.setGiveRange(from: Int32(from), to: Int32(to)) }
-    func setTakeRange(_ from: Int, _ to: Int) { vm.setTakeRange(from: Int32(from), to: Int32(to)) }
-    func focusGiveRun(_ index: Int) { vm.focusGiveRun(index: Int32(index)) }
-    func focusTakeRun(_ index: Int) { vm.focusTakeRun(index: Int32(index)) }
-    func acceptSuggestion() { vm.acceptSuggestion() }
-    func addLeg() { vm.addLeg() }
-    func removeLeg(_ index: Int) { vm.removeLeg(index: Int32(index)) }
-    func proposals() -> [SwapProposal] { vm.proposals() }
-
-    deinit { task?.cancel() }
-}
-
 /// `.sheet(item:)` needs Identifiable; the Kotlin `SwapDecision` isn't, so wrap it.
-private struct IdentifiedSwapDecision: Identifiable {
+///
+/// `internal`, not `private`: SwapBannerView.swift is an extension on ShiftsRootView in
+/// another file, and Swift extensions cannot see a private type from the file they extend.
+struct IdentifiedSwapDecision: Identifiable {
     let id = UUID()
     let decision: SwapDecision
 }
 
 /// `.sheet(item:)` needs Identifiable; the Kotlin `PendingSwapNotice` isn't, so wrap it.
-private struct IdentifiedPendingSwapNotice: Identifiable {
+struct IdentifiedPendingSwapNotice: Identifiable {
     let id = UUID()
     let notice: PendingSwapNotice
 }
@@ -4764,447 +4373,6 @@ private struct PendingSwapNoticeSheetView: View {
 /// The calendar swap sheet: a pinned "give" (the tapped shift), a week navigator + Mon–Sun
 /// strip, and the selected day's housemate cards to "take". Cross-week + retroactive fall
 /// out of week paging; the give persists across weeks. Whole-run swaps in v1.
-private struct SwapCalendarPage: View {
-    @StateObject private var obs: SwapCalendarObservable
-    let onSubmit: ([SwapProposal]) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.colorScheme) private var scheme
-    @State private var handoffTab = 0 // 0 = My House, 1 = Others (hand-off recipient directory)
-
-    init(giveShift: MyShift, meUserId: String?, repo: WorkerShiftsRepository?, demoSeats: [HouseSeat], initialPermanent: Bool = false, pendingGiveAssignmentIds: Set<String> = [], onSubmit: @escaping ([SwapProposal]) -> Void) {
-        _obs = StateObject(wrappedValue: SwapCalendarObservable(giveShift: giveShift, meUserId: meUserId, repo: repo, demoSeats: demoSeats, pendingGiveAssignmentIds: pendingGiveAssignmentIds, initialPermanent: initialPermanent))
-        self.onSubmit = onSubmit
-    }
-
-    var body: some View {
-        let c = ShiftColors.resolve(scheme)
-        let s = obs.state
-        let legCount = s.legs.count + (s.take != nil ? 1 : 0)
-        VStack(alignment: .leading, spacing: 14) {
-                if !s.legs.isEmpty {
-                    VStack(spacing: 6) {
-                        ForEach(Array(s.legs.enumerated()), id: \.offset) { i, leg in
-                            HStack(spacing: 8) {
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(leg.workerName).font(ShiftFont.sans(13, .semibold)).foregroundColor(c.ink)
-                                    Text(leg.summary).font(ShiftFont.sans(12)).foregroundColor(c.sec)
-                                }
-                                Spacer(minLength: 0)
-                                Button(action: { obs.removeLeg(i) }) {
-                                    Image(systemName: "xmark").font(.system(size: 12, weight: .semibold)).foregroundColor(c.sec)
-                                        .frame(width: 24, height: 24).background(c.surface).clipShape(Circle())
-                                }.buttonStyle(.plain)
-                            }
-                            .padding(.horizontal, 12).padding(.vertical, 8)
-                            .background(c.surfaceVar).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        }
-                    }.accessibilityIdentifier("swap_legs")
-                }
-
-                // After banking a leg, the one-tap "give the next part to the same person too"
-                // shortcut (the chosen same-person flow): two non-contiguous parts of one shift
-                // to one person stay independent legs, but feel like one intent.
-                if let sug = s.suggestion {
-                    suggestionChip(sug, c)
-                }
-
-                if let deal = s.deal {
-                    dealCard(deal, s, c)
-                }
-
-                HStack(spacing: 8) {
-                    modeButton("Swap", handoff: false, c, s)
-                    modeButton("Hand off", handoff: true, c, s)
-                }
-
-                // Hand-off (§8.5) is NOT a calendar exchange — you just pick who covers
-                // the shift, so the whole calendar is replaced by the recipient directory.
-                if s.handoff {
-                    handoffPicker(s, c)
-                } else {
-                // ── "Your shift" controls — PROMINENT, above the calendar. Partial swaps are
-                // uncommon but heavily used; the old hidden "adjust hours" link was
-                // undiscoverable. Shown whenever your shift is splittable — for a plain swap
-                // AND a permanent swap (§8.1/§8.3 partial).
-                if s.giveSplittable, let g = s.give {
-                    // Once a part is banked the shift fragments — show the segmented timeline
-                    // (locked zones + tap-to-focus) above the slider; the slider then only
-                    // adjusts "how much" within the focused free run.
-                    if s.giveSegments.contains(where: { $0.locked }) {
-                        swapTimeline(s.giveSegments, activeVerb: "Giving", c, "swap_give_timeline") { obs.focusGiveRun($0) }
-                    }
-                    giveRangeCard(s.permanent ? "How much of your slot to give?" : "How much of your shift to give?",
-                                  card: g, count: Int(s.giveBlockCount), from: Int(s.giveFrom), to: Int(s.giveTo),
-                                  runFrom: Int(s.giveRunFrom), runTo: Int(s.giveRunTo),
-                                  set: { f, t in obs.setGiveRange(f, t) }, c, "swap_give_range")
-                }
-                if s.permanentToggleVisible {
-                    permanentToggleCard(s, c)
-                }
-
-                HStack {
-                    Button(action: { obs.prevWeek() }) { Image(systemName: "chevron.left").font(.system(size: 16)).foregroundColor(c.ink) }
-                        .accessibilityIdentifier("swap_week_prev")
-                    Spacer()
-                    VStack(spacing: 1) {
-                        Text(s.weekRange).font(ShiftFont.sans(14, .semibold)).foregroundColor(c.ink)
-                        Text(s.weekRelative).font(ShiftFont.sans(12)).foregroundColor(c.ter)
-                    }
-                    Spacer()
-                    Button(action: { obs.nextWeek() }) { Image(systemName: "chevron.right").font(.system(size: 16)).foregroundColor(c.ink) }
-                        .accessibilityIdentifier("swap_week_next")
-                }
-
-                HStack(spacing: 4) {
-                    ForEach(s.days, id: \.index) { d in
-                        let sel = Int(d.index) == Int(s.selectedDayIndex)
-                        Button(action: { obs.selectDay(Int(d.index)) }) {
-                            VStack(spacing: 4) {
-                                Text(d.dayLetter).font(ShiftFont.sans(11)).foregroundColor(c.sec)
-                                Text(d.dateLabel).font(ShiftFont.sans(13, sel ? .semibold : .regular))
-                                    .foregroundColor(sel ? .white : c.ink)
-                                    .frame(width: 28, height: 28)
-                                    .background(sel ? c.blue : Color.clear).clipShape(Circle())
-                                Circle().fill(d.hasShifts ? c.blue : Color.clear).frame(width: 4, height: 4)
-                            }.frame(maxWidth: .infinity)
-                        }.buttonStyle(.plain)
-                    }
-                }.accessibilityIdentifier("swap_day_strip")
-
-                SectionHeader(title: s.permanent ? "Swap your slot with whom?" : "Whose shift do you want?")
-                if s.loadingWeek {
-                    Text("Loading housemates…").font(ShiftFont.sans(13)).foregroundColor(c.ter)
-                } else if s.day.others.isEmpty {
-                    Text("No housemates on this day. Try another day or week.").font(ShiftFont.sans(13)).foregroundColor(c.ter)
-                } else {
-                    VStack(spacing: 8) {
-                        ForEach(s.day.others, id: \.seatIds) { card in takeCard(card, s, c) }
-                    }.accessibilityIdentifier("swap_take_list")
-                }
-
-                // Take hours — contextual to the picked person (1:1 swaps only; permanent is
-                // person-level, so this is hidden when permanent is on).
-                if s.takeSplittable, let t = s.take {
-                    // Re-taking a counterparty shift you already took part of: the taken blocks
-                    // render locked (two-budget rule, keyed per counterparty shift).
-                    if s.takeSegments.contains(where: { $0.locked }) {
-                        swapTimeline(s.takeSegments, activeVerb: "Taking", c, "swap_take_timeline") { obs.focusTakeRun($0) }
-                    }
-                    giveRangeCard("Hours you want from \(t.workerName)",
-                                  card: t, count: Int(s.takeBlockCount), from: Int(s.takeFrom), to: Int(s.takeTo),
-                                  runFrom: Int(s.takeRunFrom), runTo: Int(s.takeRunTo),
-                                  set: { f, t in obs.setTakeRange(f, t) }, c, "swap_take_range")
-                }
-
-                if s.canAddLeg {
-                    ShiftButton(title: "+ Add another person", action: { obs.addLeg() }, variant: .tonal, fullWidth: true)
-                        .accessibilityIdentifier("swap_add_leg")
-                }
-                } // end !handoff calendar block
-
-                ShiftButton(title: s.handoff ? "Hand off shift" : (legCount > 1 ? "Propose \(legCount) swaps" : "Propose swap"),
-                            action: { onSubmit(obs.proposals()); dismiss() }, fullWidth: true)
-                    .disabled(!s.canPropose)
-                    .accessibilityIdentifier("swap_submit_button")
-        }
-        .accessibilityIdentifier("swap_calendar_sheet")
-    }
-
-    /// The give ⇄ take "deal" card at the top of the sheet — the always-visible review of
-    /// the forming proposal. The give side is pinned from the tapped shift; the take side
-    /// fills in as the worker picks (or stays a muted placeholder). Connector is ⇄ for a
-    /// swap, → for a hand-off; a "Permanent" tag rides the card when the swap is permanent.
-    private func dealCard(_ deal: SwapDeal, _ s: SwapCalendarUiState, _ c: ShiftColors) -> some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack {
-                    Text("YOU GIVE").font(ShiftFont.sans(11, .semibold)).tracking(0.5).foregroundColor(c.sec)
-                    Spacer(minLength: 0)
-                    if s.permanent {
-                        Text("Permanent").font(ShiftFont.sans(11, .semibold)).foregroundColor(c.blue)
-                            .padding(.horizontal, 8).padding(.vertical, 2)
-                            .background(c.blue.opacity(0.12)).clipShape(Capsule())
-                    }
-                }
-                Text(deal.giveTitle).font(ShiftFont.sans(15, .semibold)).foregroundColor(c.ink)
-                Text(deal.giveDetail).font(ShiftFont.sans(13)).foregroundColor(c.sec)
-            }
-            .padding(.horizontal, 14).padding(.vertical, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(c.surfaceVar)
-
-            HStack(spacing: 10) {
-                Rectangle().fill(c.divider).frame(height: 1)
-                Image(systemName: s.handoff ? "arrow.right" : "arrow.left.arrow.right")
-                    .font(.system(size: 13, weight: .medium)).foregroundColor(c.blue)
-                    .frame(width: 28, height: 28).background(c.blue.opacity(0.12)).clipShape(Circle())
-                Rectangle().fill(c.divider).frame(height: 1)
-            }
-            .padding(.horizontal, 14)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(deal.takeEyebrow.uppercased()).font(ShiftFont.sans(11, .semibold)).tracking(0.5).foregroundColor(c.sec)
-                if let title = deal.takeTitle {
-                    HStack(spacing: 10) {
-                        HouseBadge(initial: deal.takeInitial ?? "?", bg: c.surfaceVar, fg: c.ink)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(title).font(ShiftFont.sans(15, .semibold)).foregroundColor(c.ink)
-                            if let detail = deal.takeDetail { Text(detail).font(ShiftFont.sans(13)).foregroundColor(c.sec) }
-                        }
-                        Spacer(minLength: 0)
-                    }.padding(.top, 4)
-                } else {
-                    Text(deal.takePlaceholder).font(ShiftFont.sans(14)).foregroundColor(c.ter).padding(.top, 2)
-                }
-            }
-            .padding(.horizontal, 14).padding(.vertical, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(c.divider, lineWidth: 1))
-        .accessibilityIdentifier("swap_deal_card")
-    }
-
-    /// A labelled 30-min range slider that reads its position from VM state and writes back
-    /// through [set] (computed bindings — the VM stays the single source of truth).
-    /// A prominent give/take duration control: the picked span's live "10:00–12:00 · 2h"
-    /// label over a stepped 30-min range slider. Used for the give-shift trim (above the
-    /// calendar) and the take-hours trim (under the picked person).
-    private func giveRangeCard(_ title: String, card: SwapDayCard, count: Int, from: Int, to: Int,
-                               runFrom: Int = 0, runTo: Int = -1,
-                               set: @escaping (Int, Int) -> Void, _ c: ShiftColors, _ id: String) -> some View {
-        let plan = planSwapSpanFor(blockIds: card.seatIds, spanStart: card.start, spanEnd: card.end,
-                                   fromBlock: Int32(from), toBlock: Int32(max(to, from + 1)))
-        return VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(ShiftFont.sans(13, .medium)).foregroundColor(c.sec)
-            Text("\(plan.rangeLabel) · \(plan.durationLabel)\(plan.wholeSpan ? " · whole shift" : "")")
-                .font(ShiftFont.mono(13.5, .semibold)).monospacedDigit().foregroundColor(c.ink)
-            BlockRangeSlider(
-                blockCount: count,
-                from: Binding(get: { from }, set: { set($0, to) }),
-                to: Binding(get: { to }, set: { set(from, $0) }),
-                lowerBound: runFrom,
-                upperBound: runTo
-            )
-        }
-        .padding(.horizontal, 13).padding(.vertical, 11)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(c.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(c.divider, lineWidth: 1))
-        .accessibilityIdentifier(id)
-    }
-
-    /// The segmented give/take timeline — one track per shift, locked zones greyed (with the
-    /// receiver's name / "Taken"), the active selection accented, free runs tap-to-focus.
-    /// Shown only once a part is reserved, so the common single-leg case stays a plain slider.
-    private func swapTimeline(_ segments: [SwapSegment], activeVerb: String, _ c: ShiftColors, _ id: String,
-                              focus: @escaping (Int) -> Void) -> some View {
-        let total = max(segments.reduce(0) { $0 + (Int($1.to) - Int($1.from)) }, 1)
-        return GeometryReader { geo in
-            let gap: CGFloat = 4
-            let avail = geo.size.width - gap * CGFloat(max(segments.count - 1, 0))
-            HStack(spacing: gap) {
-                ForEach(Array(segments.enumerated()), id: \.offset) { _, seg in
-                    let blocks = Int(seg.to) - Int(seg.from)
-                    segmentCell(seg, activeVerb: activeVerb, c, focus)
-                        .frame(width: max(avail * CGFloat(blocks) / CGFloat(total), 0))
-                }
-            }
-        }
-        .frame(height: 46)
-        .accessibilityIdentifier(id)
-    }
-
-    private func segmentCell(_ seg: SwapSegment, activeVerb: String, _ c: ShiftColors,
-                             _ focus: @escaping (Int) -> Void) -> some View {
-        let locked = seg.locked
-        let active = seg.active
-        let bg = locked ? c.surfaceVar : (active ? c.blue.opacity(0.10) : c.surface)
-        let border = active ? c.blue : (locked ? c.divider : c.outline)
-        let sub = locked ? (seg.note ?? "Given") : (active ? activeVerb : "Tap")
-        return VStack(spacing: 2) {
-            Text(seg.rangeLabel).font(ShiftFont.sans(10.5)).foregroundColor(locked ? c.ter : c.ink)
-                .lineLimit(1).minimumScaleFactor(0.7)
-            Text(sub).font(ShiftFont.sans(10, active ? .medium : .regular)).foregroundColor(active ? c.blue : c.ter).lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.horizontal, 4)
-        .background(bg)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(border, lineWidth: active ? 1.5 : 1))
-        .contentShape(Rectangle())
-        .accessibilityIdentifier(locked ? "swap_seg_locked" : (active ? "swap_seg_active" : "swap_seg_free"))
-        .onTapGesture { if !locked && !active { focus(Int(seg.from)) } }
-    }
-
-    /// The same-person "give the next part to X too" chip (accent, one tap → [acceptSuggestion]).
-    private func suggestionChip(_ sug: SwapLegSuggestion, _ c: ShiftColors) -> some View {
-        Button(action: { obs.acceptSuggestion() }) {
-            HStack(spacing: 8) {
-                Image(systemName: "plus").font(.system(size: 14, weight: .semibold)).foregroundColor(c.blue)
-                Text(sug.label).font(ShiftFont.sans(13, .medium)).foregroundColor(c.blue)
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(c.blue)
-            }
-            .padding(.horizontal, 12).padding(.vertical, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(c.blue.opacity(0.08))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(c.blue.opacity(0.4), lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("swap_suggestion")
-    }
-
-    /// The permanent-swap toggle as a prominent card (§8.3) — promoted from the old tiny
-    /// checkbox, shown up front and partial-aware (the give control above still applies).
-    private func permanentToggleCard(_ s: SwapCalendarUiState, _ c: ShiftColors) -> some View {
-        Button(action: { obs.togglePermanent() }) {
-            HStack(spacing: 12) {
-                Image(systemName: s.permanent ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 20)).foregroundColor(s.permanent ? c.blue : c.outline)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Make it permanent").font(ShiftFont.sans(14, .medium)).foregroundColor(c.ink)
-                    Text("Swap this slot every week for the rest of the period").font(ShiftFont.sans(12.5)).foregroundColor(c.sec)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 12).padding(.vertical, 11)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(s.permanent ? c.blue.opacity(0.08) : c.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(s.permanent ? c.blue : c.divider, lineWidth: s.permanent ? 1.5 : 1))
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("swap_permanent_toggle")
-    }
-
-    private func modeButton(_ title: String, handoff: Bool, _ c: ShiftColors, _ s: SwapCalendarUiState) -> some View {
-        let on = s.handoff == handoff
-        return Button(action: { obs.setHandoff(handoff) }) {
-            Text(title)
-                .font(ShiftFont.sans(13.5, on ? .semibold : .regular))
-                .foregroundColor(on ? .white : c.ink)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .background(on ? c.blue : c.surfaceVar)
-                .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(handoff ? "swap_mode_handoff" : "swap_mode_swap")
-    }
-
-    private func takeCard(_ card: SwapDayCard, _ s: SwapCalendarUiState, _ c: ShiftColors) -> some View {
-        let sel = s.take?.userId == card.userId && s.take?.seatIds == card.seatIds
-        return Button(action: { obs.pickTake(card) }) {
-            HStack(spacing: 10) {
-                HouseBadge(initial: String(card.workerName.prefix(1)), bg: c.surfaceVar, fg: c.ink)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(card.workerName).font(ShiftFont.sans(14, .semibold)).foregroundColor(c.ink)
-                    Text("\(card.timeLabel) · \(card.durationLabel)").font(ShiftFont.sans(12.5)).foregroundColor(c.sec)
-                }
-                Spacer(minLength: 0)
-                if sel { Image(systemName: ShiftIcons.checkCircle).font(.system(size: 16)).foregroundColor(c.blue) }
-            }
-            .padding(.horizontal, 12).padding(.vertical, 10)
-            .background(sel ? c.blue.opacity(0.08) : c.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(sel ? c.blue : c.divider, lineWidth: sel ? 1.5 : 1))
-        }.buttonStyle(.plain).accessibilityIdentifier("swap_take_row")
-    }
-
-    // MARK: hand-off recipient directory (§8.5)
-
-    /// The hand-off recipient directory — "My House" (own roster, flat) + "Others" (every
-    /// other house, grouped + searchable, since 10+ houses × ~8 workers is too long to
-    /// scan). Eligible recipients only (the VM pre-filters); the server stays authoritative.
-    private func handoffPicker(_ s: SwapCalendarUiState, _ c: ShiftColors) -> some View {
-        let dir = s.handoffDirectory
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                handoffTabButton("My House", tab: 0, c)
-                handoffTabButton("Others", tab: 1, c)
-            }
-            if handoffTab == 0 {
-                if dir.myHouse.isEmpty {
-                    Text("No eligible workers in your house.").font(ShiftFont.sans(13)).foregroundColor(c.ter)
-                } else {
-                    VStack(spacing: 8) {
-                        ForEach(dir.myHouse, id: \.userId) { w in handoffWorkerRow(w, s, c) }
-                    }.accessibilityIdentifier("handoff_my_house_list")
-                }
-            } else {
-                handoffSearchField(s, c)
-                if dir.others.isEmpty {
-                    Text(s.handoffQuery.isEmpty ? "No eligible workers in other houses." : "No matches for \"\(s.handoffQuery)\".")
-                        .font(ShiftFont.sans(13)).foregroundColor(c.ter)
-                } else {
-                    VStack(alignment: .leading, spacing: 14) {
-                        ForEach(dir.others, id: \.houseId) { group in
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(group.houseName.uppercased()).font(ShiftFont.sans(11, .medium)).tracking(0.5).foregroundColor(c.sec)
-                                ForEach(group.workers, id: \.userId) { w in handoffWorkerRow(w, s, c) }
-                            }
-                        }
-                    }.accessibilityIdentifier("handoff_others_list")
-                }
-            }
-        }.accessibilityIdentifier("handoff_picker")
-    }
-
-    private func handoffTabButton(_ title: String, tab: Int, _ c: ShiftColors) -> some View {
-        let on = handoffTab == tab
-        return Button(action: { handoffTab = tab }) {
-            Text(title)
-                .font(ShiftFont.sans(13.5, on ? .semibold : .regular))
-                .foregroundColor(on ? .white : c.ink)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .background(on ? c.blue : c.surfaceVar)
-                .clipShape(Capsule())
-        }.buttonStyle(.plain)
-        .accessibilityIdentifier(tab == 0 ? "handoff_tab_my_house" : "handoff_tab_others")
-    }
-
-    private func handoffWorkerRow(_ w: HandoffWorker, _ s: SwapCalendarUiState, _ c: ShiftColors) -> some View {
-        let sel = s.recipient?.userId == w.userId
-        return Button(action: { obs.pickRecipient(w) }) {
-            HStack(spacing: 10) {
-                HouseBadge(initial: String(w.name.prefix(1)), bg: c.surfaceVar, fg: c.ink)
-                Text(w.name).font(ShiftFont.sans(14, .semibold)).foregroundColor(c.ink)
-                Spacer(minLength: 0)
-                if sel { Image(systemName: ShiftIcons.checkCircle).font(.system(size: 16)).foregroundColor(c.blue) }
-            }
-            .padding(.horizontal, 12).padding(.vertical, 10)
-            .background(sel ? c.blue.opacity(0.08) : c.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(sel ? c.blue : c.divider, lineWidth: sel ? 1.5 : 1))
-        }.buttonStyle(.plain).accessibilityIdentifier("handoff_worker_row")
-    }
-
-    private func handoffSearchField(_ s: SwapCalendarUiState, _ c: ShiftColors) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundColor(c.ter)
-            TextField("Search workers or houses", text: Binding(get: { s.handoffQuery }, set: { obs.setHandoffQuery($0) }))
-                .font(ShiftFont.sans(14)).foregroundColor(c.ink)
-                .autocorrectionDisabled(true)
-                .textInputAutocapitalization(.never)
-                .accessibilityIdentifier("handoff_search_field")
-            if !s.handoffQuery.isEmpty {
-                Button(action: { obs.setHandoffQuery("") }) {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 15)).foregroundColor(c.sec)
-                }.buttonStyle(.plain).accessibilityIdentifier("handoff_search_clear")
-            }
-        }
-        .padding(.horizontal, 12).padding(.vertical, 11)
-        .background(c.surfaceVar)
-        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(c.divider, lineWidth: 1))
-        .accessibilityIdentifier("handoff_search")
-    }
-}
-
 /// The "This week — 14h of 20h soft cap" summary chip (design My-Shifts header).
 private struct WeekTotalChip: View {
     let currentWeeklyHours: Double
@@ -5286,7 +4454,9 @@ private struct DropScopeOption: View {
 /// the card actionable, `tel:` (the dialer opens prefilled; it does not auto-call) and
 /// `mailto:` (the mail app opens composing, nothing is sent). The card's avatar wears the
 /// worker's own colour, the same one their blocks carry in the grid.
-private struct ContactSheetView: View {
+// INTERNAL, not private: presented by the House tab, which lives in
+// HouseGridView.swift as an `extension ShiftsRootView`, and `private` is file-scoped.
+struct ContactSheetView: View {
     let block: HouseGridBlock
     private var row: HouseGridBlock { block }
     let deskPhone: String?
@@ -5416,7 +4586,9 @@ private struct ContactSheetView: View {
 /// result (over-target / soft-cap / cannot / opted-out) surfaces a confirm dialog that
 /// re-submits with `override = true`; terminal results flow back to the host for the toast
 /// and the grid refetch. The server is authoritative for authorization + the hard cap.
-private struct AssignWorkerSheet: View {
+// INTERNAL, not private: presented by the House tab, which lives in
+// HouseGridView.swift as an `extension ShiftsRootView`, and `private` is file-scoped.
+struct AssignWorkerSheet: View {
     let houseName: String
     let houseId: String
     let block: HouseGridBlock
@@ -5584,31 +4756,6 @@ struct WorkerTint {
 extension MyShift: Identifiable {}
 extension OpenShift: Identifiable {}
 extension HouseGridBlock: Identifiable {}
-
-/// Reports the House grid's horizontal day-column scroll offset (≤ 0) so the frozen
-/// day-header row can track it. Last value wins (one scroll view feeds it).
-private struct HouseHScrollKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
-}
-
-private extension View {
-    /// Continuously mirror a horizontal `ScrollView`'s content offset to `onOffset` (≤ 0,
-    /// matching the preference convention) so the House grid's frozen day-header row tracks
-    /// the columns as they scroll sideways. `onScrollGeometryChange` (iOS 18+) updates on
-    /// every offset change during the drag; on older systems this is a no-op and the
-    /// `HouseHScrollKey` preference path remains the (best-effort) fallback.
-    @ViewBuilder
-    func houseTrackHScroll(_ onOffset: @escaping (CGFloat) -> Void) -> some View {
-        if #available(iOS 18.0, *) {
-            self.onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, x in
-                onOffset(-x)
-            }
-        } else {
-            self
-        }
-    }
-}
 
 #Preview {
     ShiftsRootView()

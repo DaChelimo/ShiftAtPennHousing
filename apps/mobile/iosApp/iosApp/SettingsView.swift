@@ -50,6 +50,10 @@ struct SettingsScreen: View {
     /// (nil) keeps the VM's optimistic local toggle only. Only the broadcast / "General
     /// updates" channel is interactive — the three personal-notif rows stay disabled (§10.1).
     var onToggleBroadcast: ((Bool) -> Void)? = nil
+    // Persist the configurable channels (open shifts at my/other houses, and the
+    // shift-reminder lead times). Called with the WHOLE preference set, because the
+    // RPC upserts every column at once. Nil on the demo path (local-only).
+    var onToggleNotification: ((NotificationPreferences) -> Void)? = nil
     /// Restart the first-run welcome tour on demand — the way back in for a worker who
     /// skipped it or just wants a refresher.
     var onReplayTour: () -> Void = {}
@@ -262,6 +266,9 @@ struct SettingsScreen: View {
 
     private func notificationRow(_ row: NotificationRowModel, last: Bool, _ c: ShiftColors) -> some View {
         let (icon, tint) = notificationVisual(row.channel, c)
+        // The shift-reminder row owns three lead-time checkboxes underneath. They ARE the
+        // control; its switch is a shortcut for "all off" / "back to the default".
+        let isReminders = row.channel == .shiftReminders
         return VStack(spacing: 0) {
             HStack(spacing: 13) {
                 ZStack {
@@ -270,32 +277,92 @@ struct SettingsScreen: View {
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(row.title).font(ShiftFont.sans(15, .medium)).foregroundColor(c.ink)
+                        .accessibilityIdentifier("settings_notification_title")
                     Text(row.sub).font(ShiftFont.sans(12.5)).foregroundColor(c.ter)
+                        .accessibilityIdentifier("settings_notification_sub")
                 }
                 Spacer(minLength: 0)
-                Toggle("", isOn: Binding(get: { row.on }, set: { _ in
-                    // Only GENERAL_UPDATES is interactive. Flip the optimistic local state,
-                    // then PATCH the EF (live host) with the resulting subscription value.
-                    if row.interactive {
-                        model.vm.toggleBroadcast()
-                        let subscribed = model.vm.uiState.value.notifications
-                            .first { $0.channel == .generalUpdates }?.on ?? false
-                        onToggleBroadcast?(subscribed)
-                    }
-                }))
+                Toggle("", isOn: Binding(get: { row.on }, set: { _ in toggleChannel(row) }))
                     .labelsHidden().tint(c.blue).disabled(!row.interactive)
-                    .accessibilityIdentifier(row.channel == .generalUpdates ? "settings_broadcast_toggle" : "")
+                    .accessibilityIdentifier(toggleIdentifier(row.channel))
             }
             .padding(.horizontal, 14).padding(.vertical, 12)
+            if isReminders { leadTimeChecklist(c) }
             if !last { divider(c) }
+        }
+    }
+
+    /// Flip one channel. Only the interactive ones reach here; GENERAL_UPDATES still goes
+    /// through its own Edge Function, the rest through `set_notification_preferences`.
+    private func toggleChannel(_ row: NotificationRowModel) {
+        guard row.interactive else { return }
+        if row.channel == .generalUpdates {
+            model.vm.toggleBroadcast()
+            let subscribed = model.vm.uiState.value.notifications
+                .first { $0.channel == .generalUpdates }?.on ?? false
+            onToggleBroadcast?(subscribed)
+        } else if let next = model.vm.toggleNotification(channel: row.channel) {
+            onToggleNotification?(next)
+        }
+    }
+
+    /// The 2h / 1h / 30m checkboxes (BSpec §10.1a, 2026-07-28).
+    ///
+    /// Checkboxes rather than a picker because the choices are not exclusive: a worker may
+    /// want a 2-hour heads-up AND a 30-minute nudge. All three, some, or none. Unticking
+    /// the last one is allowed; the row's summary then reads "Off", so "no reminders" is
+    /// visibly different from "something failed to load".
+    @ViewBuilder
+    private func leadTimeChecklist(_ c: ShiftColors) -> some View {
+        let chosen = model.vm.shiftReminderOffsets
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(SettingsKt.SHIFT_REMINDER_LEAD_TIMES, id: \.self) { minutes in
+                let ticked = chosen.contains(minutes)
+                Button {
+                    if let next = model.vm.toggleShiftReminder(offsetMinutes: minutes.int32Value) {
+                        onToggleNotification?(next)
+                    }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: ticked ? "checkmark.square.fill" : "square")
+                            .font(.system(size: 17))
+                            .foregroundColor(ticked ? c.blue : c.ter)
+                            .accessibilityIdentifier("settings_lead_time_box_\(minutes)")
+                        Text(SettingsKt.shiftReminderLabel(offsetMinutes: minutes.int32Value))
+                            .font(ShiftFont.sans(14))
+                            .foregroundColor(ticked ? c.ink : c.sec)
+                            .accessibilityIdentifier("settings_lead_time_\(minutes)")
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                    .padding(.vertical, 6)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.leading, 57).padding(.trailing, 14).padding(.bottom, 10)
+    }
+
+    private func toggleIdentifier(_ channel: NotificationChannel) -> String {
+        switch channel {
+        case .generalUpdates: return "settings_broadcast_toggle"
+        case .openShiftsHomeHouse: return "settings_open_home_toggle"
+        case .openShiftsOtherHouses: return "settings_open_other_toggle"
+        case .shiftReminders: return "settings_shift_reminders_toggle"
+        default: return ""
         }
     }
 
     private func notificationVisual(_ channel: NotificationChannel, _ c: ShiftColors) -> (String, Color) {
         switch channel {
         case .float: return (ShiftIcons.floatOut, c.floatOut.accent)
+        case .swapRequests: return (ShiftIcons.refresh, c.pending)
+        case .breakSignup: return (ShiftIcons.snowflake, c.breakShift.accent)
+        case .preferences: return (ShiftIcons.calendar, c.pickupDot)
         case .shiftReminders: return (ShiftIcons.clock, c.breakShift.accent)
         case .schedulePublished: return (ShiftIcons.calendar, c.blue)
+        case .openShiftsHomeHouse: return (ShiftIcons.building, c.blue)
+        case .openShiftsOtherHouses: return (ShiftIcons.building, c.ter)
         case .generalUpdates: return (ShiftIcons.bell, c.ter)
         default: return (ShiftIcons.bell, c.ter)
         }

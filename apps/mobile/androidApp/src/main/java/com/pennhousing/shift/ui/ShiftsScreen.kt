@@ -180,6 +180,7 @@ internal fun ShiftsApp(
     val onDropBreakSeats = actions.onDropBreakSeats
     val onToggleBreakOptOut = actions.onToggleBreakOptOut
     val onToggleBroadcast = actions.onToggleBroadcast
+    val onToggleNotification = actions.onToggleNotification
     val onMarkAllRead = actions.onMarkAllRead
     val onAcceptSwap = actions.onAcceptSwap
     val onRejectSwap = actions.onRejectSwap
@@ -498,6 +499,7 @@ internal fun ShiftsApp(
                             settingsVm,
                             onSignOut,
                             onToggleBroadcast,
+                            onToggleNotification = onToggleNotification,
                             onReplayTour = onboardingVm::replayTour,
                             onReplayShiftTour = {
                                 nav.navigate(ShiftDestination.MyShifts)

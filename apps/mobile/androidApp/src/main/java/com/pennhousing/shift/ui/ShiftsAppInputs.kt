@@ -1,5 +1,6 @@
 package com.pennhousing.shift.ui
 
+import com.pennhousing.shift.shared.settings.NotificationPreferences
 import com.pennhousing.shift.shared.data.PermanentPickupScope
 import com.pennhousing.shift.shared.data.ToastNotification
 import com.pennhousing.shift.shared.house.HouseSeat
@@ -110,6 +111,9 @@ internal data class ShiftsActions(
     val onToggleBreakOptOut: (Boolean) -> Unit = {},
     // The NEW desired broadcast / "General updates" subscription state.
     val onToggleBroadcast: (Boolean) -> Unit = {},
+    // The WHOLE new set of configurable open-shift notification channels (BSpec §10.1);
+    // the RPC upserts both columns, so both travel together.
+    val onToggleNotification: (NotificationPreferences) -> Unit = {},
     // The worker's still-unread notification ids when "Mark all read" is tapped.
     val onMarkAllRead: (List<String>) -> Unit = {},
     val onAcceptSwap: (String) -> Unit = {},

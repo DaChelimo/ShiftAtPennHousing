@@ -42,17 +42,20 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   } = await supabase.auth.getUser();
   if (user === null) return null;
 
-  const { data: profile } = await supabase
-    .from('users')
-    .select('user_id, name, email, home_house_id')
-    .eq('user_id', user.id)
-    .maybeSingle();
+  // Neither query depends on the other's result (both key off user.id alone), so
+  // run them concurrently instead of paying two sequential round trips — this
+  // project points at a remote Supabase instance (~165ms/call), not local docker,
+  // so serial vs. parallel here is the difference between ~330ms and ~165ms on
+  // every single navigation (getSessionUser is called by the layout AND the page).
+  const [{ data: profile }, { data: roleRows }] = await Promise.all([
+    supabase
+      .from('users')
+      .select('user_id, name, email, home_house_id')
+      .eq('user_id', user.id)
+      .maybeSingle(),
+    supabase.from('user_roles').select('role, scope_house_id').eq('user_id', user.id),
+  ]);
   if (profile === null || profile === undefined) return null;
-
-  const { data: roleRows } = await supabase
-    .from('user_roles')
-    .select('role, scope_house_id')
-    .eq('user_id', user.id);
 
   return {
     userId: profile.user_id,

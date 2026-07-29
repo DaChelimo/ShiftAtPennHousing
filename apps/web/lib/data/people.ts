@@ -90,42 +90,33 @@ export async function getPeopleData(houseId: string, now: Date = new Date()): Pr
     people: [],
   };
 
-  const { data: house } = await svc
-    .from('houses')
-    .select('id, name')
-    .eq('id', houseId)
-    .maybeSingle();
+  // house/userRows/latestBlock only depend on houseId, so fetch them together
+  // instead of paying three sequential round trips (this project points at a
+  // remote Supabase instance — each round trip is ~165ms, not local-docker-fast).
+  const [{ data: house }, { data: userRows }, { data: latestBlock }] = await Promise.all([
+    svc.from('houses').select('id, name').eq('id', houseId).maybeSingle(),
+    svc
+      .from('users')
+      .select('user_id, name, email, home_house_id, is_active')
+      .eq('home_house_id', houseId)
+      .order('name'),
+    // Relevant week: the week of the house's most recent block, so hours reflect
+    // a real published schedule; falls back to the current week when there are
+    // none.
+    svc
+      .from('shift_blocks')
+      .select('block_start_at')
+      .eq('house_id', houseId)
+      .order('block_start_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
   if (house) base.houseName = house.name;
 
-  const { data: userRows } = await svc
-    .from('users')
-    .select('user_id, name, email, home_house_id, is_active')
-    .eq('home_house_id', houseId)
-    .order('name');
   const users = userRows ?? [];
   const rosterIds = users.map((u) => u.user_id);
   if (rosterIds.length === 0) return base;
 
-  const { data: roleRows } = await svc
-    .from('user_roles')
-    .select('user_id, role')
-    .in('user_id', rosterIds);
-  const rolesByUser = new Map<string, AppRole[]>();
-  for (const r of roleRows ?? []) {
-    const arr = rolesByUser.get(r.user_id) ?? [];
-    arr.push(r.role as AppRole);
-    rolesByUser.set(r.user_id, arr);
-  }
-
-  // Relevant week: the week of the house's most recent block, so hours reflect a
-  // real published schedule; falls back to the current week when there are none.
-  const { data: latestBlock } = await svc
-    .from('shift_blocks')
-    .select('block_start_at')
-    .eq('house_id', houseId)
-    .order('block_start_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
   const weekStart = mondayOf(
     latestBlock ? nyDate(latestBlock.block_start_at) : nyDate(now.toISOString()),
   );
@@ -139,13 +130,28 @@ export async function getPeopleData(houseId: string, now: Date = new Date()): Pr
     new Date(`${weekStart}T00:00:00Z`).getTime() - 12 * 3600 * 1000,
   ).toISOString();
   const hi = new Date(new Date(`${weekEnd}T00:00:00Z`).getTime() + 12 * 3600 * 1000).toISOString();
-  const { data: asg } = await svc
-    .from('shift_block_assignments')
-    .select('user_id, shift_blocks!inner(block_start_at)')
-    .in('user_id', rosterIds)
-    .in('status', [...COUNTING_STATUSES])
-    .gte('shift_blocks.block_start_at', lo)
-    .lt('shift_blocks.block_start_at', hi);
+  // roleRows/asg/eff each only depend on rosterIds and/or weekStart (both already
+  // resolved above), not on each other — another independent batch.
+  const [{ data: roleRows }, { data: asg }, { data: eff, error: capError }] = await Promise.all([
+    svc.from('user_roles').select('user_id, role').in('user_id', rosterIds),
+    svc
+      .from('shift_block_assignments')
+      .select('user_id, shift_blocks!inner(block_start_at)')
+      .in('user_id', rosterIds)
+      .in('status', [...COUNTING_STATUSES])
+      .gte('shift_blocks.block_start_at', lo)
+      .lt('shift_blocks.block_start_at', hi),
+    svc.rpc('effective_weekly_cap', {
+      p_week_start_date: weekStart,
+      p_block_start_at: `${weekStart}T00:00:00-05:00`,
+    }),
+  ]);
+  const rolesByUser = new Map<string, AppRole[]>();
+  for (const r of roleRows ?? []) {
+    const arr = rolesByUser.get(r.user_id) ?? [];
+    arr.push(r.role as AppRole);
+    rolesByUser.set(r.user_id, arr);
+  }
   const blocksByUser = new Map<string, number>();
   for (const row of (asg ?? []) as unknown as AsgWithBlock[]) {
     const startAt = startAtOf(row);
@@ -155,12 +161,6 @@ export async function getPeopleData(houseId: string, now: Date = new Date()): Pr
       blocksByUser.set(row.user_id, (blocksByUser.get(row.user_id) ?? 0) + 1);
     }
   }
-
-  // Campus-wide cap for the week.
-  const { data: eff, error: capError } = await svc.rpc('effective_weekly_cap', {
-    p_week_start_date: weekStart,
-    p_block_start_at: `${weekStart}T00:00:00-05:00`,
-  });
   if (capError === null) {
     const cap = eff?.[0] ?? { hours_cap: 20, cap_enforcement: 'soft' as const };
     base.cap = cap.hours_cap;

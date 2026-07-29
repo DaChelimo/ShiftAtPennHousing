@@ -1,3 +1,5 @@
+import { cache } from 'react';
+
 import { createServiceClient } from '../supabase/server';
 
 export type SystemConfigRow = {
@@ -9,7 +11,10 @@ export type SystemConfigRow = {
   notes: string | null;
 };
 
-export async function isProjectAdministrator(userId: string): Promise<boolean> {
+// Wrapped in React's cache() (per-request, not cross-request): AppLayout calls this
+// twice on every render (nav-building + the HMOD-context block below it), so without
+// dedup it was a duplicate DB round trip on every single navigation.
+export const isProjectAdministrator = cache(async (userId: string): Promise<boolean> => {
   const service = createServiceClient();
   const { data } = await service
     .from('system_config')
@@ -17,7 +22,7 @@ export async function isProjectAdministrator(userId: string): Promise<boolean> {
     .eq('config_key', 'project_administrator_user_id')
     .maybeSingle();
   return data?.config_value === userId;
-}
+});
 
 // Staggered-launch master switch. When absent/false the gate is disabled and every
 // house behaves as live (matches the DB helper is_staggered_launch_enabled()).

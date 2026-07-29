@@ -1,3 +1,5 @@
+import { cache } from 'react';
+
 import { createServiceClient } from '../supabase/server';
 
 // Dev-only simulated clock. The whole admin app reads "now" through simNow() so a
@@ -15,7 +17,12 @@ export function isTimeTravelEnabled(): boolean {
 // The current simulated instant, authoritative from the database (app_now()) so
 // the web and Postgres agree to the millisecond. Falls back to the wall clock if
 // the RPC is unavailable.
-export async function simNow(): Promise<Date> {
+//
+// Wrapped in React's cache() (per-request): the layout and nearly every page call
+// this with no arguments, so without dedup a single navigation paid the RPC round
+// trip once per segment (layout + page, sometimes twice within a page). Per-request
+// is the right granularity — a stale `now` never survives past one render.
+export const simNow = cache(async (): Promise<Date> => {
   // Production short-circuit: no offset can exist (the setter is gated off), so
   // skip the round-trip and behave exactly like the old `new Date()`.
   if (!isTimeTravelEnabled()) return new Date();
@@ -26,10 +33,10 @@ export async function simNow(): Promise<Date> {
     if (!Number.isNaN(parsed.getTime())) return parsed;
   }
   return new Date();
-}
+});
 
 // Offset (seconds) currently applied, for the card's live display. 0 = real time.
-export async function getSimOffsetSeconds(): Promise<number> {
+export const getSimOffsetSeconds = cache(async (): Promise<number> => {
   const svc = createServiceClient();
   const { data } = await svc
     .from('dev_sim_clock')
@@ -37,4 +44,4 @@ export async function getSimOffsetSeconds(): Promise<number> {
     .eq('id', true)
     .maybeSingle();
   return data?.offset_seconds ?? 0;
-}
+});

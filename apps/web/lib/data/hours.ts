@@ -152,27 +152,43 @@ export async function getHoursReport(
     rows: [],
   };
 
-  const { data: house } = await svc
-    .from('houses')
-    .select('id, name')
-    .eq('id', houseId)
-    .maybeSingle();
+  // house/userRows/latestBlock only depend on houseId, so fetch them together
+  // instead of paying three sequential round trips (this project points at a
+  // remote Supabase instance — each round trip is ~165ms, not local-docker-fast).
+  const [{ data: house }, { data: userRows }, { data: latestBlock }] = await Promise.all([
+    svc.from('houses').select('id, name').eq('id', houseId).maybeSingle(),
+    // Roster = home-housed people who work shifts (sw/sm/hm, not bm).
+    svc.from('users').select('user_id, name').eq('home_house_id', houseId).order('name'),
+    // Relevant week: week of the house's most recent block, else the current week.
+    svc
+      .from('shift_blocks')
+      .select('block_start_at')
+      .eq('house_id', houseId)
+      .order('block_start_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
   if (house) base.houseName = house.name;
 
-  // Roster = home-housed people who work shifts (sw/sm/hm, not bm).
-  const { data: userRows } = await svc
-    .from('users')
-    .select('user_id, name')
-    .eq('home_house_id', houseId)
-    .order('name');
   const users = userRows ?? [];
   const allIds = users.map((u) => u.user_id);
   if (allIds.length === 0) return base;
 
-  const { data: roleRows } = await svc
-    .from('user_roles')
-    .select('user_id, role')
-    .in('user_id', allIds);
+  const weekStart = mondayOf(
+    latestBlock ? nyDate(latestBlock.block_start_at) : nyDate(now.toISOString()),
+  );
+  const weekEnd = addDays(weekStart, 7);
+  base.weekStartDate = weekStart;
+
+  // roleRows depends on the roster above; eff only depends on weekStart (already
+  // resolved) — independent of each other, so fetch together.
+  const [{ data: roleRows }, { data: eff, error: capError }] = await Promise.all([
+    svc.from('user_roles').select('user_id, role').in('user_id', allIds),
+    svc.rpc('effective_weekly_cap', {
+      p_week_start_date: weekStart,
+      p_block_start_at: `${weekStart}T00:00:00-05:00`,
+    }),
+  ]);
   const rolesByUser = new Map<string, AppRole[]>();
   for (const r of roleRows ?? []) {
     const arr = rolesByUser.get(r.user_id) ?? [];
@@ -188,20 +204,6 @@ export async function getHoursReport(
   });
   const workerIds = workers.map((w) => w.user_id);
   if (workerIds.length === 0) return base;
-
-  // Relevant week: week of the house's most recent block, else the current week.
-  const { data: latestBlock } = await svc
-    .from('shift_blocks')
-    .select('block_start_at')
-    .eq('house_id', houseId)
-    .order('block_start_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const weekStart = mondayOf(
-    latestBlock ? nyDate(latestBlock.block_start_at) : nyDate(now.toISOString()),
-  );
-  const weekEnd = addDays(weekStart, 7);
-  base.weekStartDate = weekStart;
 
   // Counting-status assignments for the workers whose block lands in the NY week
   // (±12h UTC buffer keeps the bound DST-safe; precise NY filter in JS).
@@ -232,11 +234,6 @@ export async function getHoursReport(
     tally.set(row.user_id, t);
   }
 
-  // Campus-wide cap for the week.
-  const { data: eff, error: capError } = await svc.rpc('effective_weekly_cap', {
-    p_week_start_date: weekStart,
-    p_block_start_at: `${weekStart}T00:00:00-05:00`,
-  });
   if (capError === null) {
     const cap = eff?.[0] ?? { hours_cap: 20, cap_enforcement: 'soft' as const };
     base.cap = cap.hours_cap;

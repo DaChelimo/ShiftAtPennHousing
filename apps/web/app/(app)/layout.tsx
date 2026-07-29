@@ -40,6 +40,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect('/home');
   }
 
+  // Kick these off immediately (before the sync nav-building below runs) so they
+  // resolve concurrently instead of stalling the render one at a time. Both are
+  // awaited later — isProjectAdministrator is memoized per-request (React cache()
+  // in lib/data/config.ts), so re-awaiting the same promise elsewhere is free.
+  const isProjectAdminPromise = isProjectAdministrator(user.userId);
+  const nowPromise = simNow();
+
   const nav: NavItem[] = [
     { href: '/', label: 'Dashboard', testId: 'nav-home', icon: 'doc', group: 'Operate' },
   ];
@@ -158,7 +165,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       group: 'Admin',
     });
   }
-  if (await isProjectAdministrator(user.userId)) {
+  const isProjectAdmin = await isProjectAdminPromise;
+  if (isProjectAdmin) {
     nav.push({
       href: '/admin/config',
       label: 'Config',
@@ -179,10 +187,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // §2.5 HMOD context: resolve who is on-duty now, whether this user may leave their
   // home house (on-duty HMOD or project admin — D5), the switcher's house list, and
   // the bell's due/unread count. A single `now` so the pill, switcher, and bell agree.
-  const now = await simNow();
-  const onDutyId = await getOnDutyHmodId(now);
+  //
+  // This whole layout used to be ~8 sequential `await`s (each a GoTrue/Postgres round
+  // trip), so every tab click under this shell paid their full sum in latency, on top
+  // of Next's default 0s client router staleTime re-running it on every navigation
+  // (see next.config.ts). `now`/`isProjectAdmin` were already kicked off above; the
+  // rest fire concurrently here instead of one at a time.
+  const now = await nowPromise;
+  const [onDutyId, unreadCount, devOffsetSeconds] = await Promise.all([
+    getOnDutyHmodId(now),
+    getUnreadCount(user.userId, now),
+    // Dev-only time-travel card (left of the HMOD pill). Hidden in production.
+    isTimeTravelEnabled() ? getSimOffsetSeconds() : Promise.resolve(null),
+  ]);
   const hmodOnDuty = onDutyId === user.userId;
-  const isProjectAdmin = await isProjectAdministrator(user.userId);
   // §2.3a / 2026-06-27: the elevated tier (hm/bm/rsm) may switch into any house —
   // and, as of the cross-house decision, EDIT its schedule there (people admin /
   // leave / cap stay own-house, gated separately). The on-duty HMOD and project
@@ -203,9 +221,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           restricted: user.homeHouseId === 'harnwell',
         },
       ];
-  const unreadCount = await getUnreadCount(user.userId, now);
-  // Dev-only time-travel card (left of the HMOD pill). Hidden in production.
-  const devClock = isTimeTravelEnabled() ? { offsetSeconds: await getSimOffsetSeconds() } : null;
+  const devClock = devOffsetSeconds === null ? null : { offsetSeconds: devOffsetSeconds };
 
   return (
     <AppShell

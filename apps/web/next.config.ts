@@ -8,6 +8,15 @@ const nextConfig: NextConfig = {
     serverActions: {
       bodySizeLimit: '20mb',
     },
+    // Default dynamic staleTime is 0, so every client-side nav (including tab
+    // switches under the always-dynamic (app) layout, which reads cookies via
+    // getSessionUser) re-fetches the whole RSC tree and re-runs every DB round
+    // trip in AppLayout. 30s lets the router reuse a just-rendered shell/page
+    // when the SW flips between tabs, without going stale for a real session
+    // change (role/house edits land on the next natural revalidation).
+    staleTimes: {
+      dynamic: 30,
+    },
   },
 };
 

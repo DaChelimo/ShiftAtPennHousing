@@ -281,7 +281,22 @@ fun LoginScreen(
                     icon = if (submitting) null else ShiftIcons.Lock,
                     enabled = !submitting,
                     fullWidth = true,
+                    loading = submitting,
                 )
+
+                if (submitting) {
+                    // Says what is actually happening while the gateway call is out. Without
+                    // it the whole screen sits motionless after the tap, and a worker on a
+                    // slow connection concludes the button is broken and taps it again.
+                    Spacer(Modifier.height(14.dp))
+                    Text(
+                        "Checking your PennKey details. This only takes a moment.",
+                        modifier = Modifier.testTag("login_submitting_note"),
+                        color = c.sec,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                    )
+                }
 
                 if (state.phase == LoginPhase.ERROR && state.formError != null) {
                     Spacer(Modifier.height(16.dp))

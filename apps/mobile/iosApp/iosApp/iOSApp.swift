@@ -139,15 +139,22 @@ struct LiveRootView: View {
                 // Staggered-launch gate: a worker whose home house is not live yet sees a
                 // "coming soon" placeholder instead of the portal. GatedShiftsView resolves
                 // the gate (fail-open) before rendering the live shifts tree.
-                GatedShiftsView(userId: session.userId, onSignOut: {
-                    Task { try? await WorkerBackend.shared.authGateway.signOut() }
-                    login.authedSession = nil
-                    // A sign-out forces LOGIN even though a session was restored at launch.
-                    restored = .some(nil)
-                })
+                GatedShiftsView(
+                    userId: session.userId,
+                    // A sign-in the worker just performed explains its own wait; a cold launch
+                    // with a restored session just keeps the splash silent.
+                    signingIn: login.authedSession != nil,
+                    onSignOut: {
+                        Task { try? await WorkerBackend.shared.authGateway.signOut() }
+                        login.authedSession = nil
+                        // A sign-out forces LOGIN even though a session was restored at launch.
+                        restored = .some(nil)
+                    })
                 .id(clockEpoch)
             } else if restored == nil {
-                LaunchRestoreView()
+                // The session restore is the FIRST thing after the OS launch screen, so this
+                // is the launch screen continued, not a spinner interrupting it.
+                ShiftSplashView()
             } else {
                 LoginScreen(model: login)
             }
@@ -187,6 +194,9 @@ struct LiveRootView: View {
 /// error resolves to live rather than locking a real worker out.
 struct GatedShiftsView: View {
     let userId: String
+    /// True when this view was reached by a sign-in the worker just performed — the splash
+    /// then names what it is waiting on instead of staying silent.
+    var signingIn: Bool = false
     var onSignOut: () -> Void
     /// nil while the gate check runs; .some once resolved.
     @State private var gate: HomeHouseGate?
@@ -195,12 +205,12 @@ struct GatedShiftsView: View {
         Group {
             if let gate {
                 if gate.isLive {
-                    ShiftsRootView(onSignOut: onSignOut, liveUserId: userId)
+                    ShiftsRootView(onSignOut: onSignOut, liveUserId: userId, signingIn: signingIn)
                 } else {
                     HouseNotLiveView(houseName: gate.houseName, onSignOut: onSignOut)
                 }
             } else {
-                LaunchRestoreView()
+                ShiftSplashView(caption: signingIn ? "Signing you in" : nil)
             }
         }
         .task(id: userId) {
@@ -214,15 +224,6 @@ struct GatedShiftsView: View {
     }
 }
 
-/// Brief launch-time loading state while the persisted session is restored (the iOS
-/// analogue of Android's skeleton `LoadingScreen`).
-private struct LaunchRestoreView: View {
-    @Environment(\.colorScheme) private var scheme
-    var body: some View {
-        let c = ShiftColors.resolve(scheme)
-        return ZStack {
-            c.bg.ignoresSafeArea()
-            ProgressView()
-        }
-    }
-}
+// The launch-time loading state is `ShiftSplashView` (SplashView.swift) — the OS launch
+// screen continued. It replaced a bare `ProgressView` on a plain background, which made a
+// cold launch read as: brand splash, stray spinner, then login.

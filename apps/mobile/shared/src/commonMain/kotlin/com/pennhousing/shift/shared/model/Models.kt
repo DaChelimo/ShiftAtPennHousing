@@ -28,6 +28,14 @@ data class House(
  */
 enum class AssignmentKind { SCHEDULED, PERMANENT_PICKUP, TEMP_PICKUP, FLOAT_OUT }
 
+/**
+ * A seat write the worker has started that the server has not answered yet. Lives here
+ * (not in `shifts/`) so [MyShift] and [OpenShift] can name it without a package cycle.
+ * The lifecycle is in `data/PendingWriteStore`; the projection is in
+ * `shifts/PendingWrites.kt`, which is also where the "why" is written down.
+ */
+enum class PendingWriteKind { CLAIM, DROP, SWAP }
+
 data class MyShift(
     val id: String,
     val house: House,
@@ -42,6 +50,11 @@ data class MyShift(
     // is one block (the default); a coalesced card carries every merged block id so
     // drop/claim can target all — or a sub-range — of the underlying blocks.
     val blockIds: List<String> = listOf(id),
+    // A write the worker just started is still in flight against the server (see
+    // shifts/PendingWrites.kt). The card renders as "working on it" and refuses further
+    // actions until the server has actually answered. NEVER set from a read model: it is
+    // client-side, in-memory, and lives exactly as long as one request.
+    val busyKind: PendingWriteKind? = null,
 )
 
 enum class MyShiftsSection { PICKED_UP, DROPPED, SCHEDULED }
@@ -73,6 +86,10 @@ data class OpenShift(
     //                   even if a floater/Allied later fills the desk.
     val deskCovered: Boolean = false,
     val coverageLocked: Boolean = false,
+    // The worker tapped Claim and the per-block writes are still in flight (see
+    // shifts/PendingWrites.kt). The card is held at its FULL original span and shown as
+    // "claiming" rather than shrinking block by block as each write lands.
+    val busyKind: PendingWriteKind? = null,
 ) {
     /**
      * Stable list identity. [id] alone is NOT unique across a mixed feed: a permanently

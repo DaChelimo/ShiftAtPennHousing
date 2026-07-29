@@ -74,12 +74,15 @@ final class LoginObservable: ObservableObject {
                 // network/config failure is distinguishable from a wrong password. The success
                 // case already carries the session, so no second currentSession() probe/race.
                 let outcome = try await gateway.signIn(email: email, password: password)
-                submitting = false
                 switch onEnum(of: outcome) {
                 case .success(let ok):
                     WorkerBackend.shared.wireAccessToken()
+                    // Deliberately leaves `submitting` TRUE. The host swaps to the splash on
+                    // the very next frame; clearing it first would flash the button back to
+                    // its idle state, which reads as "nothing happened, tap again".
                     authedSession = ok.session
                 case .failure(let fail):
+                    submitting = false
                     formError = Self.message(for: fail.error)
                     formErrorDetail = fail.detail
                 }
@@ -153,11 +156,25 @@ struct LoginScreen: View {
                 ShiftButton(
                     title: model.submitting ? "Signing in…" : "Sign in with PennKey",
                     action: { model.submit() },
-                    variant: .filled, size: .lg, systemIcon: model.submitting ? nil : ShiftIcons.lock, fullWidth: true
+                    variant: .filled, size: .lg, systemIcon: model.submitting ? nil : ShiftIcons.lock, fullWidth: true,
+                    loading: model.submitting
                 )
                 .disabled(model.submitting)
                 .padding(.top, 20)
                 .accessibilityIdentifier("login_submit")
+
+                if model.submitting {
+                    // Says what is actually happening while the gateway call is out. Without
+                    // it the whole screen sits motionless after the tap, and a worker on a
+                    // slow connection concludes the button is broken and taps it again.
+                    Text("Checking your PennKey details. This only takes a moment.")
+                        .font(ShiftFont.sans(13))
+                        .foregroundColor(c.sec)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 14)
+                        .transition(.opacity)
+                        .accessibilityIdentifier("login_submitting_note")
+                }
 
                 if let formError = model.formError {
                     ShiftBanner(title: formError, tone: .error)
@@ -190,6 +207,7 @@ struct LoginScreen: View {
             }
             .padding(.horizontal, 24)
             .frame(maxWidth: .infinity)
+            .animation(.easeInOut(duration: 0.2), value: model.submitting)
         }
         .background(c.bg)
         // A non-wrapping marker, not the container itself — an identifier set directly on a

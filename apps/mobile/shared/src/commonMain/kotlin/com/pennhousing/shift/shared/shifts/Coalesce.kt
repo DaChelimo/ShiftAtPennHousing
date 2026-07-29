@@ -4,6 +4,7 @@ import com.pennhousing.shift.shared.model.AssignmentKind
 import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.model.OpenFeed
 import com.pennhousing.shift.shared.model.OpenShift
+import com.pennhousing.shift.shared.model.PendingWriteKind
 import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
@@ -38,6 +39,10 @@ private data class MyShiftMergeKey(
     val pending: Boolean,
     val breakShift: Boolean,
     val droppedStillOpen: Boolean,
+    // An in-flight write (PendingWrites.kt) is a card treatment like any other: a busy
+    // half of a run must not merge into its settled neighbour, or the "working on it"
+    // state would silently spread across blocks nothing is being written to.
+    val busyKind: PendingWriteKind?,
 )
 
 private fun mergeKey(shift: MyShift) =
@@ -48,6 +53,7 @@ private fun mergeKey(shift: MyShift) =
         pending = shift.pending,
         breakShift = shift.breakShift,
         droppedStillOpen = shift.droppedStillOpen,
+        busyKind = shift.busyKind,
     )
 
 /** What must match for two adjacent open-feed blocks to be one displayed opening. */
@@ -62,6 +68,9 @@ private data class OpenShiftMergeKey(
     // them into one card whose action would misrepresent half its blocks.
     val deskCovered: Boolean,
     val coverageLocked: Boolean,
+    // See MyShiftMergeKey.busy — a claim in flight is held as one whole card and must
+    // never absorb its settled neighbours.
+    val busyKind: PendingWriteKind?,
 )
 
 private fun mergeKey(shift: OpenShift) =
@@ -72,6 +81,7 @@ private fun mergeKey(shift: OpenShift) =
         weeksRemaining = shift.weeksRemaining,
         deskCovered = shift.deskCovered,
         coverageLocked = shift.coverageLocked,
+        busyKind = shift.busyKind,
     )
 
 /**

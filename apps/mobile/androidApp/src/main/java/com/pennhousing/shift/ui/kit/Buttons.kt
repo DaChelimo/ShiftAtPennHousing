@@ -17,6 +17,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -48,6 +50,13 @@ fun ShiftButton(
     icon: ImageVector? = null,
     enabled: Boolean = true,
     fullWidth: Boolean = false,
+    /**
+     * Work is in flight: an inline spinner takes the icon's place. The label stays the
+     * caller's, so the button both SAYS what is happening ("Signing in…") and shows movement
+     * while it does. A button that only changes its words reads as a button that did nothing.
+     * Pair with `enabled = false` to also block a second tap.
+     */
+    loading: Boolean = false,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val height =
@@ -78,7 +87,15 @@ fun ShiftButton(
             horizontalArrangement = androidx.compose.foundation.layout.Arrangement
                 .spacedBy(7.dp),
         ) {
-            if (icon != null) Icon(icon, contentDescription = null, modifier = Modifier.size(iconSize))
+            if (loading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(iconSize),
+                    strokeWidth = 2.dp,
+                    color = LocalContentColor.current,
+                )
+            } else if (icon != null) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(iconSize))
+            }
             Text(text, fontSize = labelSize, fontWeight = FontWeight.SemiBold, maxLines = 1)
         }
     }

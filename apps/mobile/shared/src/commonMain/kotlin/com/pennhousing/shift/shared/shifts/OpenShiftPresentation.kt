@@ -74,6 +74,12 @@ data class OpenShiftRow(
     val count: Int = 1,
     // "2 open" badge text when [count] > 1, else null (a single opening shows no badge).
     val countLabel: String? = null,
+    // A claim on this card is in flight (shifts/PendingWrites.kt). The card renders as
+    // "claiming", its action is suppressed, and it holds its FULL span while the
+    // per-block writes land. [busyLabel] / [busyNote] carry the copy.
+    val busy: Boolean = false,
+    val busyLabel: String? = null,
+    val busyNote: String? = null,
 )
 
 /**
@@ -110,14 +116,25 @@ fun OpenShift.toRow(
         dayLabel = dayLabel,
         durationLabel = formatDuration(start, end),
         meta = meta,
-        actionLabel = actionLabel,
+        // A card whose claim is in flight offers no action: tapping again would fire a
+        // second set of per-block writes for seats the first set may already hold.
+        actionLabel = if (busyKind != null) null else actionLabel,
         count = count,
         countLabel = if (count > 1) "$count open" else null,
+        busy = busyKind != null,
+        busyLabel = busyKind?.let { pendingWriteLabel(it) },
+        busyNote = busyKind?.let { pendingWriteNote(it) },
     )
 }
 
 /** The success toast shown after a WEEKLY open-shift claim commits. */
 const val CLAIM_SUCCESS_TOAST: String = "Claimed. It's now in My Shifts"
+
+/**
+ * The success toast shown after a drop COMMITS. Past tense on purpose: it is shown only
+ * once the Edge Function has answered, never when the worker taps (2026-07-28).
+ */
+const val DROP_SUCCESS_TOAST: String = "Dropped. The shift is open for someone else"
 
 /**
  * The success toast after a PERMANENT pickup when the scope is unknown (the dry-run GET

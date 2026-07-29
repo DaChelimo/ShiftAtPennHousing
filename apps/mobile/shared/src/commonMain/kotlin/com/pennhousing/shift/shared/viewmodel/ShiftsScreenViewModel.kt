@@ -17,7 +17,10 @@ import com.pennhousing.shift.shared.shifts.HomeOpenShiftsTab
 import com.pennhousing.shift.shared.shifts.MyShiftsTab
 import com.pennhousing.shift.shared.shifts.OpenShiftSplit
 import com.pennhousing.shift.shared.shifts.OtherHousesTab
+import com.pennhousing.shift.shared.shifts.PendingWrite
 import com.pennhousing.shift.shared.shifts.applyTemporaryDrop
+import com.pennhousing.shift.shared.shifts.pendingAwareMyShifts
+import com.pennhousing.shift.shared.shifts.pendingAwareOpenShifts
 import com.pennhousing.shift.shared.shifts.buildHomeOpenShiftsTab
 import com.pennhousing.shift.shared.shifts.buildMyShiftsTab
 import com.pennhousing.shift.shared.shifts.buildOtherHousesTab
@@ -74,8 +77,14 @@ data class ShiftsUiState(
  * screen's load instant, injected once at construction (decision #17).
  *
  * The data layer (Supabase fetch + Realtime, see `data/`) constructs the
- * snapshot; this ViewModel only decides over it. `drop`/`reclaim` are optimistic
- * local section moves (decision #13); server reconciliation is out of scope.
+ * snapshot; this ViewModel only decides over it.
+ *
+ * `claim`/`drop`/`dropToOpen`/`dropBlocks`/`reclaim` are the ORIGINAL optimistic local
+ * moves (decision #13) and are now used only by the demo/tour build, where there is no
+ * server to confirm anything. The LIVE host instead passes [pendingWrites] and leaves
+ * the snapshot alone: a claim or drop shows an in-progress card until the Edge Function
+ * answers, and the resulting state comes from the next server snapshot. See
+ * shifts/PendingWrites.kt for the reasoning (2026-07-28).
  *
  * Week navigation: the My-Shifts tab is scoped to [weekOffset]'s NY week (0 = this
  * week). [previousWeek]/[nextWeek]/[selectWeekOffset] move the shown week so a
@@ -89,6 +98,12 @@ class ShiftsScreenViewModel(
     openShifts: List<OpenShift>,
     private val now: Instant,
     initialTab: ShiftsTab = ShiftsTab.MY_SHIFTS,
+    // Writes the worker has started that the server has not answered yet. The LIVE host
+    // registers these instead of calling the optimistic [claim]/[drop] movers below, so a
+    // card shows PROGRESS until the server confirms, never a result it has not earned.
+    // See shifts/PendingWrites.kt for why. Empty on the demo path, which keeps the local
+    // moves as its only feedback.
+    private val pendingWrites: List<PendingWrite> = emptyList(),
 ) : ViewModel() {
     private var workerShifts: List<MyShift> = myShifts
     private var openFeed: List<OpenShift> = openShifts
@@ -103,12 +118,17 @@ class ShiftsScreenViewModel(
         // block); coalescing at presentation time merges each contiguous same-shift
         // run into one displayed card carrying its constituent blockIds.
         val anchor = shiftWeekAnchor(now, weekOffset)
+        // In-flight writes are projected BEFORE coalescing and week-scoping: a claim's
+        // half-written blocks are hidden and its tapped card is held whole, so the run
+        // that coalescing sees is the one the worker is actually looking at.
+        val visibleShifts = pendingAwareMyShifts(workerShifts, pendingWrites)
+        val visibleOpen = pendingAwareOpenShifts(openFeed, pendingWrites)
         // My Shifts is scoped to its shown week; the open feeds are scoped to THEIR own
         // (independent) week so a worker browses one Mon-Sun at a time — permanent openings
         // recur and pass through every week (see openShiftsInWeekOf).
-        val weekShifts = shiftsInWeekOf(workerShifts, anchor)
+        val weekShifts = shiftsInWeekOf(visibleShifts, anchor)
         val openAnchor = shiftWeekAnchor(now, openWeekOffset)
-        val weekOpen = openShiftsInWeekOf(coalesceOpenShifts(openFeed), openAnchor)
+        val weekOpen = openShiftsInWeekOf(coalesceOpenShifts(visibleOpen), openAnchor)
         return ShiftsUiState(
             selectedTab = tab,
             myShifts = buildMyShiftsTab(coalesceMyShifts(weekShifts)),

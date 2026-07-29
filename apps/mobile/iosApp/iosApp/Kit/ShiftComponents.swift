@@ -31,6 +31,11 @@ struct ShiftButton: View {
     var size: ShiftButtonSize = .md
     var systemIcon: String? = nil
     var fullWidth: Bool = false
+    /// Work is in flight: an inline spinner takes the icon's place and taps are ignored.
+    /// The label stays the caller's, so the button both SAYS what is happening ("Signing
+    /// in…") and shows movement while it does. A button that only changes its words reads
+    /// as a button that did nothing.
+    var loading: Bool = false
 
     @Environment(\.colorScheme) private var scheme
     private var c: ShiftColors { .resolve(scheme) }
@@ -38,7 +43,12 @@ struct ShiftButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 7) {
-                if let systemIcon {
+                if loading {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: fg))
+                        .scaleEffect(0.8)
+                        .frame(width: iconSize, height: iconSize)
+                } else if let systemIcon {
                     Image(systemName: systemIcon).font(.system(size: iconSize, weight: .semibold))
                 }
                 Text(title).font(ShiftFont.sans(labelSize, .semibold))
@@ -52,6 +62,7 @@ struct ShiftButton: View {
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         }
         .buttonStyle(PressScaleStyle())
+        .allowsHitTesting(!loading)
     }
 
     private var height: CGFloat {

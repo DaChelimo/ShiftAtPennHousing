@@ -17,15 +17,19 @@ import com.pennhousing.shift.shared.calendar.weekPickerOptions
 import com.pennhousing.shift.shared.model.AssignmentKind
 import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.model.OpenShift
+import com.pennhousing.shift.shared.shifts.PendingWrite
 import com.pennhousing.shift.shared.shifts.applyTemporaryDrop
 import com.pennhousing.shift.shared.shifts.coalesceMyShifts
 import com.pennhousing.shift.shared.shifts.hoursBetween
+import com.pennhousing.shift.shared.shifts.pendingAwareMyShifts
 import com.pennhousing.shift.shared.shifts.reclaimDroppedShift
 import com.pennhousing.shift.shared.swaps.PendingSwap
 import com.pennhousing.shift.shared.swaps.PendingSwapNotice
+import com.pennhousing.shift.shared.swaps.SwapBanner
 import com.pennhousing.shift.shared.swaps.SwapDecision
 import com.pennhousing.shift.shared.swaps.SwapDirection
 import com.pennhousing.shift.shared.swaps.buildPendingSwapNotice
+import com.pennhousing.shift.shared.swaps.buildSwapBanner
 import com.pennhousing.shift.shared.swaps.buildSwapDecision
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -52,6 +56,12 @@ data class CalendarUiState(
     val template: List<TemplateSlot> = emptyList(),
     /** Held hours in the SHOWN week — the "This week — Xh of cap" chip total (now lives on this tab). */
     val weekHours: Double = 0.0,
+    /**
+     * Pending swaps surfaced at the top of My Shifts, both directions (BSpec §10.1).
+     * NOT week-scoped: a request that needs an answer must be visible whatever week the
+     * worker happens to be looking at. See swaps/SwapBanner.kt.
+     */
+    val swapBanner: SwapBanner = SwapBanner(emptyList()),
 )
 
 /**
@@ -73,6 +83,9 @@ class CalendarViewModel(
     // The worker's pending swaps (both directions) from `worker_pending_swaps`; a shift
     // card whose blocks appear here is flagged, and an incoming card taps into the popup.
     pendingSwaps: List<PendingSwap> = emptyList(),
+    // Writes the worker started that the server has not answered (shifts/PendingWrites.kt).
+    // Live only; the demo path keeps its optimistic [drop]/[claim] moves.
+    private val pendingWrites: List<PendingWrite> = emptyList(),
 ) : ViewModel() {
     // Mutable: an optimistic [drop] flags blocks dropped-still-open so they leave the
     // agenda (the builders exclude them); the open feed gains them on the Shifts VM.
@@ -103,9 +116,16 @@ class CalendarViewModel(
 
     private fun closedFor(offset: Int): Set<Int> = if (offset == 0) closedDayIndexes else emptySet()
 
+    /**
+     * The shifts the calendar draws: the snapshot projected through any in-flight write,
+     * so a claim being written block by block does not assemble itself in the agenda and
+     * a shift being dropped stays put (busy) until the server confirms it is gone.
+     */
+    private fun visibleShifts(): List<MyShift> = pendingAwareMyShifts(workerShifts, pendingWrites)
+
     private fun buildWeek(): CalendarWeek =
         buildCalendarWeek(
-            workerShifts,
+            visibleShifts(),
             now,
             closedDayIndexes = closedFor(weekOffset),
             anchor = shiftWeekAnchor(now, weekOffset),
@@ -116,13 +136,14 @@ class CalendarViewModel(
         val day = dayIndex.coerceIn(0, week.days.size - 1)
         val anchor = shiftWeekAnchor(now, weekOffset)
         val closed = closedFor(weekOffset)
+        val shown = visibleShifts()
         return CalendarUiState(
             week = week,
             selectedDayIndex = day,
-            agenda = buildCalendarAgenda(workerShifts, day, now, closedDayIndexes = closed, anchor = anchor, swapMarks = swapMarks()),
+            agenda = buildCalendarAgenda(shown, day, now, closedDayIndexes = closed, anchor = anchor, swapMarks = swapMarks()),
             weekOverview =
                 if (mode == CalendarMode.WEEK) {
-                    buildCalendarWeekOverview(workerShifts, now, closedDayIndexes = closed, anchor = anchor, swapMarks = swapMarks())
+                    buildCalendarWeekOverview(shown, now, closedDayIndexes = closed, anchor = anchor, swapMarks = swapMarks())
                 } else {
                     null
                 },
@@ -131,7 +152,10 @@ class CalendarViewModel(
             template = if (mode == CalendarMode.TEMPLATE) template else emptyList(),
             // Held hours in the shown week (dropped-still-open blocks don't count) —
             // mirrors ShiftsScreenViewModel.weekHours so the chip reads the same total.
-            weekHours = shiftsInWeekOf(workerShifts, anchor).filter { !it.droppedStillOpen }.sumOf { hoursBetween(it.start, it.end) },
+            weekHours = shiftsInWeekOf(shown, anchor).filter { !it.droppedStillOpen }.sumOf { hoursBetween(it.start, it.end) },
+            // The always-on swap banner (BSpec §10.1): what is waiting on this worker and
+            // what this worker is waiting on, from the same `swaps` the card marks use.
+            swapBanner = buildSwapBanner(swaps, now),
         )
     }
 

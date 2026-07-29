@@ -34,6 +34,7 @@ import com.pennhousing.shift.ui.common.toKitState
 import com.pennhousing.shift.ui.house.durationLabel
 import com.pennhousing.shift.ui.kit.DurationChip
 import com.pennhousing.shift.ui.kit.HouseBadge
+import com.pennhousing.shift.ui.kit.InFlightPill
 import com.pennhousing.shift.ui.kit.ShiftCard
 import com.pennhousing.shift.ui.kit.ShiftIcons
 import com.pennhousing.shift.ui.theme.ShiftTheme
@@ -135,6 +136,23 @@ internal fun AgendaShiftCard(
     swap: AgendaSwapMark? = null,
     onClick: (() -> Unit)? = null,
 ) {
+    // A drop or swap on this shift is in flight: the card stays exactly where it is and
+    // says what is happening, instead of leaving the calendar before the server has
+    // agreed it is gone. It also refuses a tap, so a second drop cannot be started.
+    if (row.busy) {
+        ShiftCard(
+            state = row.state.toKitState(),
+            houseInitial = row.houseInitial,
+            timeLabel = row.timeLabel,
+            modifier = Modifier.alpha(if (past) 0.55f else 1f).testTag("calendar_shift_card_busy"),
+            houseName = row.houseName,
+            destination = row.destination,
+            durationLabel = row.durationLabel,
+            meta = row.busyNote,
+            action = { InFlightPill(row.busyLabel.orEmpty()) },
+        )
+        return
+    }
     if (swap == null) {
         ShiftCard(
             state = row.state.toKitState(),

@@ -38,6 +38,7 @@ import com.pennhousing.shift.ui.kit.SectionHeader
 import com.pennhousing.shift.ui.kit.ShiftButton
 import com.pennhousing.shift.ui.kit.ShiftCard
 import com.pennhousing.shift.ui.kit.ShiftIcons
+import com.pennhousing.shift.ui.kit.InFlightPill
 import com.pennhousing.shift.ui.theme.ShiftTheme
 
 /**
@@ -59,22 +60,28 @@ internal fun OpenFeedCard(
         state = row.state.toKitState(),
         houseInitial = row.houseInitial,
         timeLabel = row.timeLabel,
-        modifier = Modifier.testTag("open_shift_card"),
+        modifier = Modifier.testTag(if (row.busy) "open_shift_card_busy" else "open_shift_card"),
         eyebrow = row.dayLabel,
         houseName = row.houseName,
         durationLabel = row.durationLabel,
-        meta = row.meta,
+        // While a claim is in flight the card says so, at its full original span, instead
+        // of shrinking block by block as `claim-shift` commits each 30-minute write.
+        meta = row.busyNote ?: row.meta,
         countLabel = row.countLabel,
         action =
-            row.actionLabel?.let { label ->
-                {
-                    ShiftButton(
-                        label,
-                        onClaim,
-                        modifier = Modifier.testTag("claim_button"),
-                        variant = if (row.state == OpenShiftCardState.PERMANENT) ButtonVariant.Tonal else ButtonVariant.Filled,
-                        size = ButtonSize.Sm,
-                    )
+            if (row.busy) {
+                { InFlightPill(row.busyLabel.orEmpty()) }
+            } else {
+                row.actionLabel?.let { label ->
+                    {
+                        ShiftButton(
+                            label,
+                            onClaim,
+                            modifier = Modifier.testTag("claim_button"),
+                            variant = if (row.state == OpenShiftCardState.PERMANENT) ButtonVariant.Tonal else ButtonVariant.Filled,
+                            size = ButtonSize.Sm,
+                        )
+                    }
                 }
             },
     )

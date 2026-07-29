@@ -121,6 +121,11 @@ data class MyShiftRow(
     val timeLabel: String,
     val dayLabel: String,
     val durationLabel: String,
+    // A drop or swap on this shift is in flight (shifts/PendingWrites.kt). The card stays
+    // put and renders as busy, refusing a second action, until the server answers.
+    val busy: Boolean = false,
+    val busyLabel: String? = null,
+    val busyNote: String? = null,
 )
 
 fun MyShift.toRow(zone: TimeZone = NEW_YORK): MyShiftRow {
@@ -138,5 +143,8 @@ fun MyShift.toRow(zone: TimeZone = NEW_YORK): MyShiftRow {
         timeLabel = formatTimeRange(start, end, zone),
         dayLabel = formatDayLabel(start, zone),
         durationLabel = formatDuration(start, end),
+        busy = busyKind != null,
+        busyLabel = busyKind?.let { pendingWriteLabel(it) },
+        busyNote = busyKind?.let { pendingWriteNote(it) },
     )
 }

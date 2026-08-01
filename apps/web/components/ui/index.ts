@@ -14,11 +14,11 @@ export { Modal } from './Modal';
 export { Notification, type NotificationKind } from './Notification';
 export { EmptyState, ErrorState, type EmptyTone } from './EmptyState';
 export { Skeleton } from './Skeleton';
+export { PageSkeleton, type PageSkeletonProps } from './PageSkeleton';
 export { Tabs, type TabItem } from './Tabs';
 export { PageHead } from './PageHead';
 export { Card } from './Card';
 export { DataTable, type Column } from './DataTable';
-export { StatusLegend } from './StatusLegend';
 export {
   SHIFT_STATES,
   SHIFT_STATE_BY_KEY,

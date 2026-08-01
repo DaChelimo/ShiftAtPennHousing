@@ -19,9 +19,11 @@ import org.robolectric.annotation.Config
  * button that follows you everywhere covers content on the feeds and grids where the Assistant
  * isn't what you came to do. The Assistant stays reachable from "More" on every screen.
  *
- * Worth pinning per-tab rather than eyeballing: the chip lives in the Scaffold's
- * `floatingActionButton` slot, so any edit to that one condition changes it app-wide with no local
- * signal at the call sites it affects.
+ * Worth pinning per-tab rather than eyeballing: the chip is threaded down as one optional callback
+ * (`CalendarTabContent`'s `onAskAssistant`), so any edit to that single wiring changes it app-wide
+ * with no local signal at the call sites it affects. It renders INSIDE the agenda area rather than
+ * in the Scaffold's `floatingActionButton` slot, which floats above the bottom nav bar and so put
+ * the pill on top of the week navigator.
  */
 // Robolectric's default 320x470dp window collapses this screen and breaks clicks on phantom
 // zero-height nodes; a realistic device size is required (see PreferencesTourViewTest).

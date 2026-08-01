@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -71,44 +73,67 @@ private fun SwapBannerCard(
 ) {
     val c = ShiftTheme.colors
     val awaitingYou = entry.tone == SwapBannerTone.AWAITING_YOU
-    // Same two colours the tinted agenda cards use, so the banner and the card a worker
-    // taps through to read as one thing: pending-amber for "answer this", brand-blue for
-    // "we are waiting on them".
-    val accent = if (awaitingYou) c.pending else MaterialTheme.colorScheme.primary
-    val tint = if (awaitingYou) c.warnSoft else MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+    // Only the actionable row (someone needs YOUR answer) carries a color signal, in
+    // brand blue — the app's one "take action" hue everywhere else (never orange/amber,
+    // which reads as a caution state elsewhere in the shift-state legend). The outgoing
+    // row is purely informational, so it stays fully neutral instead of borrowing a
+    // second accent — that contrast in weight is what tells the two rows apart, not a
+    // second color.
+    //
+    // Both rows share the same swap (exchange-arrows) icon, so the glyph reads as "this
+    // is a swap" rather than "this is a notification" (a bell implies something else).
     val shape = RoundedCornerShape(14.dp)
+    val borderColor = if (awaitingYou) MaterialTheme.colorScheme.primary.copy(alpha = 0.45f) else c.divider
+    val chipBg = if (awaitingYou) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else c.surfaceVar
+    val iconTint = if (awaitingYou) MaterialTheme.colorScheme.primary else c.ter
     Row(
         Modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(tint)
-            .border(1.dp, accent.copy(alpha = 0.55f), shape)
+            .background(c.surface)
+            .border(1.dp, borderColor, shape)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp)
             .testTag(if (awaitingYou) "swap_banner_incoming" else "swap_banner_outgoing"),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Icon(
-            if (awaitingYou) ShiftIcons.Bell else ShiftIcons.Refresh,
-            contentDescription = null,
-            tint = accent,
-            modifier = Modifier.size(16.dp),
-        )
+        Box(
+            Modifier
+                .size(30.dp)
+                .clip(RoundedCornerShape(9.dp))
+                .background(chipBg),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                ShiftIcons.Refresh,
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.size(16.dp),
+            )
+        }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(entry.title, color = c.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             Text(entry.detail, color = c.sec, fontSize = 12.5.sp)
         }
+        // Incoming needs an answer, so its action is a solid blue pill. Outgoing is
+        // informational and gets a quiet neutral outline: the weight of the control tells
+        // the worker which of the two rows is actually theirs to act on.
         Text(
             entry.actionLabel,
-            color = accent,
+            color = if (awaitingYou) Color.White else c.sec,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             modifier =
                 Modifier
                     .clip(RoundedCornerShape(50))
-                    .background(c.surface)
-                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                    .then(
+                        if (awaitingYou) {
+                            Modifier.background(MaterialTheme.colorScheme.primary)
+                        } else {
+                            Modifier.border(1.dp, c.outline, RoundedCornerShape(50))
+                        },
+                    ).padding(horizontal = if (awaitingYou) 12.dp else 11.dp, vertical = 5.dp),
         )
     }
 }

@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -71,6 +72,9 @@ fun AskAssistantButton(
         modifier
             .onboardingAnchor(OnboardingTarget.ASSISTANT_BUTTON)
             .testTag("ask_assistant")
+            // The pill no longer rides the Scaffold's FAB slot (which put it on top of the
+            // week navigator), so it carries its own lift instead of the slot's elevation.
+            .shadow(8.dp, RoundedCornerShape(percent = 50))
             .clip(RoundedCornerShape(percent = 50))
             .background(MaterialTheme.colorScheme.primary)
             .clickable(onClick = onClick)
@@ -79,7 +83,7 @@ fun AskAssistantButton(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Icon(ShiftIcons.Sparkle, contentDescription = null, tint = Color.White)
-        Text("Ask", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+        Text("Ask Snoopy", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
     }
 }
 

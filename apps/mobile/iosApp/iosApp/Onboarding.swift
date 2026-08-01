@@ -98,7 +98,7 @@ struct AskAssistantButtonView: View {
         return Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: ShiftIcons.sparkles).font(.system(size: 15, weight: .semibold))
-                Text("Ask").font(ShiftFont.sans(15, .semibold))
+                Text("Ask Snoopy").font(ShiftFont.sans(15, .semibold))
             }
             .foregroundColor(.white)
             .padding(.horizontal, 18)

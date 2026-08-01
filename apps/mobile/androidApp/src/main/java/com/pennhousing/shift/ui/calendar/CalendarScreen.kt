@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -61,6 +62,7 @@ import com.pennhousing.shift.ui.kit.EmptyState
 import com.pennhousing.shift.ui.kit.ShiftBanner
 import com.pennhousing.shift.ui.kit.ShiftIcons
 import com.pennhousing.shift.ui.manage.ManageShiftSheet
+import com.pennhousing.shift.ui.onboarding.AskAssistantButton
 import com.pennhousing.shift.ui.onboarding.ShiftTourHelpButton
 import com.pennhousing.shift.ui.theme.ShiftTheme
 import kotlinx.coroutines.launch
@@ -103,6 +105,10 @@ internal fun CalendarTabContent(
     // autoStart trigger, overlay, help button, and pointer all render from inside the
     // sheet — see the swapTourVm comment where it's created in ShiftsApp).
     swapTourVm: SwapTourViewModel,
+    // The "Ask Snoopy" pill. It floats over the agenda, anchored ABOVE the bottom week
+    // navigator (it used to sit in the Scaffold's FAB slot, which put it on top of the
+    // navigator and covered its arrows). Null on surfaces that don't offer the Assistant.
+    onAskAssistant: (() -> Unit)? = null,
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val c = ShiftTheme.colors
@@ -168,6 +174,7 @@ internal fun CalendarTabContent(
                         }
                     }
                 }
+                AskAssistantOverlay(onAskAssistant)
             }
             // The week navigator now lives at the BOTTOM, above the nav bar.
             WeekNavBar(
@@ -185,7 +192,7 @@ internal fun CalendarTabContent(
         // placed directly under the title (the hours always follow the shown week).
         WeekTotalChip(
             weekHours = state.weekHours,
-            breakProfile = breakProfile,
+            cap = state.weekCap,
             weekOffset = state.weekOffset,
             modifier = Modifier.padding(horizontal = 16.dp).testTag("week_total_chip"),
         )
@@ -259,6 +266,7 @@ internal fun CalendarTabContent(
             } else {
                 CalendarWeekOverviewList(state.weekOverview, onShiftClick, onSwapClick, onPendingSwapClick)
             }
+            AskAssistantOverlay(onAskAssistant)
         }
         // The week navigator now lives at the BOTTOM, above the nav bar.
         WeekNavBar(
@@ -334,6 +342,26 @@ internal fun CalendarTabContent(
             onDismiss = { pendingNotice = null },
         )
     }
+}
+
+/**
+ * The floating "Ask Snoopy" pill, anchored to the bottom-right of the agenda area so it
+ * sits ABOVE the week navigator rather than on top of it (the Scaffold FAB slot floats
+ * above the bottom NAV bar, which is one bar too low). Matches iOS, which anchors the
+ * same pill to the bottom-trailing corner of the content, clear of its week bar.
+ *
+ * Call this as the LAST child of the agenda [Box] so it draws over the list.
+ */
+@Composable
+private fun BoxScope.AskAssistantOverlay(onAskAssistant: (() -> Unit)?) {
+    if (onAskAssistant == null) return
+    AskAssistantButton(
+        onClick = onAskAssistant,
+        modifier =
+            Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 16.dp, bottom = 14.dp),
+    )
 }
 
 /** Week / Day segmented toggle in the calendar header. */

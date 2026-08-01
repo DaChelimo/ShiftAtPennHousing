@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080"
+     font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="e2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#416180"/>
+    </marker>
+    <marker id="e2v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2f6b4f"/>
+    </marker>
+    <marker id="e2r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#b8472d"/>
+    </marker>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#ffffff"/>
+
+  <text x="120" y="112" font-size="26" font-weight="500" fill="#5d5d60" letter-spacing="5.7">SHIFT@PENNHOUSING</text>
+  <text x="1800" y="112" font-size="26" font-weight="500" fill="#416180" letter-spacing="5.7" text-anchor="end">SECTION 6 / THE MANAGER'S SIDE</text>
+  <text x="120" y="262" font-size="78" font-weight="600" fill="#1d1f20" letter-spacing="-1.1">Every path ends covered.</text>
+
+  <!-- breadcrumb of where we are -->
+  <g opacity="0.45">
+    <rect x="120" y="316" width="196" height="50" rx="25" fill="#f0f0f3"/>
+    <text x="218" y="348" font-size="21" fill="#5d5d60" text-anchor="middle">A seat is open</text>
+    <text x="332" y="348" font-size="21" fill="#a9a9af">›</text>
+    <rect x="356" y="316" width="200" height="50" rx="25" fill="#f0f0f3"/>
+    <text x="456" y="348" font-size="21" fill="#5d5d60" text-anchor="middle">Desk is empty</text>
+    <text x="572" y="348" font-size="21" fill="#a9a9af">›</text>
+  </g>
+  <rect x="596" y="316" width="228" height="50" rx="25" fill="#0a1e32"/>
+  <text x="710" y="348" font-size="21" font-weight="600" fill="#94bce3" text-anchor="middle">T-2h: the float runs</text>
+
+  <!-- ============ float lookup ============ -->
+  <rect x="120" y="586" width="260" height="100" rx="10" fill="#0a1e32"/>
+  <text x="250" y="628" font-size="25" font-weight="600" fill="#f5f5f8" text-anchor="middle">Float lookup</text>
+  <text x="250" y="662" font-size="25" font-weight="600" fill="#f5f5f8" text-anchor="middle">runs</text>
+
+  <g stroke="#416180" stroke-width="2.5" fill="none" marker-end="url(#e2)">
+    <path d="M380 616 C 410 616, 410 520, 432 520"/>
+    <path d="M380 656 C 410 656, 410 750, 432 750"/>
+  </g>
+
+  <!-- found -->
+  <rect x="442" y="470" width="250" height="100" rx="10" fill="#f5f5f8" stroke="#dcdce1" stroke-width="1.8"/>
+  <text x="567" y="529" font-size="24" fill="#1d1f20" text-anchor="middle">Floater found</text>
+  <text x="442" y="606" font-size="18" fill="#7a7a7d">Quad first, then Harnwell.</text>
+  <text x="442" y="632" font-size="18" fill="#7a7a7d">Never below one worker</text>
+  <text x="442" y="658" font-size="18" fill="#7a7a7d">at the source desk.</text>
+
+  <!-- none -->
+  <rect x="442" y="700" width="250" height="100" rx="10" fill="#f5f5f8" stroke="#dcdce1" stroke-width="1.8"/>
+  <text x="567" y="742" font-size="24" fill="#1d1f20" text-anchor="middle">No one</text>
+  <text x="567" y="776" font-size="24" fill="#1d1f20" text-anchor="middle">eligible</text>
+
+  <!-- ============ the alert they cannot miss ============ -->
+  <line x1="692" y1="520" x2="752" y2="520" stroke="#416180" stroke-width="2.5" marker-end="url(#e2)"/>
+  <rect x="762" y="436" width="380" height="188" rx="12" fill="#eef4fa" stroke="#416180" stroke-width="2.5"/>
+  <text x="952" y="482" font-size="24" font-weight="600" fill="#416180" text-anchor="middle">The floater is told</text>
+  <text x="790" y="524" font-size="21" fill="#1d1f20">• A push notification</text>
+  <text x="790" y="558" font-size="21" fill="#1d1f20">• A card that will not go away</text>
+  <text x="790" y="592" font-size="21" fill="#1d1f20">• The home screen widget</text>
+  <text x="762" y="664" font-size="18" fill="#7a7a7d">Reminders get louder:</text>
+  <text x="762" y="690" font-size="18" fill="#7a7a7d">6h, 2h, 1h, 30m, 5m.</text>
+
+  <!-- ============ they answer, or they do not ============ -->
+  <g stroke="#416180" stroke-width="2.5" fill="none" marker-end="url(#e2)">
+    <path d="M1142 500 C 1172 500, 1172 500, 1212 500"/>
+  </g>
+  <rect x="1222" y="456" width="220" height="88" rx="10" fill="#2f6b4f"/>
+  <text x="1332" y="509" font-size="26" font-weight="600" fill="#ffffff" text-anchor="middle">Accept</text>
+
+  <path d="M1142 560 C 1172 560, 1182 672, 1212 672" stroke="#b8472d" stroke-width="2.5" fill="none" marker-end="url(#e2r)"/>
+  <rect x="1222" y="620" width="220" height="104" rx="10" fill="#fdf2ee" stroke="#b8472d" stroke-width="2"/>
+  <text x="1332" y="660" font-size="22" fill="#b8472d" text-anchor="middle">Decline, or</text>
+  <text x="1332" y="690" font-size="22" fill="#b8472d" text-anchor="middle">silent at T-10m</text>
+
+  <!-- ============ outcomes ============ -->
+  <line x1="1442" y1="500" x2="1510" y2="500" stroke="#2f6b4f" stroke-width="2.5" marker-end="url(#e2v)"/>
+  <rect x="1520" y="456" width="280" height="88" rx="10" fill="#2f6b4f"/>
+  <text x="1660" y="509" font-size="27" font-weight="600" fill="#ffffff" text-anchor="middle">COVERED</text>
+
+  <path d="M1442 672 C 1480 672, 1480 750, 1510 750" stroke="#b8472d" stroke-width="2.5" fill="none" marker-end="url(#e2r)"/>
+  <path d="M692 750 L1510 750" stroke="#b8472d" stroke-width="2.5" fill="none" marker-end="url(#e2r)"/>
+  <rect x="1520" y="706" width="280" height="88" rx="10" fill="#b8472d"/>
+  <text x="1660" y="759" font-size="24" font-weight="600" fill="#ffffff" text-anchor="middle">Allied request</text>
+
+  <text x="1660" y="836" font-size="21" font-style="italic" fill="#7a7a7d" text-anchor="middle">continues on the next build</text>
+
+  <rect x="120" y="908" width="1680" height="2" fill="#e4e4e8"/>
+  <text x="120" y="972" font-size="36" font-weight="600" fill="#1d1f20">A float is assigned automatically. Nobody approves it, and nobody chases it.</text>
+
+  <text x="120" y="1042" font-size="26" font-weight="500" fill="#7a7a7d" letter-spacing="5.2">15</text>
+</svg>

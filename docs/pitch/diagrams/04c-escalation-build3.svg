@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080"
+     font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="e3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#b8472d"/>
+    </marker>
+    <marker id="e3b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#416180"/>
+    </marker>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#ffffff"/>
+
+  <text x="120" y="112" font-size="26" font-weight="500" fill="#5d5d60" letter-spacing="5.7">SHIFT@PENNHOUSING</text>
+  <text x="1800" y="112" font-size="26" font-weight="500" fill="#416180" letter-spacing="5.7" text-anchor="end">SECTION 6 / THE MANAGER'S SIDE</text>
+  <text x="120" y="262" font-size="78" font-weight="600" fill="#1d1f20" letter-spacing="-1.1">When nobody answers, it climbs.</text>
+  <text x="120" y="336" font-size="36" font-weight="600" fill="#b8472d">It only reaches a person when it genuinely needs one.</text>
+
+  <!-- ============ the request ============ -->
+  <rect x="120" y="430" width="270" height="96" rx="10" fill="#b8472d"/>
+  <text x="255" y="470" font-size="22" font-weight="600" fill="#ffffff" text-anchor="middle">Allied coverage</text>
+  <text x="255" y="502" font-size="22" font-weight="600" fill="#ffffff" text-anchor="middle">request opens</text>
+  <line x1="390" y1="478" x2="446" y2="478" stroke="#b8472d" stroke-width="2.5" marker-end="url(#e3)"/>
+
+  <!-- ============ rung 1 ============ -->
+  <rect x="456" y="430" width="700" height="96" rx="10" fill="#eef4fa" stroke="#416180" stroke-width="2.5"/>
+  <circle cx="512" cy="478" r="26" fill="#416180"/>
+  <text x="512" y="488" font-size="26" font-weight="600" fill="#ffffff" text-anchor="middle">1</text>
+  <text x="562" y="472" font-size="30" font-weight="600" fill="#1d1f20">RSM</text>
+  <text x="562" y="506" font-size="21" fill="#5d5d60">Residential Services Manager for the house</text>
+
+  <line x1="512" y1="526" x2="512" y2="566" stroke="#b8472d" stroke-width="2.5" marker-end="url(#e3)"/>
+  <text x="540" y="556" font-size="19" font-weight="600" fill="#b8472d">no answer</text>
+
+  <!-- ============ rung 2 ============ -->
+  <rect x="456" y="574" width="700" height="96" rx="10" fill="#eef4fa" stroke="#416180" stroke-width="2.5"/>
+  <circle cx="512" cy="622" r="26" fill="#416180"/>
+  <text x="512" y="632" font-size="26" font-weight="600" fill="#ffffff" text-anchor="middle">2</text>
+  <text x="562" y="616" font-size="30" font-weight="600" fill="#1d1f20">HM</text>
+  <text x="562" y="650" font-size="21" fill="#5d5d60">Housing Manager for the house</text>
+
+  <line x1="512" y1="670" x2="512" y2="710" stroke="#b8472d" stroke-width="2.5" marker-end="url(#e3)"/>
+  <text x="540" y="700" font-size="19" font-weight="600" fill="#b8472d">no answer</text>
+
+  <!-- ============ rung 3, terminal ============ -->
+  <rect x="456" y="718" width="700" height="104" rx="10" fill="#0a1e32"/>
+  <circle cx="512" cy="770" r="26" fill="#94bce3"/>
+  <text x="512" y="780" font-size="26" font-weight="600" fill="#0a1e32" text-anchor="middle">3</text>
+  <text x="562" y="762" font-size="30" font-weight="600" fill="#f5f5f8">HMOD</text>
+  <text x="562" y="796" font-size="21" fill="#94bce3">Housing Manager on duty. Terminal, and keeps reminding.</text>
+
+  <!-- ============ acknowledging stops it ============ -->
+  <path d="M1176 430 q18 0 18 18 v154 q0 18 18 18 q-18 0 -18 18 v154 q0 18 -18 18"
+        fill="none" stroke="#c9c9d0" stroke-width="2.5"/>
+  <text x="1240" y="512" font-size="26" font-weight="600" fill="#1d1f20">Any manager who can build</text>
+  <text x="1240" y="546" font-size="26" font-weight="600" fill="#1d1f20">for this house can acknowledge.</text>
+  <text x="1240" y="596" font-size="22" fill="#5d5d60">Acknowledging stops the ladder</text>
+  <text x="1240" y="626" font-size="22" fill="#5d5d60">and stops the reminders.</text>
+
+  <rect x="1240" y="680" width="560" height="2" fill="#e4e4e8"/>
+
+  <text x="1240" y="726" font-size="21" fill="#5d5d60">A rung with nobody reachable is</text>
+  <text x="1240" y="754" font-size="21" fill="#5d5d60">skipped straight away, not waited on.</text>
+  <text x="1240" y="800" font-size="21" fill="#5d5d60">It never fans out to other managers,</text>
+  <text x="1240" y="828" font-size="21" fill="#5d5d60">and never to other houses.</text>
+
+  <!-- ============ close it out ============ -->
+  <text x="120" y="902" font-size="26" font-weight="600" fill="#1d1f20">Close it out. What actually happened?</text>
+  <g font-size="21" fill="#1d1f20">
+    <rect x="120" y="926" width="238" height="58" rx="29" fill="#f5f5f8" stroke="#dcdce1" stroke-width="1.5"/>
+    <text x="239" y="963" text-anchor="middle">Allied secured</text>
+    <rect x="378" y="926" width="268" height="58" rx="29" fill="#f5f5f8" stroke="#dcdce1" stroke-width="1.5"/>
+    <text x="512" y="963" text-anchor="middle">Covered internally</text>
+    <rect x="666" y="926" width="298" height="58" rx="29" fill="#fdf2ee" stroke="#b8472d" stroke-width="1.5"/>
+    <text x="815" y="963" text-anchor="middle" fill="#b8472d">Desk went unstaffed</text>
+    <rect x="984" y="926" width="268" height="58" rx="29" fill="#f5f5f8" stroke="#dcdce1" stroke-width="1.5"/>
+    <text x="1118" y="963" text-anchor="middle">No longer needed</text>
+  </g>
+  <text x="1290" y="963" font-size="20" font-style="italic" fill="#7a7a7d">An open request never clears itself.</text>
+
+  <text x="120" y="1042" font-size="26" font-weight="500" fill="#7a7a7d" letter-spacing="5.2">15</text>
+</svg>

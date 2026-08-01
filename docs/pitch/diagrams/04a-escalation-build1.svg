@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080"
+     font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="e1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#416180"/>
+    </marker>
+    <marker id="e1g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#b6b6bc"/>
+    </marker>
+    <marker id="e1v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2f6b4f"/>
+    </marker>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#ffffff"/>
+
+  <text x="120" y="112" font-size="26" font-weight="500" fill="#5d5d60" letter-spacing="5.7">SHIFT@PENNHOUSING</text>
+  <text x="1800" y="112" font-size="26" font-weight="500" fill="#416180" letter-spacing="5.7" text-anchor="end">SECTION 6 / THE MANAGER'S SIDE</text>
+  <text x="120" y="262" font-size="78" font-weight="600" fill="#1d1f20" letter-spacing="-1.1">An open seat at your desk.</text>
+  <text x="120" y="344" font-size="78" font-weight="600" fill="#1d1f20" letter-spacing="-1.1">Every path ends covered.</text>
+
+  <!-- ============ start ============ -->
+  <rect x="120" y="562" width="220" height="90" rx="10" fill="#0a1e32"/>
+  <text x="230" y="616" font-size="25" font-weight="600" fill="#f5f5f8" text-anchor="middle">A seat is open</text>
+  <line x1="340" y1="607" x2="362" y2="607" stroke="#416180" stroke-width="2.5" marker-end="url(#e1)"/>
+
+  <!-- ============ the gate ============ -->
+  <path d="M520 522 L672 607 L520 692 L368 607 Z" fill="#eef4fa" stroke="#416180" stroke-width="2.5"/>
+  <text x="520" y="600" font-size="24" font-weight="600" fill="#1d1f20" text-anchor="middle">Would the desk</text>
+  <text x="520" y="630" font-size="24" font-weight="600" fill="#1d1f20" text-anchor="middle">be EMPTY?</text>
+
+  <!-- no: nothing happens, and that is the point -->
+  <line x1="520" y1="522" x2="520" y2="486" stroke="#b6b6bc" stroke-width="2.5" marker-end="url(#e1g)"/>
+  <text x="540" y="512" font-size="21" font-weight="600" fill="#7a7a7d">no</text>
+  <rect x="360" y="396" width="320" height="88" rx="10" fill="#fbfbfc" stroke="#c9c9d0" stroke-width="2" stroke-dasharray="9 7"/>
+  <text x="520" y="432" font-size="23" fill="#7a7a7d" text-anchor="middle">Stays claimable.</text>
+  <text x="520" y="462" font-size="23" fill="#7a7a7d" text-anchor="middle">Nothing fires.</text>
+
+  <!-- yes -->
+  <line x1="672" y1="607" x2="726" y2="607" stroke="#416180" stroke-width="2.5" marker-end="url(#e1)"/>
+  <text x="682" y="592" font-size="21" font-weight="600" fill="#416180">yes</text>
+  <rect x="736" y="562" width="250" height="90" rx="10" fill="#0a1e32"/>
+  <text x="861" y="616" font-size="25" font-weight="600" fill="#f5f5f8" text-anchor="middle">Open Shifts feed</text>
+
+  <!-- ============ three paths out ============ -->
+  <g stroke="#416180" stroke-width="2.5" fill="none" marker-end="url(#e1)">
+    <path d="M986 590 C 1026 590, 1026 478, 1062 478"/>
+    <path d="M986 607 L1062 607"/>
+    <path d="M986 624 C 1026 624, 1026 758, 1062 758"/>
+  </g>
+
+  <rect x="1072" y="434" width="300" height="88" rx="10" fill="#f5f5f8" stroke="#dcdce1" stroke-width="1.8"/>
+  <text x="1222" y="487" font-size="24" fill="#1d1f20" text-anchor="middle">Someone claims it</text>
+
+  <rect x="1072" y="558" width="300" height="98" rx="10" fill="#f5f5f8" stroke="#dcdce1" stroke-width="1.8"/>
+  <text x="1222" y="596" font-size="24" font-weight="600" fill="#416180" text-anchor="middle">T-3h</text>
+  <text x="1222" y="632" font-size="22" fill="#1d1f20" text-anchor="middle">Nudge to subscribed workers</text>
+
+  <rect x="1072" y="712" width="300" height="98" rx="10" fill="#f5f5f8" stroke="#dcdce1" stroke-width="1.8"/>
+  <text x="1222" y="750" font-size="24" font-weight="600" fill="#416180" text-anchor="middle">Any time</text>
+  <text x="1222" y="786" font-size="22" fill="#1d1f20" text-anchor="middle">You force a float</text>
+
+  <!-- ============ where each lands ============ -->
+  <line x1="1372" y1="478" x2="1444" y2="478" stroke="#2f6b4f" stroke-width="2.5" marker-end="url(#e1v)"/>
+  <rect x="1454" y="434" width="346" height="88" rx="10" fill="#2f6b4f"/>
+  <text x="1627" y="487" font-size="27" font-weight="600" fill="#ffffff" text-anchor="middle">COVERED</text>
+
+  <g stroke="#416180" stroke-width="2.5" fill="none" marker-end="url(#e1)">
+    <path d="M1372 607 C 1412 607, 1412 646, 1444 646"/>
+    <path d="M1372 761 C 1412 761, 1412 700, 1444 700"/>
+  </g>
+  <rect x="1454" y="600" width="346" height="146" rx="10" fill="#0a1e32"/>
+  <text x="1627" y="646" font-size="25" font-weight="600" fill="#94bce3" text-anchor="middle">T-2h</text>
+  <text x="1627" y="686" font-size="23" fill="#f5f5f8" text-anchor="middle">Pickup locks.</text>
+  <text x="1627" y="720" font-size="23" fill="#f5f5f8" text-anchor="middle">The float runs.</text>
+
+  <line x1="1627" y1="746" x2="1627" y2="800" stroke="#416180" stroke-width="2.5" stroke-dasharray="8 6" marker-end="url(#e1)"/>
+  <text x="1627" y="832" font-size="21" font-style="italic" fill="#7a7a7d" text-anchor="middle">continues on the next build</text>
+
+  <!-- ============ the line ============ -->
+  <rect x="120" y="908" width="1680" height="2" fill="#e4e4e8"/>
+  <text x="120" y="972" font-size="36" font-weight="600" fill="#1d1f20">In none of these does anyone have to remember to do anything.</text>
+
+  <text x="120" y="1042" font-size="26" font-weight="500" fill="#7a7a7d" letter-spacing="5.2">15</text>
+</svg>

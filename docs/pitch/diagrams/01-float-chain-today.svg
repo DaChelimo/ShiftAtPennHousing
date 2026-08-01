@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080"
+     font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#9a9aa0"/>
+    </marker>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#ffffff"/>
+
+  <!-- header, on the deck's grid -->
+  <text x="120" y="112" font-size="26" font-weight="500" fill="#5d5d60" letter-spacing="5.7">SHIFT@PENNHOUSING</text>
+  <text x="1800" y="112" font-size="26" font-weight="500" fill="#416180" letter-spacing="5.7" text-anchor="end">SECTION 3 / FLOATING</text>
+  <text x="120" y="270" font-size="88" font-weight="600" fill="#1d1f20" letter-spacing="-1.3">Floating, and what it takes today</text>
+  <text x="120" y="381" font-size="40" font-weight="700" fill="#2b2b2d">Sending a worker from one house to cover another</text>
+
+  <!-- ===== the chain: 6 nodes, x = 120 / 416 / 712 / 1008 / 1304 / 1600, w = 200 ===== -->
+  <g>
+    <!-- 01 -->
+    <text x="220" y="468" font-size="19" font-weight="600" fill="#597ea3" text-anchor="middle" letter-spacing="1.5">01</text>
+    <rect x="120" y="486" width="200" height="132" rx="10" fill="#f5f5f8" stroke="#dcdce1" stroke-width="1.5"/>
+    <text x="220" y="545" font-size="23" fill="#1d1f20" text-anchor="middle">Worker drops</text>
+    <text x="220" y="576" font-size="23" fill="#1d1f20" text-anchor="middle">a shift</text>
+
+    <!-- 02 -->
+    <text x="516" y="468" font-size="19" font-weight="600" fill="#597ea3" text-anchor="middle" letter-spacing="1.5">02</text>
+    <rect x="416" y="486" width="200" height="132" rx="10" fill="#f5f5f8" stroke="#dcdce1" stroke-width="1.5"/>
+    <text x="516" y="545" font-size="23" fill="#1d1f20" text-anchor="middle">The house</text>
+    <text x="516" y="576" font-size="23" fill="#1d1f20" text-anchor="middle">RSM</text>
+
+    <!-- 03 -->
+    <text x="812" y="468" font-size="19" font-weight="600" fill="#597ea3" text-anchor="middle" letter-spacing="1.5">03</text>
+    <rect x="712" y="486" width="200" height="132" rx="10" fill="#f5f5f8" stroke="#dcdce1" stroke-width="1.5"/>
+    <text x="812" y="545" font-size="23" fill="#1d1f20" text-anchor="middle">Other</text>
+    <text x="812" y="576" font-size="23" fill="#1d1f20" text-anchor="middle">houses</text>
+
+    <!-- 04 -->
+    <text x="1108" y="468" font-size="19" font-weight="600" fill="#597ea3" text-anchor="middle" letter-spacing="1.5">04</text>
+    <rect x="1008" y="486" width="200" height="132" rx="10" fill="#f5f5f8" stroke="#dcdce1" stroke-width="1.5"/>
+    <text x="1108" y="561" font-size="23" fill="#1d1f20" text-anchor="middle">Quad</text>
+
+    <!-- 05 -->
+    <text x="1404" y="468" font-size="19" font-weight="600" fill="#597ea3" text-anchor="middle" letter-spacing="1.5">05</text>
+    <rect x="1304" y="486" width="200" height="132" rx="10" fill="#f5f5f8" stroke="#dcdce1" stroke-width="1.5"/>
+    <text x="1404" y="545" font-size="23" fill="#1d1f20" text-anchor="middle">Harnwell</text>
+    <text x="1404" y="576" font-size="23" fill="#1d1f20" text-anchor="middle">RSM</text>
+
+    <!-- 06 -->
+    <text x="1700" y="468" font-size="19" font-weight="600" fill="#597ea3" text-anchor="middle" letter-spacing="1.5">06</text>
+    <rect x="1600" y="486" width="200" height="132" rx="10" fill="#f5f5f8" stroke="#dcdce1" stroke-width="1.5"/>
+    <text x="1700" y="545" font-size="23" fill="#1d1f20" text-anchor="middle">One</text>
+    <text x="1700" y="576" font-size="23" fill="#1d1f20" text-anchor="middle">worker</text>
+  </g>
+
+  <!-- ===== arrows + the wait on each hop. gap centres: 368 / 664 / 960 / 1256 / 1552 ===== -->
+  <g stroke="#9a9aa0" stroke-width="2" marker-end="url(#ar)">
+    <line x1="326" y1="552" x2="410" y2="552"/>
+    <line x1="622" y1="552" x2="706" y2="552"/>
+    <line x1="918" y1="552" x2="1002" y2="552"/>
+    <line x1="1214" y1="552" x2="1298" y2="552"/>
+    <line x1="1510" y1="552" x2="1594" y2="552"/>
+  </g>
+  <g fill="none" stroke="#b8472d" stroke-width="1.8" opacity="0.85">
+    <circle cx="368" cy="510" r="9"/><path d="M368 505 L368 510 L372 512"/>
+    <circle cx="664" cy="510" r="9"/><path d="M664 505 L664 510 L668 512"/>
+    <circle cx="960" cy="510" r="9"/><path d="M960 505 L960 510 L964 512"/>
+    <circle cx="1256" cy="510" r="9"/><path d="M1256 505 L1256 510 L1260 512"/>
+    <circle cx="1552" cy="510" r="9"/><path d="M1552 505 L1552 510 L1556 512"/>
+  </g>
+  <g font-size="16" fill="#7a7a7d" text-anchor="middle">
+    <text x="368" y="600">email</text>
+    <text x="664" y="600">email</text>
+    <text x="960" y="592">email,</text><text x="960" y="612">no reply</text>
+    <text x="1256" y="600">email</text>
+    <text x="1552" y="592">asks, then</text><text x="1552" y="612">waits</text>
+  </g>
+
+  <!-- ===== the tail nobody counts ===== -->
+  <path d="M1700 618 L1700 668" stroke="#b8472d" stroke-width="2" stroke-dasharray="6 5" fill="none"/>
+  <rect x="1304" y="668" width="496" height="76" rx="10" fill="#fdf2ee" stroke="#b8472d" stroke-width="1.8" stroke-dasharray="7 5"/>
+  <text x="1552" y="714" font-size="23" fill="#b8472d" text-anchor="middle">Two spreadsheets updated by hand</text>
+
+  <!-- ===== counters ===== -->
+  <g>
+    <text x="120" y="878" font-size="92" font-weight="600" fill="#0a1e32">6</text>
+    <text x="188" y="878" font-size="34" fill="#5d5d60">steps</text>
+    <text x="440" y="878" font-size="92" font-weight="600" fill="#0a1e32">4</text>
+    <text x="508" y="878" font-size="34" fill="#5d5d60">people</text>
+    <text x="790" y="878" font-size="92" font-weight="600" fill="#0a1e32">2</text>
+    <text x="858" y="878" font-size="34" fill="#5d5d60">spreadsheets</text>
+  </g>
+
+  <!-- ===== the line ===== -->
+  <rect x="120" y="922" width="1680" height="2" fill="#e4e4e8"/>
+  <text x="120" y="985" font-size="34" font-weight="600" fill="#b8472d">Every arrow waits on somebody reading something and remembering to act.</text>
+
+  <text x="120" y="1040" font-size="26" font-weight="500" fill="#7a7a7d" letter-spacing="5.2">05</text>
+</svg>

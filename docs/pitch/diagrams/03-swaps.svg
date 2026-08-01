@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080"
+     font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="sw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#416180"/>
+    </marker>
+    <marker id="swg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2f6b4f"/>
+    </marker>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#ffffff"/>
+
+  <text x="120" y="112" font-size="26" font-weight="500" fill="#5d5d60" letter-spacing="5.7">SHIFT@PENNHOUSING</text>
+  <text x="1800" y="112" font-size="26" font-weight="500" fill="#416180" letter-spacing="5.7" text-anchor="end">SECTION 5 / COVERAGE</text>
+  <text x="120" y="270" font-size="88" font-weight="600" fill="#1d1f20" letter-spacing="-1.3">Swaps happen between workers</text>
+  <text x="120" y="381" font-size="40" font-weight="700" fill="#2b2b2d">Two workers. A few taps. You are not in the loop.</text>
+
+  <!-- ============ the two workers ============ -->
+  <!-- Priya -->
+  <rect x="150" y="500" width="420" height="230" rx="14" fill="#f5f5f8" stroke="#dcdce1" stroke-width="1.5"/>
+  <circle cx="230" cy="566" r="24" fill="#597ea3"/>
+  <path d="M190 620 a40 34 0 0 1 80 0 z" fill="#597ea3"/>
+  <text x="296" y="562" font-size="32" font-weight="600" fill="#1d1f20">Priya</text>
+  <text x="296" y="602" font-size="22" fill="#5d5d60">Harnwell</text>
+  <rect x="186" y="646" width="348" height="56" rx="9" fill="#ffffff" stroke="#94bce3" stroke-width="1.8"/>
+  <text x="360" y="682" font-size="26" fill="#1d1f20" text-anchor="middle">Tue 4:00pm to 8:00pm</text>
+
+  <!-- Marcus -->
+  <rect x="880" y="500" width="420" height="230" rx="14" fill="#f5f5f8" stroke="#dcdce1" stroke-width="1.5"/>
+  <circle cx="960" cy="566" r="24" fill="#416180"/>
+  <path d="M920 620 a40 34 0 0 1 80 0 z" fill="#416180"/>
+  <text x="1026" y="562" font-size="32" font-weight="600" fill="#1d1f20">Marcus</text>
+  <text x="1026" y="602" font-size="22" fill="#5d5d60">Harnwell</text>
+  <rect x="916" y="646" width="348" height="56" rx="9" fill="#ffffff" stroke="#94bce3" stroke-width="1.8"/>
+  <text x="1090" y="682" font-size="26" fill="#1d1f20" text-anchor="middle">Thu 12:00pm to 4:00pm</text>
+
+  <!-- the crossing -->
+  <g stroke="#416180" stroke-width="3" fill="none" marker-end="url(#sw)">
+    <path d="M580 552 C 700 552, 760 674, 870 674"/>
+    <path d="M870 552 C 760 552, 700 674, 580 674"/>
+  </g>
+
+  <!-- request then accept -->
+  <rect x="620" y="790" width="200" height="70" rx="35" fill="#ffffff" stroke="#597ea3" stroke-width="2.5"/>
+  <text x="720" y="835" font-size="27" font-weight="600" fill="#416180" text-anchor="middle">Request</text>
+  <line x1="830" y1="825" x2="930" y2="825" stroke="#2f6b4f" stroke-width="3" marker-end="url(#swg)"/>
+  <rect x="940" y="790" width="200" height="70" rx="35" fill="#2f6b4f"/>
+  <text x="1040" y="835" font-size="27" font-weight="600" fill="#ffffff" text-anchor="middle">Accept</text>
+
+  <path d="M720 730 L720 782" stroke="#416180" stroke-width="2.5" fill="none" marker-end="url(#sw)"/>
+
+  <text x="150" y="920" font-size="34" font-weight="600" fill="#1d1f20">Both schedules update. No email.</text>
+  <text x="150" y="966" font-size="24" fill="#7a7a7d">Partial swaps allowed. Requests expire on their own.</text>
+
+  <!-- ============ you, deliberately outside it ============ -->
+  <rect x="1440" y="500" width="360" height="360" rx="14" fill="#fbfbfc" stroke="#c9c9d0" stroke-width="2.5" stroke-dasharray="10 8"/>
+  <circle cx="1620" cy="620" r="34" fill="none" stroke="#c9c9d0" stroke-width="2.5"/>
+  <path d="M1564 712 a56 46 0 0 1 112 0" fill="none" stroke="#c9c9d0" stroke-width="2.5"/>
+  <text x="1620" y="790" font-size="40" font-weight="600" fill="#a9a9af" text-anchor="middle">You</text>
+  <text x="1620" y="920" font-size="30" font-weight="600" fill="#7a7a7d" text-anchor="middle">0 emails.</text>
+  <text x="1620" y="962" font-size="30" font-weight="600" fill="#7a7a7d" text-anchor="middle">0 approvals.</text>
+
+  <text x="120" y="1042" font-size="26" font-weight="500" fill="#7a7a7d" letter-spacing="5.2">12</text>
+</svg>

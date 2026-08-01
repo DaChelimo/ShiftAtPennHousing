@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080"
+     font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="agrey" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#a9a9af"/>
+    </marker>
+    <marker id="ablue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#416180"/>
+    </marker>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#ffffff"/>
+
+  <text x="120" y="112" font-size="26" font-weight="500" fill="#5d5d60" letter-spacing="5.7">SHIFT@PENNHOUSING</text>
+  <text x="1800" y="112" font-size="26" font-weight="500" fill="#416180" letter-spacing="5.7" text-anchor="end">SECTION 5 / COVERAGE</text>
+  <text x="120" y="262" font-size="88" font-weight="600" fill="#1d1f20" letter-spacing="-1.3">One feed. One tap.</text>
+  <text x="120" y="352" font-size="88" font-weight="600" fill="#1d1f20" letter-spacing="-1.3">Gone for everyone.</text>
+
+  <!-- ================= BAND 1: TODAY ================= -->
+  <text x="120" y="452" font-size="24" font-weight="700" fill="#7a7a7d" letter-spacing="4">TODAY</text>
+
+  <!-- sender -->
+  <circle cx="220" cy="558" r="20" fill="#b6b6bc"/>
+  <path d="M186 606 a34 30 0 0 1 68 0 z" fill="#b6b6bc"/>
+  <text x="220" y="646" font-size="20" fill="#5d5d60" text-anchor="middle">Gregory RSM</text>
+
+  <!-- four separate emails -->
+  <g stroke="#a9a9af" stroke-width="2" fill="none" marker-end="url(#agrey)">
+    <path d="M300 570 C 480 500, 560 470, 700 466"/>
+    <path d="M300 574 C 480 540, 560 520, 700 519"/>
+    <path d="M300 578 C 480 590, 560 600, 700 572"/>
+    <path d="M300 582 C 480 630, 560 660, 700 625"/>
+  </g>
+  <g font-size="16" fill="#9a9aa0">
+    <text x="430" y="490">email</text><text x="430" y="540">email</text>
+    <text x="430" y="612">email</text><text x="430" y="662">email</text>
+  </g>
+
+  <g font-size="21" fill="#1d1f20">
+    <rect x="710" y="440" width="190" height="52" rx="9" fill="#f5f5f8" stroke="#dcdce1" stroke-width="1.5"/>
+    <text x="805" y="473" text-anchor="middle">Quad</text>
+    <rect x="710" y="493" width="190" height="52" rx="9" fill="#f5f5f8" stroke="#dcdce1" stroke-width="1.5"/>
+    <text x="805" y="526" text-anchor="middle">Harnwell</text>
+    <rect x="710" y="546" width="190" height="52" rx="9" fill="#f5f5f8" stroke="#dcdce1" stroke-width="1.5"/>
+    <text x="805" y="579" text-anchor="middle">Rodin</text>
+    <rect x="710" y="599" width="190" height="52" rx="9" fill="#f5f5f8" stroke="#dcdce1" stroke-width="1.5"/>
+    <text x="805" y="632" text-anchor="middle">Lauder</text>
+  </g>
+
+  <!-- first reply wins -->
+  <circle cx="936" cy="466" r="15" fill="#2f6b4f"/>
+  <path d="M929 466 l5 6 l10 -12" stroke="#ffffff" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+  <text x="962" y="474" font-size="22" fill="#2f6b4f">replied first</text>
+
+  <!-- the three dead ends -->
+  <path d="M925 500 h14 v148 h-14" stroke="#b8472d" stroke-width="2" fill="none"/>
+  <text x="955" y="567" font-size="22" fill="#b8472d">never told</text>
+  <text x="955" y="595" font-size="22" fill="#b8472d">it was gone</text>
+
+  <rect x="1240" y="452" width="560" height="200" rx="12" fill="#fdf2ee"/>
+  <text x="1280" y="530" font-size="34" font-weight="600" fill="#b8472d">One open shift.</text>
+  <text x="1280" y="576" font-size="34" font-weight="600" fill="#b8472d">Four emails.</text>
+  <text x="1280" y="622" font-size="34" font-weight="600" fill="#b8472d">Three people turned away.</text>
+
+  <rect x="120" y="700" width="1680" height="2" fill="#e4e4e8"/>
+
+  <!-- ================= BAND 2: IN THE APP ================= -->
+  <text x="120" y="762" font-size="24" font-weight="700" fill="#416180" letter-spacing="4">IN THE APP</text>
+
+  <circle cx="220" cy="856" r="20" fill="#597ea3"/>
+  <path d="M186 904 a34 30 0 0 1 68 0 z" fill="#597ea3"/>
+  <text x="220" y="944" font-size="20" fill="#416180" text-anchor="middle">Worker drops</text>
+
+  <line x1="300" y1="874" x2="392" y2="874" stroke="#416180" stroke-width="2.5" marker-end="url(#ablue)"/>
+
+  <!-- the one feed -->
+  <rect x="400" y="806" width="330" height="136" rx="12" fill="#0a1e32"/>
+  <text x="565" y="866" font-size="30" font-weight="600" fill="#f5f5f8" text-anchor="middle">Open Shifts feed</text>
+  <rect x="452" y="886" width="226" height="34" rx="17" fill="#1e3a54"/>
+  <text x="565" y="909" font-size="17" fill="#94bce3" text-anchor="middle">my house + other houses</text>
+
+  <!-- everyone, at once, same weight -->
+  <g stroke="#416180" stroke-width="2.5" fill="none" marker-end="url(#ablue)">
+    <path d="M730 860 C 800 800, 840 786, 900 784"/>
+    <path d="M730 868 C 800 840, 840 836, 900 837"/>
+    <path d="M730 880 C 800 908, 840 888, 900 890"/>
+    <path d="M730 888 C 800 940, 840 940, 900 943"/>
+  </g>
+
+  <g font-size="21" fill="#1d1f20">
+    <rect x="910" y="758" width="190" height="52" rx="9" fill="#eef4fa" stroke="#94bce3" stroke-width="1.5"/>
+    <text x="1005" y="791" text-anchor="middle">Quad</text>
+    <rect x="910" y="811" width="190" height="52" rx="9" fill="#eef4fa" stroke="#94bce3" stroke-width="1.5"/>
+    <text x="1005" y="844" text-anchor="middle">Harnwell</text>
+    <rect x="910" y="864" width="190" height="52" rx="9" fill="#eef4fa" stroke="#94bce3" stroke-width="1.5"/>
+    <text x="1005" y="897" text-anchor="middle">Rodin</text>
+    <rect x="910" y="917" width="190" height="52" rx="9" fill="#eef4fa" stroke="#94bce3" stroke-width="1.5"/>
+    <text x="1005" y="950" text-anchor="middle">Lauder</text>
+  </g>
+
+  <!-- one tap -->
+  <line x1="1110" y1="862" x2="1210" y2="862" stroke="#416180" stroke-width="2.5" marker-end="url(#ablue)"/>
+  <rect x="1220" y="832" width="150" height="60" rx="30" fill="#2f6b4f"/>
+  <text x="1295" y="871" font-size="26" font-weight="600" fill="#ffffff" text-anchor="middle">Claim</text>
+
+  <line x1="1380" y1="862" x2="1470" y2="862" stroke="#416180" stroke-width="2.5" marker-end="url(#ablue)"/>
+  <rect x="1480" y="796" width="320" height="132" rx="12" fill="#f0f0f3" stroke="#dcdce1" stroke-width="1.5"/>
+  <text x="1640" y="850" font-size="27" font-weight="600" fill="#5d5d60" text-anchor="middle">Gone. Instantly.</text>
+  <text x="1640" y="886" font-size="27" font-weight="600" fill="#5d5d60" text-anchor="middle">For everyone.</text>
+
+  <text x="120" y="1042" font-size="26" font-weight="500" fill="#7a7a7d" letter-spacing="5.2">11</text>
+</svg>

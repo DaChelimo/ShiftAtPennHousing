@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080"
+     font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <rect width="1920" height="1080" fill="#ffffff"/>
+
+  <text x="120" y="112" font-size="26" font-weight="500" fill="#5d5d60" letter-spacing="5.7">SHIFT@PENNHOUSING</text>
+  <text x="1800" y="112" font-size="26" font-weight="500" fill="#416180" letter-spacing="5.7" text-anchor="end">SECTION 3 / FLOATING</text>
+  <text x="120" y="270" font-size="88" font-weight="600" fill="#1d1f20" letter-spacing="-1.3">Nobody failed. The tools did.</text>
+  <text x="120" y="381" font-size="40" font-weight="700" fill="#2b2b2d">Every failure you just heard is a person doing their best</text>
+
+  <!-- Deliberately unaligned, deliberately unconnected. The empty space is the argument. -->
+
+  <!-- spreadsheet -->
+  <g transform="translate(190,505) rotate(-3)">
+    <rect x="0" y="0" width="150" height="120" rx="8" fill="#f5f5f8" stroke="#c9c9d0" stroke-width="2.5"/>
+    <line x1="0" y1="34" x2="150" y2="34" stroke="#c9c9d0" stroke-width="2"/>
+    <line x1="0" y1="72" x2="150" y2="72" stroke="#c9c9d0" stroke-width="2"/>
+    <line x1="50" y1="0" x2="50" y2="120" stroke="#c9c9d0" stroke-width="2"/>
+    <line x1="100" y1="0" x2="100" y2="120" stroke="#c9c9d0" stroke-width="2"/>
+  </g>
+  <text x="265" y="686" font-size="30" font-weight="600" fill="#1d1f20" text-anchor="middle">Spreadsheet</text>
+  <text x="265" y="726" font-size="26" fill="#b8472d" text-anchor="middle">goes stale</text>
+
+  <!-- text message -->
+  <g transform="translate(660,588) rotate(4)">
+    <path d="M0 20 a20 20 0 0 1 20 -20 h110 a20 20 0 0 1 20 20 v66 a20 20 0 0 1 -20 20 h-78 l-30 30 v-30 h-2 a20 20 0 0 1 -20 -20 z"
+          fill="#f5f5f8" stroke="#c9c9d0" stroke-width="2.5"/>
+  </g>
+  <text x="735" y="778" font-size="30" font-weight="600" fill="#1d1f20" text-anchor="middle">Text</text>
+  <text x="735" y="818" font-size="26" fill="#b8472d" text-anchor="middle">gets buried</text>
+
+  <!-- email -->
+  <g transform="translate(1140,472) rotate(-5)">
+    <rect x="0" y="0" width="160" height="110" rx="8" fill="#f5f5f8" stroke="#c9c9d0" stroke-width="2.5"/>
+    <path d="M0 8 L80 66 L160 8" fill="none" stroke="#c9c9d0" stroke-width="2.5"/>
+  </g>
+  <text x="1220" y="646" font-size="30" font-weight="600" fill="#1d1f20" text-anchor="middle">Email</text>
+  <text x="1220" y="686" font-size="26" fill="#b8472d" text-anchor="middle">easy to miss</text>
+
+  <!-- call -->
+  <g transform="translate(1596,614) rotate(6)">
+    <path d="M12 8 a12 12 0 0 1 16 -4 l22 14 a12 12 0 0 1 4 16 l-12 20 a70 70 0 0 0 40 40 l20 -12 a12 12 0 0 1 16 4 l14 22 a12 12 0 0 1 -4 16 l-20 12 a24 24 0 0 1 -26 0 A150 150 0 0 1 4 42 a24 24 0 0 1 0 -22 z"
+          fill="#f5f5f8" stroke="#c9c9d0" stroke-width="2.5"/>
+  </g>
+  <text x="1660" y="800" font-size="30" font-weight="600" fill="#1d1f20" text-anchor="middle">Call</text>
+  <text x="1660" y="840" font-size="26" fill="#b8472d" text-anchor="middle">needs a number</text>
+
+  <rect x="120" y="908" width="1680" height="2" fill="#e4e4e8"/>
+  <text x="120" y="972" font-size="36" font-weight="600" fill="#1d1f20">None of them talk to each other. None of them is live.</text>
+
+  <text x="120" y="1042" font-size="26" font-weight="500" fill="#7a7a7d" letter-spacing="5.2">08</text>
+</svg>

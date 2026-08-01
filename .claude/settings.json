@@ -8,7 +8,7 @@
         "--supabase-url",
         "http://localhost:54321",
         "--service-role-key",
-        "<key printed by `supabase start` \u2014 never commit the real value here>"
+        "<key printed by `supabase start` — never commit the real value here>"
       ]
     }
   },
@@ -21,6 +21,16 @@
             "type": "command",
             "command": "node scripts/hooks/psql-destructive-guard.js",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node scripts/hooks/ship-check-guard.js",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node scripts/hooks/qa-remote-guard.js",
+            "timeout": 10
           }
         ]
       },
@@ -30,6 +40,16 @@
           {
             "type": "command",
             "command": "node scripts/hooks/em-dash-guard.js",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node scripts/hooks/anon-grant-guard.js",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node scripts/hooks/seat-write-guard.js",
             "timeout": 10
           }
         ]
@@ -42,6 +62,38 @@
           {
             "type": "command",
             "command": "node scripts/hooks/file-size-guard.js",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node scripts/hooks/loading-state-guard.js",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node scripts/hooks/supabase-getuser-guard.js",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/hooks/qa-mode-lifecycle.js",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/hooks/qa-mode-lifecycle.js",
             "timeout": 10
           }
         ]

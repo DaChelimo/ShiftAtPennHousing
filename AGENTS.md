@@ -208,6 +208,11 @@ critical things is the failure mode to avoid.
   one commit. Use a conventional-commit subject (`type(scope): summary`). When the
   working tree mixes features, stage by path per feature; cross-cutting files
   (shared models, docs) go in the commit of the feature that drives them.
+- **Where a new lesson goes** is a routing decision, not a preference: cheapest home that still
+  works, and promote only on recurrence. Mechanically checkable goes in `scripts/hooks/` and
+  MUST be registered in `.claude/settings.json`; needed-only-when-doing-X goes in a skill; only
+  a genuinely every-task invariant belongs in this file. Full routing table:
+  `.claude/skills/ship-check/references/lessons.md`.
 - Type generation: after any migration change, run:
   `supabase gen types typescript --local > packages/shared/src/database.types.ts`
 - Supabase MCP: configured in `.claude/settings.local.json` (gitignored). When active,

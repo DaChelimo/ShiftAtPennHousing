@@ -49,3 +49,9 @@ packages/core/src/**/*.d.ts
 
 # edge-runtime watchdog log (local dev)
 scripts/edge-watchdog.log
+
+# Local DB backups (pre-upgrade dumps). Never committed.
+.local-backups/
+
+# QA mode marker: derived state, never committed. Owned by scripts/qa/qa-mode.sh
+.qa-mode

@@ -4,15 +4,21 @@ import Image from 'next/image';
  * The Penn shield crest, cropped from source PNGs supplied by the product
  * owner (no vector source exists yet). See docs/design/brand-source/README.md
  * for provenance and the crest's use everywhere else (mobile splash, app
- * icons). The crest is used exactly as supplied, unmodified, on every
- * background including the dark header chrome, per the locked-in decision
- * recorded there.
+ * icons). `color` is the crest exactly as supplied, for light backgrounds;
+ * `reversed` is the white-outline cut for dark backgrounds (the header chrome,
+ * the login page's dark brand panel) where the default's thin dark outline
+ * reads poorly.
  */
-export type LogoVariant = 'color' | 'reversed' | 'mono';
+export type LogoVariant = 'color' | 'reversed';
+
+const CREST_SRC: Record<LogoVariant, string> = {
+  color: '/brand/crest.png',
+  reversed: '/brand/crest-reversed.png',
+};
 
 export function LogoMark({
   size = 24,
-  variant, // eslint-disable-line @typescript-eslint/no-unused-vars -- kept for call-site compatibility; the crest itself is variant-agnostic (see docs/design/brand-source/README.md)
+  variant = 'color',
   className,
 }: {
   size?: number;
@@ -21,7 +27,7 @@ export function LogoMark({
 }) {
   return (
     <Image
-      src="/brand/crest.png"
+      src={CREST_SRC[variant]}
       alt="Shift"
       width={size}
       height={size}

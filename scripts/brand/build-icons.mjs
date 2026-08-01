@@ -1,11 +1,14 @@
 #!/usr/bin/env node
-// Generates every brand asset from scripts/brand/geometry.mjs.
+// Generates every brand asset: the crest-based marks/icons from the raster crops in
+// docs/design/brand-source/ (see the README there), and the mobile login-screen chevron
+// mark from the vector geometry in scripts/brand/geometry.mjs.
 //
 //   node scripts/brand/build-icons.mjs
 //
 // Writes into apps/web, apps/mobile/androidApp and apps/mobile/iosApp. All
-// outputs are committed — this script exists so the geometry has one home, not
-// so assets are built on demand. Re-run it after editing geometry.mjs.
+// outputs are committed — this script exists so each source has one home, not
+// so assets are built on demand. Re-run it after editing geometry.mjs or the
+// brand-source crops.
 //
 // sharp is resolved out of apps/web/node_modules (it is a web dependency, used
 // there for KB PDF rendering); there is no separate install for this script.
@@ -16,15 +19,16 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  COLORS, PRIMARY, MONO, FAVICON,
-  bounds, boundingRadius, chevronOutline, platePositions,
-  markSvg, tileSvg, markPaths, redPath, navyPath,
+  COLORS, PRIMARY,
+  bounds, boundingRadius,
+  redPath, navyPath,
 } from './geometry.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const WEB = join(ROOT, 'apps/web');
 const ANDROID = join(ROOT, 'apps/mobile/androidApp/src/main/res');
 const IOS = join(ROOT, 'apps/mobile/iosApp/iosApp');
+const BRAND_SOURCE = join(ROOT, 'docs/design/brand-source');
 
 const require = createRequire(join(WEB, 'package.json'));
 const sharp = require('sharp');
@@ -37,80 +41,111 @@ async function put(path, contents) {
   written.push(path.slice(ROOT.length + 1));
 }
 
-// `opaque` strips the alpha channel: App Store Connect rejects an AppIcon with
-// transparency, and iOS composites a transparent apple-touch-icon onto black.
-async function png(path, svg, size, { opaque = false } = {}) {
-  let pipe = sharp(Buffer.from(svg), { density: 384 })
-    .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } });
-  if (opaque) pipe = pipe.flatten({ background: COLORS.ground });
-  const buf = await pipe.png({ compressionLevel: 9 }).toBuffer();
-  await put(path, buf);
+// Composites a raster crest crop (from BRAND_SOURCE, see the README there for
+// provenance) centered on a square canvas of `size`, occupying `widthFrac` of
+// it. Used for every crest-based icon (web favicon/manifest/apple-touch, the
+// Android adaptive icon, the iOS AppIcon) so there is exactly one place that
+// does this compositing — none of those targets store a pre-baked canvas.
+async function crestCanvas(source, size, widthFrac, { background = null } = {}) {
+  const markWidth = Math.round(size * widthFrac);
+  const mark = await sharp(join(BRAND_SOURCE, source))
+    .resize({ width: markWidth })
+    .png()
+    .toBuffer();
+  const markMeta = await sharp(mark).metadata();
+  let canvas = sharp({
+    create: {
+      width: size,
+      height: size,
+      channels: 4,
+      background: background ?? { r: 0, g: 0, b: 0, alpha: 0 },
+    },
+  }).composite([
+    { input: mark, left: Math.round((size - markMeta.width) / 2), top: Math.round((size - markMeta.height) / 2) },
+  ]);
+  if (background) canvas = canvas.flatten({ background });
+  return canvas.png({ compressionLevel: 9 }).toBuffer();
 }
 
-async function webp(path, svg, size) {
-  const buf = await sharp(Buffer.from(svg), { density: 384 })
-    .resize(size, size)
-    .webp({ quality: 95 })
+// Recolors a crest crop's silhouette solid white, alpha preserved — for
+// Android's themed (monochrome) icon.
+async function whiteSilhouette(source, size, widthFrac) {
+  const markWidth = Math.round(size * widthFrac);
+  const mark = await sharp(join(BRAND_SOURCE, source))
+    .resize({ width: markWidth })
+    .png()
     .toBuffer();
-  await put(path, buf);
+  const markMeta = await sharp(mark).metadata();
+  const white = await sharp({
+    create: { width: markMeta.width, height: markMeta.height, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } },
+  })
+    .composite([{ input: mark, blend: 'dest-in' }])
+    .png()
+    .toBuffer();
+  return sharp({ create: { width: size, height: size, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .composite([{ input: white, left: Math.round((size - markMeta.width) / 2), top: Math.round((size - markMeta.height) / 2) }])
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+}
+
+// Mobile splash lockup — the full "SHIFT AT PENN" wordmark on the OS splash screen and its
+// in-app continuation (SplashOverlay.kt / SplashView.swift). Both platforms lay it out at a
+// fixed SPLASH_HEIGHT_PT point size ("natural size", never resized in code), so sharpness on
+// high-density screens comes only from generating one pixel slice per device density here —
+// see the per-platform density loops in buildAndroid/buildIos below.
+const SPLASH_HEIGHT_PT = 111;
+
+async function splashLockup(source, scale) {
+  const height = Math.round(SPLASH_HEIGHT_PT * scale);
+  return sharp(join(BRAND_SOURCE, source)).resize({ height }).png({ compressionLevel: 9 }).toBuffer();
+}
+
+// In-app login-screen mark (iOS LoginView.swift / Android LoginScreen.kt): the same
+// crest crop as the web login mark (Logo.tsx), not the geometry-derived chevron. This
+// surface deliberately held onto the chevron during the 2026-07-25/29 crest rebrand
+// (see brand-source/README.md); superseded 2026-07-29 at the product owner's request so
+// the whole app agrees on one mark. Fixed-point-size layout, one slice per density/scale
+// like splashLockup above.
+const LOGIN_MARK_HEIGHT_PT = 72;
+
+async function loginMark(source, scale) {
+  const height = Math.round(LOGIN_MARK_HEIGHT_PT * scale);
+  return sharp(join(BRAND_SOURCE, source)).resize({ height }).png({ compressionLevel: 9 }).toBuffer();
 }
 
 const GENERATED = 'Generated by scripts/brand/build-icons.mjs from scripts/brand/geometry.mjs. Do not edit by hand.';
 
 /* ── web ──────────────────────────────────────────────────────────────── */
 
+// Web favicon/manifest/apple-touch/OG icons all come from the Penn crest crop
+// in BRAND_SOURCE (see docs/design/brand-source/README.md for provenance),
+// not from geometry.mjs — the chevron mark is retired everywhere on web.
+// crestCanvas/whiteSilhouette (above) do the compositing so nothing here is a
+// pre-baked, hand-maintained canvas.
+const WEB_ICON_SOURCE = 'shield-light-2048.png';
+
 async function buildWeb() {
-  await put(join(WEB, 'public/brand/logo.svg'), markSvg(PRIMARY));
-  await put(join(WEB, 'public/brand/logo-mono.svg'), markSvg(MONO, { fill: 'currentColor' }));
-  // Reversed: Penn red has no contrast on navy, so the upper chevron lifts to
-  // the muted blue and the lower goes white.
-  await put(join(WEB, 'public/brand/logo-reversed.svg'),
-    markSvg(PRIMARY, { upper: COLORS.ghost, lower: COLORS.white }));
-  await put(join(WEB, 'public/brand/icon.svg'), tileSvg(PRIMARY, { inset: 0.94 }));
+  // Header/login mark (apps/web/components/ui/Logo.tsx): the crest crop
+  // exactly as supplied, no compositing — the component sizes it itself.
+  await sharp(join(BRAND_SOURCE, 'shield-light.png')).png({ compressionLevel: 9 })
+    .toFile(join(WEB, 'public/brand/crest.png'));
+  await sharp(join(BRAND_SOURCE, 'shield-dark.png')).png({ compressionLevel: 9 })
+    .toFile(join(WEB, 'public/brand/crest-reversed.png'));
 
-  // The favicon cut: no plates, thicker bands, wider gap.
-  await put(join(WEB, 'app/icon.svg'), tileSvg(FAVICON, { inset: 0.94 }));
+  await put(join(WEB, 'app/icon.png'), await crestCanvas(WEB_ICON_SOURCE, 256, 0.82, { background: COLORS.ground }));
+  await put(join(WEB, 'app/apple-icon.png'), await crestCanvas(WEB_ICON_SOURCE, 180, 0.82, { background: COLORS.ground }));
+  await put(join(WEB, 'public/brand/icon-192.png'), await crestCanvas(WEB_ICON_SOURCE, 192, 0.82, { background: COLORS.ground }));
+  await put(join(WEB, 'public/brand/icon-512.png'), await crestCanvas(WEB_ICON_SOURCE, 512, 0.82, { background: COLORS.ground }));
+  // Maskable: the OS crops to a circle inside the safe zone, so the mark is
+  // pulled in and the background must be opaque (no transparency to reveal).
+  await put(join(WEB, 'public/brand/icon-maskable-512.png'), await crestCanvas(WEB_ICON_SOURCE, 512, 0.6, { background: COLORS.ground }));
+  await put(join(WEB, 'public/brand/og.png'), await crestCanvas(WEB_ICON_SOURCE, 512, 0.82, { background: COLORS.ground }));
 
-  await png(join(WEB, 'app/apple-icon.png'), tileSvg(PRIMARY, { inset: 0.94 }), 180, { opaque: true });
-  await png(join(WEB, 'public/brand/icon-192.png'), tileSvg(PRIMARY, { inset: 0.94 }), 192);
-  await png(join(WEB, 'public/brand/icon-512.png'), tileSvg(PRIMARY, { inset: 0.94 }), 512);
-  // Maskable: Android PWA crops to a circle of 80% diameter, so pull the mark in.
-  await png(join(WEB, 'public/brand/icon-maskable-512.png'), tileSvg(PRIMARY, { inset: 0.88 }), 512);
-  await png(join(WEB, 'public/brand/og.png'), tileSvg(PRIMARY, { inset: 0.94 }), 512, { opaque: true });
-
-  // Path data for the inline React mark, so the header cannot drift from the
-  // icon files. Consumed by apps/web/components/ui/Logo.tsx.
-  const b = bounds(PRIMARY);
-  const pad = 2;
-  const viewBox = [b.minX - pad, b.minY - pad, b.width + pad * 2, b.height + pad * 2]
-    .map((v) => Number(v.toFixed(4)))
-    .join(' ');
-  await put(join(WEB, 'lib/brandPaths.ts'), `// ${GENERATED}
-// The chevronel. See docs/design/logo.md for the construction.
-
-export const BRAND_COLORS = {
-  navy: '${COLORS.navy}',
-  red: '${COLORS.red}',
-  ground: '${COLORS.ground}',
-  ghost: '${COLORS.ghost}',
-} as const;
-
-export const BRAND_VIEW_BOX = '${viewBox}';
-
-/** Upper (Penn red) chevron. */
-export const BRAND_UPPER_PATH = '${redPath(PRIMARY)}';
-
-/** Upper chevron, monochrome cut: thinner, so weight alone separates the two. */
-export const BRAND_UPPER_PATH_MONO = '${redPath(MONO)}';
-
-/** Lower (Penn navy) chevron, with the three plates as evenodd holes. */
-export const BRAND_LOWER_PATH = '${navyPath(PRIMARY)}';
-`);
-
-  // Stock create-next-app scaffolding the mark replaces.
+  // Stale generated files from the retired chevron mark / stock scaffolding.
   for (const stale of [
-    'app/favicon.ico', 'public/file.svg', 'public/globe.svg',
-    'public/next.svg', 'public/vercel.svg', 'public/window.svg',
+    'app/icon.svg', 'app/favicon.ico', 'lib/brandPaths.ts',
+    'public/brand/logo.svg', 'public/brand/logo-mono.svg', 'public/brand/logo-reversed.svg', 'public/brand/icon.svg',
+    'public/file.svg', 'public/globe.svg', 'public/next.svg', 'public/vercel.svg', 'public/window.svg',
   ]) {
     await rm(join(WEB, stale), { force: true });
   }
@@ -151,41 +186,31 @@ function adaptiveGroup(cut, { upper, lower }) {
     </group>`;
 }
 
-// The launcher icon (app icon) was replaced with the real Penn shield crest — a raster
-// scan, not vector geometry, so it does not derive from geometry.mjs like the rest of
-// this file. Source of truth is the fixed PNGs in docs/design/brand-source/ (see the
-// README there for provenance/decisions). ic_launcher_background/foreground/monochrome
-// below are regenerated from those PNGs on every run so re-running this script cannot
-// silently reintroduce the retired chevron icon.
+// The launcher icon (app icon) is the real Penn shield crest — a raster scan, not
+// vector geometry, so it does not derive from geometry.mjs like the rest of this
+// file. Source of truth is the crop in docs/design/brand-source/ (see the README
+// there for provenance/decisions); crestCanvas/whiteSilhouette composite it onto
+// the launcher canvas on every run so re-running this script cannot silently
+// reintroduce the retired chevron icon or drift from a hand-baked PNG.
 //
-// NOT covered here (deliberately out of scope for this pass, still chevron-based):
-// ic_brand_mark.xml, the in-app login-screen mark (ui/LoginScreen.kt) — a separate
-// surface from the launcher icon / splash screen.
-const BRAND_SOURCE = join(ROOT, 'docs/design/brand-source');
+// The in-app login-screen mark (ui/LoginScreen.kt) is a separate surface from the
+// launcher icon / splash screen — see the ic_login_mark generation below.
 // Matches the app's light theme background, ui/theme/Color.kt L.bg.
 const ICON_BACKGROUND = '#F6F7F9';
+// Adaptive icons are drawn on a 1024px canvas; only the central ~2/3 is the safe
+// zone before circular/squircle launcher masks start clipping.
+const ANDROID_ICON_SOURCE = 'shield-light-2048.png';
+const ANDROID_ICON_WIDTH_FRAC = 0.58;
 
 async function buildAndroid() {
   await put(join(ANDROID, 'drawable/ic_launcher_background.xml'), vectorDrawable(
     `    <path android:fillColor="${ICON_BACKGROUND}" android:pathData="M0,0h108v108h-108z"/>`,
     { viewport: 108 }));
 
-  for (const [name, src] of [
-    ['ic_launcher_foreground', 'android-adaptive-foreground.png'],
-    ['ic_launcher_monochrome', 'android-adaptive-monochrome.png'],
-  ]) {
-    const buf = await sharp(join(BRAND_SOURCE, src)).png().toBuffer();
-    await put(join(ANDROID, `drawable/${name}.png`), buf);
-  }
-
-  // In-app mark (ui/LoginScreen.kt). Deliberately NOT part of the crest rebrand above —
-  // still the geometry-derived chevron, ground included so it is theme-independent
-  // (Compose clips it).
-  await put(join(ANDROID, 'drawable/ic_brand_mark.xml'), vectorDrawable(
-    `    <path android:fillColor="${COLORS.ground}" android:pathData="M0,0h100v100h-100z"/>\n` +
-    `    <path android:fillColor="${COLORS.red}" android:pathData="${redPath(PRIMARY)}"/>\n` +
-    `    <path android:fillColor="${COLORS.navy}" android:fillType="evenOdd" android:pathData="${navyPath(PRIMARY)}"/>`,
-    { viewport: 100, size: 100 }));
+  await put(join(ANDROID, 'drawable/ic_launcher_foreground.png'),
+    await crestCanvas(ANDROID_ICON_SOURCE, 1024, ANDROID_ICON_WIDTH_FRAC));
+  await put(join(ANDROID, 'drawable/ic_launcher_monochrome.png'),
+    await whiteSilhouette(ANDROID_ICON_SOURCE, 1024, ANDROID_ICON_WIDTH_FRAC));
 
   const adaptive = (round) => `<?xml version="1.0" encoding="utf-8"?>
 <!-- Generated by scripts/brand/build-icons.mjs. Do not edit by hand. -->
@@ -200,21 +225,38 @@ async function buildAndroid() {
 
   // minSdk is 24, so API 24-25 still need raster mipmaps with the background baked in
   // (no <adaptive-icon> layering pre-26). Composite the crest over the same background
-  // color used above, letter-boxed inside the safe zone the source PNG already respects.
-  // The round variant reuses the identical square composite: most OEM launchers on
-  // API 24-25 apply their own circular mask over whatever bitmap is supplied regardless.
-  const foregroundPath = join(BRAND_SOURCE, 'android-adaptive-foreground.png');
+  // color used above, letter-boxed inside the safe zone. The round variant reuses the
+  // identical square composite: most OEM launchers on API 24-25 apply their own
+  // circular mask over whatever bitmap is supplied regardless.
   for (const [bucket, size] of [['mdpi', 48], ['hdpi', 72], ['xhdpi', 96], ['xxhdpi', 144], ['xxxhdpi', 192]]) {
-    const buf = await sharp(foregroundPath)
-      .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
-      .flatten({ background: ICON_BACKGROUND })
-      .webp({ quality: 95 })
-      .toBuffer();
-    await put(join(ANDROID, `mipmap-${bucket}/ic_launcher.webp`), buf);
-    await put(join(ANDROID, `mipmap-${bucket}/ic_launcher_round.webp`), buf);
+    const buf = await crestCanvas(ANDROID_ICON_SOURCE, size, ANDROID_ICON_WIDTH_FRAC, { background: ICON_BACKGROUND });
+    await put(join(ANDROID, `mipmap-${bucket}/ic_launcher.webp`), await sharp(buf).webp({ quality: 95 }).toBuffer());
+    await put(join(ANDROID, `mipmap-${bucket}/ic_launcher_round.webp`), await sharp(buf).webp({ quality: 95 }).toBuffer());
   }
 
   // The widget picker previews @mipmap/ic_launcher, which is now the crest.
+
+  // Splash lockup: one slice per Android density bucket, both themes (splashLockup above).
+  // An earlier pass shipped a single unqualified drawable/splash_lockup.png — Android treats
+  // that as a low-priority fallback, not a guaranteed 1x baseline, so real devices rendered
+  // it soft. Explicit density buckets are the correct fix; the unqualified files are retired
+  // below so there is exactly one splash_lockup per density, not an ambiguous extra copy.
+  const ANDROID_DENSITY_SCALE = { mdpi: 1, hdpi: 1.5, xhdpi: 2, xxhdpi: 3, xxxhdpi: 4 };
+  for (const [bucket, scale] of Object.entries(ANDROID_DENSITY_SCALE)) {
+    await put(join(ANDROID, `drawable-${bucket}/splash_lockup.png`), await splashLockup('lockup-horizontal-light.png', scale));
+    await put(join(ANDROID, `drawable-night-${bucket}/splash_lockup.png`), await splashLockup('lockup-horizontal-dark.png', scale));
+  }
+  for (const stale of ['drawable/splash_lockup.png', 'drawable-night/splash_lockup.png']) {
+    await rm(join(ANDROID, stale), { force: true });
+  }
+
+  // Login-screen mark (ui/LoginScreen.kt): same crest crop, same density-bucket
+  // treatment as the splash lockup above (loginMark helper).
+  for (const [bucket, scale] of Object.entries(ANDROID_DENSITY_SCALE)) {
+    await put(join(ANDROID, `drawable-${bucket}/ic_login_mark.png`), await loginMark('shield-light.png', scale));
+    await put(join(ANDROID, `drawable-night-${bucket}/ic_login_mark.png`), await loginMark('shield-dark.png', scale));
+  }
+  await rm(join(ANDROID, 'drawable/ic_brand_mark.xml'), { force: true });
 }
 
 /* ── ios ──────────────────────────────────────────────────────────────── */
@@ -229,7 +271,31 @@ async function buildIos() {
     images: [{ filename: 'AppIcon-1024.png', idiom: 'universal', platform: 'ios', size: '1024x1024' }],
     ...info,
   }, null, 2) + '\n');
-  await png(join(cat, 'AppIcon.appiconset/AppIcon-1024.png'), tileSvg(PRIMARY, { inset: 0.94 }), 1024, { opaque: true });
+  // App Store Connect rejects transparency, so the crest is composited onto an
+  // opaque white canvas (App Icons can't have their own background otherwise).
+  await put(join(cat, 'AppIcon.appiconset/AppIcon-1024.png'),
+    await crestCanvas('shield-light-2048.png', 1024, 0.72, { background: '#FFFFFF' }));
+
+  // Splash lockup (LaunchLogo): one @1x/@2x/@3x slice per theme (splashLockup above). An
+  // earlier pass shipped only a single "1x"-scale entry per theme, so SwiftUI's non-resizable
+  // Image rendered it at the full pixel size on every device — correct footprint on a 1x
+  // simulator, soft on a real Retina device. Proper scale slices fix that without changing
+  // the natural-size 111pt layout SplashView.swift relies on.
+  const launchLogo = join(cat, 'LaunchLogo.imageset');
+  const iosImages = [];
+  for (const scale of [1, 2, 3]) {
+    const lightName = scale === 1 ? 'lockup-horizontal-light.png' : `lockup-horizontal-light@${scale}x.png`;
+    await put(join(launchLogo, lightName), await splashLockup('lockup-horizontal-light.png', scale));
+    iosImages.push({ filename: lightName, idiom: 'universal', scale: `${scale}x` });
+
+    const darkName = scale === 1 ? 'lockup-horizontal-dark.png' : `lockup-horizontal-dark@${scale}x.png`;
+    await put(join(launchLogo, darkName), await splashLockup('lockup-horizontal-dark.png', scale));
+    iosImages.push({
+      appearances: [{ appearance: 'luminosity', value: 'dark' }],
+      filename: darkName, idiom: 'universal', scale: `${scale}x`,
+    });
+  }
+  await put(join(launchLogo, 'Contents.json'), JSON.stringify({ images: iosImages, ...info }, null, 2) + '\n');
 
   // Accent stays Shift Blue — the mark's palette is deliberately not the UI accent.
   await put(join(cat, 'AccentColor.colorset/Contents.json'), JSON.stringify({
@@ -243,41 +309,25 @@ async function buildIos() {
     ...info,
   }, null, 2) + '\n');
 
-  // Swift geometry mirror, so the in-app mark cannot drift from the icon.
-  const b = bounds(PRIMARY);
-  const pt = (p) => `CGPoint(x: ${p[0].toFixed(4)}, y: ${p[1].toFixed(4)})`;
-  const list = (pts) => pts.map(pt).join(',\n        ');
-  await put(join(IOS, 'BrandMarkGeometry.swift'), `// ${GENERATED}
-// The chevronel, on the shared 100x100 artboard. See docs/design/logo.md.
+  // Login-screen mark (LoginView.swift): same crest crop, same appearance-switched
+  // imageset pattern as LaunchLogo above (loginMark helper).
+  const loginMarkSet = join(cat, 'LoginMark.imageset');
+  const loginMarkImages = [];
+  for (const scale of [1, 2, 3]) {
+    const lightName = scale === 1 ? 'login-mark-light.png' : `login-mark-light@${scale}x.png`;
+    await put(join(loginMarkSet, lightName), await loginMark('shield-light.png', scale));
+    loginMarkImages.push({ filename: lightName, idiom: 'universal', scale: `${scale}x` });
 
-import CoreGraphics
+    const darkName = scale === 1 ? 'login-mark-dark.png' : `login-mark-dark@${scale}x.png`;
+    await put(join(loginMarkSet, darkName), await loginMark('shield-dark.png', scale));
+    loginMarkImages.push({
+      appearances: [{ appearance: 'luminosity', value: 'dark' }],
+      filename: darkName, idiom: 'universal', scale: `${scale}x`,
+    });
+  }
+  await put(join(loginMarkSet, 'Contents.json'), JSON.stringify({ images: loginMarkImages, ...info }, null, 2) + '\n');
 
-enum BrandMarkGeometry {
-    static let artboard: CGFloat = 100
-
-    /// Upper (Penn red) chevron outline.
-    static let upper: [CGPoint] = [
-        ${list(chevronOutline(PRIMARY.red))},
-    ]
-
-    /// Lower (Penn navy) chevron outline.
-    static let lower: [CGPoint] = [
-        ${list(chevronOutline(PRIMARY.navy))},
-    ]
-
-    /// Plate centres, on the lower chevron's centreline.
-    static let plates: [CGPoint] = [
-        ${list(platePositions(PRIMARY.navy, PRIMARY.plateSpacing))},
-    ]
-
-    static let plateRadius: CGFloat = ${PRIMARY.plateRadius}
-
-    /// Tight bounds of the whole mark, for centring inside a tile.
-    static let markBounds = CGRect(
-        x: ${b.minX.toFixed(4)}, y: ${b.minY.toFixed(4)},
-        width: ${b.width.toFixed(4)}, height: ${b.height.toFixed(4)})
-}
-`);
+  await rm(join(IOS, 'BrandMarkGeometry.swift'), { force: true });
 }
 
 /* ── run ──────────────────────────────────────────────────────────────── */

@@ -44,7 +44,20 @@ import com.pennhousing.shift.shared.data.ProfileSnapshot
 import com.pennhousing.shift.shared.data.WorkerBackend
 import com.pennhousing.shift.shared.data.WorkerSnapshot
 import com.pennhousing.shift.shared.house.HouseScheduleSnapshot
+import com.pennhousing.shift.shared.data.CoverageWriteResult
+import com.pennhousing.shift.shared.data.HouseHoursResult
+import com.pennhousing.shift.shared.data.LadderCadence
+import com.pennhousing.shift.shared.data.ProfileLoad
 import com.pennhousing.shift.shared.live.LiveDefaults
+import com.pennhousing.shift.shared.manager.CachedRoleShape
+import com.pennhousing.shift.shared.manager.RoleShapeResolution
+import com.pennhousing.shift.shared.manager.coverage.CoverageOutcome
+import com.pennhousing.shift.shared.manager.coverage.CoverageRequest
+import com.pennhousing.shift.shared.manager.resolveRoleShape
+import com.pennhousing.shift.shared.manager.shouldRewriteRoleShape
+import com.pennhousing.shift.shared.viewmodel.CoverageViewModel
+import com.pennhousing.shift.ui.manager.ManagerModePrefs
+import com.pennhousing.shift.ui.manager.dialPhoneNumber
 import com.pennhousing.shift.shared.model.FloatAck
 import com.pennhousing.shift.shared.model.PendingFloat
 import com.pennhousing.shift.shared.model.RecentFloat
@@ -323,8 +336,14 @@ private fun LiveOrLoginRoot(
                 // A session restored at launch (or just authenticated) is the live
                 // worker — carry their JWT on every privileged request.
                 LaunchedEffect(session.userId) { WorkerBackend.wireAccessToken() }
+                val signOutContext = LocalContext.current
                 val onSignOut = {
                     scope.launch { WorkerBackend.authGateway.signOut() }
+                    // Forget the remembered app shape. The user-id check in `resolveRoleShape`
+                    // already prevents the next person inheriting these tabs, so this is belt and
+                    // braces; it also stops a signed-out phone carrying a record of who last used
+                    // it and what they could do.
+                    ManagerModePrefs.clear(signOutContext)
                     authedSession = null
                     signedOut = true
                 }
@@ -394,6 +413,27 @@ private fun LiveShiftsRoot(
     val repo = remember { WorkerBackend.shiftsRepository }
     val swapRepo = remember { WorkerBackend.swapActivityRepository }
     val writeStore = remember { WorkerBackend.pendingWrites }
+    // THE APP SHAPE, RESOLVED BEFORE THE FIRST FRAME (docs/manager-app/SPEC.md §5.1).
+    //
+    // Read SYNCHRONOUSLY here, above everything else, because the alternative is what this
+    // replaced: capabilities came from a three-round-trip network read, so every cold launch drew
+    // the WORKER shape first and then re-keyed the navigation when the roles arrived. For a
+    // manager that flipped the bottom bar and the start destination on every single launch.
+    //
+    // `remember` keyed on the user id, not `produceState`: SharedPreferences serves from an
+    // in-memory map after the first touch, so this is a lookup, not I/O. Nothing asynchronous can
+    // go here without putting the flip back.
+    val shapeContext = LocalContext.current
+    val cachedShape = remember(session.userId) { ManagerModePrefs.read(shapeContext) }
+    val shapeResolution = remember(cachedShape, session.userId) { resolveRoleShape(cachedShape, session.userId) }
+    // On a HIT this is the manager's real shape from frame one. On a MISS it is a plain worker,
+    // which is never SEEN, because the splash is held below until the server answers.
+    val shapeFromCache =
+        remember(shapeResolution) {
+            (shapeResolution as? RoleShapeResolution.UseCached)?.capabilities
+                ?: LiveDefaults.plainWorkerCapabilities()
+        }
+
     val snapshotState by remember(session.userId) {
         repo.observeWorkerWeek(session.userId, now)
     }.collectAsStateWithLifecycle(initialValue = null)
@@ -406,8 +446,13 @@ private fun LiveShiftsRoot(
         // skeleton is what a POST-launch reload falls back to.
         null -> LoadingScreen()
         else -> {
-            // The worker's own week is on screen: the splash may drop.
-            LaunchedEffect(Unit) { onWeekLoaded() }
+            // The worker's own week is on screen. The splash drops once the app SHAPE is also
+            // settled, which on a cache hit is already true and costs nothing.
+            //
+            // The only launch that waits here is the first one after a sign-in, when there is
+            // nothing cached and guessing is exactly the flip we are removing. "Settled" includes
+            // a FAILED read: we asked, we got nothing, and we open as a worker rather than hanging
+            // on the splash. See `roleShapeSettled` below.
             // Best-effort live writes (drop/claim/reclaim/pickup) flip the ViewModel
             // optimistically; a SUCCESSFUL write changes the DB and the next Realtime
             // snapshot reconciles the UI. A FAILED write (edge runtime down, timeout,
@@ -448,6 +493,9 @@ private fun LiveShiftsRoot(
                         snapshot.openShifts,
                         now,
                         pendingWrites = pendingWrites,
+                        // Server-owned per-week caps, carried on the snapshot. Nothing
+                        // client-side decides the cap any more.
+                        weeklyCaps = snapshot.weeklyCaps,
                     )
                 }
             // Float requests: load ALL the worker's outstanding floats (the bounded,
@@ -535,7 +583,7 @@ private fun LiveShiftsRoot(
             // its in-progress card and clears it), and on a swap change (the banner + marks).
             val calendarVm =
                 remember(snapshot, closedDays, revertKey, livePendingSwaps, pendingWrites) {
-                    CalendarViewModel(snapshot.myShifts, now, closedDays, livePendingSwaps, pendingWrites)
+                    CalendarViewModel(snapshot.myShifts, now, closedDays, livePendingSwaps, pendingWrites, snapshot.weeklyCaps)
                 }
             // The worker's profile (own users / user_roles). Loaded here (above the House
             // VM) so its resolved role can gate the House-grid manager actions; it also
@@ -543,10 +591,14 @@ private fun LiveShiftsRoot(
             // failure. `isManager` = holds a schedule-manager role (anything but a plain
             // `sw`); the House VM combines it with the home-house check for `canManage`.
             val profileRepo = remember { WorkerBackend.profileRepository }
-            val liveProfile by
-                produceState<ProfileSnapshot?>(initialValue = null, session.userId, revertKey) {
-                    value = runCatching { profileRepo.fetchProfile(session.userId) }.getOrNull()
+            // A LOAD STATE, not a nullable snapshot: the splash release below has to distinguish
+            // "still asking" from "asked and it failed", or a manager on a dead connection would
+            // stare at the wordmark forever.
+            val profileLoad by
+                produceState<ProfileLoad>(initialValue = ProfileLoad.Loading, session.userId, revertKey) {
+                    value = ProfileLoad.Done(runCatching { profileRepo.fetchProfile(session.userId) }.getOrNull())
                 }
+            val liveProfile = profileLoad.snapshotOrNull
             // House schedule (§11.4, T3b): the home house's week grid with contacts
             // (full-directory ruling). Falls back to the demo snapshot while loading.
             val liveHouseSchedule by
@@ -702,6 +754,80 @@ private fun LiveShiftsRoot(
                         liveNotificationPrefs,
                     ).apply { setTheme(ThemePrefs.read(settingsContext)) }
                 }
+            // ----- Manager mode (docs/manager-app/SPEC.md). -----
+            // Everything here is inert for a plain worker: `capabilities` defaults to no
+            // manager surface, so the streams never subscribe and `coverageVm` stays null.
+            // The shape actually used. The server's answer wins the moment it lands; until then
+            // the cached shape stands.
+            //
+            // NOTE the fallback is `shapeFromCache`, NOT a plain worker. A failed or slow role read
+            // must not strip a manager's Coverage tab: they would lose the alert surface precisely
+            // when the network is flaky. This is safe because the cache shapes UI only and every
+            // manager write is re-authorized server-side.
+            // Is the app shape known enough to draw? True immediately on a cache hit; on a miss it
+            // becomes true when the role read COMPLETES, success or failure.
+            val roleShapeSettled =
+                shapeResolution is RoleShapeResolution.UseCached || profileLoad is ProfileLoad.Done
+            LaunchedEffect(roleShapeSettled) { if (roleShapeSettled) onWeekLoaded() }
+
+            val capabilities = liveProfile?.capabilities ?: shapeFromCache
+            // Write through only on a real change, so the common launch does no write at all and
+            // `capabilities` stays value-identical across the reconcile. That identity is what
+            // stops the navigation re-keying on `startRoute` and rebuilding its back stacks.
+            LaunchedEffect(profileLoad, session.userId) {
+                val snapshot = liveProfile ?: return@LaunchedEffect
+                val fresh =
+                    CachedRoleShape(
+                        userId = session.userId,
+                        homeHouseId = snapshot.homeHouseId,
+                        roles = snapshot.roles,
+                    )
+                if (shouldRewriteRoleShape(cachedShape, fresh)) ManagerModePrefs.write(shapeContext, fresh)
+            }
+            val coverageContext = LocalContext.current
+            val coverageRepo = remember { WorkerBackend.coverageRepository }
+            // The configured ladder cadence, for an honest "escalates in 12m" countdown. Read
+            // once per session: an admin retuning it mid-shift is not worth a poll.
+            val ladderCadence by
+                produceState(initialValue = LadderCadence(), capabilities.hasCoverage) {
+                    if (capabilities.hasCoverage) value = coverageRepo.fetchLadderCadence()
+                }
+            // Live coverage requests. Realtime-backed, so an escalation landing on this manager
+            // appears without a refresh. RLS scopes the rows, so no house filter is sent.
+            val coverageRequests by
+                produceState(initialValue = emptyList<CoverageRequest>(), capabilities.hasCoverage) {
+                    if (capabilities.hasCoverage) coverageRepo.coverageStream().collect { value = it }
+                }
+            val coverageVm =
+                remember(capabilities.hasCoverage, ladderCadence) {
+                    if (capabilities.hasCoverage) {
+                        CoverageViewModel(coverageRequests, now, ladderCadence.rungTimeoutMinutes)
+                    } else {
+                        null
+                    }
+                }
+            // Feed later snapshots in rather than rebuilding the ViewModel, so an open Respond
+            // sheet survives a Realtime update instead of being torn down mid-decision.
+            LaunchedEffect(coverageRequests, coverageVm) { coverageVm?.refresh(coverageRequests) }
+
+            val hoursRepo = remember { WorkerBackend.hoursRepository }
+            val hoursReport by
+                produceState<HouseHoursResult?>(initialValue = null, capabilities, revertKey) {
+                    if (capabilities.hasManagerSurface) {
+                        value =
+                            runCatching {
+                                hoursRepo.fetchHouseHours(
+                                    houseId = capabilities.adminHouseId,
+                                    houseName = liveProfile?.profile?.homeHouseName ?: capabilities.adminHouseId,
+                                    weekStart = now,
+                                    // An SM cannot read another house's assignments, so their
+                                    // breakdown is home-desk only and the screen says so.
+                                    awayVisible = capabilities.isScheduleAdmin,
+                                )
+                            }.getOrNull()
+                    }
+                }
+
             ShiftsApp(
                 viewModels =
                     ShiftsViewModels(
@@ -715,6 +841,7 @@ private fun LiveShiftsRoot(
                         breakCalendarVm = breakCalendarVm,
                         settingsVm = settingsVm,
                         assistantVm = assistantVm,
+                        coverageVm = coverageVm,
                     ),
                 hostState =
                     ShiftsHostState(
@@ -731,10 +858,25 @@ private fun LiveShiftsRoot(
                         // live (per-week) keyed on the worker; no current-week candidate list needed.
                         swapMeUserId = session.userId,
                         swapDemoSeats = emptyList(),
+                        capabilities = capabilities,
+                        hoursReport = hoursReport,
                     ),
                 actions =
                     ShiftsActions(
                         onSignOut = onSignOut,
+                        // Manager mode. These two are the only writes in this app that must
+                        // report their result: a failed acknowledge has to revert so the banner
+                        // returns and the ladder keeps escalating. Never queue them offline.
+                        onAcknowledgeCoverage = { requestId ->
+                            coverageRepo.acknowledge(requestId) != CoverageWriteResult.Failed
+                        },
+                        onCloseCoverage = { requestId, outcome, note ->
+                            val parsed = CoverageOutcome.fromWire(outcome)
+                            parsed != null &&
+                                coverageRepo.close(requestId, parsed, note) != CoverageWriteResult.Failed
+                        },
+                        onCallPhone = { number -> if (number != null) dialPhoneNumber(coverageContext, number) },
+                        onForceTriggerCoverage = { /* wired with the grid override pass */ },
                         onSubmitPreferences = {
                             // POST the current edits, then flip to the optimistic submitted state
                             // (mirrors the Shifts screen's claim/drop). On failure surface the toast;

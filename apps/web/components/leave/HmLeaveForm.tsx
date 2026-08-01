@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { returnFromLeave, submitLeave } from '../../lib/actions/leave';
 import type { ActiveLeave, ReplacementOption } from '../../lib/data/leave';
+import { availabilityLabel, overlappingLeaves } from '../../lib/leaveAvailability';
 import { Button, Card, ComboBox, DateInput, Field, Notification } from '../ui';
 
 export function HmLeaveForm({
@@ -23,6 +24,31 @@ export function HmLeaveForm({
   const [mailtoUrl, setMailtoUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // §2.6 #1: your own house's managers are the default pool, so the picker opens on them
+  // (plus the project administrator, the guaranteed terminal). §2.6 #7 still needs a
+  // different house when both of a house's managers are out, so the wider pool is one
+  // click away rather than removed.
+  const [includeOtherHouses, setIncludeOtherHouses] = useState(false);
+
+  const otherHouseCount = candidates.filter((c) => c.group === 'other').length;
+
+  const options = useMemo(() => {
+    const shown = includeOtherHouses ? candidates : candidates.filter((c) => c.group === 'primary');
+    return shown.map((c) => {
+      const availability = availabilityLabel(c.busy, startDate, endDate);
+      return {
+        value: c.userId,
+        label: c.name,
+        meta: [c.group === 'other' ? c.houseName : null, c.role, availability]
+          .filter((part): part is string => part !== null)
+          .join(' · '),
+      };
+    });
+  }, [candidates, includeOtherHouses, startDate, endDate]);
+
+  const selected = candidates.find((c) => c.userId === replacementUserId) ?? null;
+  const selectedClashes =
+    selected !== null ? overlappingLeaves(selected.busy, startDate, endDate) : [];
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -66,7 +92,7 @@ export function HmLeaveForm({
 
           <Field
             label="Replacement"
-            helper="HMs in your incoming replacement chain are omitted to prevent cycles (§2.6)."
+            helper="Your house first. Anyone already on leave over your dates is flagged, and managers whose own cover routes back through you are omitted."
           >
             <ComboBox
               testId="replacement-select"
@@ -74,13 +100,34 @@ export function HmLeaveForm({
               placeholder="Select replacement…"
               value={replacementUserId}
               onChange={setReplacementUserId}
-              options={candidates.map((c) => ({
-                value: c.userId,
-                label: c.name,
-                meta: c.role,
-              }))}
+              options={options}
             />
           </Field>
+
+          {!includeOtherHouses && otherHouseCount > 0 && (
+            <div>
+              <Button
+                kind="tertiary"
+                size="sm"
+                type="button"
+                data-testid="replacement-include-other-houses"
+                onClick={() => setIncludeOtherHouses(true)}
+              >
+                Include managers from other houses ({otherHouseCount})
+              </Button>
+            </div>
+          )}
+
+          {selectedClashes.length > 0 && (
+            <Notification
+              kind="warning"
+              title="Replacement is already on leave"
+              testId="replacement-clash"
+            >
+              {selected?.name} has leave of their own over part of these dates. Pick someone else,
+              or confirm with them directly before you submit.
+            </Notification>
+          )}
 
           {error !== null && (
             <p data-testid="leave-error" className="t-helper" style={{ color: 'var(--st-danger)' }}>

@@ -91,7 +91,10 @@ data class CalendarAgenda(
     val isEmpty: Boolean get() = items.none { it.shift != null }
 }
 
-private fun mondayOf(
+// `internal`, not private: WeeklyCapSchedule keys its per-week caps on this same NY
+// Monday, and the two must agree exactly or a cap lands on the wrong week. Module-scoped
+// so it does not cross the SKIE boundary into Swift.
+internal fun mondayOf(
     now: Instant,
     zone: TimeZone,
 ): LocalDate {
@@ -442,21 +445,25 @@ fun buildTypicalWeek(
         .groupBy { shift ->
             val local = shift.start.toLocalDateTime(zone)
             Triple(local.dayOfWeek.ordinal, formatBlockTime(shift.start, zone) + formatBlockTime(shift.end, zone), shift.house.id)
-        }
-        .values
+        }.values
         .map { group ->
             val first = group.minByOrNull { it.start }!!
             val weeks = group.map { mondayOf(it.start, zone) }.toSet().size
             TemplateSlot(
-                dayIndex = first.start.toLocalDateTime(zone).date.dayOfWeek.ordinal,
-                dayLabel = DOW_SHORT[first.start.toLocalDateTime(zone).date.dayOfWeek.ordinal],
+                dayIndex = first.start
+                    .toLocalDateTime(zone)
+                    .date.dayOfWeek.ordinal,
+                dayLabel = DOW_SHORT[
+                    first.start
+                        .toLocalDateTime(zone)
+                        .date.dayOfWeek.ordinal,
+                ],
                 timeLabel = formatTimeRangeLabel(first, zone),
                 durationLabel = formatHoursMinutes((first.end - first.start).inWholeMinutes),
                 houseName = first.house.name,
                 weeksSeen = weeks,
             )
-        }
-        .sortedWith(compareBy({ it.dayIndex }, { it.timeLabel }))
+        }.sortedWith(compareBy({ it.dayIndex }, { it.timeLabel }))
 
 private fun formatTimeRangeLabel(
     shift: MyShift,

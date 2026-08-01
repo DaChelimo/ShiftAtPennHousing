@@ -24,7 +24,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.pennhousing.shift.shared.data.ToastNotification
+import com.pennhousing.shift.shared.notifications.ToastNotification
+import com.pennhousing.shift.shared.shifts.WeeklyCap
 import com.pennhousing.shift.shared.shifts.weeklyHoursSummary
 import com.pennhousing.shift.ui.kit.ShiftIcons
 import com.pennhousing.shift.ui.theme.ShiftTheme
@@ -67,12 +68,14 @@ internal fun ShiftCardColumn(content: @Composable () -> Unit) {
 @Composable
 internal fun WeekTotalChip(
     weekHours: Double,
-    breakProfile: Boolean,
+    // The SHOWN week's server cap (ShiftsUiState.weekCap). Not a client-derived value:
+    // a season sets its own cap, so there is nothing to branch on locally.
+    cap: WeeklyCap,
     weekOffset: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     val c = ShiftTheme.colors
-    val summary = remember(weekHours, breakProfile) { weeklyHoursSummary(weekHours, breakProfile) }
+    val summary = remember(weekHours, cap) { weeklyHoursSummary(weekHours, cap) }
     // The label follows the shown week so the hours never read as "this week" when
     // the worker has navigated forward/back.
     val label =

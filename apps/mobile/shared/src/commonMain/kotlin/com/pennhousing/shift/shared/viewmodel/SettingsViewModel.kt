@@ -1,7 +1,6 @@
 package com.pennhousing.shift.shared.viewmodel
 
 import androidx.lifecycle.ViewModel
-import com.pennhousing.shift.shared.settings.HoursLimits
 import com.pennhousing.shift.shared.settings.NotificationChannel
 import com.pennhousing.shift.shared.settings.NotificationPreferences
 import com.pennhousing.shift.shared.settings.NotificationRowModel
@@ -10,7 +9,6 @@ import com.pennhousing.shift.shared.settings.ThemeChoice
 import com.pennhousing.shift.shared.settings.buildNotificationRows
 import com.pennhousing.shift.shared.settings.toggled
 import com.pennhousing.shift.shared.settings.withShiftReminderToggled
-import com.pennhousing.shift.shared.settings.hoursLimits
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,7 +17,6 @@ data class SettingsUiState(
     val profile: SettingsProfile,
     val notifications: List<NotificationRowModel>,
     val theme: ThemeChoice,
-    val hours: HoursLimits,
     val appVersion: String,
 )
 
@@ -52,7 +49,6 @@ class SettingsViewModel(
             profile = profile,
             notifications = buildNotificationRows(prefs, broadcast),
             theme = theme,
-            hours = hoursLimits(),
             appVersion = appVersion,
         )
 

@@ -169,23 +169,32 @@ fun permanentPickupToast(
 data class ClaimMeter(
     val afterLabel: String,
     val capLabel: String,
+    /** "soft cap" / "hard cap" — the enforcement of the week's server cap. */
+    val capEnforcementLabel: String,
     val currentFraction: Double,
     val afterFraction: Double,
     val verdict: ClaimCapVerdict,
-)
+) {
+    /** "Puts you over the 20h soft cap" — the over-cap notice title. */
+    val overCapTitle: String get() = "Puts you over the $capLabel $capEnforcementLabel"
+}
 
+/** [cap] is the server cap for the week the claimed shift lands in. */
 fun claimMeter(
     currentWeeklyHours: Double,
     addedHours: Double,
-    breakProfile: Boolean,
+    cap: WeeklyCap,
 ): ClaimMeter {
-    val cap = if (breakProfile) BREAK_HOURS_CAP else SOFT_HOURS_CAP
     val after = currentWeeklyHours + addedHours
+    // A season could in principle compile a zero/negative cap; guard the divisor so the
+    // meter degrades to "full" rather than emitting NaN into the UI.
+    val denominator = if (cap.hours > 0.0) cap.hours else SOFT_HOURS_CAP
     return ClaimMeter(
         afterLabel = formatHours(after),
-        capLabel = formatHours(cap),
-        currentFraction = (currentWeeklyHours / cap).coerceIn(0.0, 1.0),
-        afterFraction = (after / cap).coerceIn(0.0, 1.0),
-        verdict = evaluateClaimCap(currentWeeklyHours, addedHours, breakProfile),
+        capLabel = cap.hoursLabel,
+        capEnforcementLabel = cap.enforcementLabel,
+        currentFraction = (currentWeeklyHours / denominator).coerceIn(0.0, 1.0),
+        afterFraction = (after / denominator).coerceIn(0.0, 1.0),
+        verdict = evaluateClaimCap(currentWeeklyHours, addedHours, cap),
     )
 }

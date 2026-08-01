@@ -49,7 +49,6 @@
 		8C4158E8958645CD808B399A /* HouseGridTourUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42092448C346C93B9F4495EB /* HouseGridTourUITests.swift */; };
 		8F5154667D844D04BB6F6A81 /* AskChipPlacementUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F8502DC503B01D90F61C92E /* AskChipPlacementUITests.swift */; };
 		983A85F9E98253907723D163 /* IBMPlexSans-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 7B34AA86864B6EC1606F1447 /* IBMPlexSans-SemiBold.ttf */; };
-		A34DBCD15A571A14047FA5EE /* BrandMarkGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45544A5BE51A539CC2F98D32 /* BrandMarkGeometry.swift */; };
 		A454074AB6AA023403A1BBD3 /* OpenShiftsConfigIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 759989B288B28705A12301DF /* OpenShiftsConfigIntent.swift */; };
 		A988F27620C078D93E10F424 /* WidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEEC15AAA9F6FB86F98AC081 /* WidgetSnapshot.swift */; };
 		B88E8A7A9515A943BDA4D852 /* ShiftTourUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 219F81C4C13131409736855C /* ShiftTourUITests.swift */; };
@@ -66,6 +65,10 @@
 		E2F776EA2C085E4562DBF7F1 /* SwapTourView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C744213FDBA755AEE98FD0A0 /* SwapTourView.swift */; };
 		E7AD254D49831AAE55A4B24A /* PreferencesTourUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C90C8CC85B9271EE7FF8E18 /* PreferencesTourUITests.swift */; };
 		EBCE83C9705160D151141674 /* HouseGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B1D60DBB1F910782193BA04 /* HouseGridView.swift */; };
+		44A6DACEEBA82B50DD2651C6 /* CoverageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0E8CC636C84CC62D2472CA8 /* CoverageView.swift */; };
+		9B09F9C538870784BB877450 /* HoursView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A3442B8CFBCCB4E2E96F1D8 /* HoursView.swift */; };
+		795808E3ADAF027841113CA3 /* ManagerModePrefs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F9C175080AF43892E17F5FF /* ManagerModePrefs.swift */; };
+		4FEE6CEA344AF60712296909 /* PhoneDialer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EB278E090A39AB2053C541D /* PhoneDialer.swift */; };
 		EE57983C854AAA89E7A106E5 /* ShiftTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D8A2FD225457B6AFE246BC0 /* ShiftTheme.swift */; };
 		F0AEDB9DB44EDF1EFD46D800 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 3957085DC97F2122FDAE6F9B /* README.md */; };
 		F35AC5D59C7455EA4A917097 /* PreferencesPaintUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77B8819957A691836164F208 /* PreferencesPaintUITests.swift */; };
@@ -120,11 +123,14 @@
 		38CE44FF4D19152F031CB5BD /* PreferencesTourView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesTourView.swift; sourceTree = "<group>"; };
 		3957085DC97F2122FDAE6F9B /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		3B1D60DBB1F910782193BA04 /* HouseGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HouseGridView.swift; sourceTree = "<group>"; };
+		E0E8CC636C84CC62D2472CA8 /* CoverageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoverageView.swift; sourceTree = "<group>"; };
+		3A3442B8CFBCCB4E2E96F1D8 /* HoursView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoursView.swift; sourceTree = "<group>"; };
+		9F9C175080AF43892E17F5FF /* ManagerModePrefs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManagerModePrefs.swift; sourceTree = "<group>"; };
+		4EB278E090A39AB2053C541D /* PhoneDialer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneDialer.swift; sourceTree = "<group>"; };
 		3FB0B967449A2C5466958FE2 /* WidgetSampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSampleData.swift; sourceTree = "<group>"; };
 		41088AB1785319BBF456B6FB /* BreakTourUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BreakTourUITests.swift; sourceTree = "<group>"; };
 		41C9BDD7465FE0F27FEE8598 /* AssistantScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantScreen.swift; sourceTree = "<group>"; };
 		42092448C346C93B9F4495EB /* HouseGridTourUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HouseGridTourUITests.swift; sourceTree = "<group>"; };
-		45544A5BE51A539CC2F98D32 /* BrandMarkGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandMarkGeometry.swift; sourceTree = "<group>"; };
 		48A79C1108FDA55D1F5A6EB5 /* HouseNotLiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HouseNotLiveView.swift; sourceTree = "<group>"; };
 		4E150BAEFEBE013FA7CADF39 /* FloatCarouselView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatCarouselView.swift; sourceTree = "<group>"; };
 		52C915F23FFB1DD8D6A39ADE /* IBMPlexSans-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "IBMPlexSans-Medium.ttf"; sourceTree = "<group>"; };
@@ -180,7 +186,6 @@
 				8B6C1F485E0CF8BB70C9DDD2 /* AppDelegate.swift */,
 				F543015C899423D4B01CEB2E /* Assets.xcassets */,
 				41C9BDD7465FE0F27FEE8598 /* AssistantScreen.swift */,
-				45544A5BE51A539CC2F98D32 /* BrandMarkGeometry.swift */,
 				73EA60230287BEC92AF92580 /* BreakCalendarView.swift */,
 				D3F3BA3C4657043132AA3A15 /* BreakTourView.swift */,
 				CE8509E5A49E4A5CAAEB3ADB /* ContentView.swift */,
@@ -190,6 +195,10 @@
 				C3680B5C84C0DCBAC26110A7 /* HouseGridTourView.swift */,
 				3B1D60DBB1F910782193BA04 /* HouseGridView.swift */,
 				48A79C1108FDA55D1F5A6EB5 /* HouseNotLiveView.swift */,
+				E0E8CC636C84CC62D2472CA8 /* CoverageView.swift */,
+				3A3442B8CFBCCB4E2E96F1D8 /* HoursView.swift */,
+				9F9C175080AF43892E17F5FF /* ManagerModePrefs.swift */,
+				4EB278E090A39AB2053C541D /* PhoneDialer.swift */,
 				C49B0B02429FBBC9F867DDE1 /* iosApp.entitlements */,
 				668CECA83ACC03A83C85A623 /* iOSApp.swift */,
 				5EF4A054A43ED6B6C286E46F /* LoginView.swift */,
@@ -496,7 +505,6 @@
 			files = (
 				FDE52B8D57A097A60A4CF366 /* AppDelegate.swift in Sources */,
 				D8A3228BAB55BE393AF94BAD /* AssistantScreen.swift in Sources */,
-				A34DBCD15A571A14047FA5EE /* BrandMarkGeometry.swift in Sources */,
 				072EC6FFED86D1DB8BF7728C /* BreakCalendarView.swift in Sources */,
 				6DACDB19F29DEBB53B272B93 /* BreakTourView.swift in Sources */,
 				56B0305B5D3847FC6B326502 /* ContentView.swift in Sources */,
@@ -505,6 +513,10 @@
 				7E573DC55A73E5FD7B17899E /* HouseGridTourView.swift in Sources */,
 				EBCE83C9705160D151141674 /* HouseGridView.swift in Sources */,
 				BD6934086D2807A45CE807D2 /* HouseNotLiveView.swift in Sources */,
+				44A6DACEEBA82B50DD2651C6 /* CoverageView.swift in Sources */,
+				9B09F9C538870784BB877450 /* HoursView.swift in Sources */,
+				795808E3ADAF027841113CA3 /* ManagerModePrefs.swift in Sources */,
+				4FEE6CEA344AF60712296909 /* PhoneDialer.swift in Sources */,
 				D488747AD197BC7C1635E66B /* LoginView.swift in Sources */,
 				0AF4CAA71467D55095FFFF00 /* Onboarding.swift in Sources */,
 				00CC194E57EAF831383E5E17 /* OpenClaimTourView.swift in Sources */,
@@ -635,7 +647,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
-				PRODUCT_NAME = "Shift PennHousing";
+				PRODUCT_NAME = SHIFT;
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
@@ -721,7 +733,7 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				PRODUCT_NAME = "Shift PennHousing";
+				PRODUCT_NAME = SHIFT;
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";

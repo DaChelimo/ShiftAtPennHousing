@@ -144,7 +144,13 @@ export async function getAiScheduleContext(houseId: string): Promise<AiScheduleC
     p_house_id: houseId,
     p_as_of: firstDay,
   });
-  const houseWorkers = (rosterRows ?? []) as { user_id: string; name: string }[];
+  // house_roster_as_of also returns the house's RSM (2026-07-29 desk-assignment
+  // decision, is_rsm=true) for the manual builder. The AI agent generates a
+  // preference-driven schedule for capped student workers only; an RSM never
+  // submits preferences or a target and is excluded here on purpose.
+  const houseWorkers = ((rosterRows ?? []) as { user_id: string; name: string; is_rsm: boolean }[])
+    .filter((u) => !u.is_rsm)
+    .map((u) => ({ user_id: u.user_id, name: u.name }));
   const houseWorkerIds = houseWorkers.map((u) => u.user_id);
 
   const prefRows = await selectByBlockIdChunks(weekBlockIds, (chunk) =>

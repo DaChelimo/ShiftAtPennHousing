@@ -1,5 +1,6 @@
 import { cache } from 'react';
 
+import { cachedGlobal, invalidateGlobal } from '../cache/ttl';
 import { createServiceClient } from '../supabase/server';
 
 // Dev-only simulated clock. The whole admin app reads "now" through simNow() so a
@@ -14,34 +15,49 @@ export function isTimeTravelEnabled(): boolean {
   return process.env.NODE_ENV !== 'production';
 }
 
-// The current simulated instant, authoritative from the database (app_now()) so
-// the web and Postgres agree to the millisecond. Falls back to the wall clock if
-// the RPC is unavailable.
-//
-// Wrapped in React's cache() (per-request): the layout and nearly every page call
-// this with no arguments, so without dedup a single navigation paid the RPC round
-// trip once per segment (layout + page, sometimes twice within a page). Per-request
-// is the right granularity — a stale `now` never survives past one render.
-export const simNow = cache(async (): Promise<Date> => {
-  // Production short-circuit: no offset can exist (the setter is gated off), so
-  // skip the round-trip and behave exactly like the old `new Date()`.
-  if (!isTimeTravelEnabled()) return new Date();
-  const svc = createServiceClient();
-  const { data, error } = await svc.rpc('app_now');
-  if (error === null && typeof data === 'string') {
-    const parsed = new Date(data);
-    if (!Number.isNaN(parsed.getTime())) return parsed;
-  }
-  return new Date();
-});
+const OFFSET_KEY = 'dev_sim_clock:offset_seconds';
+// Short: the offset only moves when someone drives the dev clock card, and that
+// action invalidates the entry explicitly (see devClock actions), so this TTL is a
+// backstop for an offset changed by the orchestrator harness or by raw SQL.
+const OFFSET_TTL_MS = 5_000;
 
 // Offset (seconds) currently applied, for the card's live display. 0 = real time.
-export const getSimOffsetSeconds = cache(async (): Promise<number> => {
-  const svc = createServiceClient();
-  const { data } = await svc
-    .from('dev_sim_clock')
-    .select('offset_seconds')
-    .eq('id', true)
-    .maybeSingle();
-  return data?.offset_seconds ?? 0;
+//
+// One globally-shared row, so it is memoized process-wide rather than re-read on every
+// navigation. React cache() still collapses repeat calls within a single render.
+export const getSimOffsetSeconds = cache(
+  async (): Promise<number> =>
+    cachedGlobal(OFFSET_KEY, OFFSET_TTL_MS, async () => {
+      const svc = createServiceClient();
+      const { data } = await svc
+        .from('dev_sim_clock')
+        .select('offset_seconds')
+        .eq('id', true)
+        .maybeSingle();
+      return data?.offset_seconds ?? 0;
+    }),
+);
+
+// Drop the memoized offset so the next read reflects a just-written value.
+export function invalidateSimOffset(): void {
+  invalidateGlobal(OFFSET_KEY);
+}
+
+// The current simulated instant.
+//
+// This used to call the app_now() RPC, one remote round trip on every render of every
+// page (the layout plus most pages, deduped per request but paid again on every
+// navigation). app_now() is by definition `now() + dev_sim_clock.offset_seconds`, so the
+// same instant is available from the memoized offset above with no round trip at all on
+// the hot path. The DB is still the single source of the OFFSET, which is what actually
+// has to agree between the website and the orchestrator; only the "what time is it"
+// half is read locally.
+//
+// Wrapped in React's cache() (per-request) so one navigation sees one consistent `now`
+// across the layout and every page segment.
+export const simNow = cache(async (): Promise<Date> => {
+  // Production short-circuit: no offset can exist (the setter is gated off), so
+  // skip the lookup and behave exactly like the old `new Date()`.
+  if (!isTimeTravelEnabled()) return new Date();
+  return new Date(Date.now() + (await getSimOffsetSeconds()) * 1000);
 });

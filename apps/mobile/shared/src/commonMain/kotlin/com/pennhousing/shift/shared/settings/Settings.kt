@@ -1,14 +1,10 @@
 package com.pennhousing.shift.shared.settings
 
-import com.pennhousing.shift.shared.shifts.BREAK_HOURS_CAP
-import com.pennhousing.shift.shared.shifts.SOFT_HOURS_CAP
-import com.pennhousing.shift.shared.shifts.formatHours
-
 /*
  * Settings / Profile — PURE presentation logic shared by both platforms, the settings
  * analogue of the other screens' presentation layers. Identity + the notification
- * channels + the appearance choice + the (read-only) hours limits, with NO clock and
- * NO I/O — the profile snapshot is injected.
+ * channels + the appearance choice, with NO clock and NO I/O — the profile snapshot is
+ * injected.
  *
  * DATA AVAILABILITY (this is a NEW screen — checked before building):
  *  - Identity is READABLE: a worker can SELECT their own `users` row (name, email,
@@ -25,7 +21,6 @@ import com.pennhousing.shift.shared.shifts.formatHours
  *    render always-on/disabled. The two "a shift opened up" channels are the only
  *    configurable ones and live in `notification_preferences`, written through the
  *    `set_notification_preferences` RPC (there is no direct table write path).
- *  - The hours limits are the shared constants (soft 20h / break-hard 40h).
  *  - Theme is client-only (no backend); applying it app-wide is a host concern.
  *  - Sign out uses the existing `AuthGateway.signOut`.
  */
@@ -257,10 +252,8 @@ fun NotificationPreferences.withShiftReminderToggled(offsetMinutes: Int): Notifi
     )
 }
 
-/** The read-only "Hours & limits" display values, from the shared caps. */
-data class HoursLimits(
-    val softCapLabel: String,
-    val hardCapLabel: String,
-)
-
-fun hoursLimits(): HoursLimits = HoursLimits(softCapLabel = formatHours(SOFT_HOURS_CAP), hardCapLabel = formatHours(BREAK_HOURS_CAP))
+// The Settings screen used to carry a read-only "Hours & limits" group showing a static
+// 20h soft cap / 40h break hard cap. It was removed (2026-07-29) along with the rest of
+// the client-side cap constants: the cap is per-week server config (see
+// `effective_weekly_caps`), so a fixed pair of numbers on a settings screen could only
+// ever be wrong once a season set its own cap.

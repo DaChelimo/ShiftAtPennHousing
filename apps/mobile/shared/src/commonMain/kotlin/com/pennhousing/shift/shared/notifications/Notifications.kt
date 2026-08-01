@@ -25,7 +25,28 @@ import kotlin.time.Instant
  */
 
 /** Display category — the UI maps each to a kit icon + state colour (never colour alone). */
-enum class NotificationCategory { FLOAT, REMINDER, SHIFT_REMOVED, PERMANENT, PREFERENCES, SWAP, INFO, ALLIED_PAGE }
+enum class NotificationCategory {
+    FLOAT,
+    REMINDER,
+    SHIFT_REMOVED,
+    PERMANENT,
+    PREFERENCES,
+    SWAP,
+    INFO,
+    ALLIED_PAGE,
+
+    /**
+     * A manager's Allied coverage request (BSpec §5.4a) — the highest-consequence entry this
+     * app can show, because a desk goes empty unless a human acts.
+     *
+     * This category exists because `hmod_urgent` used to fall through the `else ->` branch of
+     * [categoryForType] alongside `broadcast` and `hm_leave_notice`. The server already
+     * classifies it correctly (`_shared/push-presentation.ts` puts it in `URGENT_TYPES` and
+     * sends it time-sensitive), and the client then rendered it as a low-priority
+     * informational row. See docs/manager-app/SPEC.md §3.1.
+     */
+    ALLIED_COVERAGE,
+}
 
 /**
  * Best-effort map from a `notifications.type` value to a display category, for the
@@ -38,7 +59,8 @@ fun categoryForType(rawType: String): NotificationCategory =
         "swap_request" -> NotificationCategory.SWAP
         "sw_permanent_removal_alert" -> NotificationCategory.PERMANENT
         "allied_page" -> NotificationCategory.ALLIED_PAGE
-        else -> NotificationCategory.INFO // broadcast, hm_leave_notice, hmod_urgent, personal_shift, unknown
+        TYPE_ALLIED_COVERAGE -> NotificationCategory.ALLIED_COVERAGE
+        else -> NotificationCategory.INFO // broadcast, hm_leave_notice, personal_shift, unknown
     }
 
 /** The `payload.kind` the float-lookup / force-trigger RPCs stamp on the float-assigned notification. */
@@ -46,6 +68,22 @@ const val PAYLOAD_KIND_FLOAT_ASSIGNED: String = "float_assigned"
 
 /** The `notifications.type` for an off-hours Allied-page ladder alert (migration 20260713000001). */
 const val TYPE_ALLIED_PAGE: String = "allied_page"
+
+/**
+ * The `notifications.type` for a manager's Allied coverage request (migration
+ * 20260729000010). Its payload carries `request_id`, which is what the Respond sheet opens.
+ */
+const val TYPE_ALLIED_COVERAGE: String = "hmod_urgent"
+
+/** Body copy for a coverage request. No em/en dashes (surfaced text). */
+private fun alliedCoverageBody(
+    houseName: String?,
+    windowLabel: String?,
+): String {
+    val where = houseName ?: "a desk"
+    val when_ = windowLabel?.let { " for $it" } ?: ""
+    return "$where needs Allied coverage$when_. Tap to respond."
+}
 
 /** Body copy for a ladder alert. No em/en dashes (surfaced text). */
 private fun alliedPageBody(deskPhone: String?): String =
@@ -83,11 +121,17 @@ fun notificationFromPayload(
     unread: Boolean,
     alliedPageBlockId: String? = null,
     deskPhone: String? = null,
+    coverageRequestId: String? = null,
+    coverageHouseName: String? = null,
+    coverageWindowLabel: String? = null,
 ): NotificationItem {
     // An off-hours ladder alert (staggered-rollout pilot): a `allied_page` row carrying
     // `payload.block_id`. It is the actionable "call the desk" entry — urgent, and its
     // row opens the ack ("I've called the desk") that resolves the ladder.
     val isAlliedPage = rawType.lowercase() == TYPE_ALLIED_PAGE && alliedPageBlockId != null
+    // A manager's Allied coverage request: an `hmod_urgent` row carrying `payload.request_id`.
+    // Its row opens the Respond sheet, which acknowledges on open (BSpec §5.4a).
+    val isAlliedCoverage = rawType.lowercase() == TYPE_ALLIED_COVERAGE && coverageRequestId != null
     val isFloatAssigned = payloadKind == PAYLOAD_KIND_FLOAT_ASSIGNED
     val openable = isFloatAssigned && floatId != null
     return NotificationItem(
@@ -95,6 +139,7 @@ fun notificationFromPayload(
         category =
             when {
                 isAlliedPage -> NotificationCategory.ALLIED_PAGE
+                isAlliedCoverage -> NotificationCategory.ALLIED_COVERAGE
                 isFloatAssigned -> NotificationCategory.FLOAT
                 else -> categoryForType(rawType)
             },
@@ -102,6 +147,7 @@ fun notificationFromPayload(
             title
                 ?: when {
                     isAlliedPage -> "Call the desk for Allied coverage"
+                    isAlliedCoverage -> "Allied coverage needed"
                     isFloatAssigned -> "Float assignment"
                     else -> "Notification"
                 },
@@ -109,15 +155,19 @@ fun notificationFromPayload(
             body
                 ?: when {
                     isAlliedPage -> alliedPageBody(deskPhone)
+                    isAlliedCoverage -> alliedCoverageBody(coverageHouseName, coverageWindowLabel)
                     openable -> "You've been floated. Tap to acknowledge."
                     else -> ""
                 },
         createdAt = createdAt,
         unread = unread,
-        urgent = openable || isAlliedPage,
+        urgent = openable || isAlliedPage || isAlliedCoverage,
         floatId = if (openable) floatId else null,
         alliedPageBlockId = if (isAlliedPage) alliedPageBlockId else null,
-        deskPhone = if (isAlliedPage) deskPhone else null,
+        // The desk phone is useful on BOTH allied paths: the ladder alert says "call the
+        // desk", and the coverage Respond sheet dials Allied from the same number.
+        deskPhone = if (isAlliedPage || isAlliedCoverage) deskPhone else null,
+        coverageRequestId = if (isAlliedCoverage) coverageRequestId else null,
     )
 }
 
@@ -186,6 +236,12 @@ data class NotificationItem(
     val alliedPageBlockId: String? = null,
     /** The desk phone to call, shown on the ladder-alert row. */
     val deskPhone: String? = null,
+    /**
+     * Non-null → a manager's Allied coverage request (BSpec §5.4a): the REQUEST to respond
+     * to. Its row deep-links into the Coverage tab and opens the Respond sheet, which
+     * acknowledges on open.
+     */
+    val coverageRequestId: String? = null,
 )
 
 /** A fully-formatted Updates row — the UI renders this directly. */
@@ -211,6 +267,10 @@ data class NotificationRow(
     val alliedPageBlockId: String? = null,
     /** The desk phone to call, shown on the ladder-alert row. */
     val deskPhone: String? = null,
+    /** This row is a manager Allied coverage request; tapping it opens the Respond sheet. */
+    val opensCoverage: Boolean = false,
+    /** The coverage request to respond to. */
+    val coverageRequestId: String? = null,
 )
 
 /**
@@ -266,6 +326,8 @@ fun NotificationItem.toRow(
         opensAlliedPage = alliedPageBlockId != null,
         alliedPageBlockId = alliedPageBlockId,
         deskPhone = deskPhone,
+        opensCoverage = coverageRequestId != null,
+        coverageRequestId = coverageRequestId,
     )
 
 /**

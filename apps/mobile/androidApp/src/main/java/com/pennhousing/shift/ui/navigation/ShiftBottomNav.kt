@@ -40,20 +40,43 @@ private data class BarItem(
     val anchor: OnboardingTarget,
 )
 
+/**
+ * Every bar item this app can render, keyed by destination. The BAR ORDER comes from the
+ * caller's list (see `ShiftDestination.bottomBarFor`), not from this map, so a role's bar can
+ * be reordered without touching the presentation.
+ */
 private val BAR_ITEMS =
-    listOf(
-        BarItem(ShiftDestination.MyShifts, ShiftIcons.Calendar, "My Shifts", "tab_my_shifts", OnboardingTarget.MY_SHIFTS_TAB),
-        BarItem(ShiftDestination.OpenShifts, ShiftIcons.Plus, "Open", "tab_open_shifts", OnboardingTarget.OPEN_TAB),
-        BarItem(ShiftDestination.House, ShiftIcons.Building, "House", "tab_house", OnboardingTarget.HOUSE_TAB),
-        BarItem(ShiftDestination.Swaps, ShiftIcons.Refresh, "Swaps", "tab_swaps", OnboardingTarget.SWAPS_TAB),
+    mapOf<ShiftDestination, BarItem>(
+        ShiftDestination.MyShifts to
+            BarItem(ShiftDestination.MyShifts, ShiftIcons.Calendar, "My Shifts", "tab_my_shifts", OnboardingTarget.MY_SHIFTS_TAB),
+        ShiftDestination.OpenShifts to
+            BarItem(ShiftDestination.OpenShifts, ShiftIcons.Plus, "Open", "tab_open_shifts", OnboardingTarget.OPEN_TAB),
+        ShiftDestination.House to
+            BarItem(ShiftDestination.House, ShiftIcons.Building, "House", "tab_house", OnboardingTarget.HOUSE_TAB),
+        ShiftDestination.Swaps to
+            BarItem(ShiftDestination.Swaps, ShiftIcons.Refresh, "Swaps", "tab_swaps", OnboardingTarget.SWAPS_TAB),
+        ShiftDestination.Coverage to
+            BarItem(ShiftDestination.Coverage, ShiftIcons.Warning, "Coverage", "tab_coverage", OnboardingTarget.HOUSE_TAB),
+        ShiftDestination.Hours to
+            BarItem(ShiftDestination.Hours, ShiftIcons.Clock, "Hours", "tab_hours", OnboardingTarget.HOUSE_TAB),
     )
 
 /**
- * The Material 3 bottom navigation bar (BEHAVIORAL_SPECIFICATION §5.6). Four frequent
- * destinations — My Shifts, Open, House, Swaps — plus a "More" item that opens the
- * overflow sheet for the rest (Updates, Preferences, Break shifts, Settings). The unread
- * dot rides on "More" since Updates now lives inside it. Selectors: `tab_my_shifts` /
- * `tab_open_shifts` / `tab_house` / `tab_swaps`, plus `tab_more`.
+ * The Material 3 bottom navigation bar (BEHAVIORAL_SPECIFICATION §5.6; manager variants in
+ * docs/manager-app/SPEC.md §6).
+ *
+ * Four destinations plus a "More" item that opens the overflow sheet for the rest. WHICH four
+ * depends on the signed-in user's role, which is why [bar] is a parameter rather than a
+ * constant: a worker gets My Shifts / Open / House / Swaps, a manager gets Coverage / House /
+ * Open / My Shifts. The unread dot rides on "More" since Updates lives inside it.
+ *
+ * [coverageBadgeCount] is the count of Allied coverage requests still needing a human. It
+ * renders as a NUMBERED badge on the Coverage item rather than a plain dot, because "three
+ * desks are about to be empty" is a materially different message from "something happened",
+ * and it is the one number in this app a manager must be able to read at a glance.
+ *
+ * Selectors: `tab_my_shifts` / `tab_open_shifts` / `tab_house` / `tab_swaps` / `tab_coverage`
+ * / `tab_hours`, plus `tab_more`.
  */
 @Composable
 internal fun ShiftBottomNav(
@@ -61,6 +84,8 @@ internal fun ShiftBottomNav(
     hasUnread: Boolean,
     onSelect: (ShiftDestination) -> Unit,
     onMore: () -> Unit,
+    bar: List<ShiftDestination> = ShiftDestination.BOTTOM_BAR,
+    coverageBadgeCount: Int = 0,
 ) {
     val c = ShiftTheme.colors
     val colors =
@@ -72,20 +97,30 @@ internal fun ShiftBottomNav(
             unselectedTextColor = c.ter,
         )
     NavigationBar(containerColor = c.surface, tonalElevation = 0.dp) {
-        BAR_ITEMS.forEach { item ->
+        bar.mapNotNull { BAR_ITEMS[it] }.forEach { item ->
+            val badge = if (item.destination == ShiftDestination.Coverage) coverageBadgeCount else 0
             NavigationBarItem(
                 selected = current == item.destination,
                 onClick = { onSelect(item.destination) },
-                icon = { Icon(item.icon, contentDescription = null) },
+                icon = {
+                    if (badge > 0) {
+                        BadgedBox(badge = { Badge { Text(badge.toString()) } }) {
+                            Icon(item.icon, contentDescription = null)
+                        }
+                    } else {
+                        Icon(item.icon, contentDescription = null)
+                    }
+                },
                 label = { Text(item.label, maxLines = 1) },
                 colors = colors,
                 modifier = Modifier.testTag(item.tag).onboardingAnchor(item.anchor),
             )
         }
         NavigationBarItem(
-            // Lit for the episodic destinations that live behind the sheet. Assistant is
+            // Lit for the episodic destinations that live behind the sheet, minus anything
+            // this role's bar already carries (or two items would light at once). Assistant is
             // reachable from the sheet but deliberately does not light this up.
-            selected = current in ShiftDestination.MORE_SELECTS,
+            selected = current in ShiftDestination.moreSelects(bar),
             onClick = onMore,
             icon = {
                 if (hasUnread) {

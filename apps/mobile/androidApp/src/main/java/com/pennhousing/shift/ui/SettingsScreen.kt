@@ -16,8 +16,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,12 +37,12 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pennhousing.shift.shared.settings.NotificationChannel
 import com.pennhousing.shift.shared.settings.NotificationPreferences
-import com.pennhousing.shift.shared.settings.SHIFT_REMINDER_LEAD_TIMES
-import com.pennhousing.shift.shared.settings.shiftReminderLabel
 import com.pennhousing.shift.shared.settings.NotificationRowModel
+import com.pennhousing.shift.shared.settings.SHIFT_REMINDER_LEAD_TIMES
 import com.pennhousing.shift.shared.settings.SettingsProfile
 import com.pennhousing.shift.shared.settings.THEME_CHOICES
 import com.pennhousing.shift.shared.settings.label
+import com.pennhousing.shift.shared.settings.shiftReminderLabel
 import com.pennhousing.shift.shared.viewmodel.SettingsViewModel
 import com.pennhousing.shift.ui.kit.SegmentedControl
 import com.pennhousing.shift.ui.kit.ShiftIcons
@@ -161,17 +161,6 @@ fun SettingsTabContent(
         }
 
         item {
-            SettingsGroup("Hours & limits") {
-                SettingsRow(icon = ShiftIcons.Tune, tint = MaterialTheme.colorScheme.primary, title = "Weekly soft cap") {
-                    CapValue(state.hours.softCapLabel)
-                }
-                SettingsRow(icon = ShiftIcons.Ban, tint = c.danger.accent, title = "Break-period hard cap", last = true) {
-                    CapValue(state.hours.hardCapLabel)
-                }
-            }
-        }
-
-        item {
             SettingsGroup("Account") {
                 SettingsRow(
                     icon = ShiftIcons.Person,
@@ -261,7 +250,7 @@ fun SettingsTabContent(
 
         item {
             Text(
-                "Shift@PennHousing · v${state.appVersion}",
+                "SHIFT · v${state.appVersion}",
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 color = c.ter,
                 style = ShiftTheme.type.monoId.copy(fontSize = 11.5.sp),
@@ -363,7 +352,13 @@ private fun SettingsRow(
             trailing?.invoke()
         }
         if (!last) {
-            Box(Modifier.fillMaxWidth().padding(start = 57.dp).height(1.dp).background(c.divider))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 57.dp)
+                    .height(1.dp)
+                    .background(c.divider),
+            )
         }
     }
 }
@@ -442,7 +437,13 @@ private fun ShiftReminderSettingRow(
         }
         // Same inset rule the other rows use, so the group reads as one list.
         if (!last) {
-            Box(Modifier.fillMaxWidth().padding(start = 57.dp).height(1.dp).background(c.divider))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 57.dp)
+                    .height(1.dp)
+                    .background(c.divider),
+            )
         }
     }
 }
@@ -485,15 +486,4 @@ private fun notificationVisual(channel: NotificationChannel): Pair<ImageVector, 
         NotificationChannel.OPEN_SHIFTS_OTHER_HOUSES -> ShiftIcons.Building to c.ter
         NotificationChannel.GENERAL_UPDATES -> ShiftIcons.Bell to c.ter
     }
-}
-
-/** A mono cap value (e.g. "20h") for the Hours & limits rows. */
-@Composable
-private fun CapValue(label: String) {
-    Text(
-        label,
-        style = ShiftTheme.type.monoId.copy(fontSize = 14.sp),
-        color = ShiftTheme.colors.sec,
-        fontWeight = FontWeight.SemiBold,
-    )
 }

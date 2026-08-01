@@ -60,7 +60,7 @@ private val pushJson = Json { ignoreUnknownKeys = true }
 fun pushDisplayFromData(
     type: String?,
     payloadJson: String?,
-    appName: String = "Shift@PennHousing",
+    appName: String = "SHIFT",
 ): PushDisplay {
     val payload =
         payloadJson?.let { raw ->

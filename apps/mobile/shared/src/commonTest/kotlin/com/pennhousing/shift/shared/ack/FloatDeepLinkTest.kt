@@ -59,11 +59,11 @@ class FloatDeepLinkTest {
 
     @Test fun unparseable_payload_never_displays_blank() {
         val d = pushDisplayFromData("ack_reminder", "{not json")
-        assertEquals("Shift@PennHousing", d.title)
+        assertEquals("SHIFT", d.title)
         assertEquals("ack_reminder", d.body)
         assertNull(d.floatId)
         val empty = pushDisplayFromData(null, null)
-        assertEquals("Shift@PennHousing", empty.title)
+        assertEquals("SHIFT", empty.title)
         assertNull(empty.floatId)
     }
 }

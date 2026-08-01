@@ -1,6 +1,5 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, useSyncExternalStore, useTransition } from 'react';
 
 import {
@@ -10,6 +9,7 @@ import {
   type OrchestratorTickSummary,
   type TickCoverage,
 } from '../lib/actions/devClock';
+
 import { TickResultCard } from './TickResultCard';
 
 type LastTick = { summary: OrchestratorTickSummary; coverage: TickCoverage };
@@ -33,8 +33,12 @@ function readStoredLastTick(): LastTick | null {
 // broadcast, T-2h float lookup, HMOD escalation, T-15m no-ack) fire as simulated
 // time crosses each boundary. Rendered only in non-production builds.
 //
-// The current offset arrives as a prop (server-read each render); after a change
-// we router.refresh() so the prop re-flows rather than mirroring it into state.
+// The current offset arrives as a prop (server-read each render); every action here
+// calls revalidatePath('/', 'layout') server-side, and Next streams the re-rendered
+// tree back as part of the action response, so the prop re-flows on its own. Do NOT
+// add a router.refresh() on top of that: it is a SECOND full RSC fetch of the same
+// tree, and it is what made one button press re-render the whole admin shell twice
+// (four times for set-clock-then-tick) against a hosted database.
 // Live "now" comes from the ticking `nowMs` state, never a render-time Date.now().
 
 const SECOND = 1000;
@@ -80,7 +84,6 @@ function getTickServerSnapshot(): number {
 }
 
 export function DevClockCard({ offsetSeconds }: { offsetSeconds: number }) {
-  const router = useRouter();
   const ref = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [pick, setPick] = useState('');
@@ -125,7 +128,6 @@ export function DevClockCard({ offsetSeconds }: { offsetSeconds: number }) {
         return;
       }
       setOpen(false);
-      router.refresh();
     });
   }
 
@@ -142,7 +144,6 @@ export function DevClockCard({ offsetSeconds }: { offsetSeconds: number }) {
         return;
       }
       setOpen(false);
-      router.refresh();
     });
   }
 
@@ -163,8 +164,6 @@ export function DevClockCard({ offsetSeconds }: { offsetSeconds: number }) {
       } catch {
         // ignore storage failures
       }
-      // The action revalidated the layout; pull the refreshed board into view.
-      router.refresh();
     });
   }
 
@@ -303,8 +302,10 @@ export function DevClockCard({ offsetSeconds }: { offsetSeconds: number }) {
 
           <div style={{ fontWeight: 600, fontSize: 13 }}>Orchestrator</div>
           <div style={{ fontSize: 11, color: 'var(--text-muted, #6b7280)', lineHeight: 1.4 }}>
-            Runs the escalation tick now (it auto-runs every minute). Set the clock into a boundary,
-            then tick to fire broadcast / float lookup / no-ack void at the simulated instant.
+            Runs the escalation tick now. Set the clock into a boundary, then tick to fire broadcast
+            / float lookup / no-ack void at the simulated instant. It also auto-runs every minute
+            wherever the orchestrator-tick cron is registered (check verify_scheduled_jobs; local
+            dev deliberately has no cron and is manual-only).
           </div>
           <button
             type="button"

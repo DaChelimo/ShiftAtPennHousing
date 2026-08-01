@@ -122,8 +122,8 @@ fun ComponentGallery(modifier: Modifier = Modifier) {
         }
         ShiftSection("Dropped", isEmpty = true) {}
         Column {
-            KeyValueRow("Weekly soft cap", value = "20h")
-            KeyValueRow("Break hard cap", value = "40h", last = true)
+            KeyValueRow("Home house", value = "Harnwell")
+            KeyValueRow("Role", value = "Student Worker", last = true)
         }
 
         GroupTitle("Controls")

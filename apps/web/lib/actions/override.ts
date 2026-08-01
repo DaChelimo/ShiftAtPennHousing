@@ -10,12 +10,15 @@ import type { ActionResult } from './builder';
 
 // S1 — Admin override (BSpec §4.3 Phase-3, §11.1). Live inline assign / reassign /
 // remove on a published block, this-week-vs-permanent, with a soft-advisory confirm.
+// A `this_week` seat of ANY age — past, started, or future — is editable (D1,
+// amended 2026-07-29); only the schedule-write authz gate below still applies.
 //
 // The authoritative enforcement is the SQL RPC (admin_assign_worker /
-// admin_remove_worker, migration 20260606000001) — SECURITY DEFINER, called via the
-// service client (same authorized pattern as publishScheduleAction). These actions
-// add the web-layer authz gate (canBuildSchedule + admin-house match) and translate
-// the snake_case RAISE reasons / the soft-confirm signal into the UI shape.
+// admin_remove_worker, migration 20260606000001, past-edit amendment
+// 20260729000001) — SECURITY DEFINER, called via the service client (same
+// authorized pattern as publishScheduleAction). These actions add the web-layer
+// authz gate (canBuildSchedule + admin-house match) and translate the
+// snake_case RAISE reasons / the soft-confirm signal into the UI shape.
 
 export type OverrideScope = 'this_week' | 'permanent';
 
@@ -45,7 +48,8 @@ function friendlyMessage(raw: string): string {
       'That worker’s home house is not this house. Cross-house placement uses pickup/float, not override.',
     user_inactive: 'That worker is inactive and cannot be assigned.',
     worker_inactive: 'That worker is inactive and cannot be assigned.',
-    block_started: 'That shift has already started — it can no longer be edited.',
+    no_future_occurrences:
+      'No future occurrence of this slot remains this term to apply the pattern to.',
     float_committed:
       'This seat is committed to a float. Use the float decline / void controls instead.',
     seat_not_assignable: 'This seat cannot be assigned directly.',

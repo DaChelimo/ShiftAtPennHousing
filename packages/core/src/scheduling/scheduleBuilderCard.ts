@@ -13,7 +13,10 @@
 // target − assigned (may be ≤ 0); D4 wouldExceedTarget ⇔ assigned + spanHours > target
 // (STRICT, same in both phases); D5 Phase-2 downgrades cannot+optedOut to advisories over
 // every worker (missing/none → no advisory); D6 cannot before opted_out; D7 validateDragSpan
-// checks size (2..12) before strict 30-min contiguity.
+// checks size (2..12) before strict 30-min contiguity; D8 (2026-07-29) an RSM sitting at
+// their own house's desk is hours-cap-exempt in both phases and, in Phase 1, is routed
+// straight into `available` rather than through phase-04 grouping (which has no preference
+// rows to key off for them and would otherwise mark them permanently `blocked: missing`).
 
 import {
   groupWorkersForSpan,
@@ -63,6 +66,11 @@ export type WorkerScheduleInfo = {
   assignedHours: number; // hours already assigned THIS week
   targetHours: number; // submitted target (0..cap)
   optedOut: boolean; // period_targets.opted_out — the "no hours" button
+  // The house's RSM sitting at their own desk (2026-07-29): not a capped student
+  // worker, so exempt from every hours check (hard cap, soft cap, over-target) and
+  // from the Phase-1 preference gate (they never submit preferences). Absent/false
+  // for every other worker.
+  isRsm?: boolean;
 };
 
 // ----- Phase 1 (Preference-Assisted) -----
@@ -74,6 +82,7 @@ export type Phase1Entry = {
   hoursRemaining: number; // targetHours − assignedHours (may be ≤ 0)
   selectable: boolean; // false iff status === 'blocked'
   wouldExceedTarget: boolean; // assignedHours + spanHours > targetHours (strict)
+  isRsm?: boolean; // hours-cap-exempt desk-sitting RSM; UI suppresses hours copy
 };
 
 export type Phase1Card = {
@@ -97,8 +106,15 @@ export function buildPhase1Card(
 ): Phase1Card {
   const spanHours = span.length * HOURS_PER_BLOCK;
   const byId = infoById(workers);
+
+  // An RSM never submits preferences, so routing them through phase-04's grouping
+  // would always land them in `blocked: missing` — the opposite of "always able to
+  // sit at their own desk". Route them straight into `available` instead.
+  const rsmWorkers = workers.filter((w) => w.isRsm === true);
+  const gradedWorkers = workers.filter((w) => w.isRsm !== true);
+
   const grouping = groupWorkersForSpan(
-    workers.map((w) => w.worker),
+    gradedWorkers.map((w) => w.worker),
     span,
     preferences,
   );
@@ -121,9 +137,21 @@ export function buildPhase1Card(
     return blockedReason === undefined ? base : { ...base, blockedReason };
   };
 
+  const rsmEntries: Phase1Entry[] = rsmWorkers.map((info) => ({
+    worker: info.worker,
+    status: 'available',
+    hoursRemaining: 0,
+    selectable: true,
+    wouldExceedTarget: false,
+    isRsm: true,
+  }));
+
   return {
     preferred: grouping.preferred.map((g) => toEntry(g.worker, 'preferred', undefined)),
-    available: grouping.available.map((g) => toEntry(g.worker, 'available', undefined)),
+    available: [
+      ...grouping.available.map((g) => toEntry(g.worker, 'available', undefined)),
+      ...rsmEntries,
+    ],
     blocked: grouping.blocked.map((g) => toEntry(g.worker, 'blocked', g.blockedReason)),
   };
 }
@@ -140,6 +168,7 @@ export type Phase2Entry = {
   hoursRemaining: number;
   advisories: Phase2Advisory[]; // advisory only — never excludes / disables
   wouldExceedTarget: boolean;
+  isRsm?: boolean; // hours-cap-exempt desk-sitting RSM; UI suppresses hours copy
 };
 
 function compareByName(left: Phase2Entry, right: Phase2Entry): number {
@@ -167,6 +196,20 @@ export function buildPhase2Roster(
   }
 
   const roster = workers.map((info) => {
+    // An RSM sitting at their own desk is exempt from every advisory and the
+    // hours cap (2026-07-29): no cannot/opted-out rows exist for them anyway
+    // (they never submit preferences), and over-target never applies.
+    if (info.isRsm === true) {
+      return {
+        worker: info.worker,
+        assignedHours: info.assignedHours,
+        hoursRemaining: 0,
+        advisories: [],
+        wouldExceedTarget: false,
+        isRsm: true,
+      } satisfies Phase2Entry;
+    }
+
     const workerPrefs = prefsByWorker.get(info.worker.userId);
     const advisories: Phase2Advisory[] = [];
 

@@ -2,6 +2,7 @@ import { ActionInbox } from '../../../components/inbox/ActionInbox';
 import { Notification } from '../../../components/ui/Notification';
 import { PageHead } from '../../../components/ui/PageHead';
 import { canBuildSchedule, getSessionUser } from '../../../lib/auth';
+import { getCoverageData } from '../../../lib/data/coverage';
 import { getInboxData } from '../../../lib/data/inbox';
 import { simNow } from '../../../lib/time/simClock';
 
@@ -25,6 +26,7 @@ export default async function InboxPage() {
     );
   }
 
-  const data = await getInboxData(await simNow());
-  return <ActionInbox data={data} />;
+  const now = await simNow();
+  const [data, coverage] = await Promise.all([getInboxData(now), getCoverageData(now)]);
+  return <ActionInbox data={data} coverage={coverage} />;
 }

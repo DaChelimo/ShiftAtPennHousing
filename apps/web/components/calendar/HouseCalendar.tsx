@@ -6,11 +6,12 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import './calendar.css';
 
 import type { CalendarModel, CalShift } from '../../lib/data/calendar';
-import { EmptyState, Icon, IconButton, StatusLegend, Tag } from '../ui';
+import { EmptyState, Icon, IconButton, Tag } from '../ui';
 
 import { DayColumn, GutterTicks, SplitDay, useNowBlock } from './Grid';
 import { ShiftDetailPanel } from './ShiftDetailPanel';
 import { WeekPicker } from './WeekPicker';
+import { useWriteStatusToasts, WriteStatusToastStack } from './WriteStatusToasts';
 import { addDaysKey, fmtRange, relWeekLabel } from './format';
 
 export function HouseCalendar({
@@ -33,6 +34,7 @@ export function HouseCalendar({
   const weekScrollRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const nowBlock = useNowBlock(model.dayStartMin, model.blocksPerDay);
+  const writeToasts = useWriteStatusToasts();
 
   // When a shift is opened in week view, scroll its day column up to just right
   // of the sticky time gutter so it sits in the area beside the inset panel
@@ -163,10 +165,6 @@ export function HouseCalendar({
         </div>
       </div>
 
-      <div style={{ margin: '0 24px 10px' }}>
-        <StatusLegend />
-      </div>
-
       {model.isPast && model.hasBlocks && (
         <div className="cal-banner">
           <Icon name="clock" size={16} />
@@ -257,8 +255,11 @@ export function HouseCalendar({
             setSelected(null);
             router.refresh();
           }}
+          onWriteStatus={writeToasts.report}
         />
       )}
+
+      <WriteStatusToastStack toasts={writeToasts.toasts} onDismiss={writeToasts.dismiss} />
     </div>
   );
 }

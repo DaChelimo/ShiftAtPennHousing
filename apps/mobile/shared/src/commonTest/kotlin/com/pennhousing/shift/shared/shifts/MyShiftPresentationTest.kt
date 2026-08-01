@@ -109,7 +109,8 @@ class MyShiftPresentationTest {
         assertEquals("of 20h soft cap", s.capLabel)
     }
 
-    @Test fun weekly_summary_break_hard_cap() = assertEquals("of 40h hard cap", weeklyHoursSummary(30.0, breakProfile = true).capLabel)
+    @Test fun weekly_summary_break_hard_cap() =
+        assertEquals("of 40h hard cap", weeklyHoursSummary(30.0, WeeklyCap(40.0, CapEnforcement.HARD)).capLabel)
 
     // ----- row builder -----
 

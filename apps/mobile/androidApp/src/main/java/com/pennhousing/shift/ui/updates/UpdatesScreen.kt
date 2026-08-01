@@ -152,6 +152,10 @@ internal fun NotificationCard(
             NotificationCategory.SWAP -> ShiftIcons.Refresh to c.floatIn.accent
             NotificationCategory.INFO -> ShiftIcons.Bell to c.pickupDot
             NotificationCategory.ALLIED_PAGE -> ShiftIcons.Warning to c.floatOut.accent
+            // A manager's Allied coverage request (BSpec §5.4a) — the danger accent, not the
+            // float accent, because a desk goes EMPTY unless a human acts. This row used to
+            // fall through to the INFO bell; see docs/manager-app/SPEC.md §3.1.
+            NotificationCategory.ALLIED_COVERAGE -> ShiftIcons.Warning to c.danger.accent
         }
     val shape = RoundedCornerShape(14.dp)
     var box = Modifier.fillMaxWidth().clip(shape).background(if (row.urgent) c.floatSoft else c.surface)

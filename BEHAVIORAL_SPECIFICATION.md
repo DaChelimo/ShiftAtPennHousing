@@ -136,6 +136,7 @@ Every house has a Residential Services Manager. The RSM is a university employee
 
 - **The RSM holds every power an HM holds, with one exception: an RSM can never serve as HMOD.** They build and override the schedule, force-trigger float lookups, administer their house's people, modify the weekly hours cap, and go on leave — all the HM administrative powers — but they are never placed on the HMOD rotor and are never a valid HMOD-transfer target (see §2.5/§2.6).
 - **The RSM holds shift assignments like an HM.** An RSM may work scheduled shifts at their home desk and pick up open shifts (per the standard eligibility matrix). Like an HM, an RSM is never automatically floated by the system and never receives broadcast notifications.
+- **The RSM can be assigned to their own desk from the schedule builder (added 2026-07-29).** In both builder phases (Section 4.3) and in post-publish manual override, the house's RSM appears in the roster as an assignable worker alongside student workers, so the schedule-building SM/HM/BM/RSM can put them on the desk directly when the house needs it (Gregory and Harnwell were the driving cases, but this applies to any house). The RSM is exempt from every hours check when assigned this way: no hard cap, no soft-cap advisory, and no over-target warning, since they are salaried admin rather than a capped student worker. This assignment is scoped to the RSM's own house only; an RSM cannot be builder-assigned to a desk at another house.
 - **The RSM has read-only visibility into every house.** An RSM may view the live schedule and coverage of any of the 13 houses (e.g., the DuBois RSM may view the Rodin schedule), but may **not** make changes to a house other than their own. Every write the RSM performs — overrides, builder edits, people admin, leave, cap — remains scoped to their own house; cross-house access is view-only.
 
 In administrative contexts where this document says "HM," the RSM holds the same power **except HMOD duty**. Where the routing of a notification differs (the RSM, not the HM, is the in-working-hours contact), it is called out explicitly in §10.1.
@@ -174,6 +175,10 @@ The HMOD does not receive a stacked digest of events — only real-time notifica
 An HM or BM may indicate one or more days of leave by selecting dates in the system. When leave is set:
 
 1. The system designates a replacement for the leave period. By default, the replacement is the same house's BM (if an HM is going on leave) or HM (if a BM is going on leave). The user may instead select any other HM or BM in the system as their replacement, in which case the user is responsible for verbally confirming the replacement's availability before submission.
+
+   **The picker opens on the user's own house.** Because the same house's other manager is the intended replacement in the ordinary case, the picker initially offers only the user's own-house managers plus the project administrator (the guaranteed terminal, never hidden). Managers at other houses are offered on request, in one action, and remain fully selectable: item 7 below requires a different house when a house's HM and BM are both out on the same date.
+
+   **Known conflicts are flagged.** For each candidate, the picker states whether that candidate is themselves on active leave over the dates the user has entered, and names the conflicting dates. Selecting a conflicting candidate is not blocked (the user may have arranged cover directly), but the system warns before submission. This is an aid, not a substitute: the user remains responsible for verbally confirming availability. Candidates whose own leave cover routes back through the user are omitted entirely, per the cycle-prevention rule in item 4.
 
 2. If the user being placed on leave is currently the HMOD-of-the-week (or scheduled to be during their leave dates), the replacement also assumes HMOD duty for those dates. Because HMOD runs from Friday 08:00 to the following Friday 07:59 and includes the weekend at the start of the duty week, an HM whose HMOD week is the leave period needs a replacement whose availability includes the weekend.
 
@@ -387,6 +392,8 @@ Each worker entry shows their name, their span status (preferred, available, or 
 
 If assigning a worker would push them over their target hours, the system displays a warning popup. The SM may dismiss the warning and continue. The 20-hour cap during regular school year is soft and overridable.
 
+**The house's RSM (Section 2.3a) is included in this card too, but is never grouped by preference and never carries an hours warning.** An RSM never submits shift preferences, so rather than being marked "blocked: no preference submitted," they always appear as an available, selectable worker. Assigning the RSM never triggers the target-hours warning popup, in either phase.
+
 **Phase 2: Manual Override**
 
 After the preference-assisted build, the SM enters a manual editing phase. In this phase, the drag-picker still works but the card behavior changes: when the SM drags a span, the card shows every worker in the house, sorted by name, with their total assigned hours. The card has a search bar for finding specific workers and is height-clipped with scrolling. The SM can assign any worker to any span, regardless of preferences. This phase is for handling cases the preference-assisted phase cannot.
@@ -397,7 +404,9 @@ The Phase-1 hard constraints (a worker's "cannot" markings, and a worker's "no h
 
 When the SM publishes the schedule, it becomes live. Workers can see their assignments. The schedule is the source of truth from this moment forward.
 
-The SM retains override capability after publishing. The SM can add workers to shifts, remove workers from shifts, and reassign blocks at any point during the period. The same card UI from Phase 2 (full house roster, search bar) is used for these post-publish edits. HMs share these same override capabilities.
+The SM retains override capability after publishing. The SM can add workers to shifts, remove workers from shifts, and reassign blocks at any point during the period. The same card UI from Phase 2 (full house roster, search bar) is used for these post-publish edits. HMs, BMs, RSMs, and admins share these same override capabilities (SM is own-house only; HM/BM/RSM/admin may override any house, Section 13).
+
+**A shift of any age — already underway, or entirely in the past, with no time limit — may be edited (amended 2026-07-29).** This is an admin correction power, not a worker claim: it carries no T-2h cutoff in either direction, and it is distinct from the "worker cannot claim a shift within 2 hours of its start" rule (Section 5.3), which governs claim eligibility, not manager override. Every other override rule is unchanged by this: an override still cannot touch a float-committed seat (use the float decline/void controls instead, Section 6), cannot place a worker across houses (cross-house placement uses pickup/float, not override), and the 40-hour hard weekly cap is still absolute and never bypassable.
 
 ### 4.4 Claim-Based Scheduling for Winter Break and Short Breaks
 
@@ -483,6 +492,8 @@ The permanent openings feed is always visible to all SWs at the affected house, 
 
 A permanently-dropped slot's individual weekly occurrences still surface in the **weekly feed** as they cross the 30-day horizon, where they undergo standard escalation. The permanent openings feed exists in parallel so that workers can claim the entire remaining recurrence in one action rather than picking it up week-by-week.
 
+**Which days carry a recurring slot (widened 2026-07-29).** A permanent opening exists on any **schedule-built** operating day, which means both regular-school-year terms and summer seasons. Claim-based days (breaks) are excluded, because a break has no recurring slot to pick up — its shifts are claimed individually. This was previously limited to regular-school-year days, which left a season's recurring slots pickable only one week at a time. The rule that the feed must never advertise a recurrence the pickup cannot take (Section 8.4.3) is unchanged; both sides moved together.
+
 A slot is removed from the permanent openings feed when:
 
 - Another worker permanently picks it up (Section 8.4).
@@ -519,6 +530,8 @@ Temporary drop rules:
 A drop horizon of 30 days governs only whether the dropped shift appears in the weekly feed; drops of regular-schedule shifts more than 30 days in advance are accepted and held until the 30-day horizon is reached. Break shifts may only be dropped during the claim phase or after the shift enters the open-shifts feed (T-1d onward); they cannot be dropped before T-14d because they do not exist as claimable shifts until then. Permanent drops do not apply during break profiles.
 
 When a worker temporarily drops a shift, the dropped block(s) enter the weekly feed if within 30 days of starting (or, for break shifts dropped before T-1d, return to the calendar claim pool). The drop triggers the escalation chain based on the shift's start time.
+
+The drop ALSO notifies every other worker who could claim the seat, immediately (Section 10.1). This is independent of the escalation chain and of the 30-day feed horizon: the notification is sent when the drop happens, however far off the shift is. The same applies to a permanent drop (Section 8.4), which sends one notification describing the recurring slot rather than one per occurrence.
 
 ### 5.3 Claiming an Open Shift
 
@@ -610,13 +623,44 @@ When a shift is open (unclaimed), it progresses through a timed escalation chain
 
    The float lookup attempts to assign one or more floaters following the rules in Section 6. If a floater is identified, they are automatically assigned with no human approval step. If no floater is identified, the system proceeds to step 3 immediately.
 
-3. **T-2 hours (on float lookup failure): HMOD Notification.** If float lookup returns no candidate, the HMOD is notified that Allied coverage is required. The notification contains the time of needed coverage and the house. The HMOD places the call to Allied. Allied coverage is the terminal step; once Allied is assigned, the gap is considered resolved. The window remains unpickable (Section 5.5); securing Allied does not re-open the empty seats for student pickup.
+3. **T-2 hours (on float lookup failure): Allied coverage request.** If float lookup returns no candidate, the system opens a tracked **Allied coverage request** and pages a manager. The request carries the house, the coverage window, and the reason. It escalates through a fixed three-rung ladder until a manager acknowledges it, and it can only leave a manager's active view when a human records what actually happened (Section 5.4a). A manager places the call to Allied. Allied coverage is the terminal step for the _shift_; once Allied is assigned the gap is covered, but the request itself stays open until it is closed out. The window remains unpickable (Section 5.5); securing Allied does not re-open the empty seats for student pickup.
 
 **Winter Break Profile**
 
 1. **T-3 hours: Broadcast.** Same as above. Only Harnwell workers receive these broadcasts during winter since only Harnwell operates.
 
 2. **T-2 hours: HMOD Notification.** No float lookup step exists in winter; the system goes directly to HMOD notification for Allied procurement.
+
+### 5.4a The Allied Coverage Request and Its Escalation Ladder
+
+_(Added 2026-07-29.)_
+
+The moment the escalation chain runs out of internal options, a desk is going to be empty unless a human procures Allied. That is the highest-consequence event this system produces, so it is tracked as an object with a lifecycle rather than as a single notification.
+
+**One request per contiguous uncovered stretch, per house.** The chain fires once per 30-minute block, so a four-hour empty window would otherwise page a manager eight separate times. Adjacent blocks are merged into one request covering the whole stretch, and merging does not re-page.
+
+**The ladder has exactly three rungs, in this order:**
+
+1. **Residential Services Manager** for the house.
+2. **Housing Manager** for the house (following the leave-delegation chain, Section 2.6).
+3. **Housing Manager on duty** (the campus HMOD rotor). This rung is **terminal**.
+
+If a rung has nobody reachable (no RSM for the house, the whole HM leave chain out, an empty rotor), that rung is **skipped immediately** rather than holding the request for its full timeout. If all three are unreachable, the request falls to the project administrator terminal contact (Section 2.6). The request is **never** fanned out to any other manager, and never to other houses' RSMs.
+
+A rung holds the request for `allied_ladder_rung_timeout_minutes` (Section 14). While it holds, the current recipient is re-paged every `allied_ladder_reminder_minutes` until they acknowledge. On the terminal rung there is nobody above to escalate to, so the request stays there and keeps reminding.
+
+**Acknowledging and closing are two different things, deliberately.**
+
+- **Acknowledging** means "I have seen this and I am handling it." It stops the ladder and stops the reminders. Any manager who can build for that house may acknowledge, not only the current rung holder: if an RSM picks up a request that has already passed to their HM, that is a good outcome.
+- **Closing out** means "here is what actually happened," and requires one of four outcomes: **Allied secured**, **Covered internally**, **Desk went unstaffed**, or **No longer needed**. Closing as _Desk went unstaffed_ additionally requires a written note.
+
+**An open request never clears itself.** Once its coverage window passes without a close-out, the request becomes **overdue** and stays visible until a human closes it. A request that was acknowledged but never closed also goes overdue. The system closes a request on its own in exactly one case: the coverage is no longer needed because the block was voided by a configuration change or the desk regained a worker, recorded as _No longer needed_.
+
+Every request closed as _Desk went unstaffed_, and every request that goes overdue, is a **missed-coverage incident** and appears in the coverage report for review.
+
+**A coverage status the system cannot read is never presented as quiet.** Because managers carry no push devices, open requests reach a human through a persistent alert shown on every page of the manager console while any request needs attention. Silence on that alert therefore means "every desk is accounted for," which makes a failed read the most dangerous thing this surface can hide. So if the coverage status cannot be loaded, the manager is told exactly that, with the same prominence as a real alert, and told that open requests may exist and are not being shown. It never resolves to an empty or all-clear state, and a failed read never removes the manager's ability to use the rest of the console.
+
+_(Amended 2026-07-29. This supersedes two earlier behaviors. First, the first contact used to be hours-dependent: the RSM during Housing Manager working hours, the HMOD outside them. The ladder now always starts at the RSM and reaches the HMOD as its third rung. The off-hours pilot ladder of Section 10.1b is unchanged and still pre-empts this ladder when it is switched on. Second, the alert used to fire exactly once, to exactly one person, with no reminder and no second recipient, and then archive itself when the coverage window ended whether or not anyone had acted, disappearing entirely a day later. A desk that went unstaffed left no record anywhere.)_
 
 ### 5.5 Escalation Is One-Way (with the Float-Drop Exception)
 
@@ -862,7 +906,7 @@ Permanent swaps apply only to SM-built schedules (regular school year). Permanen
 
 ### 8.4 Permanent Shift Drop and Permanent Shift Pickup
 
-The system supports two operations on recurring slots that affect every future occurrence within the current operating profile: **permanent drop** and **permanent pickup**. Both apply only under SM-built scheduling (regular school year); break profiles are claim-based, and each occurrence is owned individually with no recurring relationship.
+The system supports two operations on recurring slots that affect every future occurrence within the current operating profile: **permanent drop** and **permanent pickup**. Both apply only under SM-built scheduling — regular-school-year terms **and** summer seasons (widened 2026-07-29); break profiles are claim-based, and each occurrence is owned individually with no recurring relationship.
 
 #### 8.4.1 Permanent Drop
 
@@ -872,9 +916,13 @@ A worker who can no longer (or no longer wants to) work a recurring slot for the
 2. A popup asks: "Drop this week only, or drop permanently for the rest of the period?"
 3. If permanent is chosen, the system displays a confirmation summary: "You will drop all future occurrences of this recurring slot through [end of current profile]. This affects [N] future weeks." The worker confirms.
 
-On confirmation, the system performs an atomic bulk operation on every future occurrence of the recurring slot where the current owner is the dropping worker. Specifically: for every shift block assignment whose house, day-of-week, and block-start-time match the recurring slot, whose date is strictly after the moment of the drop, whose date is within the **current semester's regular school year period**, and whose current owner is the dropping worker, the assignment's user is removed and the block becomes vacant. The block is flagged as part of a permanent drop so that the permanent openings feed can identify it.
+On confirmation, the system performs an atomic bulk operation on every future occurrence of the recurring slot where the current owner is the dropping worker. Specifically: for every shift block assignment whose house, day-of-week, and block-start-time match the recurring slot, whose date is strictly after the moment of the drop, whose date is within the **current operating period** (a fall or spring semester, or a summer season — see the scope note below), and whose current owner is the dropping worker, the assignment's user is removed and the block becomes vacant. The block is flagged as part of a permanent drop so that the permanent openings feed can identify it.
 
-**Semester scope, not contiguous-profile-run scope.** "Current operating profile" here means the current semester's regular_school_year period — fall semester (or spring semester) in its entirety, **not** the contiguous run of regular_school_year dates between break interruptions. A permanent drop made in October continues through Thanksgiving and onward to the end of fall semester. Short breaks embedded within a semester (Thanksgiving, fall break, spring break, spring fling) are claim-based and do not have recurring slots, so they are naturally excluded from the drop's scope; the recurring slot resumes for regular_school_year dates after the break. The drop does **not** continue into the next semester: a fall-semester drop has no effect on spring semester, which is built fresh.
+**Whole-period scope, not contiguous-profile-run scope.** "Current operating profile" here means the current operating period in its entirety, **not** the contiguous run of same-profile dates between break interruptions. A permanent drop made in October continues through Thanksgiving and onward to the end of fall semester. Short breaks embedded within a period (Thanksgiving, fall break, spring break, spring fling) are claim-based and do not have recurring slots, so they are naturally excluded from the drop's scope; the recurring slot resumes for scheduled dates after the break. The drop does **not** continue into the next period: a fall-semester drop has no effect on spring semester, which is built fresh.
+
+**Summer seasons are in scope (corrected 2026-07-29).** A summer season is a schedule-built operating period like a semester, so a recurring summer slot is permanently droppable on the same terms, bounded by the season's end. This was previously specified — and implemented — as the current _regular school year_ period only, which made a summer recurrence impossible to drop: the attempt was refused as though the date lay outside the current period, and the shift was released to nobody.
+
+Permanent **pickup** is in scope for seasons on the same terms and in the same change, so giving and taking stay symmetric: any recurrence that can be permanently dropped can be permanently picked up. A season runs roughly ten weeks, and requiring a worker to claim the same slot nine separate times — or leaving them unable to offer it as a recurrence at all — is the cost that motivated this. The one exclusion that survives in both directions is a **claim-based day**: breaks carry no recurring slot, so they are neither dropped nor advertised.
 
 The operation skips:
 
@@ -999,6 +1047,11 @@ Each calendar week has a single hours cap that applies to that week for all work
 - A week containing one or more days of Thanksgiving, fall break, or spring break defaults to 40 hours (hard cap).
 - A week containing one or more days of spring fling (but no other break) defaults to 20 hours (soft cap).
 - A week straddling regular school year and a 40-hour break (Thanksgiving, fall, spring, winter) defaults to 40 hours (hard cap), on the safe side.
+- A week whose days belong to an **operating season** (for example summer) takes the cap and enforcement the administrator configured for that season, which may be any positive number of hours and either soft or hard. Where a week straddles two seasons, or a season and the school year, the most protective cap applies: the tightest hard cap if any day is hard, otherwise the tightest of the soft caps present.
+
+**The cap is not a fixed pair of values.** 20/soft and 40/hard are the school-year and break defaults, not the only possibilities. A season may set any cap, so no surface may assume the cap is one of two known numbers.
+
+**Every surface shows the cap the system resolved, for the week being shown.** The hours meters, the claim confirmation, the over-cap warnings, and any other place a cap appears all display the resolved cap for the relevant week, and a screen that lets the worker navigate between weeks updates the cap as they navigate. No app may compute or assume a cap of its own. Before the value has loaded, a surface may show the school-year default as a placeholder; because that placeholder is soft, it can only ever produce a warning the worker may proceed through, never a refusal of a claim the system would have allowed.
 
 **Manual cap modification.** An HM or BM (of any house) may modify the cap of any specific calendar week via the system-wide cap-modifier UI. The modification is global: it applies to all 13 houses simultaneously. The HM/BM may set a week to either 20 (soft, overridable) or 40 (hard, not overridable). This prevents redundant per-house configuration and ensures uniform enforcement across campus.
 
@@ -1027,7 +1080,15 @@ Notifications are routed by recipient role and urgency. The system does not deli
 
 **Personal notifications** (your own shift was dropped, you've been assigned a float, your acknowledgment is overdue) are sent immediately to the affected worker. These notifications are mandatory and cannot be silenced.
 
-**Open shift broadcasts** (T-3 hour notifications about an unclaimed shift) go to every worker who is eligible to claim that seat and who has not turned the channel off. Eligibility is the same rule the open-shifts feed uses: the worker is active, holds `sw`/`sm`/`hm`, is not a `bm`, and, for a Harnwell seat, is home-Harnwell (the training constraint applies to notifications as well as to assignment). A worker is notified about their OWN house by default and about OTHER houses only if they opted in (Section 10.1a).
+**A shift just opened** _(added 2026-07-29)_. The moment a worker drops a shift, every OTHER worker who could claim that seat is notified. This fires on the drop itself, at any distance from the shift, and it fires whether or not the desk still has another worker on it: a vacant seat is claimable regardless of coverage (Section 5.4), so the coverage floor governs escalation only and never this notification. The dropper is not notified about their own drop. One notification covers the whole dropped span, not one per 30-minute block, and a recurring (permanent) drop produces a single notification describing the weekly slot.
+
+For a worker's OWN house this notification is mandatory and cannot be turned off. For OTHER houses it is opt-in (Section 10.1a). Eligibility is the same rule the open-shifts feed uses: the worker is active, holds `sw`/`sm`/`hm`, is not a `bm`, and, for a Harnwell seat, is home-Harnwell. The training constraint outranks the opt-in: a worker who is not home-Harnwell is never told about a Harnwell seat even if they have opted into other houses, because they could never claim it.
+
+A seat whose block is already coverage-locked (Section 5.5) is not announced, because it is no longer claimable.
+
+**Open shift broadcasts** (T-3 hour notifications about an unclaimed shift) are a separate, later statement: not "someone gave this up" but "this is still uncovered with three hours to go." They fire from the escalation chain, only when the desk would otherwise be empty. They go to every worker who is eligible to claim that seat and who has not turned the channel off. Eligibility is the same as above. A worker is notified about their OWN house by default and about OTHER houses only if they opted in (Section 10.1a). Because the two notifications answer different questions, a worker may hear about the same seat twice; this is intended.
+
+_(Amended 2026-07-29. Before this date a drop wrote no notification at all. The only "a shift opened up" a worker could receive was the T-3 hour broadcast, which fires only for a desk that would otherwise be EMPTY, so on a multi-staffed desk such as Harnwell or Upper Quad a drop notified nobody, ever, and a shift dropped a week in advance sat silent until three hours before it started.)_
 
 _(Amended 2026-07-28. This notification previously rode on `broadcast_subscribed`, the "General updates / house-wide broadcasts" switch, which is opt-in and defaults to off, so in practice almost nobody was told that a shift had opened. `broadcast_subscribed` keeps its own separate meaning for house-wide announcements and no longer gates the shift-opened notification. HMs, RSMs and BMs still cannot subscribe to house-wide broadcasts: the toggle is not shown to them, the backend rejects the write, and an SM promoted to HM has their subscription revoked at the moment of role assignment.)_
 
@@ -1045,14 +1106,17 @@ A notification is configurable only when ignoring it costs the worker nothing. E
 - Preference-window events and their deadlines.
 - Schedule published.
 - Your own shift being dropped, removed, or cancelled by an operator or by a configuration change.
+- **A shift opening at your own house** _(added 2026-07-29)_. Coverage at your own desk is not optional information, so the instant "a shift just opened" notification for your home house has no off switch.
 
 **Configurable:**
 
-| Channel                     | Default           | Meaning                                                    |
-| --------------------------- | ----------------- | ---------------------------------------------------------- |
-| Shift reminders             | **1 hour before** | A heads-up before each of your own shifts (see below).     |
-| Open shifts at my house     | **On**            | Someone dropped a shift at your home house.                |
-| Open shifts at other houses | **Off**           | A shift you are eligible to pick up opened somewhere else. |
+| Channel                     | Default           | Meaning                                                                        |
+| --------------------------- | ----------------- | ------------------------------------------------------------------------------ |
+| Shift reminders             | **1 hour before** | A heads-up before each of your own shifts (see below).                         |
+| Open shifts at my house     | **On**            | The T-3 hour reminder that a seat at your home house is still uncovered.       |
+| Open shifts at other houses | **Off**           | Any shift you are eligible to pick up opening somewhere else, instant or T-3h. |
+
+_(The "Open shifts at my house" row was amended 2026-07-29 and this supersedes its earlier meaning. It used to read "Someone dropped a shift at your home house" and to govern every open-shift notification for the home house. It now governs the T-3 hour reminder ONLY; the instant drop notification for your own house became mandatory on the same date and is listed above. Turning this off means you stop hearing the last-chance nudge, not that you stop hearing about drops.)_
 
 The two open-shift channels are separate because they are different asks: your own house is coverage you are part of, another house is extra work you have volunteered to hear about. A worker who has never opened Settings behaves exactly like one who kept the defaults.
 
@@ -1216,7 +1280,7 @@ The system does not maintain a separate audit log of state changes. The calendar
 **Student Managers** can do everything an SW can do, plus, for their home house only:
 
 - Build the initial schedule (regular school year).
-- Override the live schedule, including temporary removal of a worker from a specific week's slot and permanent removal of a worker from a recurring slot for the rest of the operating profile. The manual override interface presents both options explicitly.
+- Override the live schedule, including temporary removal of a worker from a specific week's slot and permanent removal of a worker from a recurring slot for the rest of the operating profile. The manual override interface presents both options explicitly. This includes shifts that have already started or are entirely in the past, with no time limit (amended 2026-07-29, Section 4.3).
 - Initiate permanent shift swap requests.
 - Force-trigger a float lookup before T-2h.
 
@@ -1243,7 +1307,11 @@ Both HMs and BMs can:
 - Modify the global weekly hours cap for any calendar week.
 - Serve as HMOD on rotation.
 
-**Housing Manager On Duty** holds HM permissions across all 13 houses while on duty, with notifications routed per the HMOD schedule.
+**Housing Manager On Duty** holds HM permissions across all 13 houses while on duty, with notifications routed per the HMOD schedule. The HMOD is the third and terminal rung of the Allied coverage ladder (Section 5.4a).
+
+**Allied coverage requests** _(added 2026-07-29)_: anyone who may build a schedule for a house (SM, RSM, HM, BM, Administrator) may see, acknowledge, and close out that house's Allied coverage requests. Only the three ladder rungs (RSM, HM, HMOD) are ever paged. Student Workers have no visibility of coverage requests and cannot close one.
+
+**The Residential Services Manager (RSM)** holds every permission above that an HM holds for their own house (Section 2.3a), except HMOD eligibility. Additionally, an RSM can be assigned to their own house's desk directly from the schedule builder and post-publish override (Section 4.3, added 2026-07-29), exempt from the hard cap, soft-cap advisory, and over-target warning that apply to student-worker assignments.
 
 **Every internal role** (SW, SM, RSM, HM, BM, Administrator) can additionally:
 
@@ -1267,7 +1335,7 @@ Allied is not a user of the Desk Assistant.
 
 The following parameters are system-wide configurable by the project administrator. They are initialized with the defaults shown but may be modified post-launch:
 
-- **Escalation chain offsets** (per profile): broadcast at T-3h, float lookup at T-2h, HMOD notification at T-2h.
+- **Escalation chain offsets** (per profile): broadcast at T-3h, float lookup at T-2h, Allied coverage request at T-2h.
 - **Acknowledgment deadline**: 10 minutes before float start (decoupled from the T-2h float lookup trigger so that automated T-2h floats have a meaningful acknowledgment window).
 - **No-ack trigger offset**: 5 minutes before the acknowledgment deadline (i.e., 15 minutes before float start). Configurable system-wide.
 - **Acknowledgment cadence**: 6h (configurable per house by HM/BM or project administrator), 2h (configurable per house by HM/BM or project administrator), 1h (mandatory), 30m (mandatory), 5m (mandatory) before the **acknowledgment deadline**. Changes to the 6h and 2h offsets apply to float assignments created after the change; existing assignments retain the cadence in effect at creation time.
@@ -1290,6 +1358,8 @@ The following parameters are system-wide configurable by the project administrat
   parameter here.
 - **Minimum float chunk size**: 1 block (30 minutes). A single coverable block is floated rather than sent to Allied.
 - **Maximum Allied coverage per securing**: 8 blocks (4 hours). A single contiguous vacant gap is secured at most 4 hours at a time; the remainder stays claimable and re-escalates.
+- **Allied ladder rung timeout** _(added 2026-07-29)_: 60 minutes. How long each rung of the Allied coverage ladder (RSM, then HM, then HMOD) holds an unacknowledged request before it escalates to the next rung (Section 5.4a). Note that the ladder starts at roughly T-2h before the block, so at 60 minutes the HMOD is first contacted near the start of the coverage window; a shorter value contacts the whole ladder sooner.
+- **Allied ladder reminder interval** _(added 2026-07-29)_: 15 minutes. How often the current rung holder is re-paged while they have neither acknowledged nor been escalated past.
 - **HM working hours**: Monday-Friday 08:00 to 17:00.
 - **HMOD rotor cadence**: weekly, Friday 08:00 handoff.
 
@@ -1425,7 +1495,7 @@ The Assistant is told the current date and time in America/New_York whenever it 
 
 The Assistant is optimised for a worker who has just told a resident **"let me quickly check"** (added 2026-07-22). That setting, not a reading session, is the design centre: the resident is at the desk, and the worker needs one fact they can say out loud.
 
-So the first line of every answer is the answer itself: yes, no, the number to call, or the step to take. At most one or two short sentences follow, carrying only detail that changes what the worker does next. The Assistant does not restate the question, narrate its reasoning, list the options it rejected, or summarise at the end. Where guidance is time-conditional it gives **the branch that applies now**, not every branch. Length is a usability property here: an answer that is correct but takes twenty seconds to read has failed the person at the desk.
+So the first line of every answer is the answer itself: yes, no, the number to call, or the step to take. At most one or two short sentences follow, carrying only detail that changes what the worker does next. The Assistant does not restate the question, classify it ("this is an access question"), narrate its reasoning or the instructions it is following, list the options it rejected, or summarise at the end. Where guidance is time-conditional it gives **the branch that applies now**, not every branch. Length is a usability property here: an answer that is correct but takes twenty seconds to read has failed the person at the desk.
 
 ### 17.3c Never an Em Dash or En Dash
 
@@ -1437,7 +1507,7 @@ These are absolute and are not overridable by configuration:
 
 1. **Grounded and cited, or it defers.** No invented procedures.
 2. **Life safety is never substituted.** For fire, medical, or emergency-door situations, the Assistant surfaces the documented protocol and pushes the worker to the proper emergency line and escalation. It never positions itself as a substitute for emergency protocol. Detection here is deliberately over-inclusive: a false positive costs a redundant safety reminder, a false negative costs the reminder that mattered.
-3. **Access decisions: inform and defer, never authorize.** The Assistant states policy about who may enter what and when. When it is unsure, it tells the worker **not to grant access** and to escalate. It never issues an authorization.
+3. **Access decisions: inform and defer, never authorize.** The Assistant states policy about who may enter what and when. When it is unsure, it tells the worker **not to grant access** and to escalate. It never issues an authorization. Unlike rule 2, this rule adds **nothing visible** to the answer (clarified 2026-07-30): a life-safety preamble is something the worker must read, whereas the access rule only governs how the answer is written. The worker gets the decision and who to escalate to, never a paragraph announcing that they asked an access question or restating the rule the Assistant is following. That paragraph shipped for a time and is the failure this clarifies.
 4. **No disclosure of specific incidents or personal information.** The Assistant gives guidance, never case detail. It refuses attempts to surface a specific past event ("what happened the other day") rather than relying on the search returning nothing. This bars specifics the Assistant produces from **outside** the sources it cited; it does not bar repeating what those sources themselves say (clarified 2026-07-22). An answer may quote the official contact numbers and program dates its own cited sources contain, because that material has already passed the same reader-scope and sensitivity checks the worker would clear by opening the document directly. Read the other way, this rule silently broke the corpus's most important answers: "there is a flood in the building right now, what is the escalation procedure?" was refused in full, because the correct answer must quote the Facilities and duty-manager numbers.
 5. **A human sends every page.** The Assistant drafts; a person reviews, edits if they want, and sends.
 
@@ -1627,3 +1697,40 @@ The following decisions govern the permanent drop and permanent pickup workflows
 9. **Pickup conflict resolution:** Lenient — for each week in scope, time conflicts cause specific conflicting blocks to be skipped for that week; hours cap violations cause the entire week to be skipped. Other weeks are picked up normally.
 10. **Notifications:** Both SW and SM/HM get an in-app notification (no push) and a persistent record in their respective updates tabs whenever a permanent drop or removal occurs.
 11. **No history retention:** Calendar holds only the current state; no log of past ownership beyond what's currently assigned.
+
+---
+
+## 23. Worker Sign-In
+
+Added 2026-07-31. The worker app's sign-in screen was shipped without a description in this document; this section states what it must do, and revises its failure handling.
+
+A worker signs in with an **email address and a password**. PennKey single sign-on is **not** wired: there is no redirect to an identity provider and no passkey. The button therefore reads "Sign in" and names no provider, because naming one the app does not actually use tells the worker to expect a redirect that never comes. **(Revised 2026-07-31: the button previously read "Sign in with PennKey" and an accompanying line claimed the app was "checking your PennKey details".)**
+
+### 23.1 What the Worker Sees When Sign-In Fails
+
+Every sign-in attempt reaches a visible outcome. The four the worker can be shown are:
+
+| Condition                                                 | What the worker is told                                        |
+| --------------------------------------------------------- | -------------------------------------------------------------- |
+| Email or password is wrong, or the account does not exist | Incorrect email or password.                                   |
+| The backend cannot be reached at all                      | Network error. Check your connection and try again.            |
+| The attempt did not come back in time                     | Signing in took too long. Check your connection and try again. |
+| Anything else                                             | Something went wrong. Please try again.                        |
+
+Wrong credentials and an unreachable backend are deliberately **not** collapsed into one message. A worker told "incorrect password" when the real problem is the network will keep retyping a password that was correct all along.
+
+The system never states whether an email address is registered. "Incorrect email or password" is returned for an unknown address and a wrong password alike, so the screen cannot be used to enumerate who has an account.
+
+Field-level problems (an empty field, an address with no `@`) are caught before any attempt is made and shown against the offending field.
+
+### 23.2 A Sign-In Attempt Is Bounded and Interruptible
+
+Two guarantees, both added 2026-07-31 after a worker reported the screen sitting on "Signing in…" indefinitely with no error and no way out:
+
+1. **Bounded.** An attempt that has not produced a result within **15 seconds** is abandoned and reported as "took too long". The screen never sits in its signing-in state indefinitely. This bound is a fixed property of the app, not an operator-tunable parameter, so it does not appear in §14.
+
+2. **Interruptible.** While an attempt is in flight, the worker can **cancel** it. Cancelling stops the attempt, returns the form to its editable state with the typed email and password still there, and shows **no error** — the worker chose this, and it is not a failure. They can immediately correct a typo and try again without waiting the attempt out.
+
+A result that arrives after a cancel is discarded. It neither signs the worker in nor raises an error banner: once they have backed out, the abandoned attempt cannot reach back and change what is on screen.
+
+Signing in successfully is not the end of the wait. The app then checks whether the worker's house has launched yet (§22) and loads their week. The house check is itself bounded to **8 seconds** and degrades to "assume launched" on expiry, added 2026-07-31 for the same reason as the sign-in bound above. Loading the week itself is **not** covered by any bound.

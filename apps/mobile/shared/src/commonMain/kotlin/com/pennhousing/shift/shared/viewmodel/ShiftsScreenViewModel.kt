@@ -17,23 +17,25 @@ import com.pennhousing.shift.shared.shifts.HomeOpenShiftsTab
 import com.pennhousing.shift.shared.shifts.MyShiftsTab
 import com.pennhousing.shift.shared.shifts.OpenShiftSplit
 import com.pennhousing.shift.shared.shifts.OtherHousesTab
+import com.pennhousing.shift.shared.shifts.PartialClaimPlan
+import com.pennhousing.shift.shared.shifts.PartialDropPlan
 import com.pennhousing.shift.shared.shifts.PendingWrite
+import com.pennhousing.shift.shared.shifts.WeeklyCap
+import com.pennhousing.shift.shared.shifts.WeeklyCapSchedule
 import com.pennhousing.shift.shared.shifts.applyTemporaryDrop
-import com.pennhousing.shift.shared.shifts.pendingAwareMyShifts
-import com.pennhousing.shift.shared.shifts.pendingAwareOpenShifts
+import com.pennhousing.shift.shared.shifts.blockIndexAt
 import com.pennhousing.shift.shared.shifts.buildHomeOpenShiftsTab
 import com.pennhousing.shift.shared.shifts.buildMyShiftsTab
 import com.pennhousing.shift.shared.shifts.buildOtherHousesTab
 import com.pennhousing.shift.shared.shifts.coalesceMyShifts
 import com.pennhousing.shift.shared.shifts.coalesceOpenShifts
-import com.pennhousing.shift.shared.shifts.PartialClaimPlan
-import com.pennhousing.shift.shared.shifts.PartialDropPlan
-import com.pennhousing.shift.shared.shifts.blockIndexAt
 import com.pennhousing.shift.shared.shifts.dropOptionsFor
 import com.pennhousing.shift.shared.shifts.evaluateClaimCap
 import com.pennhousing.shift.shared.shifts.hoursBetween
 import com.pennhousing.shift.shared.shifts.isClaimable
 import com.pennhousing.shift.shared.shifts.openShiftsInWeekOf
+import com.pennhousing.shift.shared.shifts.pendingAwareMyShifts
+import com.pennhousing.shift.shared.shifts.pendingAwareOpenShifts
 import com.pennhousing.shift.shared.shifts.planPartialClaim
 import com.pennhousing.shift.shared.shifts.planPartialDrop
 import com.pennhousing.shift.shared.shifts.planTemporaryDrop
@@ -57,6 +59,12 @@ data class ShiftsUiState(
     val weekRangeLabel: String = "",
     /** The held hours in the SHOWN week (the "This week — Xh" chip total). */
     val weekHours: Double = 0.0,
+    /**
+     * The SHOWN week's server cap, for the hours chip. Follows [weekOffset]: a week on
+     * the far side of a season boundary can carry a different cap, so the chip must not
+     * be pinned to the current week's.
+     */
+    val weekCap: WeeklyCap = WeeklyCap.FALLBACK,
     /**
      * Weeks from the current one (0 = this week) — drives the Open-Shifts week header,
      * INDEPENDENT of [weekOffset]. The open feeds ([homeOpen]/[otherHouses]) are scoped to
@@ -104,6 +112,10 @@ class ShiftsScreenViewModel(
     // See shifts/PendingWrites.kt for why. Empty on the demo path, which keeps the local
     // moves as its only feedback.
     private val pendingWrites: List<PendingWrite> = emptyList(),
+    // Per-week server caps for the navigable window (`effective_weekly_caps`). Defaults to
+    // PENDING so the demo build and the pre-first-snapshot frame render the school-year
+    // fallback instead of nothing. See [WeeklyCapSchedule].
+    private val weeklyCaps: WeeklyCapSchedule = WeeklyCapSchedule.PENDING,
 ) : ViewModel() {
     private var workerShifts: List<MyShift> = myShifts
     private var openFeed: List<OpenShift> = openShifts
@@ -139,6 +151,7 @@ class ShiftsScreenViewModel(
             // Held hours in the shown week (dropped-still-open blocks no longer count),
             // mirroring `weeklyHours` but for the navigated week.
             weekHours = weekShifts.filter { !it.droppedStillOpen }.sumOf { hoursBetween(it.start, it.end) },
+            weekCap = weeklyCaps.capAt(anchor),
             openWeekOffset = openWeekOffset,
             openWeekRangeLabel = buildCalendarWeek(emptyList(), now, anchor = openAnchor).rangeLabel,
         )
@@ -193,11 +206,18 @@ class ShiftsScreenViewModel(
 
     fun claimable(shift: OpenShift): Boolean = isClaimable(shift, now)
 
+    /**
+     * The cap governing [shift] — the one for the week the shift STARTS in, not the
+     * shown week. The open feeds have their own week offset and a claim can be made from
+     * a week the My-Shifts tab is not currently showing, so keying off the shift itself
+     * is the only reading that is right in every combination.
+     */
+    fun capFor(shift: OpenShift): WeeklyCap = weeklyCaps.capAt(shift.start)
+
     fun claimCap(
         shift: OpenShift,
         currentWeeklyHours: Double,
-        breakProfile: Boolean,
-    ): ClaimCapVerdict = evaluateClaimCap(currentWeeklyHours, hoursBetween(shift.start, shift.end), breakProfile)
+    ): ClaimCapVerdict = evaluateClaimCap(currentWeeklyHours, hoursBetween(shift.start, shift.end), capFor(shift))
 
     fun dropOptions(
         shift: MyShift,

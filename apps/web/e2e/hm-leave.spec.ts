@@ -27,7 +27,7 @@ test.describe('HM/BM leave (§2.6)', () => {
     await expect(page.getByTestId('hm-leave-form')).toBeHidden();
   });
 
-  test('the replacement picker excludes the incoming chain (cycle prevention) and offers the default + admin', async ({
+  test('the picker opens on own-house managers plus the admin terminal, and excludes the incoming chain once the cross-house pool is revealed', async ({
     page,
   }) => {
     await login(page, SEED.hmQuad);
@@ -37,21 +37,32 @@ test.describe('HM/BM leave (§2.6)', () => {
     await page.getByTestId('leave-start-date').fill('2026-03-10');
     await page.getByTestId('leave-end-date').fill('2026-03-12');
 
-    // Open the replacement picker.
+    // Open the replacement picker. Collapsed, it is Hana's OWN house (§2.6 #1's default
+    // pool) plus the project administrator, so the common case needs no searching.
     await page.getByTestId('replacement-select').click();
     const options = page.getByTestId('replacement-options');
     await expect(options).toBeVisible();
-
-    // Ingrid's active leave resolves THROUGH Hana (hmQuad), so Hana is in Ingrid's
-    // forward chain ⇒ Ingrid is in Hana's incoming chain ⇒ excluded from the picker
-    // (§2.6: "These HMs are excluded from the replacement picker: selecting any of
-    // them would create a cycle").
-    await expect(options.getByRole('option', { name: SEED.hmIncoming.name })).toHaveCount(0);
 
     // The same-house BM is the default replacement and IS offered (§2.6 #1).
     await expect(options.getByRole('option', { name: SEED.bmQuad.name })).toBeVisible();
     // The project administrator is ALWAYS a valid terminal selection (§2.6).
     await expect(options.getByRole('option', { name: SEED.projectAdmin.name })).toBeVisible();
+    // Availability over the requested window is shown, so the leaver does not pick blind.
+    await expect(options.getByRole('option', { name: SEED.bmQuad.name })).toContainText(
+      'Available',
+    );
+
+    // §2.6 #7 still requires a different house when both of a house's managers are out,
+    // so the cross-house pool is one click away rather than removed.
+    await page.keyboard.press('Escape');
+    await page.getByTestId('replacement-include-other-houses').click();
+    await page.getByTestId('replacement-select').click();
+
+    // Ingrid's active leave resolves THROUGH Hana (hmQuad), so Hana is in Ingrid's
+    // forward chain ⇒ Ingrid is in Hana's incoming chain ⇒ excluded from the picker even
+    // with the cross-house pool revealed (§2.6: "These HMs are excluded from the
+    // replacement picker: selecting any of them would create a cycle").
+    await expect(options.getByRole('option', { name: SEED.hmIncoming.name })).toHaveCount(0);
   });
 
   test('HM creates leave with a valid replacement and the system generates a pre-filled mailto', async ({

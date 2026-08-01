@@ -3,9 +3,9 @@
 import { revalidatePath } from 'next/cache';
 
 import { getSessionUser } from '../auth';
-import { SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from '../env';
+import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from '../env';
 import { createServiceClient } from '../supabase/server';
-import { isTimeTravelEnabled } from '../time/simClock';
+import { invalidateSimOffset, isTimeTravelEnabled, simNow } from '../time/simClock';
 
 export type DevClockResult = { ok: true; offsetSeconds: number } | { ok: false; error: string };
 
@@ -34,6 +34,9 @@ export async function setSimClock(targetISO: string): Promise<DevClockResult> {
     .eq('id', true);
   if (error !== null) return { ok: false, error: error.message };
 
+  // The offset is memoized process-wide (simClock.ts); drop it so the very next render
+  // reads the value we just wrote instead of waiting out its TTL.
+  invalidateSimOffset();
   revalidatePath('/', 'layout');
   return { ok: true, offsetSeconds };
 }
@@ -51,6 +54,7 @@ export async function clearSimClock(): Promise<DevClockResult> {
     .eq('id', true);
   if (error !== null) return { ok: false, error: error.message };
 
+  invalidateSimOffset();
   revalidatePath('/', 'layout');
   return { ok: true, offsetSeconds: 0 };
 }
@@ -100,13 +104,58 @@ type TickSnapshot = { floatStatus: Map<string, string>; stepKeys: Set<string> };
 
 type Svc = ReturnType<typeof createServiceClient>;
 
+// The slice of the world one tick can touch, derived from the simulated clock.
+//
+// Both halves of the diff used to be UNBOUNDED selects of float_assignments and
+// block_step_status. That is fine while those tables are empty and quietly wrong once
+// they are not: PostgREST caps a response at 1000 rows (db-max-rows), so past that the
+// "before" snapshot silently loses rows and the modal starts reporting steps as newly
+// fired that fired days ago. Bounding it is both the correctness fix and the reason this
+// action stops getting slower as the tables grow.
+//
+// The bound is derived from state, not from a wall clock, so it survives the rewindable
+// simulated clock: the orchestrator only ever fires steps for blocks inside its
+// LOOKAHEAD_MINUTES (3h05m) horizon, and only ever touches floats that are still
+// unresolved or were created moments ago by this very tick.
+type TickWindow = { blockFromISO: string; blockToISO: string; floatFromISO: string };
+
+const HORIZON_BEFORE_MS = 60 * 60 * 1000; // a step fired just before `now` is still ours
+const HORIZON_AFTER_MS = 4 * 60 * 60 * 1000; // > the orchestrator's 3h05m lookahead
+const FLOAT_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+
+async function tickWindow(): Promise<TickWindow> {
+  const now = (await simNow()).getTime();
+  return {
+    blockFromISO: new Date(now - HORIZON_BEFORE_MS).toISOString(),
+    blockToISO: new Date(now + HORIZON_AFTER_MS).toISOString(),
+    floatFromISO: new Date(now - FLOAT_LOOKBACK_MS).toISOString(),
+  };
+}
+
+// Every float this tick could plausibly create or void: one that is still unresolved
+// (only a pending/acknowledged float can be voided) or one created inside the lookback,
+// which is what a float created by THIS tick looks like on the "after" read once its
+// status has already moved to voided.
+function floatWindowFilter(w: TickWindow): string {
+  return `status.in.(pending,acknowledged),created_at.gte.${w.floatFromISO}`;
+}
+
+// Step rows for blocks inside the escalation horizon. The !inner embed turns the block
+// time range into a join filter, so this stays one round trip.
+function stepsInWindow(svc: Svc, w: TickWindow) {
+  return svc
+    .from('block_step_status')
+    .select('block_id, step_name, shift_blocks!inner(block_start_at)')
+    .gte('shift_blocks.block_start_at', w.blockFromISO)
+    .lte('shift_blocks.block_start_at', w.blockToISO);
+}
+
 // Read the "before" state so the post-tick diff can tell what the tick created
-// (new floats / newly-fired steps) versus what already existed. Timestamp-free
-// so it is robust to the rewindable simulated clock.
-async function snapshotForTick(svc: Svc): Promise<TickSnapshot> {
+// (new floats / newly-fired steps) versus what already existed.
+async function snapshotForTick(svc: Svc, w: TickWindow): Promise<TickSnapshot> {
   const [floats, steps] = await Promise.all([
-    svc.from('float_assignments').select('float_id, status'),
-    svc.from('block_step_status').select('block_id, step_name'),
+    svc.from('float_assignments').select('float_id, status').or(floatWindowFilter(w)),
+    stepsInWindow(svc, w),
   ]);
   const floatStatus = new Map<string, string>();
   for (const r of floats.data ?? []) floatStatus.set(r.float_id, r.status);
@@ -149,16 +198,27 @@ function groupDeskSpans(
     (byHouse.get(b.houseId) ?? byHouse.set(b.houseId, []).get(b.houseId)!).push(b.startMs);
   }
   return [...byHouse.entries()]
-    .map(([houseId, starts]) => ({ houseId, houseName: houseName(houseId), spans: mergeSpans(starts) }))
+    .map(([houseId, starts]) => ({
+      houseId,
+      houseName: houseName(houseId),
+      spans: mergeSpans(starts),
+    }))
     .sort((a, b) => a.houseName.localeCompare(b.houseName));
 }
 
 // Diff DB state around the tick and describe every coverage action it took.
-async function collectTickCoverage(svc: Svc, before: TickSnapshot): Promise<TickCoverage> {
+async function collectTickCoverage(
+  svc: Svc,
+  before: TickSnapshot,
+  w: TickWindow,
+): Promise<TickCoverage> {
   const empty: TickCoverage = { floats: [], allied: [], broadcasts: [], voided: [] };
   const [floatsAfter, stepsAfter, housesRes] = await Promise.all([
-    svc.from('float_assignments').select('float_id, user_id, status, destination_assignment_ids'),
-    svc.from('block_step_status').select('block_id, step_name'),
+    svc
+      .from('float_assignments')
+      .select('float_id, user_id, status, destination_assignment_ids')
+      .or(floatWindowFilter(w)),
+    stepsInWindow(svc, w),
     svc.from('houses').select('id, name'),
   ]);
 
@@ -176,8 +236,12 @@ async function collectTickCoverage(svc: Svc, before: TickSnapshot): Promise<Tick
   const newSteps = (stepsAfter.data ?? []).filter(
     (s) => !before.stepKeys.has(`${s.block_id}|${s.step_name}`),
   );
-  const alliedBlockIds = newSteps.filter((s) => s.step_name === 'hmod_notify_allied').map((s) => s.block_id);
-  const broadcastBlockIds = newSteps.filter((s) => s.step_name === 'broadcast').map((s) => s.block_id);
+  const alliedBlockIds = newSteps
+    .filter((s) => s.step_name === 'hmod_notify_allied')
+    .map((s) => s.block_id);
+  const broadcastBlockIds = newSteps
+    .filter((s) => s.step_name === 'broadcast')
+    .map((s) => s.block_id);
 
   if (
     newFloats.length === 0 &&
@@ -288,19 +352,32 @@ export async function runOrchestratorTick(): Promise<OrchestratorTickResult> {
   // Snapshot state BEFORE the tick so we can attribute new floats / fired steps
   // to this run (diff-based, immune to the rewindable simulated clock).
   const svc = createServiceClient();
-  const before = await snapshotForTick(svc);
+  const window = await tickWindow();
+  const before = await snapshotForTick(svc, window);
 
   let body: unknown;
+  let status = 0;
   try {
+    // ONE api key, in the Authorization header, and nothing in `apikey`.
+    //
+    // This used to send `Authorization: Bearer <service role>` AND `apikey: <anon>`.
+    // Under the sb_publishable_* / sb_secret_* key format the gateway rejects a request
+    // carrying two DIFFERENT API keys outright ("Conflicting API keys", HTTP 401) before
+    // the function ever boots, so every tick fired from this panel 401'd in ~2ms and the
+    // orchestrator never ran even once. The other Edge call sites in this app are fine
+    // and must NOT be changed to match: they send a USER JWT in Authorization plus the
+    // publishable key in `apikey`, which is the supported pairing. This one is different
+    // precisely because it authenticates AS the system, exactly like the pg_cron caller,
+    // which also sends Authorization alone.
     const res = await fetch(`${SUPABASE_URL}/functions/v1/orchestrator-tick`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-        apikey: SUPABASE_ANON_KEY,
         'Content-Type': 'application/json',
       },
       body: '{}',
     });
+    status = res.status;
     body = await res.json();
   } catch (error) {
     return {
@@ -310,11 +387,29 @@ export async function runOrchestratorTick(): Promise<OrchestratorTickResult> {
   }
 
   if (typeof body !== 'object' || body === null) {
-    return { ok: false, error: 'Unexpected orchestrator response.' };
+    return { ok: false, error: `Unexpected orchestrator response (HTTP ${status}).` };
   }
   const b = body as Record<string, unknown>;
+
+  // A real tick ALWAYS carries tickedAt (the Edge Function stamps it from app_now()),
+  // including the HTTP 500 it returns when a pass errored — that response is a genuine
+  // summary and must still be shown. Anything without it is an envelope failure: a
+  // gateway 401, a 404, a boot error. Report it. Reading the counts optimistically off
+  // such a body used to render a perfectly plausible "0 scanned · 0 fired · 0 voided"
+  // success stamped with the REAL clock, which is exactly how a hard 401 masqueraded as
+  // "the orchestrator ran and found nothing to do".
+  if (typeof b.tickedAt !== 'string') {
+    const detail =
+      typeof b.error === 'string'
+        ? b.error
+        : typeof b.message === 'string'
+          ? b.message
+          : JSON.stringify(b).slice(0, 200);
+    return { ok: false, error: `Orchestrator did not run (HTTP ${status}): ${detail}` };
+  }
+
   const summary: OrchestratorTickSummary = {
-    tickedAt: typeof b.tickedAt === 'string' ? b.tickedAt : new Date().toISOString(),
+    tickedAt: b.tickedAt,
     blocksScanned: Number(b.blocksScanned ?? 0),
     stepsFired: Number(b.stepsFired ?? 0),
     floatsVoided: Number(b.floatsVoided ?? 0),
@@ -326,7 +421,7 @@ export async function runOrchestratorTick(): Promise<OrchestratorTickResult> {
   // seats broadcast, floats voided) by diffing against the pre-tick snapshot.
   let coverage: TickCoverage = { floats: [], allied: [], broadcasts: [], voided: [] };
   try {
-    coverage = await collectTickCoverage(svc, before);
+    coverage = await collectTickCoverage(svc, before, window);
   } catch {
     // Coverage detail is best-effort; the counts summary still stands.
   }

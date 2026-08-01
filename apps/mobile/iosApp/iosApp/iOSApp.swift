@@ -146,6 +146,11 @@ struct LiveRootView: View {
                     signingIn: login.authedSession != nil,
                     onSignOut: {
                         Task { try? await WorkerBackend.shared.authGateway.signOut() }
+                        // Forget the remembered app shape (docs/manager-app/SPEC.md §5.1).
+                        // `resolveRoleShape`'s user-id check already stops the next signed-in
+                        // person inheriting these tabs; this is belt and braces, and it also
+                        // stops a signed-out device carrying a record of who last used it.
+                        ManagerModePrefs.clear()
                         login.authedSession = nil
                         // A sign-out forces LOGIN even though a session was restored at launch.
                         restored = .some(nil)

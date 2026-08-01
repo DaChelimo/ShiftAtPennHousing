@@ -27,10 +27,16 @@ extension ShiftsRootView {
     @ViewBuilder
     private func swapBannerCard(_ entry: SwapBannerEntry, _ c: ShiftColors) -> some View {
         let awaitingYou = entry.tone == .awaitingYou
-        // The same two colours the tinted agenda cards use, so the banner and the card it
-        // taps through to read as one thing.
-        let accent = awaitingYou ? c.pending : c.blue
-        let tint = awaitingYou ? c.warnSoft : c.blue.opacity(0.10)
+        // Only the actionable row (someone needs YOUR answer) carries a color signal, in
+        // brand blue — the app's one "take action" hue everywhere else (never orange/amber,
+        // which reads as a caution state elsewhere in the shift-state legend). The outgoing
+        // row is purely informational and stays fully neutral instead of borrowing a second
+        // accent — that contrast in weight is what tells the two rows apart. Both rows share
+        // the same swap (exchange-arrows) icon rather than a bell, so the glyph reads as
+        // "this is a swap" and not "this is a notification". Mirrors Android's
+        // `SwapBannerRow.kt` exactly.
+        let accent = awaitingYou ? c.blue : c.ter
+        let borderColor = awaitingYou ? c.blue.opacity(0.45) : c.divider
         Button {
             // The same two destinations the tinted agenda card opens: the accept/decline
             // decision for an incoming swap, the cancel-or-keep-waiting notice for one
@@ -46,9 +52,15 @@ extension ShiftsRootView {
             }
         } label: {
             HStack(spacing: 10) {
-                Image(systemName: awaitingYou ? "bell.fill" : "arrow.triangle.2.circlepath")
+                // A soft accent chip behind the glyph: the one place the tint survives, so
+                // the card still carries its state colour without wearing it everywhere.
+                Image(systemName: "arrow.triangle.2.circlepath")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(accent)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9).fill(awaitingYou ? accent.opacity(0.14) : c.surfaceVar)
+                    )
                     // Identifiers go on LEAVES: a container identifier shadows its children.
                     .accessibilityIdentifier("swap_banner_icon")
                 VStack(alignment: .leading, spacing: 2) {
@@ -65,21 +77,31 @@ extension ShiftsRootView {
                         .accessibilityIdentifier("swap_banner_detail")
                 }
                 Spacer(minLength: 0)
+                // Incoming needs an answer, so its action is a solid blue pill. Outgoing is
+                // informational and gets a quiet neutral outline: the weight of the control
+                // tells the worker which row is actually theirs to act on.
                 Text(entry.actionLabel)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(accent)
-                    .padding(.horizontal, 10)
+                    .foregroundColor(awaitingYou ? .white : c.sec)
+                    .padding(.horizontal, awaitingYou ? 12 : 11)
                     .padding(.vertical, 5)
-                    .background(Capsule().fill(c.surface))
+                    .background(
+                        Capsule().fill(awaitingYou ? accent : Color.clear)
+                    )
+                    .overlay(
+                        Capsule().stroke(
+                            awaitingYou ? Color.clear : c.outline, lineWidth: 1
+                        )
+                    )
                     .accessibilityIdentifier("swap_banner_action")
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 14).fill(tint))
+            .background(RoundedRectangle(cornerRadius: 14).fill(c.surface))
             .overlay(
                 RoundedRectangle(cornerRadius: 14)
-                    .stroke(accent.opacity(0.55), lineWidth: 1)
+                    .stroke(borderColor, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)

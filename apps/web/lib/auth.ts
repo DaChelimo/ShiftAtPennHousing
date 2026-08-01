@@ -37,10 +37,16 @@ export type SessionUser = {
 // the proxy/render boundary.
 export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (user === null) return null;
+  // getClaims() rather than getUser(): both verify the token (getSession does not, which
+  // is why it is not used here), but getUser() is an HTTP call to GoTrue every time —
+  // 100-150ms against the hosted project, on top of the identical call the proxy already
+  // made for the same request. This project's tokens are ES256, so getClaims verifies the
+  // signature locally against a once-per-process JWKS fetch: ~3-6ms. The user id is the
+  // only thing this function needed from the response; name/email/house come from the
+  // `users` row below, which is the authoritative profile anyway.
+  const { data: claims } = await supabase.auth.getClaims();
+  const userId = claims?.claims?.sub;
+  if (userId === undefined) return null;
 
   // Neither query depends on the other's result (both key off user.id alone), so
   // run them concurrently instead of paying two sequential round trips — this
@@ -51,9 +57,9 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     supabase
       .from('users')
       .select('user_id, name, email, home_house_id')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .maybeSingle(),
-    supabase.from('user_roles').select('role, scope_house_id').eq('user_id', user.id),
+    supabase.from('user_roles').select('role, scope_house_id').eq('user_id', userId),
   ]);
   if (profile === null || profile === undefined) return null;
 

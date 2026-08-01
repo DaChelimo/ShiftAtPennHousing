@@ -14,6 +14,7 @@ import {
   isWorker,
 } from '../../lib/auth';
 import { isProjectAdministrator } from '../../lib/data/config';
+import { getShellCoverage } from '../../lib/data/coverage';
 import { getOnDutyHmodId, getShellHouses, getUnreadCount } from '../../lib/data/hmod';
 import { getSimOffsetSeconds, isTimeTravelEnabled, simNow } from '../../lib/time/simClock';
 
@@ -40,12 +41,39 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect('/home');
   }
 
-  // Kick these off immediately (before the sync nav-building below runs) so they
-  // resolve concurrently instead of stalling the render one at a time. Both are
-  // awaited later — isProjectAdministrator is memoized per-request (React cache()
-  // in lib/data/config.ts), so re-awaiting the same promise elsewhere is free.
+  // Kick the whole shell context off in ONE wave, before the synchronous nav-building
+  // below runs, so nothing in here sits on the critical path one round trip at a time.
+  // `now` no longer costs a round trip (simClock reads a memoized offset), which is what
+  // lets getOnDutyHmodId/getUnreadCount — both of which need it — start immediately
+  // rather than after a preceding await. Each of these is memoized (React cache() per
+  // request, plus a process-wide memo for the two global config reads), so awaiting the
+  // same promise again later is free.
   const isProjectAdminPromise = isProjectAdministrator(user.userId);
   const nowPromise = simNow();
+  const canSeeCoverage = canBuildSchedule(user);
+  const shellContextPromise = nowPromise.then((now) =>
+    Promise.all([
+      getOnDutyHmodId(now),
+      getUnreadCount(user.userId, now),
+      // The app-wide coverage banner and the red bell badge. Allied coverage alerts
+      // apply to anyone who can build a schedule (sm/hm/bm/rsm), the same audience as
+      // the Action Inbox and the RLS policy on the table.
+      //
+      // getShellCoverage, NOT getCoverageData: this is a LAYOUT, so it sits above every
+      // error.tsx in its subtree and a throw here escapes to Next's global error and
+      // takes the entire console down on every route (in dev, as a document-reload
+      // loop). getShellCoverage degrades to `unavailable` instead, and the banner says
+      // so out loud rather than implying all clear.
+      canSeeCoverage ? getShellCoverage(now) : Promise.resolve(null),
+      // Dev-only time-travel card (left of the HMOD pill). Hidden in production.
+      isTimeTravelEnabled() ? getSimOffsetSeconds() : Promise.resolve(null),
+      // Fetched unconditionally rather than only when the switcher turns out to be
+      // unlocked: it is memoized reference data, and starting it here keeps it off the
+      // tail of the render, where it used to be a lone sequential round trip after this
+      // batch had already resolved.
+      getShellHouses(),
+    ]),
+  );
 
   const nav: NavItem[] = [
     { href: '/', label: 'Dashboard', testId: 'nav-home', icon: 'doc', group: 'Operate' },
@@ -77,6 +105,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       label: 'Action inbox',
       testId: 'nav-inbox',
       icon: 'inbox',
+      group: 'Operate',
+    });
+    nav.push({
+      href: '/admin/coverage',
+      label: 'Coverage report',
+      testId: 'nav-admin-coverage',
+      icon: 'shield',
       group: 'Operate',
     });
     nav.push({
@@ -188,18 +223,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // home house (on-duty HMOD or project admin — D5), the switcher's house list, and
   // the bell's due/unread count. A single `now` so the pill, switcher, and bell agree.
   //
-  // This whole layout used to be ~8 sequential `await`s (each a GoTrue/Postgres round
-  // trip), so every tab click under this shell paid their full sum in latency, on top
-  // of Next's default 0s client router staleTime re-running it on every navigation
-  // (see next.config.ts). `now`/`isProjectAdmin` were already kicked off above; the
-  // rest fire concurrently here instead of one at a time.
-  const now = await nowPromise;
-  const [onDutyId, unreadCount, devOffsetSeconds] = await Promise.all([
-    getOnDutyHmodId(now),
-    getUnreadCount(user.userId, now),
-    // Dev-only time-travel card (left of the HMOD pill). Hidden in production.
-    isTimeTravelEnabled() ? getSimOffsetSeconds() : Promise.resolve(null),
-  ]);
+  // This whole layout used to be a chain of sequential `await`s, each one a GoTrue or
+  // Postgres round trip (~130ms p50, ~280ms p90 against the hosted project), so every
+  // tab click under this shell paid their full sum in latency. Everything is now kicked
+  // off in a single wave at the top of the render and merely collected here.
+  const [onDutyId, unreadCount, shellCoverage, devOffsetSeconds, allHouses] =
+    await shellContextPromise;
+  const coverage = shellCoverage?.data ?? null;
+  const coverageUnavailable = shellCoverage?.unavailable ?? false;
   const hmodOnDuty = onDutyId === user.userId;
   // §2.3a / 2026-06-27: the elevated tier (hm/bm/rsm) may switch into any house —
   // and, as of the cross-house decision, EDIT its schedule there (people admin /
@@ -213,7 +244,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     isStudentManager: isStudentManager(user),
   });
   const houses = canSwitchHouse
-    ? await getShellHouses()
+    ? allHouses
     : [
         {
           id: user.homeHouseId,
@@ -237,6 +268,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       canSwitchToWorker={isWorker(user)}
       houses={houses}
       unreadCount={unreadCount}
+      coverageCount={coverage?.actionRequiredCount ?? 0}
+      coverageOverdue={(coverage?.overdue.length ?? 0) > 0}
+      coverageUnavailable={coverageUnavailable}
+      canSeeCoverage={canSeeCoverage}
       devClock={devClock}
     >
       {children}

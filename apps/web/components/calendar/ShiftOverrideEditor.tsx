@@ -1,24 +1,14 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 
-import {
-  assignWorker,
-  removeWorker,
-  type AssignAdvisory,
-  type OverrideScope,
-} from '../../lib/actions/override';
+import { assignWorker, removeWorker, type OverrideScope } from '../../lib/actions/override';
 import type { AssignableWorker, CalShift } from '../../lib/data/calendar';
-import { Avatar, Button, Icon, Modal, Notification } from '../ui';
+import { Avatar, Button, Icon, Notification } from '../ui';
 
-import { blockLabel, fmtH, shiftOriginMinutes, spanLabel } from './format';
-
-const ADVISORY_LABEL: Record<string, string> = {
-  cannot: 'This worker marked “cannot work” for this shift.',
-  opted_out: 'This worker opted out of hours this period.',
-  soft_cap: 'This assignment exceeds the worker’s soft (20h) weekly cap.',
-  over_target: 'This assignment exceeds the worker’s target hours.',
-};
+import { RangeSlider } from './RangeSlider';
+import type { WriteStatusEvent } from './WriteStatusToasts';
+import { fmtH, shiftOriginMinutes, spanLabel } from './format';
 
 type CapTone = 'muted' | 'warn' | 'danger';
 
@@ -44,136 +34,6 @@ function capHint(
   };
 }
 
-// A draggable dual-thumb range slider over the shift's 30-min blocks. Either thumb
-// snaps to a block boundary. This is the ONLY way to size the sub-range, there is
-// no typed from/to entry, by design (2026-07-25 redesign).
-function RangeSlider({
-  startBlock,
-  endBlock,
-  fromBlock,
-  toBlock,
-  originMin,
-  onChange,
-}: {
-  startBlock: number;
-  endBlock: number;
-  fromBlock: number;
-  toBlock: number;
-  originMin: number;
-  onChange: (from: number, to: number) => void;
-}) {
-  const trackRef = useRef<HTMLDivElement>(null);
-  const [drag, setDrag] = useState<'from' | 'to' | null>(null);
-  const span = endBlock - startBlock;
-
-  useEffect(() => {
-    if (drag === null) return;
-    const blockAt = (clientX: number): number | null => {
-      const el = trackRef.current;
-      if (!el) return null;
-      const r = el.getBoundingClientRect();
-      const frac = (clientX - r.left) / r.width;
-      return Math.max(startBlock, Math.min(endBlock, startBlock + Math.round(frac * span)));
-    };
-    const move = (e: PointerEvent) => {
-      const b = blockAt(e.clientX);
-      if (b === null) return;
-      if (drag === 'from') onChange(Math.min(b, toBlock - 1), toBlock);
-      else onChange(fromBlock, Math.max(b, fromBlock + 1));
-    };
-    const up = () => setDrag(null);
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-    return () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-    };
-  }, [drag, fromBlock, toBlock, startBlock, endBlock, span, onChange]);
-
-  const fromPct = ((fromBlock - startBlock) / span) * 100;
-  const toPct = ((toBlock - startBlock) / span) * 100;
-
-  const onKey = (which: 'from' | 'to') => (e: React.KeyboardEvent) => {
-    const delta =
-      e.key === 'ArrowRight' || e.key === 'ArrowUp'
-        ? 1
-        : e.key === 'ArrowLeft' || e.key === 'ArrowDown'
-          ? -1
-          : 0;
-    if (delta === 0) return;
-    e.preventDefault();
-    if (which === 'from')
-      onChange(Math.min(Math.max(fromBlock + delta, startBlock), toBlock - 1), toBlock);
-    else onChange(fromBlock, Math.max(Math.min(toBlock + delta, endBlock), fromBlock + 1));
-  };
-
-  // One tick per 30-min block boundary (a "marked" slider, mirroring the discrete-
-  // step feel of the mobile BlockRangeSlider) so it reads as a stepped control, not
-  // a freeform drag — every stop is a real, snappable block.
-  const ticks: number[] = [];
-  for (let i = 0; i <= span; i++) ticks.push((i / span) * 100);
-
-  return (
-    <div className="range-slider">
-      <div className="range-slider-bounds" aria-hidden="true">
-        <span>{blockLabel(startBlock, originMin)}</span>
-        <span>{blockLabel(endBlock, originMin)}</span>
-      </div>
-      <div className="range-slider-track" ref={trackRef}>
-        <div
-          className="range-slider-fill"
-          style={{ left: `${fromPct}%`, width: `${toPct - fromPct}%` }}
-        />
-        {ticks.map((pct) => (
-          <span key={pct} className="range-slider-tick" style={{ left: `${pct}%` }} />
-        ))}
-        <button
-          type="button"
-          className="range-thumb"
-          style={{ left: `${fromPct}%` }}
-          role="slider"
-          aria-label="Start time"
-          aria-valuemin={startBlock}
-          aria-valuemax={toBlock - 1}
-          aria-valuenow={fromBlock}
-          aria-valuetext={blockLabel(fromBlock, originMin)}
-          data-testid="override-range-from-thumb"
-          onPointerDown={(e) => {
-            e.preventDefault();
-            setDrag('from');
-          }}
-          onKeyDown={onKey('from')}
-        >
-          <span className="range-thumb-badge" aria-hidden="true">
-            {blockLabel(fromBlock, originMin)}
-          </span>
-        </button>
-        <button
-          type="button"
-          className="range-thumb"
-          style={{ left: `${toPct}%` }}
-          role="slider"
-          aria-label="End time"
-          aria-valuemin={fromBlock + 1}
-          aria-valuemax={endBlock}
-          aria-valuenow={toBlock}
-          aria-valuetext={blockLabel(toBlock, originMin)}
-          data-testid="override-range-to-thumb"
-          onPointerDown={(e) => {
-            e.preventDefault();
-            setDrag('to');
-          }}
-          onKeyDown={onKey('to')}
-        >
-          <span className="range-thumb-badge" aria-hidden="true">
-            {blockLabel(toBlock, originMin)}
-          </span>
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // Unified inline edit for the shift detail panel's edit section. Occupied seats lead
 // with an action choice (Swap / Remove, no label), nothing below it renders until
 // one is picked. Then: a range slider (the only way to size the sub-range), and for
@@ -189,12 +49,14 @@ export function EditSection({
   softCapHours,
   capEnforcement,
   onApplied,
+  onWriteStatus,
 }: {
   shift: CalShift;
   assignableWorkers: AssignableWorker[];
   softCapHours: number;
   capEnforcement: 'soft' | 'hard';
   onApplied: () => void;
+  onWriteStatus?: (evt: WriteStatusEvent) => void;
 }) {
   const occupied = shift.userId !== null;
   const { startBlock, endBlock } = shift;
@@ -218,7 +80,6 @@ export function EditSection({
   // A completed-but-no-op write (0 seats assigned) is surfaced as a warning snackbar
   // rather than a success, so the operator sees that nothing changed.
   const [warning, setWarning] = useState<string | null>(null);
-  const [confirm, setConfirm] = useState<AssignAdvisory[] | null>(null);
 
   // The DB block ids backing the selected sub-range (blockIds are in block order).
   const selectedBlockIds = shift.blockIds.slice(fromBlock - startBlock, toBlock - startBlock);
@@ -241,7 +102,7 @@ export function EditSection({
     setError(null);
   }
 
-  async function doAssign(overrideAdvisories: boolean) {
+  async function doAssign() {
     if (workerId === null) {
       setError('Pick a worker first.');
       return;
@@ -250,37 +111,67 @@ export function EditSection({
     setError(null);
     setSuccess(null);
     setWarning(null);
+    onWriteStatus?.({
+      key: shift.id,
+      phase: 'pending',
+      message: occupied
+        ? `Swapping ${shift.workerName ?? 'this worker'}'s ${rangeLabel} shift…`
+        : `Assigning ${rangeLabel}…`,
+    });
     const res = await assignWorker({
       blockIds: selectedBlockIds,
       userId: workerId,
       scope,
-      overrideAdvisories,
+      // A manager editing the LIVE calendar directly is assumed to already know
+      // the worker's hours/availability picture (unlike the schedule builder,
+      // where the roster panel is the only place that context is surfaced) — so
+      // soft advisories (over target, opted out, marked cannot, over soft cap)
+      // never gate a live-calendar write with a confirm popup. Hard blocks (hard
+      // cap, Harnwell training) are NOT affected by this flag and still return a
+      // real error below.
+      overrideAdvisories: true,
       // SWAP on a still-occupied seat: overwrite the incumbent's seat (not a
       // sibling vacant one). Omitted when filling an open shift.
       incumbentUserId: occupied ? shift.userId : undefined,
     });
     setBusy(false);
     if (!res.ok) {
-      setConfirm(null);
       setError(res.error);
+      onWriteStatus?.({
+        key: shift.id,
+        phase: 'error',
+        message: `Couldn't ${occupied ? 'swap' : 'assign'}: ${res.error}`,
+      });
       return;
     }
     if (res.data.needsConfirm) {
-      setConfirm(res.data.advisories);
+      // Unreachable in practice: overrideAdvisories is always true above, so the
+      // RPC never returns needs_confirm. Guarded only to satisfy the union type.
+      setError('Could not complete the assignment.');
+      onWriteStatus?.({ key: shift.id, phase: 'cancel' });
       return;
     }
-    setConfirm(null);
     // A completed write that touched zero seats is a no-op, not a success, so the
     // operator should know nothing changed (and, where we can infer it, why).
+    // The inline warning below covers this case, so the toast just clears rather
+    // than claiming a success that didn't happen.
     if (res.data.assignedCount === 0) {
       setWarning(
         res.data.scope === 'permanent'
           ? 'No shifts were assigned. Every future occurrence of this slot is already filled (or none remain this term).'
           : 'No shift was assigned. This seat is already filled.',
       );
+      onWriteStatus?.({ key: shift.id, phase: 'cancel' });
       return;
     }
     setSuccess(occupied ? 'Swapped' : 'Assigned');
+    onWriteStatus?.({
+      key: shift.id,
+      phase: 'success',
+      message: occupied
+        ? `Swapped: ${selectedName ?? 'the worker'} now covers ${rangeLabel}`
+        : `Assigned: ${selectedName ?? 'the worker'} now covers ${rangeLabel}`,
+    });
     setTimeout(onApplied, 700);
   }
 
@@ -290,6 +181,11 @@ export function EditSection({
     setError(null);
     setSuccess(null);
     setWarning(null);
+    onWriteStatus?.({
+      key: shift.id,
+      phase: 'pending',
+      message: `Removing ${shift.workerName ?? 'this worker'}'s ${rangeLabel} shift…`,
+    });
     const res = await removeWorker({
       blockIds: selectedBlockIds,
       userId: shift.userId,
@@ -298,9 +194,15 @@ export function EditSection({
     setBusy(false);
     if (!res.ok) {
       setError(res.error);
+      onWriteStatus?.({ key: shift.id, phase: 'error', message: `Couldn't remove: ${res.error}` });
       return;
     }
     setSuccess('Removed');
+    onWriteStatus?.({
+      key: shift.id,
+      phase: 'success',
+      message: `Removed: ${rangeLabel} is open again`,
+    });
     setTimeout(onApplied, 700);
   }
 
@@ -308,40 +210,55 @@ export function EditSection({
     <div className="detail-override" data-testid="override-section">
       <div className="edit-top">
         {/* 1 — action (occupied only, no label): pick Swap or Remove first. Nothing
-            below this shows until one is chosen. Deliberately its OWN button style
-            (not the generic .seg toggle used for Apply-to below) — this is the
-            flow's first real decision, so it needs to read as two clickable
-            buttons, not a passive filter control. */}
+            below this shows until one is chosen. A full-width segmented pill (not
+            two separate buttons) so it reads as one control with two states —
+            switching it is what reveals the rest of the flow — rather than as a
+            command fired on click. The banner beneath names the chosen action in
+            full ("Now swapping <name>" / "Now removing <name>") and carries the
+            tint down into the revealed content below it. */}
         {occupied && (
-          <div className="action-picker" role="radiogroup" aria-label="Action">
-            <button
-              type="button"
-              role="radio"
-              data-testid="override-action-replace"
-              className={`action-btn action-btn-swap ${action === 'replace' ? 'is-on' : ''}`.trim()}
-              aria-checked={action === 'replace'}
-              onClick={() => {
-                setAction('replace');
-                setError(null);
-              }}
-            >
-              <Icon name="swap" size={15} />
-              Swap with someone else
-            </button>
-            <button
-              type="button"
-              role="radio"
-              data-testid="override-action-remove"
-              className={`action-btn action-btn-remove ${action === 'remove' ? 'is-on' : ''}`.trim()}
-              aria-checked={action === 'remove'}
-              onClick={() => {
-                setAction('remove');
-                setError(null);
-              }}
-            >
-              <Icon name="trash" size={15} />
-              Remove
-            </button>
+          <div className="col gap-2">
+            <div className="action-seg" role="radiogroup" aria-label="Action">
+              <button
+                type="button"
+                role="radio"
+                data-testid="override-action-replace"
+                className={`action-seg-btn action-seg-swap ${action === 'replace' ? 'is-on' : ''}`.trim()}
+                aria-checked={action === 'replace'}
+                onClick={() => {
+                  setAction('replace');
+                  setError(null);
+                }}
+              >
+                <Icon name="swap" size={15} />
+                Swap
+              </button>
+              <button
+                type="button"
+                role="radio"
+                data-testid="override-action-remove"
+                className={`action-seg-btn action-seg-remove ${action === 'remove' ? 'is-on' : ''}`.trim()}
+                aria-checked={action === 'remove'}
+                onClick={() => {
+                  setAction('remove');
+                  setError(null);
+                }}
+              >
+                <Icon name="trash" size={15} />
+                Remove
+              </button>
+            </div>
+            {action !== null && (
+              <div
+                className={`action-banner ${action === 'remove' ? 'is-danger' : ''}`.trim()}
+                data-testid="override-action-banner"
+              >
+                <Icon name={action === 'remove' ? 'trash' : 'swap'} size={14} />
+                {action === 'remove'
+                  ? `Now removing ${shift.workerName ?? 'this worker'}`
+                  : `Now swapping ${shift.workerName ?? 'this worker'}`}
+              </div>
+            )}
           </div>
         )}
 
@@ -496,46 +413,13 @@ export function EditSection({
               full
               data-testid="override-submit"
               disabled={busy || workerId === null}
-              onClick={() => doAssign(false)}
+              onClick={() => doAssign()}
             >
               {occupied ? 'Swap in' : 'Assign'} {rangeLabel}
               {selectedName ? ` → ${selectedName}` : ''}
             </Button>
           )}
         </div>
-      )}
-
-      {confirm !== null && (
-        <Modal
-          testId="override-advisory-confirm"
-          eyebrow="Soft constraint"
-          title="Confirm override"
-          onClose={() => setConfirm(null)}
-          footer={
-            <>
-              <Button kind="secondary" onClick={() => setConfirm(null)} disabled={busy}>
-                Cancel
-              </Button>
-              <Button
-                kind="primary"
-                data-testid="override-advisory-accept"
-                disabled={busy}
-                onClick={() => doAssign(true)}
-              >
-                {occupied ? 'Swap anyway' : 'Assign anyway'}
-              </Button>
-            </>
-          }
-        >
-          <p style={{ marginBottom: 12 }}>This assignment trips a soft constraint:</p>
-          <ul className="col gap-2" style={{ margin: 0, paddingLeft: 18 }}>
-            {confirm.map((a) => (
-              <li key={a.kind} className="t-body">
-                {ADVISORY_LABEL[a.kind] ?? a.kind}
-              </li>
-            ))}
-          </ul>
-        </Modal>
       )}
     </div>
   );

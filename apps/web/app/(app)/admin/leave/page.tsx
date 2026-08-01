@@ -17,7 +17,7 @@ export default async function LeavePage() {
       <PageHead
         eyebrow="Manage"
         title="Housing Manager leave"
-        sub="Record your leave dates and pick a replacement — we'll prep the email to your student workers (§2.6)."
+        sub="Record your leave dates and pick a replacement. We'll prep the email to your student workers (§2.6)."
       />
       {isHouseAdmin(user) ? (
         await renderForm(user)

@@ -92,20 +92,21 @@ fun formatDuration(
 /** "14h" / "14.5h" — strips a whole-number decimal. */
 fun formatHours(hours: Double): String = if (hours % 1.0 == 0.0) "${hours.toInt()}h" else "${hours}h"
 
-/** The "This week — 14h of 20h soft cap" summary chip (§5.3 caps). */
+/** The "This week, 14h of 20h soft cap" summary chip (§5.3 caps). */
 data class WeeklyHoursSummary(
     val current: String,
     val capLabel: String,
 )
 
+/** [cap] is the SHOWN week's server cap, so the chip follows week navigation. */
 fun weeklyHoursSummary(
     currentWeeklyHours: Double,
-    breakProfile: Boolean = false,
-): WeeklyHoursSummary {
-    val cap = if (breakProfile) BREAK_HOURS_CAP else SOFT_HOURS_CAP
-    val word = if (breakProfile) "hard cap" else "soft cap"
-    return WeeklyHoursSummary(current = formatHours(currentWeeklyHours), capLabel = "of ${formatHours(cap)} $word")
-}
+    cap: WeeklyCap = WeeklyCap.FALLBACK,
+): WeeklyHoursSummary =
+    WeeklyHoursSummary(
+        current = formatHours(currentWeeklyHours),
+        capLabel = "of ${cap.hoursLabel} ${cap.enforcementLabel}",
+    )
 
 /**
  * A fully-formatted My-Shifts card row — the UI renders this verbatim. Cross-house

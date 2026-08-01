@@ -1,5 +1,9 @@
 package com.pennhousing.shift.shared.data
 
+import com.pennhousing.shift.shared.manager.ManagerCapabilities
+import com.pennhousing.shift.shared.manager.ManagerRole
+import com.pennhousing.shift.shared.manager.highestRoleOf
+import com.pennhousing.shift.shared.manager.managerCapabilitiesOf
 import com.pennhousing.shift.shared.network.EdgeFunctionClient
 import com.pennhousing.shift.shared.network.EdgeResult
 import com.pennhousing.shift.shared.settings.NotificationPreferences
@@ -69,15 +73,17 @@ class ProfileRepository(
                 .decodeSingleOrNull<HouseNameRow>()
                 ?.name ?: user.homeHouseId
 
-        // The worker's roles (own rows). Pick the most privileged for the display label;
-        // `sw` is the implicit default when no row is present.
-        val roles =
+        // The worker's roles (own rows). `scope_house_id` comes along because it is what
+        // separates an SM's own-house reach from the elevated tier's cross-house reach; the
+        // display label picks the most privileged role, and `sw` is the implicit default when
+        // no row is present.
+        val roleRows =
             supabase
                 .from("user_roles")
-                .select(Columns.list("role")) { filter { eq("user_id", userId) } }
+                .select(Columns.list("role", "scope_house_id")) { filter { eq("user_id", userId) } }
                 .decodeList<UserRoleRow>()
-                .map { it.role }
-        val role = highestRole(roles)
+        val role = highestRoleOf(roleRows.map { it.role })
+        val managerRoles = roleRows.map { ManagerRole(role = it.role, scopeHouseId = it.scopeHouseId) }
 
         return ProfileSnapshot(
             profile =
@@ -88,6 +94,9 @@ class ProfileRepository(
                     homeHouseName = houseName,
                 ),
             broadcastSubscribed = user.broadcastSubscribed,
+            capabilities = managerCapabilitiesOf(roles = managerRoles, homeHouseId = user.homeHouseId),
+            roles = managerRoles,
+            homeHouseId = user.homeHouseId,
         )
     }
 
@@ -159,12 +168,7 @@ class ProfileRepository(
             true
         }.getOrDefault(false)
 
-    /** Role precedence for the profile label (bm > hm > rsm > sm > sw). */
-    private fun highestRole(roles: List<String>): String =
-        ROLE_PRECEDENCE.firstOrNull { it in roles } ?: "sw"
-
     private companion object {
-        val ROLE_PRECEDENCE = listOf("bm", "hm", "rsm", "sm", "sw")
         const val TABLE_NOTIFICATION_PREFERENCES = "notification_preferences"
     }
 }
@@ -176,10 +180,45 @@ private data class NotificationPreferencesRow(
     @SerialName("shift_reminder_offsets") val shiftReminderOffsets: List<Int> = listOf(60),
 )
 
+/**
+ * Whether the profile read has finished, as distinct from whether it succeeded.
+ *
+ * The launch splash is held until the app shape is known (docs/manager-app/SPEC.md §5.1), and
+ * "known" has to include "we asked and it failed". A plain nullable snapshot cannot express that:
+ * null means both "still loading" and "loaded nothing", so a failed read would hold the splash
+ * forever and a manager on a dead connection would stare at the wordmark.
+ */
+sealed interface ProfileLoad {
+    data object Loading : ProfileLoad
+
+    /** The read completed. [snapshot] is null when it failed or the row was unreadable. */
+    data class Done(val snapshot: ProfileSnapshot?) : ProfileLoad
+
+    /** The snapshot if one arrived, else null. Callers that only want the data use this. */
+    val snapshotOrNull: ProfileSnapshot?
+        get() = (this as? Done)?.snapshot
+}
+
 /** The worker's identity + live broadcast flag, for the `SettingsViewModel` constructor. */
 data class ProfileSnapshot(
     val profile: SettingsProfile,
     val broadcastSubscribed: Boolean,
+    /**
+     * What manager surfaces this user gets (docs/manager-app/SPEC.md §5). Defaults to a plain
+     * worker so any caller that does not care is unaffected, and so a failed role read can
+     * never accidentally read as privileged.
+     */
+    val capabilities: ManagerCapabilities = managerCapabilitiesOf(emptyList(), homeHouseId = ""),
+    /**
+     * The RAW `user_roles` rows and home house that [capabilities] was derived from.
+     *
+     * Carried so the launch-shape cache can store the INPUTS and re-derive through
+     * `managerCapabilitiesOf`, rather than caching a derived boolean. Caching the derivation would
+     * put a second copy of the role rules on the device, and it would go stale the next time the
+     * SQL predicates change. See `manager/ManagerRoleCache.kt`.
+     */
+    val roles: List<ManagerRole> = emptyList(),
+    val homeHouseId: String = "",
 )
 
 // ----- Wire rows → pure inputs. -----
@@ -200,6 +239,7 @@ private data class HouseNameRow(
 @Serializable
 private data class UserRoleRow(
     val role: String,
+    @SerialName("scope_house_id") val scopeHouseId: String? = null,
 )
 
 // ----- The `users-broadcast-subscription` Edge-Function request body. -----

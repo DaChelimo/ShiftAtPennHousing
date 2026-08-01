@@ -40,6 +40,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -72,6 +73,7 @@ import com.pennhousing.shift.ui.kit.ShiftIcons
 import com.pennhousing.shift.ui.theme.ShiftTheme
 import com.pennhousing.shift.ui.theme.rememberPersistedDarkTheme
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -97,6 +99,23 @@ class LoginHost(
     private val _state = MutableStateFlow(LoginUiState())
     val state: StateFlow<LoginUiState> = _state.asStateFlow()
 
+    /** The in-flight sign-in, so [LoginEvent.CancelRequested] can actually stop it. */
+    private var submitJob: Job? = null
+
+    /**
+     * The screen's single event entry point. Everything still goes through the pure
+     * reducer; the one side effect layered on top is tearing down the in-flight
+     * gateway call when the worker cancels — a state change alone would leave the
+     * request running and its (ignored) result burning the connection.
+     */
+    fun onEvent(event: LoginEvent) {
+        if (event == LoginEvent.CancelRequested) {
+            submitJob?.cancel()
+            submitJob = null
+        }
+        dispatch(event)
+    }
+
     fun dispatch(event: LoginEvent) {
         _state.value = LoginReducer.reduce(_state.value, event)
     }
@@ -106,17 +125,23 @@ class LoginHost(
      * moved us into SUBMITTING, fire the single sign-in call and feed the result back
      * through the reducer. Reading email/password off the current state (not the
      * event) keeps the gateway call a pure function of the submitted form.
+     *
+     * A result arriving after a cancel is harmless: the reducer honours
+     * AuthSucceeded/AuthFailed only from SUBMITTING, and a cancel has already moved
+     * the phase back to EDITING.
      */
     fun runSubmit() {
         val snapshot = _state.value
         if (snapshot.phase != LoginPhase.SUBMITTING) return
-        scope.launch {
-            val outcome = gateway.signIn(snapshot.email, snapshot.password)
-            when (outcome) {
-                is AuthOutcome.Success -> dispatch(LoginEvent.AuthSucceeded(outcome.session))
-                is AuthOutcome.Failure -> dispatch(LoginEvent.AuthFailed(outcome.error, outcome.detail))
+        submitJob?.cancel()
+        submitJob =
+            scope.launch {
+                val outcome = gateway.signIn(snapshot.email, snapshot.password)
+                when (outcome) {
+                    is AuthOutcome.Success -> dispatch(LoginEvent.AuthSucceeded(outcome.session))
+                    is AuthOutcome.Failure -> dispatch(LoginEvent.AuthFailed(outcome.error, outcome.detail))
+                }
             }
-        }
     }
 }
 
@@ -144,19 +169,19 @@ fun LoginRoute(
         }
     }
 
-    LoginScreen(state = state, onEvent = host::dispatch)
+    LoginScreen(state = state, onEvent = host::onEvent)
 }
 
 /**
  * The reskinned login screen (worker-app.html `LoginScreen`) over [LoginUiState] — the
- * brand mark, the PennKey credential fields, "keep me signed in", and the primary
- * sign-in CTA. Binds to the existing reducer via [onEvent]; testTags (`login_screen`,
- * `login_email`, `login_password`, `login_submit`, `login_error`) are preserved.
+ * brand mark, the credential fields, "keep me signed in", and the primary sign-in CTA.
+ * Binds to the existing reducer via [onEvent]; testTags (`login_screen`, `login_email`,
+ * `login_password`, `login_submit`, `login_cancel`, `login_error`) are preserved.
  *
- * NOTE: a true PennKey SSO redirect is not wired (the gateway is email+password), so
- * the design's separate "Sign in with PennKey" SSO button + the credentials path are
- * folded into one real credential sign-in. "Keep me signed in" is informational — the
- * Supabase session persists via storage regardless.
+ * NOTE: PennKey SSO is not wired — the gateway is plain email+password, which is why
+ * the CTA reads "Sign in" rather than naming an identity provider the app does not
+ * actually redirect to. "Keep me signed in" is informational; the Supabase session
+ * persists via storage regardless.
  */
 @Composable
 fun LoginScreen(
@@ -186,7 +211,7 @@ fun LoginScreen(
                 Spacer(Modifier.height(40.dp))
                 BrandMark(72.dp)
                 Text(
-                    "Shift@PennHousing",
+                    "SHIFT",
                     modifier = Modifier.padding(top = 20.dp),
                     color = c.ink,
                     fontSize = 27.sp,
@@ -205,7 +230,8 @@ fun LoginScreen(
                 Spacer(Modifier.height(36.dp))
 
                 LoginField(
-                    label = "PennKey email",
+                    label = "Your email",
+                    placeholder = "bob@engineering.upenn.edu",
                     value = state.email,
                     onValueChange = { onEvent(LoginEvent.EmailChanged(it)) },
                     icon = ShiftIcons.Person,
@@ -274,7 +300,7 @@ fun LoginScreen(
 
                 Spacer(Modifier.height(20.dp))
                 ShiftButton(
-                    text = if (submitting) "Signing in…" else "Sign in with PennKey",
+                    text = if (submitting) "Signing in…" else "Sign in",
                     onClick = { onEvent(LoginEvent.SubmitRequested) },
                     modifier = Modifier.fillMaxWidth().testTag("login_submit"),
                     size = ButtonSize.Lg,
@@ -285,15 +311,23 @@ fun LoginScreen(
                 )
 
                 if (submitting) {
-                    // Says what is actually happening while the gateway call is out. Without
-                    // it the whole screen sits motionless after the tap, and a worker on a
-                    // slow connection concludes the button is broken and taps it again.
+                    // The way out of a slow sign-in. The CTA is disabled while the gateway
+                    // call is in flight, so without this the worker has no control at all —
+                    // they either wait out the timeout or force-quit the app. Shown from the
+                    // first frame rather than on a delay: a sign-in that resolves quickly
+                    // barely renders it, and one that does not is exactly when it is needed.
                     Spacer(Modifier.height(14.dp))
                     Text(
-                        "Checking your PennKey details. This only takes a moment.",
-                        modifier = Modifier.testTag("login_submitting_note"),
-                        color = c.sec,
-                        fontSize = 13.sp,
+                        "Cancel",
+                        modifier =
+                            Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onEvent(LoginEvent.CancelRequested) }
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                                .testTag("login_cancel"),
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     )
                 }
@@ -342,20 +376,23 @@ fun LoginScreen(
 }
 
 /**
- * The brand mark: the chevronel on its paper ground.
+ * The brand mark: the Penn crest, matching the web login mark (`Logo.tsx`) and the
+ * mobile splash lockup.
  *
- * `ic_brand_mark` is generated by scripts/brand/build-icons.mjs from the same
- * geometry as the launcher icon, the iOS AppIcon and the web favicon, so this
- * cannot drift from them. The drawable carries its own ground, which is why it
- * reads identically in light and dark. Corner radius matches the iOS squircle
- * so the two platforms' login screens agree. See docs/design/logo.md.
+ * `ic_login_mark` is generated by scripts/brand/build-icons.mjs from the same crest
+ * crop as the launcher icon, the iOS AppIcon and the web favicon, so this cannot
+ * drift from them. Light/dark crop selection is handled by the `drawable`/
+ * `drawable-night` resource qualifier, so no theme branch is needed here.
+ * 2026-07-29: supersedes the geometry-derived chevron this surface held onto during
+ * the crest rebrand — see docs/design/brand-source/README.md.
  */
 @Composable
 private fun BrandMark(size: androidx.compose.ui.unit.Dp) {
     Image(
-        painter = painterResource(R.drawable.ic_brand_mark),
+        painter = painterResource(R.drawable.ic_login_mark),
         contentDescription = null,
-        modifier = Modifier.size(size).clip(RoundedCornerShape(size * 0.2237f)),
+        modifier = Modifier.size(size),
+        contentScale = ContentScale.Fit,
     )
 }
 
@@ -367,6 +404,8 @@ private fun LoginField(
     onValueChange: (String) -> Unit,
     icon: ImageVector,
     modifier: Modifier = Modifier,
+    /** Example text shown in place of an empty field, e.g. a worked-example email address. */
+    placeholder: String? = null,
     isPassword: Boolean = false,
     passwordVisible: Boolean = false,
     keyboardType: KeyboardType = KeyboardType.Text,
@@ -414,6 +453,14 @@ private fun LoginField(
                         onDone = { onImeAction?.invoke() },
                     ),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                decorationBox = { innerTextField ->
+                    Box {
+                        if (value.isEmpty() && placeholder != null) {
+                            Text(placeholder, color = c.ter, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                        }
+                        innerTextField()
+                    }
+                },
             )
             trailing?.invoke()
         }
@@ -425,5 +472,6 @@ private fun AuthError.toMessage(): String =
     when (this) {
         AuthError.INVALID_CREDENTIALS -> "Incorrect email or password."
         AuthError.NETWORK -> "Network error. Check your connection and try again."
+        AuthError.TIMEOUT -> "Signing in took too long. Check your connection and try again."
         AuthError.UNKNOWN -> "Something went wrong. Please try again."
     }

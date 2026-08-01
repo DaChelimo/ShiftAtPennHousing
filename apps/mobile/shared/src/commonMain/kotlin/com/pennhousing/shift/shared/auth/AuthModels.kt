@@ -18,7 +18,15 @@ data class AuthSession(
     val expiresAt: Instant,
 )
 
-enum class AuthError { INVALID_CREDENTIALS, NETWORK, UNKNOWN }
+/**
+ * The user-facing failure buckets a sign-in can land in.
+ *
+ * [TIMEOUT] is deliberately distinct from [NETWORK]: "the request never came back"
+ * needs different advice ("try again") from "there is no connection at all", and
+ * keeping them apart is what stops an unreachable backend reading as a wrong
+ * password. See `SupabaseAuthGateway.SIGN_IN_TIMEOUT` for the bound.
+ */
+enum class AuthError { INVALID_CREDENTIALS, NETWORK, TIMEOUT, UNKNOWN }
 
 sealed interface AuthOutcome {
     data class Success(val session: AuthSession) : AuthOutcome
@@ -37,6 +45,17 @@ sealed interface AuthOutcome {
  * NOT implement it in this pure-logic package.
  */
 interface AuthGateway {
+    /**
+     * Attempts a sign-in. Implementations must be BOUNDED — a call that never
+     * returns strands the login screen in SUBMITTING, where the reducer honours no
+     * events except [LoginEvent.CancelRequested]. Every terminal condition,
+     * including "took too long", must come back as an [AuthOutcome].
+     *
+     * The one exception is cancellation: if the caller cancels the coroutine (the
+     * worker tapped Cancel), implementations must let [kotlin.coroutines.cancellation.CancellationException]
+     * propagate rather than converting it into a [AuthOutcome.Failure]. Swallowing
+     * it would report a bogus error for a deliberate user action.
+     */
     suspend fun signIn(
         email: String,
         password: String,

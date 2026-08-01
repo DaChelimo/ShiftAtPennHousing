@@ -21,7 +21,6 @@ import {
   Select,
   SHIFT_STATES,
   Skeleton,
-  StatusLegend,
   Tabs,
   Tag,
   TextInput,
@@ -72,7 +71,15 @@ const PEOPLE: Person[] = [
   { name: 'Sam Quad', role: 'SM', hours: '8 / 20' },
 ];
 
-function Section({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
+function Section({
+  title,
+  sub,
+  children,
+}: {
+  title: string;
+  sub?: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="st-section">
       <div className="st-section-head">
@@ -104,8 +111,17 @@ function Gallery() {
         </span>
       ),
     },
-    { key: 'role', header: 'Role', render: (p) => <Tag kind={p.role === 'SM' ? 'blue' : 'gray'}>{p.role}</Tag> },
-    { key: 'hours', header: 'Hours', numeric: true, render: (p) => <span className="t-mono">{p.hours}</span> },
+    {
+      key: 'role',
+      header: 'Role',
+      render: (p) => <Tag kind={p.role === 'SM' ? 'blue' : 'gray'}>{p.role}</Tag>,
+    },
+    {
+      key: 'hours',
+      header: 'Hours',
+      numeric: true,
+      render: (p) => <span className="t-mono">{p.hours}</span>,
+    },
   ];
 
   return (
@@ -200,7 +216,6 @@ function Gallery() {
             </span>
           </div>
           <div className="st-section-body col gap-4">
-            <StatusLegend />
             <div className="state-grid">
               {SHIFT_STATES.map((s) => (
                 <div className="state-card" key={s.key}>
@@ -300,7 +315,11 @@ function Gallery() {
             actionable
             title="Allied coverage needed — Quad, 22:00–24:00"
             actions={
-              <Button kind="danger" size="sm" onClick={() => toast({ kind: 'success', title: 'Marked covered' })}>
+              <Button
+                kind="danger"
+                size="sm"
+                onClick={() => toast({ kind: 'success', title: 'Marked covered' })}
+              >
                 Call Allied / Mark covered
               </Button>
             }
@@ -324,7 +343,10 @@ function Gallery() {
             <Skeleton w="65%" />
           </Card>
           <Card>
-            <ErrorState desc="Could not load coverage. Retry in a moment." action={<Button kind="secondary">Retry</Button>} />
+            <ErrorState
+              desc="Could not load coverage. Retry in a moment."
+              action={<Button kind="secondary">Retry</Button>}
+            />
           </Card>
         </Section>
 
@@ -347,7 +369,11 @@ function Gallery() {
             <Button kind="danger" onClick={() => setModal('danger')}>
               Danger modal
             </Button>
-            <Button kind="tertiary" icon="bell" onClick={() => toast({ kind: 'success', title: 'Saved', text: 'Changes applied.' })}>
+            <Button
+              kind="tertiary"
+              icon="bell"
+              onClick={() => toast({ kind: 'success', title: 'Saved', text: 'Changes applied.' })}
+            >
               Fire a toast
             </Button>
           </div>
@@ -393,8 +419,8 @@ function Gallery() {
           }
         >
           <p className="t-body">
-            This vacates all their shifts, voids their floats, and deactivates the account. Mid-shift
-            gaps escalate immediately.
+            This vacates all their shifts, voids their floats, and deactivates the account.
+            Mid-shift gaps escalate immediately.
           </p>
         </Modal>
       )}

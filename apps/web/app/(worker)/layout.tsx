@@ -43,8 +43,13 @@ export default async function WorkerLayout({ children }: { children: React.React
     { href: '/home/breaks', label: 'Breaks', testId: 'wnav-breaks', icon: 'calendar' },
   ];
 
-  const devClock = isTimeTravelEnabled() ? { offsetSeconds: await getSimOffsetSeconds() } : null;
-  const updatesCount = await getUpdatesBadgeCount(user.userId, await simNow());
+  // One wave, not three sequential round trips. This shell renders on every worker tab
+  // click, and each await here was a separate request to the hosted Supabase project.
+  const [devOffsetSeconds, updatesCount] = await Promise.all([
+    isTimeTravelEnabled() ? getSimOffsetSeconds() : Promise.resolve(null),
+    simNow().then((now) => getUpdatesBadgeCount(user.userId, now)),
+  ]);
+  const devClock = devOffsetSeconds === null ? null : { offsetSeconds: devOffsetSeconds };
 
   return (
     <WorkerShell

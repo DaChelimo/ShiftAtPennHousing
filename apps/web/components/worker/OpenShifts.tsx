@@ -190,7 +190,8 @@ export function OpenShifts({ board }: { board: OpenShiftsBoard }) {
         >
           <span className="t-body">This week</span>
           <span className="t-meta">
-            {String(board.currentWeekHours)}h of {String(board.hoursCap)}h soft cap
+            {String(board.currentWeekHours)}h of {String(board.hoursCap)}h{' '}
+            {board.capEnforcement === 'hard' ? 'hard cap' : 'soft cap'}
           </span>
         </div>
         <div className="claim-meter">

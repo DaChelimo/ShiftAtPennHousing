@@ -41,8 +41,10 @@ brief §6.1. This doc is the source of truth for the session; it pins the ambigu
 ## 2. Pinned decisions
 
 - **D1 — timing.** Admin override is an admin power, not a worker claim: it does **not** apply
-  the worker T-2h claim cutoff. It **does** reject a block that has already started/past
-  (`block_start_at <= now`) — reason `block_started` (escalation/edits never run after start).
+  the worker T-2h claim cutoff. **AMENDED 2026-07-29:** it also no longer rejects a block that
+  has already started/past. `block_started` was removed entirely (migration
+  `20260729000001`); a `this_week` seat of any age, unbounded past or future, is editable by
+  any authorized schedule admin (sm own-house; hm/bm/rsm/admin any house).
 - **D2 — hard cap is absolute.** Over the **40h hard** cap = hard block `hard_cap_exceeded`,
   **not** overridable even with `p_override_advisories=true` (BSpec §9.3/§820). Over the **20h
   soft** cap = advisory (overridable).

@@ -4,16 +4,17 @@ import com.pennhousing.shift.shared.breakclaim.BreakCalendarSnapshot
 import com.pennhousing.shift.shared.breakclaim.noBreakCalendar
 import com.pennhousing.shift.shared.data.ProfileSnapshot
 import com.pennhousing.shift.shared.data.WorkerSnapshot
-import com.pennhousing.shift.shared.shifts.weeklyHours
 import com.pennhousing.shift.shared.house.HouseScheduleSnapshot
 import com.pennhousing.shift.shared.model.FloatAck
 import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.notifications.IncomingSwap
 import com.pennhousing.shift.shared.notifications.NotificationItem
-import com.pennhousing.shift.shared.swaps.HandoffWorker
-import com.pennhousing.shift.shared.swaps.PendingSwap
 import com.pennhousing.shift.shared.notifications.withIncomingSwapEntries
 import com.pennhousing.shift.shared.notifications.withPendingFloatEntry
+import com.pennhousing.shift.shared.platform.SimClock
+import com.pennhousing.shift.shared.shifts.weeklyHours
+import com.pennhousing.shift.shared.swaps.HandoffWorker
+import com.pennhousing.shift.shared.swaps.PendingSwap
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
 import com.pennhousing.shift.shared.viewmodel.BreakCalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
@@ -24,7 +25,6 @@ import com.pennhousing.shift.shared.viewmodel.ShiftsScreenViewModel
 import com.pennhousing.shift.shared.viewmodel.SwapCalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.SwapsViewModel
 import com.pennhousing.shift.shared.viewmodel.UpdatesViewModel
-import com.pennhousing.shift.shared.platform.SimClock
 import kotlin.time.Instant
 
 /**
@@ -58,7 +58,14 @@ object DemoFactory {
      */
     fun shiftsViewModel(snapshot: WorkerSnapshot): ShiftsScreenViewModel {
         val now = now()
-        return ShiftsScreenViewModel(snapshot.myShifts, snapshot.openShifts, now)
+        // weeklyCaps rides the snapshot: on iOS this factory IS the live path, so
+        // dropping it here would leave the whole platform on the fallback cap.
+        return ShiftsScreenViewModel(
+            snapshot.myShifts,
+            snapshot.openShifts,
+            now,
+            weeklyCaps = snapshot.weeklyCaps,
+        )
     }
 
     /** The live "This week — Xh" total for [snapshot] (D8; pure `weeklyHours`). */
@@ -196,8 +203,7 @@ object DemoFactory {
     fun houseWeekSeats(
         anchor: Instant,
         isHome: Boolean,
-    ): List<com.pennhousing.shift.shared.house.HouseSeat> =
-        DemoData.houseWeekSeats(anchor, DemoData.DEMO_ME_USER_ID, isHome)
+    ): List<com.pennhousing.shift.shared.house.HouseSeat> = DemoData.houseWeekSeats(anchor, DemoData.DEMO_ME_USER_ID, isHome)
 
     /** The pickable houses for the demo House-tab switcher. */
     fun houses(): List<com.pennhousing.shift.shared.house.HouseOption> = DemoData.houses()
@@ -230,14 +236,17 @@ object DemoFactory {
     fun calendarViewModel(
         snapshot: WorkerSnapshot,
         closedDayIndexes: Set<Int>,
-    ): CalendarViewModel = CalendarViewModel(snapshot.myShifts, now(), closedDayIndexes)
+    ): CalendarViewModel = CalendarViewModel(snapshot.myShifts, now(), closedDayIndexes, weeklyCaps = snapshot.weeklyCaps)
 
     /** Live calendar VM + closed days + the worker's pending swaps (My-Shifts swap indicators). */
     fun calendarViewModel(
         snapshot: WorkerSnapshot,
         closedDayIndexes: Set<Int>,
         pendingSwaps: List<PendingSwap>,
-    ): CalendarViewModel = CalendarViewModel(snapshot.myShifts, now(), closedDayIndexes, pendingSwaps)
+        // The hours chip on iOS reads its cap from here; without it the whole platform
+        // sits on the fallback.
+    ): CalendarViewModel =
+        CalendarViewModel(snapshot.myShifts, now(), closedDayIndexes, pendingSwaps, weeklyCaps = snapshot.weeklyCaps)
 
     fun preferencesViewModel(): PreferencesViewModel = PreferencesViewModel(DemoData.preferencePeriod(now()))
 
@@ -249,8 +258,7 @@ object DemoFactory {
      * honest replacement for the demo calendar (whose fake ids make claims silently fail).
      * iOS calls this from `BreakCalendarObservable` when `fetchActiveBreak` resolves to none.
      */
-    fun emptyBreakCalendarViewModel(): BreakCalendarViewModel =
-        BreakCalendarViewModel(noBreakCalendar(meUserId = null, now = now()), now())
+    fun emptyBreakCalendarViewModel(): BreakCalendarViewModel = BreakCalendarViewModel(noBreakCalendar(meUserId = null, now = now()), now())
 
     /**
      * Live break-calendar VM from the worker's real grid snapshot + active break id +

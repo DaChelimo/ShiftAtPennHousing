@@ -28,8 +28,9 @@
 --   C. Assign — permanent (every future in-semester occurrence; feed removal).
 --   D. Assign — hard rejections (RAISE P0001 + the targeted row unchanged):
 --      Harnwell training backstop (DB trigger fires even via service role),
---      inactive worker, hard cap (even with override), block_started,
---      float_committed, cross_house_not_supported.
+--      inactive worker, hard cap (even with override), float_committed,
+--      cross_house_not_supported. A block already started/past is NO LONGER a
+--      rejection (D1, amended 2026-07-29) — see the past-block SUCCESS case.
 --   E. Assign — soft confirm gating (no write + needs_confirm with override=false;
 --      write with override=true).
 --   F. Authz — non-(sm/hm/bm) rejected; admin of another house rejected.
@@ -37,7 +38,8 @@
 --   H. Remove — permanent (all future in-semester → vacant+permanent_drop;
 --      float-committed skipped; sw_permanent_removal_alert (the SM passive
 --      sm_permanent_drop_alert was retired 2026-07-13); feed appearance).
---   I. Remove — rejections (block_started / float_committed / not-occupied).
+--   I. Remove — a past/started seat now succeeds (D1, amended 2026-07-29), plus
+--      the remaining rejections (float_committed / not-occupied).
 --   J. Atomicity — a rejected op leaves every row untouched.
 --
 -- TDD-RED: the S1 migration (`admin_assign_worker` / `admin_remove_worker`) is not
@@ -48,7 +50,7 @@
 
 BEGIN;
 
-SELECT plan(58);
+SELECT plan(59);
 
 -- ============================================================
 -- 0. Fixtures.
@@ -180,7 +182,8 @@ VALUES
   -- overwrite seat 1, NOT fill the sibling vacant seat (the old reassign bug).
   ('51000002-0000-0000-0000-000000001751', 'harrison',
    (current_setting('test.s1.anchor')::timestamptz + interval '7 days') - interval '90 minutes', 2),
-  -- A PAST block for block_started (harrison 18:00, -1w).
+  -- A PAST block (harrison 18:00, -1w) — used to prove past-edit works (D1,
+  -- amended 2026-07-29): assign fills it here, then section I removes from it.
   ('51000002-0000-0000-0000-000000001802', 'harrison',
    (current_setting('test.s1.anchor')::timestamptz - interval '7 days') - interval '1 hour', 1),
   -- A FUTURE float-committed seat (harrison 16:00, +1w) — pending_float_in.
@@ -221,7 +224,7 @@ VALUES
    '51000001-0000-0000-0000-000000000002', 'scheduled', 'none', false, NULL),
   ('51000003-0000-0000-0000-000000001752', '51000002-0000-0000-0000-000000001751',
    NULL, 'vacant', 'never_assigned', false, NULL),
-  -- past block (block_started): a vacant seat.
+  -- past block: a vacant seat (see the past-edit note above).
   ('51000003-0000-0000-0000-000000001802', '51000002-0000-0000-0000-000000001802', NULL, 'vacant', 'never_assigned', false, NULL),
   -- float-committed seat: pending_float_in (a floater inbound), occupant = the incumbent.
   ('51000003-0000-0000-0000-000000001601', '51000002-0000-0000-0000-000000001601',
@@ -502,21 +505,20 @@ SELECT is(
   'assign: the seat is untouched after the hard-cap rejection'
 );
 
--- D4. Block already started.
-SELECT throws_ok(
+-- D4. Block already started/past is now assignable (D1, amended 2026-07-29).
+SELECT lives_ok(
   $$ SELECT public.admin_assign_worker(
        '51000001-0000-0000-0000-000000000003'::uuid,
        ARRAY['51000002-0000-0000-0000-000000001802']::uuid[],        -- the -1w past block
        '51000001-0000-0000-0000-000000000001'::uuid,
        'this_week', false,
        current_setting('test.s1.anchor')::timestamptz) $$,
-  'P0001', 'block_started',
-  'assign: a block already started/past is rejected (block_started, D1)'
+  'assign: a block already started/past is filled, no longer rejected (D1, amended 2026-07-29)'
 );
 SELECT is(
-  (SELECT status::text FROM public.shift_block_assignments WHERE assignment_id = '51000003-0000-0000-0000-000000001802'),
-  'vacant',
-  'assign: the past block is untouched after the block_started rejection'
+  (SELECT user_id FROM public.shift_block_assignments WHERE assignment_id = '51000003-0000-0000-0000-000000001802'),
+  '51000001-0000-0000-0000-000000000001'::uuid,
+  'assign: the past block now holds the assigned worker (fed into section I as a removal fixture)'
 );
 
 -- D5. Float-committed seat.
@@ -814,16 +816,22 @@ SELECT is(
 -- I. REMOVE — rejections (§4b) — RAISE P0001 + the targeted row unchanged.
 -- ============================================================
 
--- I1. Block started/past.
-SELECT throws_ok(
+-- I1. Block started/past is now removable (D1, amended 2026-07-29). Reuses the
+--     -1w past block section D filled: it holds the target worker, so this
+--     proves the full past-edit round trip (assign, then remove).
+SELECT lives_ok(
   $$ SELECT public.admin_remove_worker(
        '51000001-0000-0000-0000-000000000003'::uuid,
-       ARRAY['51000002-0000-0000-0000-000000001701']::uuid[],        -- the 17:00 seat is now held by the target
+       ARRAY['51000002-0000-0000-0000-000000001802']::uuid[],
        '51000001-0000-0000-0000-000000000001'::uuid,
        'this_week',
-       current_setting('test.s1.anchor')::timestamptz + interval '100 days') $$,  -- as-of after the block start
-  'P0001', 'block_started',
-  'remove: a block already started/past is rejected (block_started)'
+       current_setting('test.s1.anchor')::timestamptz + interval '100 days') $$,  -- as-of long after the block start
+  'remove: a block already started/past is vacated, no longer rejected (D1, amended 2026-07-29)'
+);
+SELECT is(
+  (SELECT status::text FROM public.shift_block_assignments WHERE assignment_id = '51000003-0000-0000-0000-000000001802'),
+  'vacant',
+  'remove: the past block is vacated (temporary_drop) after the past-edit'
 );
 
 -- I2. Float-committed seat. (The pending_float_in seat is held by the incumbent.)

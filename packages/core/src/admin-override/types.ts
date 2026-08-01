@@ -82,7 +82,6 @@ export type AdminRemovalInput = {
 export type AdminHardBlockReason =
   | 'worker_inactive'
   | 'hard_cap_exceeded'
-  | 'block_started'
   | 'float_committed'
   | 'seat_not_assignable'
   | 'not_occupied_by_worker'

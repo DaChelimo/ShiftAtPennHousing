@@ -4,7 +4,7 @@ import { useSyncExternalStore } from 'react';
 
 import type { CalendarDay, CalShift, CalSwapMark, LaneSegment } from '../../lib/data/calendar';
 import { workerColor, workerContrastText } from '../../lib/workerColor';
-import { Icon, PickupDot, StatusLegend, Tag } from '../ui';
+import { Icon, PickupDot, Tag } from '../ui';
 
 import {
   BLOCK_H,
@@ -15,8 +15,6 @@ import {
   shiftOriginMinutes,
   spanLabel,
 } from './format';
-
-export { StatusLegend };
 
 // The admin calendar's CalShift carries `workerPhone`; the worker-safe model
 // omits it. Every grid renderer here is presentation-only and never reads that

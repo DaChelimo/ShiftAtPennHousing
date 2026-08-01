@@ -47,21 +47,23 @@ class SwapBannerTest {
         assertTrue(buildSwapBanner(emptyList(), now).isEmpty)
     }
 
-    @Test fun an_incoming_swap_says_someone_is_waiting_on_you() {
+    @Test fun an_incoming_swap_says_swap_is_awaiting_your_approval() {
         val entry = buildSwapBanner(listOf(swap("s1", SwapDirection.INCOMING)), now).entries.single()
         assertEquals(SwapBannerTone.AWAITING_YOU, entry.tone)
-        assertTrue(entry.title.contains("Ben"))
-        assertTrue(entry.detail.contains("Respond"), entry.detail)
+        assertEquals("Swap awaiting your approval", entry.title)
+        assertTrue(entry.detail.contains("Ben"), entry.detail)
+        assertTrue(entry.detail.contains("Respond by"), entry.detail)
         assertEquals("Review", entry.actionLabel)
     }
 
-    @Test fun an_outgoing_swap_says_you_are_waiting_on_them() {
+    @Test fun an_outgoing_swap_says_swap_pending() {
         // The state the pilot report says was missing entirely: "swap pending the other
         // person to accept" had nowhere to appear on the home screen.
         val entry = buildSwapBanner(listOf(swap("s1", SwapDirection.OUTGOING)), now).entries.single()
         assertEquals(SwapBannerTone.AWAITING_THEM, entry.tone)
-        assertEquals("Waiting on Ben", entry.title)
-        assertTrue(entry.detail.contains("expires"), entry.detail)
+        assertEquals("Swap pending", entry.title)
+        assertTrue(entry.detail.contains("Ben"), entry.detail)
+        assertTrue(entry.detail.contains("Expires"), entry.detail)
         assertEquals("View", entry.actionLabel)
     }
 

@@ -44,10 +44,10 @@ sealed class AssistantStreamEvent {
 /** Starter chips shown on the empty chat screen, shared so both platforms render identical copy. */
 object AssistantPrompts {
     val starters: List<String> = listOf(
-        "Who's on duty right now?",
-        "What's my next shift?",
-        "How do I check if a resident has access to a specific room?",
-        "A resident is locked out of their room. What are the steps?",
+        "Can Penn PFP students have overnight guests?",
+        "Does BELFOR have access to the building's back door?",
+        "Resident forgot their PAC number. How do I retrieve it?",
+        "Can I check out a cart to a Harnwell alum who's now off campus?",
     )
 }
 

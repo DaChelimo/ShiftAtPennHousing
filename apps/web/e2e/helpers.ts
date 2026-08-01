@@ -90,9 +90,11 @@ export const SEED = {
   // Quad week (Monday `overrideWeek`) holding BOTH a vacant seat (an "Open shift"
   // card) and an occupied seat staffed by `overrideIncumbent`, so assign /
   // reassign / remove all have a target. `overrideAdvisoryWorker` is a Quad SW who
-  // triggers an advisory when assigned (opted-out / over-soft-cap that week), so
-  // the advisory-confirm modal appears. The actors reuse the phase-13b Quad SWs:
-  // Cara (incumbent) and Fred (opted-out → advisory). See e2e/README.md (S1).
+  // trips a soft advisory when assigned (opted-out / over-soft-cap that week); on
+  // the live calendar that advisory no longer gates the write (2026-07-31), so
+  // assigning them writes directly instead of surfacing a confirm popup. The
+  // actors reuse the phase-13b Quad SWs: Cara (incumbent) and Fred (opted-out).
+  // See e2e/README.md (S1).
   overrideWeek: nextNyMondayISO(), // next NY Monday; the seed anchors Quad cards to it (now-relative, never ages out)
   overrideIncumbent: { email: 'cara.quad@pennhousing.test', name: 'Cara Quad' } as SeedUser,
   overrideAdvisoryWorker: { email: 'fred.quad@pennhousing.test', name: 'Fred Quad' } as SeedUser,

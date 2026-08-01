@@ -123,6 +123,14 @@ const info = (
   optedOut = false,
 ): WorkerScheduleInfo => ({ worker, assignedHours, targetHours, optedOut });
 
+const rsmInfo = (worker: Worker, assignedHours: number): WorkerScheduleInfo => ({
+  worker,
+  assignedHours,
+  targetHours: 0,
+  optedOut: false,
+  isRsm: true,
+});
+
 const prefs = (entries: Array<[Worker, string, PreferenceRecord['status']]>): PreferenceRecord[] =>
   entries.map(([worker, blockId, status]) => ({ userId: worker.userId, blockId, status }));
 
@@ -482,5 +490,59 @@ describe('buildPhase2Roster — over-target warning matches Phase 1 (D4)', () =>
     expect(roster.find((e) => e.worker.userId === alice.userId)?.wouldExceedTarget).toBe(false);
     // Bob: 9.5 + 1 = 10.5 > target → warning
     expect(roster.find((e) => e.worker.userId === bob.userId)?.wouldExceedTarget).toBe(true);
+  });
+});
+
+// =====================================================================
+// D8 (2026-07-29) — the house's RSM sitting at their own desk is hours-cap-exempt
+// in both phases, and in Phase 1 is routed to `available` rather than through
+// phase-04's preference grouping (an RSM never submits preferences).
+// =====================================================================
+
+describe('buildPhase1Card — RSM desk-assignment exemption (D8)', () => {
+  it('an RSM with zero preference rows lands in `available`, not `blocked: missing`', () => {
+    const card = buildPhase1Card([rsmInfo(carol, 39)], span2(), []);
+    expect(names(card.blocked)).toEqual([]);
+    expect(names(card.available)).toEqual(['Carol']);
+    const entry = card.available[0]!;
+    expect(entry.selectable).toBe(true);
+    expect(entry.isRsm).toBe(true);
+  });
+
+  it('an RSM never shows wouldExceedTarget, however many hours are already assigned', () => {
+    const card = buildPhase1Card([rsmInfo(carol, 100)], span4(), []);
+    expect(card.available[0]?.wouldExceedTarget).toBe(false);
+  });
+
+  it('a regular worker in the same call is still graded normally alongside the RSM', () => {
+    const card = buildPhase1Card(
+      [rsmInfo(carol, 39), info(alice, 0, 10)],
+      span2(),
+      prefs([
+        [alice, B0, 'preferred'],
+        [alice, B1, 'preferred'],
+      ]),
+    );
+    expect(names(card.preferred)).toEqual(['Alice']);
+    expect(names(card.available)).toEqual(['Carol']);
+  });
+});
+
+describe('buildPhase2Roster — RSM desk-assignment exemption (D8)', () => {
+  it('an RSM carries no advisories and never shows wouldExceedTarget', () => {
+    const roster = buildPhase2Roster([rsmInfo(carol, 100)], span2(), [
+      { userId: carol.userId, blockId: B0, status: 'cannot' },
+    ]);
+    expect(roster[0]?.advisories).toEqual([]);
+    expect(roster[0]?.wouldExceedTarget).toBe(false);
+    expect(roster[0]?.isRsm).toBe(true);
+  });
+
+  it('a regular worker in the same roster still gets the normal advisories', () => {
+    const roster = buildPhase2Roster([rsmInfo(carol, 0), info(alice, 0, 0, true)], span2(), []);
+    const aliceEntry = roster.find((e) => e.worker.userId === alice.userId);
+    const carolEntry = roster.find((e) => e.worker.userId === carol.userId);
+    expect(aliceEntry?.advisories).toEqual([{ kind: 'opted_out' }]);
+    expect(carolEntry?.advisories).toEqual([]);
   });
 });

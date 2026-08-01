@@ -16,7 +16,8 @@ appId: com.pennhousing.shift
     id: "claim_button"
 
 # A claim that would push the worker over the 20h soft cap warns first, but is
-# permitted (§5.3). Confirm through the warning if it is shown.
+# permitted (§5.3): one tap on "Claim anyway" claims immediately and dismisses.
+# Otherwise, confirm the plain claim.
 - runFlow:
     when:
       visible:
@@ -24,9 +25,13 @@ appId: com.pennhousing.shift
     commands:
       - tapOn:
           id: "soft_cap_confirm_button"
-
-- tapOn:
-    id: "claim_confirm_button"
+- runFlow:
+    when:
+      visible:
+        id: "claim_confirm_button"
+    commands:
+      - tapOn:
+          id: "claim_confirm_button"
 - assertVisible:
     id: "claim_success"
 

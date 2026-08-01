@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createClient } from '../lib/supabase/client';
 
 import { DevClockCard } from './DevClockCard';
+import { CoverageAlert } from './coverage/CoverageAlert';
 import { Avatar } from './ui/Avatar';
 import { Icon, type IconName } from './ui/Icon';
 import { LogoMark, Wordmark } from './ui/Logo';
@@ -169,6 +170,10 @@ export function AppShell({
   canSwitchToWorker = false,
   houses,
   unreadCount = 0,
+  coverageCount = 0,
+  coverageOverdue = false,
+  coverageUnavailable = false,
+  canSeeCoverage = false,
   devClock = null,
   children,
 }: {
@@ -180,6 +185,21 @@ export function AppShell({
   canSwitchToWorker?: boolean;
   houses?: ShellHouse[];
   unreadCount?: number;
+  /**
+   * Open Allied coverage requests still needing a manager. Rendered as a SEPARATE red
+   * badge from `unreadCount`: an unstaffed desk must never look like a swap request.
+   */
+  coverageCount?: number;
+  /** At least one open request whose coverage window has already passed. */
+  coverageOverdue?: boolean;
+  /**
+   * The coverage read FAILED. Distinct from `coverageCount === 0`, which means a
+   * genuinely quiet night. The banner must say the status is unknown rather than let
+   * silence read as all clear.
+   */
+  coverageUnavailable?: boolean;
+  /** This user is a manager (sm/hm/bm/rsm), so coverage alerts apply to them. */
+  canSeeCoverage?: boolean;
   /** Dev-only time-travel control state; null hides the card (e.g. production). */
   devClock?: { offsetSeconds: number } | null;
   children: React.ReactNode;
@@ -309,14 +329,28 @@ export function AppShell({
           href="/inbox"
           data-testid="nav-bell"
           className="hdr-bell"
-          aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
-          title="Notifications"
+          aria-label={
+            coverageCount > 0
+              ? `${coverageCount} Allied coverage requests need attention`
+              : unreadCount > 0
+                ? `Notifications, ${unreadCount} unread`
+                : 'Notifications'
+          }
+          title={coverageCount > 0 ? 'Allied coverage needed' : 'Notifications'}
         >
           <Icon name="bell" size={18} />
-          {unreadCount > 0 && (
-            <span data-testid="bell-count" className="bell-count">
-              {unreadCount}
+          {/* The urgent badge WINS over the plain unread badge. A desk about to go
+              unstaffed and a swap request must not render identically. */}
+          {coverageCount > 0 ? (
+            <span data-testid="bell-urgent-count" className="bell-count is-urgent">
+              {coverageCount}
             </span>
+          ) : (
+            unreadCount > 0 && (
+              <span data-testid="bell-count" className="bell-count">
+                {unreadCount}
+              </span>
+            )
           )}
         </Link>
 
@@ -392,7 +426,19 @@ export function AppShell({
         ))}
       </nav>
 
-      <main className="main">{children}</main>
+      <main className="main">
+        {/* Always mounted for a manager, even at zero: it owns the shell-level realtime
+            subscription, so a request arriving while they sit on any page surfaces the
+            banner without a navigation. It renders nothing when the count is zero. */}
+        {canSeeCoverage && (
+          <CoverageAlert
+            actionRequiredCount={coverageCount}
+            hasOverdue={coverageOverdue}
+            unavailable={coverageUnavailable}
+          />
+        )}
+        {children}
+      </main>
     </div>
   );
 }

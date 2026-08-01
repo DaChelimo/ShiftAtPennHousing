@@ -37,10 +37,12 @@ import { SEED, login } from './helpers';
 //   override-scope-week / -permanent — the This-week / Permanent scope toggle.
 //   override-submit             — assign / replace the chosen worker.
 //   override-remove             — remove the worker from the selected range.
-//   override-advisory-confirm   — the advisory-confirm modal (cannot / opted-out /
-//                                 over-soft-cap / over-target).
-//   override-advisory-accept    — accept the advisory and complete the write.
 //   override-success            — post-write confirmation.
+//
+// No advisory confirm popup here (2026-07-31): soft advisories (cannot /
+// opted-out / over-soft-cap / over-target) never gate a live-calendar write.
+// That confirm card exists only in the schedule builder now (OverrideConfirmModal,
+// testids over-target-warning / advisory-confirm) — see ShiftOverrideEditor.tsx.
 //
 // Route: /calendar?week=<Monday>. House under test: Quad (multi-staff, non-Harnwell).
 // The S1 seed publishes a Quad week (SEED.overrideWeek) with a 10:00 block holding
@@ -175,24 +177,23 @@ test.describe('Live-calendar admin override (§4.3) — assign / replace / remov
   });
 });
 
-test.describe('Live-calendar admin override (§4.3) — advisory confirm', () => {
-  test('assigning an over-soft-cap / opted-out / cannot worker shows the advisory confirm modal; accepting completes it', async ({
+test.describe('Live-calendar admin override (§4.3) — soft advisories never confirm', () => {
+  test('assigning an over-soft-cap / opted-out / cannot worker writes immediately, no confirm popup (2026-07-31)', async ({
     page,
   }) => {
     await login(page, SEED.hmQuad);
     await openCard(page, /open shift/i);
     await expect(page.getByTestId('override-section')).toBeVisible();
 
-    // SEED.overrideAdvisoryWorker (Fred) opted out for this period — assigning surfaces
-    // the confirm modal rather than writing.
+    // SEED.overrideAdvisoryWorker (Fred) opted out for this period. An RSM/SM
+    // editing the LIVE schedule is assumed to already know a worker's hours and
+    // availability picture, so soft advisories no longer gate the write behind a
+    // confirm popup here (unlike the schedule builder, where the roster panel is
+    // the only place that context surfaces) — the assignment completes directly.
     await workerCard(page, SEED.overrideAdvisoryWorker.name).click();
     await page.getByTestId('override-submit').click();
 
-    const modal = page.getByTestId('override-advisory-confirm');
-    await expect(modal).toBeVisible();
-
-    // Accepting the advisory completes the assignment.
-    await page.getByTestId('override-advisory-accept').click();
+    await expect(page.getByTestId('override-advisory-confirm')).toHaveCount(0);
     await expect(page.getByTestId('override-success')).toBeVisible();
     await expect(
       page.getByRole('button', { name: new RegExp(SEED.overrideAdvisoryWorker.name, 'i') }),

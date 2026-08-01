@@ -6,6 +6,7 @@ import type { AssignableWorker, CalShift } from '../../lib/data/calendar';
 import { EscalationChip, Icon, IconButton, PickupDot, Tag, type EscalationStep } from '../ui';
 
 import { EditSection } from './ShiftOverrideEditor';
+import type { WriteStatusEvent } from './WriteStatusToasts';
 import {
   blocksToHours,
   CAL_STATE_META,
@@ -35,6 +36,7 @@ export function ShiftDetailPanel({
   capEnforcement,
   onClose,
   onApplied,
+  onWriteStatus,
   panelRef,
 }: {
   shift: CalShift;
@@ -45,6 +47,7 @@ export function ShiftDetailPanel({
   capEnforcement: 'soft' | 'hard';
   onClose: () => void;
   onApplied: () => void;
+  onWriteStatus?: (evt: WriteStatusEvent) => void;
   panelRef?: Ref<HTMLElement>;
 }) {
   useEffect(() => {
@@ -173,6 +176,7 @@ export function ShiftDetailPanel({
             softCapHours={softCapHours}
             capEnforcement={capEnforcement}
             onApplied={onApplied}
+            onWriteStatus={onWriteStatus}
           />
         </div>
       </aside>

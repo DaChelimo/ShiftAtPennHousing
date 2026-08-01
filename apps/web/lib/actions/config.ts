@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 
 import { getSessionUser } from '../auth';
-import { isProjectAdministrator } from '../data/config';
+import { invalidateProjectAdministrator, isProjectAdministrator } from '../data/config';
 import type { SystemConfigRow } from '../data/config';
 import { createServiceClient } from '../supabase/server';
 
@@ -37,6 +37,7 @@ export async function saveSystemConfig(input: {
   if (error !== null) return { ok: false, error: error.message };
   if (data === null) return { ok: false, error: 'Unknown configuration key.' };
 
+  invalidateProjectAdministrator();
   revalidatePath('/admin/config');
   return {
     ok: true,

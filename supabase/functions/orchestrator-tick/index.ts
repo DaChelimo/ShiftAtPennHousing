@@ -36,6 +36,8 @@ type TickSummary = {
   floatsVoided: number;
   swapsExpired: number;
   laddersAdvanced: number;
+  coverageEscalated: number;
+  coverageReminded: number;
   errors: string[];
 };
 type StepStatus = 'fired' | 'completed_via_force_trigger' | 'rolled_back';
@@ -761,6 +763,41 @@ async function processOffhoursLadder(
   return typeof data === 'number' ? data : 0;
 }
 
+// Manager coverage-ladder advance pass (RSM -> HM -> HMOD). Escalates any open,
+// unacknowledged Allied coverage request whose rung timeout has elapsed, and re-pages
+// the current holder on the reminder interval. All logic — rung resolution, rung
+// skipping, the SKIP LOCKED advance, the terminal-rung stand-down — lives in the RPC;
+// this is a thin wrapper, matching processOffhoursLadder next door.
+//
+// This is the pass that fixes the pre-2026-07-29 behavior, where the escalation chain
+// paged exactly one person exactly once and then considered the desk handled.
+async function processCoverageLadder(
+  supabase: Supabase,
+  now: Date,
+): Promise<{ escalated: number; reminded: number }> {
+  // Close out anything that no longer needs cover (block voided, or the desk regained
+  // a present worker) BEFORE advancing, so a resolved gap never escalates to the next
+  // manager. This is the ONE case the system may close on its own.
+  const { error: closeError } = await supabase.rpc('system_close_obsolete_coverage_requests', {
+    p_now: now.toISOString(),
+  });
+  if (closeError !== null) {
+    throw closeError;
+  }
+
+  const { data, error } = await supabase.rpc('advance_allied_coverage_ladder', {
+    p_now: now.toISOString(),
+  });
+  if (error !== null) {
+    throw error;
+  }
+  const result = (data ?? {}) as { escalated?: number; reminded?: number };
+  return {
+    escalated: typeof result.escalated === 'number' ? result.escalated : 0,
+    reminded: typeof result.reminded === 'number' ? result.reminded : 0,
+  };
+}
+
 async function expirePendingSwaps(supabase: Supabase, now: Date): Promise<number> {
   // Cost audit F-10. The `swap-expiry` pg_cron job and this function ran the identical
   // UPDATE every minute; whichever went second updated zero rows. This copy was also
@@ -861,6 +898,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
     floatsVoided: 0,
     swapsExpired: 0,
     laddersAdvanced: 0,
+    coverageEscalated: 0,
+    coverageReminded: 0,
     errors: [],
   };
 
@@ -928,8 +967,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // this tick (the off-hours hmod terminal / no-ack void), and advancing after them
   // lets a just-covered gap resolve. A ladder started this tick is never advanced now —
   // its rung_fired_at == now, so the timeout has not elapsed.
-  const [ladderResult] = await Promise.allSettled([
+  const [ladderResult, coverageLadderResult] = await Promise.allSettled([
     processOffhoursLadder(supabase, now, runtimeConfig),
+    processCoverageLadder(supabase, now),
   ]);
   if (vacantResult.status === 'fulfilled') {
     summary.blocksScanned = vacantResult.value.blocksScanned;
@@ -951,6 +991,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
     summary.laddersAdvanced = ladderResult.value;
   } else {
     summary.errors.push(`offhours_ladder: ${errorMessage(ladderResult.reason)}`);
+  }
+  if (coverageLadderResult.status === 'fulfilled') {
+    summary.coverageEscalated = coverageLadderResult.value.escalated;
+    summary.coverageReminded = coverageLadderResult.value.reminded;
+  } else {
+    summary.errors.push(`coverage_ladder: ${errorMessage(coverageLadderResult.reason)}`);
   }
 
   try {

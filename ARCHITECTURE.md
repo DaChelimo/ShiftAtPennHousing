@@ -241,6 +241,14 @@ weekly_cap_overrides
 
 If a row exists for a given week, it overrides the profile-derived default for all 13 houses for that week. If no row exists, the default rules from the behavioral spec Section 9.3 apply (computed from the days in the week).
 
+The `hours_cap` column is constrained to 20-with-soft or 40-with-hard (`weekly_cap_overrides_value_pairing_check`, migration `20260528000011`). That constraint governs **manual overrides only**. A profile-derived cap has no such restriction: `apply_compiled_season` writes whatever `default_hours_cap` / `default_cap_enforcement` the administrator configured for the season, so the effective cap of a week may be any positive integer with either enforcement.
+
+**Resolution is `effective_weekly_cap(week_start_date, block_start_at)`.** Precedence: a `weekly_cap_overrides` row for the week, else the week's `operating_calendar` days joined to `operating_profiles`, taking the tightest hard cap if any day is hard and otherwise the tightest cap present, else 20/soft. The `block_start_at` parameter is retained for signature compatibility and unused. Migration `20260724000001` restored the `operating_profiles` join after `20260528000011` had replaced it with a hardcoded `break_type` classification that fell through to 20/soft for anything it did not recognize — which silently ignored every compiled operating-season profile, since a season profile (`s_<slug>_<YYYYMMDD>`) matched none of the hardcoded break types.
+
+**`effective_weekly_caps(from_week_start, to_week_start)`** (migration `20260729000004`) returns one row per Monday in the range, each delegating to `effective_weekly_cap`. It exists so a client can resolve every week it can navigate to in one round trip rather than one RPC per week, which would multiply the refetch amplification the mobile Realtime debounce exists to contain. Dates are snapped to their Monday with `date_trunc('week', ...)`; a reversed range returns no rows rather than raising, so a client clock skew cannot fail a snapshot read; a range wider than 53 weeks raises `invalid_parameter_value`. It is granted to `authenticated` and `service_role` and explicitly revoked from `anon` — the mobile worker app is the caller. The values are global schedule config, not user-scoped data, so client reachability is intentional. Tests: `supabase/tests/weekly-caps-range.sql` (11).
+
+**Clients consume the cap; they never derive it.** This is the same rule the coverage lock follows for claimability, and for the same reason: the value is server config that no client can reconstruct. The mobile app carries the resolved per-week caps on its worker-week snapshot (`WorkerSnapshot.weeklyCaps`, sourced by `WeeklyCapRepository`) and keys them by NY Monday, so the hours chip and the claim meter follow week navigation; the web worker portal reads `effective_weekly_cap` for the current week in `lib/data/worker/openShifts.ts`. Both previously hardcoded 20/soft, which is why an administrator raising the summer cap through `/admin/operations` changed nothing a worker could see (fixed 2026-07-29).
+
 ### 2.6 Layer 6: HMOD Rotor
 
 A table defining who serves as HMOD for each weekly slot.
@@ -301,6 +309,8 @@ This walk is implemented as a single recursive CTE. The delegation graph is kept
 3. This check runs inside a **serializable transaction** so that concurrent insertions cannot create a cycle between check-time and commit-time.
 
 The selection UI excludes incoming-chain members from the picker as a UX guard. The server-side transaction check is the authoritative backstop.
+
+**Replacement picker construction.** `getLeaveAdminData` (`apps/web/lib/data/leave.ts`) builds the picker with the service client, because an HM legitimately needs to read managers and active leave rows beyond their own-house RLS scope. It returns each candidate tagged `group: 'primary' | 'other'` — `primary` is the leaver's own-house managers plus the project administrator, `other` is every remaining house — together with the candidate's own active leave date ranges. The client (`HmLeaveForm`) shows `primary` on open and reveals `other` on request; it never re-queries. The availability hint is pure client-side date arithmetic in `apps/web/lib/leaveAvailability.ts`, comparing the leaver's entered window against each candidate's ranges as plain `date` strings (lexicographic compare, no `Date` parsing, so no timezone shift can move a day). Grouping and flagging are UX only: both groups post the same `replacement_user_id` to `submit_hm_leave`, and the server-side incoming-chain check remains the sole authoritative gate.
 
 **Project administrator as terminal node.** `replacement_user_id = NULL` means "project administrator handles this." The project administrator may always be selected; they cannot themselves go on leave in this system. The picker always surfaces the project administrator as an option.
 
@@ -378,7 +388,11 @@ A table that names each SM-built scheduling period as a first-class entity. This
 scheduling_periods
   period_id              (primary key)
   period_name            (text; e.g., "Fall 2025", "Spring 2026")
-  profile_name           (foreign key to operating_profiles; always 'regular_school_year')
+  profile_name           (foreign key to operating_profiles; any SM-built profile — a
+                          'regular_school_year' term OR a compiled 's_%' season profile.
+                          Widened by 20260702000006: summer is SM-built and needs a
+                          period row of its own. Corrected 2026-07-29; this field was
+                          previously documented as always 'regular_school_year')
   start_date             (date; inclusive — the first operating date of the semester)
   end_date               (date; inclusive — the last operating date of the semester,
                            matching the semester_end_date used by the permanent drop algorithm)
@@ -391,7 +405,7 @@ scheduling_periods
                           published_at IS NOT NULL.)
 ```
 
-`scheduling_periods` covers only SM-built (`regular_school_year`) periods. Break periods are covered by `break_periods`; they use claim-based scheduling and have no preference deadline. The two tables are intentionally kept separate because their purposes and query patterns are distinct: `break_periods` is looked up by date range to anchor claim-phase timings; `scheduling_periods` is looked up by `period_id` to resolve preference submission state and target hours.
+`scheduling_periods` covers only SM-built periods — both `regular_school_year` terms and compiled `s_%` season profiles (summer is SM-built; see Section 2.13). Break periods are covered by `break_periods`; they use claim-based scheduling and have no preference deadline. The two tables are intentionally kept separate because their purposes and query patterns are distinct: `break_periods` is looked up by date range to anchor claim-phase timings; `scheduling_periods` is looked up by `period_id` to resolve preference submission state and target hours.
 
 **Population:** an administrator creates a `scheduling_periods` row when setting up the academic calendar (alongside `operating_calendar` row population). The `preference_deadline` is initially null and is set by the SM via the schedule-build UI once they are ready to open preference submission.
 
@@ -399,7 +413,7 @@ scheduling_periods
 
 - `period_targets.period_id` and `preferences` rows are scoped to a specific `scheduling_periods` row. This ensures that when a new semester is built, the prior semester's preferences and targets are not overwritten — they remain in the database for historical reference, queryable by `period_id`.
 - The preference submission reminder job (5d, 3d, 1d before deadline — Behavioral Spec Section 4.2) queries `scheduling_periods` for the active period's `preference_deadline` to compute reminder times.
-- The permanent drop semester-boundary algorithm (Section 7.1) resolves `semester_end_date` from `scheduling_periods.end_date` for the period whose date range contains the drop date. This is a simpler and more reliable lookup than the recursive CTE walk: `SELECT end_date FROM scheduling_periods WHERE :drop_date BETWEEN start_date AND end_date AND profile_name = 'regular_school_year'`. The CTE walk remains documented as the fallback if this lookup returns no row (data integrity error condition).
+- The permanent drop period-boundary algorithm (Section 7.1) resolves `semester_end_date` from `scheduling_periods.end_date` for the current-or-upcoming period, **whatever that period's profile**: `SELECT end_date FROM scheduling_periods WHERE :drop_date <= end_date ORDER BY start_date LIMIT 1`. This is a simpler and more reliable lookup than the recursive CTE walk. The CTE walk remains documented as the fallback if this lookup returns no row (data integrity error condition). **Corrected 2026-07-29:** this lookup previously carried `AND profile_name = 'regular_school_year'`, which made a permanent drop impossible inside a summer season — it raised `semester_boundary_not_found` for a date sitting inside the current period, and the worker's shift was released to nobody.
 
 **Relationship to `break_periods`.** A fall semester's `scheduling_periods` row has `end_date` = the last regular_school_year date before winter break. The winter break's `break_periods` row has `start_date` = the first winter_break date. There is no overlap; the boundary is clean. Short breaks embedded within a semester (Thanksgiving, spring fling) have `break_periods` rows but are not interruptions in the `scheduling_periods` row — the semester's `end_date` spans across them.
 
@@ -444,7 +458,7 @@ user_roles
 A user can hold multiple roles. The `hm`, `rsm`, and `bm` roles share identical **administrative** capabilities (overrides, force-triggers, notifications, leave, weekly-cap) but differ in **worker** behavior and in two role-specific carve-outs (RSM cannot be HMOD; RSM has cross-house read):
 
 - A user holding `hm` may also hold `sw`/`sm` roles and act as a worker (scheduled shifts, claimed pickups, schedule preferences). However, the float lookup eligibility and broadcast subscription pipelines exclude any user with the `hm` role: HMs are never assigned floats and never receive open-shifts broadcasts. They may still manually browse the open-shifts feed and claim.
-- A user holding `rsm` (Residential Services Manager — Behavioral Spec §2.3a) is below the HM and above the SM. The `rsm` role carries **every** HM power **except HMOD**: it is admitted to `user_has_house_admin_role` and `user_can_build_schedule` exactly like `hm`/`bm` (own-house, scope-matched), so an RSM builds/overrides, administers people, sets the cap, and takes leave for their own house. Like an HM, an RSM holds shifts (claim pool + builder roster) but is never auto-floated and never receives broadcast. Two carve-outs: (a) an RSM is **never** placed on the `hmod_rotor` and is never a valid HMOD-transfer target; (b) an RSM has **read-only** visibility into _every_ house's live schedule (the `user_is_rsm(uuid)` predicate ORs into the schedule-visibility SELECT policies), while every write stays scope-matched to their own house.
+- A user holding `rsm` (Residential Services Manager — Behavioral Spec §2.3a) is below the HM and above the SM. The `rsm` role carries **every** HM power **except HMOD**: it is admitted to `user_has_house_admin_role` and `user_can_build_schedule` exactly like `hm`/`bm` (own-house, scope-matched), so an RSM builds/overrides, administers people, sets the cap, and takes leave for their own house. Like an HM, an RSM holds shifts (claim pool) but is never auto-floated and never receives broadcast. As of migration `20260729000002`, an RSM is also assignable from the schedule-builder roster to their **own** house's desk, exempt from every hours check (see below). Two carve-outs: (a) an RSM is **never** placed on the `hmod_rotor` and is never a valid HMOD-transfer target; (b) an RSM has **read-only** visibility into _every_ house's live schedule (the `user_is_rsm(uuid)` predicate ORs into the schedule-visibility SELECT policies), while every write stays scope-matched to their own house.
 - A user holding `bm` is admin-only. The schema enforces this by treating `bm` as exclusive of worker roles for scheduling purposes: a user with `bm` is excluded from preference submission, schedule-builder rosters, claim eligibility, and float lookup. They may still hold the `bm` role alongside `hm` or other admin roles, but worker-facing pipelines treat them as inactive.
 
 HMOD eligibility is implicit: any user with `hm` or `bm` role can appear in the `hmod_rotor`. The `rsm` role is **never** HMOD-eligible — the rotor population query and FK intent stay `hm`/`bm` only.
@@ -493,6 +507,10 @@ Each 30-minute block at each house with required headcount > 0 has its own row i
 
 **Every seat write is a compare-and-swap under a row lock (Behavioral Spec §1.6).** A read-then-write on a seat with no lock in between is a TOCTOU race, and under `READ COMMITTED` both sessions pass the check before either commits. The concurrency audit of 2026-07-26 found four write paths shaped that way, three of which wrote with **no predicate at all** (`drop_shift` vacated `WHERE assignment_id = ANY(...)`; `accept_swap` transferred the same way; `admin_assign_worker` picked its seat with an unlocked `DISTINCT ON`), so the second writer silently overwrote the first and the loser still received HTTP 200. Migration `20260726000009` gives each of them (a) a `FOR UPDATE` acquisition **before** the validating read and (b) the validating predicate repeated on the write itself with a `ROW_COUNT` assertion, so a seat that changed hands becomes a no-op that raises (`drop_not_owned`, `span_invalidated`, `seat_not_assignable`) rather than an overwrite. `admin_assign_worker` uses the `LATERAL ... LIMIT 1 FOR UPDATE SKIP LOCKED` seat pick that `claim_open_shift` and `permanent_pickup_slot` already use: `SKIP LOCKED` (not plain `FOR UPDATE`) is what makes two admins assigning onto one multi-staff block take **different** seats, since a blocked plain `FOR UPDATE` wakes, re-checks, finds the row still inside its predicate, and overwrites the other admin's worker anyway.
 
+**`admin_assign_worker` / `admin_remove_worker` may now edit a `this_week` seat of any age, unbounded past or future (Behavioral Spec §4.3, migration `20260729000001`).** Both RPCs previously carried an absolute `block_started` hard block (`block_start_at <= p_now` on any clicked seat), rejecting the write with no override path. It has been removed entirely from the `this_week` branch of both functions; the RPC's only remaining gate on WHO may reach this power is the existing `user_can_build_schedule` operator check (sm scoped to its own house; hm/bm/rsm/admin any house), so every schedule-admin role gained unbounded past-edit at once, not a new role tier. Every other hard block is unchanged: `cross_house_not_supported`, `worker_inactive`, `float_committed` (S1 remains OUT of float-committed seats — use decline/void), `seat_not_assignable`, `not_occupied_by_worker`, and the 40-hour hard cap (`hard_cap_exceeded`, still absolute, never overridable). `admin_assign_worker`'s `permanent` scope was never about past edits — it targets the recurring slot's future occurrences (`block_start_at > p_now`) by construction — and that filter is untouched; its "no future occurrence remains" case previously reused the `block_started` exception name and has been renamed to the self-describing `no_future_occurrences` now that `block_started` no longer exists as a concept. The pure mirror `packages/core/src/admin-override/index.ts` (`evaluateAdminAssignment` / `evaluateAdminRemoval`) had its `isStarted` check removed to match.
+
+**`admin_assign_worker` also exempts the block's house RSM from the same-house guard and every hours check (Behavioral Spec §2.3a/§4.3/§13, migration `20260729000002`).** The function computes `v_is_rsm` as `EXISTS (SELECT 1 FROM user_roles WHERE user_id = p_user_id AND role = 'rsm' AND scope_house_id = v_block_house_id)` (keyed on the RSM's role scope, not `users.home_house_id`, so the exemption stays own-house-only even if the two ever drift). When true: the target-worker same-house check (`v_worker.home_house_id <> v_block_house_id` → `cross_house_not_supported`) is bypassed; `admin_override_cap_assessment` is not even called, so the 40-hour hard cap, the 20-hour soft-cap advisory, and the `over_target` advisory are all skipped. The `cannot`/`opted_out` advisories are left as-is (an RSM has no `preferences`/`period_targets` rows, so they never fire in practice). `house_roster_as_of(house_id, as_of)` (migration `20260719000001`) gained a third output column, `is_rsm boolean`, returned via `bool_or` over a `UNION ALL` of the existing sw-membership branch and a new branch selecting the house's `role = 'rsm'` user; both `getBuilderData` (the manual builder) and `getAiScheduleContext` (§15/19, the AI scheduler) call this RPC, so `getAiScheduleContext` explicitly filters `is_rsm` rows back out — the AI agent still generates a preference-driven schedule for capped student workers only. The pure card view-model, `packages/core/src/scheduling/scheduleBuilderCard.ts` (`WorkerScheduleInfo.isRsm`), mirrors both exemptions client-side: `buildPhase2Roster` forces `advisories: []` / `wouldExceedTarget: false` for an `isRsm` worker, and `buildPhase1Card` routes `isRsm` workers around `groupWorkersForSpan` entirely into `available` (an RSM has no preference rows, so phase-04's grouping would otherwise always mark them `blocked: missing`, the opposite of "always assignable at their own desk").
+
 **Lock order is global: `users` → `shift_block_assignments` (ascending `assignment_id`) → `swap_requests`.** `accept_swap` and `apply_permanent_swap` previously took `swap_requests` first, which inverted against `drop_shift` → the `void_pending_swaps_for_vacated_seat` trigger → `swap_requests`, and deadlocked a drop racing an accept. `accept_swap` now pre-reads the swap **unlocked** purely to learn its id arrays (they are immutable after creation), locks the seats, then locks and re-reads the swap row authoritatively. Note the trigger is keyed on a status **transition**, so it is blind to the user_id-only transfer an accept performs; the compare-and-swap, not the trigger, is what protects that path.
 
 **Invariant #5 is enforced by the schema (migration `20260726000010`).** `shift_block_assignments_one_seat_per_worker` is a partial unique index on `(block_id, user_id)` where `user_id IS NOT NULL AND status IN ('scheduled','claimed','floated_in','pending_float_in')`. Before it, nothing in the schema prevented one worker holding two seats of a block: `enforce_block_occupied_headcount` only compares an occupied count to `required_headcount`, which two seats held by the same worker satisfy — which is how the `permanent_pickup_slot` double-seat bug (fixed 2026-07-24) reached a running database and had to be found by hand-reproduction. `admin_assign_worker` (both scopes) and `permanent_pickup_slot` carry an explicit "worker does not already occupy this block" filter so a legitimate flow degrades to assigning one fewer seat instead of failing with a raw `23505`. The index catches DUPLICATION, not substitution: the ownership-overwrite races above keep exactly one occupant per seat, so no unique constraint can see them, which is why both mechanisms are needed. `enforce_block_occupied_headcount` additionally counts its siblings `FOR UPDATE` now; the residual insert-insert phantom is not closed, because every runtime occupy is an UPDATE of an existing seat row and the only paths that INSERT occupied rows are the `publish_schedule` family, which already serialize on `scheduling_periods FOR UPDATE`.
@@ -535,7 +553,7 @@ Firing is implemented as `permanent_drop` (for recurring slots) plus `temporary_
 
 The `permanent_drop` value is what powers the permanent openings feed. The feed query selects blocks with `status = vacant` AND `vacancy_origin = permanent_drop`, grouped by (house, day-of-week, block-start-time) to present them as recurring slots rather than individual blocks.
 
-**The two feeds overlap; they are not a partition (corrected 2026-07-24).** Behavioral Spec §5.1 and §8.4.3 require a permanently-dropped occurrence to surface in the **weekly** feed as well, once that specific week crosses the 30-day horizon, so a worker can take one week of it without owning the rest. The client read model `worker_open_shifts` had instead partitioned the feeds with an exclusive `CASE WHEN vacancy_origin = 'permanent_drop' THEN 'permanent_opening' ELSE 'weekly' END`, which made the §5.3 single-occurrence claim unreachable: the occurrence never rendered as a weekly card, so no worker could originate the claim, and every week of an unwanted slot ran the full escalation chain to paid Allied coverage instead. The view now emits such an occurrence **twice** while it is inside the horizon, once per feed, both rows carrying the same `assignment_id` (migration `20260724000004`). The permanent branch is additionally restricted to `regular_school_year` days, mirroring the permanent-pickup candidate filter so the feed never advertises a slot the pickup cannot take; a `permanent_drop` block off the regular calendar falls through to the weekly branch instead.
+**The two feeds overlap; they are not a partition (corrected 2026-07-24).** Behavioral Spec §5.1 and §8.4.3 require a permanently-dropped occurrence to surface in the **weekly** feed as well, once that specific week crosses the 30-day horizon, so a worker can take one week of it without owning the rest. The client read model `worker_open_shifts` had instead partitioned the feeds with an exclusive `CASE WHEN vacancy_origin = 'permanent_drop' THEN 'permanent_opening' ELSE 'weekly' END`, which made the §5.3 single-occurrence claim unreachable: the occurrence never rendered as a weekly card, so no worker could originate the claim, and every week of an unwanted slot ran the full escalation chain to paid Allied coverage instead. The view now emits such an occurrence **twice** while it is inside the horizon, once per feed, both rows carrying the same `assignment_id` (migration `20260724000004`). The permanent branch is additionally restricted to **schedule-built** days (`operating_profiles.scheduling_mode = 'sm_built'`, exposed by the view as `schedule_built`), mirroring the permanent-pickup candidate filter so the feed never advertises a slot the pickup cannot take; a `permanent_drop` block on a claim-based day falls through to the weekly branch instead. **Widened 2026-07-29** from `profile_name = 'regular_school_year'`, so a summer season's recurring slots are pickable as a whole recurrence (migration `20260729000011`, with `permanent-pickup`'s `candidateBlocks()` and `semesterEndDate()` moved to the same rule in the same commit). Mode rather than name is load-bearing: a season compiles into several phase profiles, so no single name identifies it, while `sm_built` preserves the break-day exclusion the old equality actually bought.
 
 **Each feed is bounded in time, and by different amounts (migration `20260726000001`).** `vacant_seats` previously selected every future `vacant` assignment across all 13 houses to the end of generated time, with no upper bound — the client supplies only a lower one (`start_at >= Monday-of-last-week`), and supabase-kt silently drops a second filter on the same column, so the bound has to live in the view. Measured under RLS as a real Harnwell worker, one mobile read cost **130,343 shared buffers and ~270 ms** (16,150 rows). The weekly branch is now bounded at **6 weeks**, covering the client's navigable window with headroom; the permanent branch at **26 weeks**, deliberately longer so a permanently-dropped slot whose next regular-school-year occurrence lands beyond six weeks is still pickable as a whole recurrence. Verified by diffing the full projection against the previous definition: identical inside the horizon (1,752,053 rows, zero differing), and the bound drops 27,972 weekly rows and **zero** permanent rows. `weeks_remaining` keeps its own **unbounded** scan (now one `GROUP BY` over the recurring-slot identity rather than a correlated count per output row), so the advertised count still spans the whole remaining recurrence and continues to match what `permanent_pickup_slot` can take.
 
@@ -809,9 +827,27 @@ Each chain step is a named handler. The orchestrator looks up the step name from
 
 **Step: float_lookup.** Mark the block as unpickable atomically via the coverage lock (see below). Invoke the float lookup algorithm (Section 5). If floaters are assigned, the affected blocks transition appropriately. If no floater is found, the step fails, and the orchestrator immediately fires the next chain step (`hmod_notify_allied`).
 
-**Step: hmod_notify_allied.** Resolve the current HMOD via `hmod_rotor` and `hm_leave`. Determine whether the current time is within HM working hours AND whether the block's start time is within HM working hours; if so, also (or instead) notify the relevant house's HM. Per behavioral spec Section 10, HM working hours notifications go to the HM directly; outside HM hours, only the HMOD is notified. Generate the notification. Block remains `vacant` until the HMOD confirms Allied, at which point the block flips to `allied`.
+**Step: hmod_notify_allied.** Opens a tracked **Allied coverage request** via `open_allied_coverage_request` (migration `20260729000010`) rather than emitting a single notification. The request row (`allied_coverage_requests`) carries the house, the coverage window, the reason, the current ladder rung, and the close-out outcome. Block remains `vacant` until Allied is confirmed, at which point the block flips to `allied`.
 
-The HMOD confirmation is a manual in-app action: "I've called Allied for these blocks." Until that action, the block is technically still vacant in the database.
+Request lifecycle (Behavioral Spec §5.4a):
+
+- **Open.** Rung 1 is always the house's RSM (`resolve_rsm_for_house`). A rung whose resolver returns NULL is skipped immediately rather than holding the request for its timeout; if every rung is unreachable the request falls to `system_config('project_administrator_user_id')`, and if that is unset a `RAISE WARNING` is emitted and no request is created.
+- **Coalescing.** The chain step is inherently one fire per 30-minute block, so a contiguous stretch would page once per block. When the new window abuts or overlaps an already-open request for the same house, that request's window is EXTENDED and no second page is sent. The anchor `block_id` stays the first block, which keeps the `one_open_per_block` partial unique index valid.
+- **Advance.** `advance_allied_coverage_ladder(now, limit)` runs once per orchestrator tick (alongside the existing off-hours-ladder advance; no new cron). Per open, unacknowledged request it either escalates to the next reachable rung, or re-pages the current holder on the reminder interval, or (on the terminal `hmod` rung) stands down and keeps reminding. It selects `FOR UPDATE SKIP LOCKED` so concurrent ticks cannot double-escalate.
+- **Acknowledge / close.** `acknowledge_allied_coverage_request` stops the ladder; `close_allied_coverage_request` records one of four `allied_coverage_outcome` values and is the ONLY way a request leaves the active view. `desk_unstaffed` requires a note (enforced in the RPC, not only the UI). Both also stamp `acknowledged_at` on the request's outstanding `hmod_urgent` notifications so the alert is silenced on every surface at once.
+- **System close.** `system_close_obsolete_coverage_requests` runs first in the same tick pass and closes as `no_longer_needed` any request whose block was voided or whose desk regained escalation coverage. This is a status write, not a coverage revocation, so hard invariant #3 (no-takeback) is untouched. It is the ONLY automatic close.
+
+Notifications reuse the existing `hmod_urgent` type rather than adding an enum value, so every existing consumer keeps working; the payload gains `request_id`, `rung`, and `rung_deadline_at`.
+
+**Grants.** `allied_coverage_requests` needs `GRANT SELECT ... TO authenticated` in addition to its RLS policy: table privileges are checked BEFORE any policy, so the policy alone yields a bare "permission denied for table" and the Action Inbox renders an empty state while real requests sit unactioned. `anon` holds nothing, and clients hold no INSERT/UPDATE (every write goes through a SECURITY DEFINER RPC). pgTAP runs as a superuser and cannot catch a missing grant, so `allied-coverage-ladder.sql` asserts the grants explicitly.
+
+**A failed coverage read must degrade, not crash the console** (Behavioral Spec §5.4a; added 2026-07-29). `getCoverageData` (`apps/web/lib/data/coverage.ts`) deliberately **throws** rather than returning an empty result, so a broken read can never render as "All clear. No coverage needed". That is correct for `/inbox`, which has its own `error.tsx`. It is wrong for the shell, because `app/(app)/layout.tsx` renders **above** every error boundary in its own subtree: an uncaught throw there escapes to Next's built-in global error, which is a blank screen for the whole admin console on every route in production, and in dev an overlay that reloads the document, re-throws on the reload, and loops roughly twice a second with no window in which to navigate away. A stale PostgREST schema cache for `allied_coverage_requests` produced exactly that on 2026-07-29.
+
+So the shell reads through `getShellCoverage`, which catches, logs `shell_coverage_read_failed`, and returns `{ data: null, unavailable: true }`. `AppShell` forwards `coverageUnavailable` to `CoverageAlert`, which renders an explicit "Coverage status could not be loaded" banner at full alert prominence — distinct from `actionRequiredCount === 0`, which renders nothing. `app/error.tsx` is the root backstop for the next unguarded layout failure; it exists so a layout-level throw renders a readable, retryable page instead of an unbreakable reload loop. Do not "simplify" `getCoverageData` to swallow its error, and do not call it directly from a layout.
+
+`getCoverageData` is wrapped in React `cache()`, keyed on the `now` argument. The shell and `/inbox` both need it on the same render, and `simNow()` is itself `cache()`d so both pass the same `Date` instance; unmemoized, one `/inbox` navigation ran the whole read **twice** (requests select, rung-timeout config row, name lookup) for about one extra Supabase round trip of latency. Per-request only: the rows are RLS-scoped to the signed-in manager, so a process-wide cache here would leak one house's coverage to another's. The rung timeout is the one genuinely global value and uses the process-wide `cachedGlobal` memo instead. These reads also resolve identity through `getSessionUser()` rather than `supabase.auth.getUser()`, which is a GoTrue HTTP round trip on every call (the cost-audit F-07 rule).
+
+The Allied confirmation is a manual in-app action. Until that action, the block is technically still vacant in the database.
 
 **Coverage-conditional pickup lock (Behavioral Spec §5.3/§5.4/§5.5).** Both securing-tier steps (`float_lookup`, `hmod_notify_allied`, but **not** `broadcast` — T-3h stays claimable) call `lock_block_coverage(block_id, now)`, which sets `shift_blocks.coverage_locked_at` once (idempotent, one-way).
 
@@ -884,8 +920,8 @@ When `hmod_notify_allied` (or any HM-action notification) fires:
 
 1. Determine the block's start time.
 2. Determine the current time.
-3. If current time is within HM working hours (Mon-Fri, [08:00, 17:00)) AND the block start time is within HM working hours AND the block's date is a weekday → resolve the house's **RSM** (via `resolve_rsm_for_house` → `hm_leave` → effective contact at current moment) and notify them (notification `target = 'rsm'`). The HM is **not** the in-hours recipient — they are reached only in their HMOD capacity. If the RSM is on leave, leave-resolution returns the RSM's replacement (by default the HM, then BM) as the effective contact; if the house has no acting RSM at all, the notification falls back to the HMOD on duty (`target = 'hmod'`). A notification firing at exactly 08:00 is within HM hours; one firing at exactly 17:00 is within HMOD hours.
-4. Otherwise → resolve the current HMOD (via `hmod_rotor` → effective HMOD at current moment) and notify them.
+3. **Allied coverage requests are no longer routed by hour** _(amended 2026-07-29)_. They enter the three-rung ladder of Behavioral Spec §5.4a, which always starts at the house's RSM (`resolve_rsm_for_house`), escalates to the house's HM (`resolve_hm_for_house`, which walks `hm_leave`), and terminates at the HMOD on duty (`resolve_hmod_on_duty`). The hours-dependent branch below still governs OTHER HM-action notifications; it no longer governs Allied procurement. The off-hours pilot ladder (`is_offhours_ladder_enabled()`, default false) still pre-empts the manager ladder when switched on.
+4. For the remaining HM-action notifications: if current time is within HM working hours (Mon-Fri, [08:00, 17:00)) AND the block start time is within HM working hours AND the block's date is a weekday → resolve the house's **RSM** and notify them (`target = 'rsm'`), falling back to the HMOD on duty. A notification firing at exactly 08:00 is within HM hours; one firing at exactly 17:00 is within HMOD hours. Otherwise → resolve the current HMOD and notify them.
 
 This implements the behavioral spec's Section 10.1 routing rules exactly. There are no stacked digests; if neither the HM nor HMOD is currently on duty for the routing, the notification still fires (it must, because action is required), but only to whichever role is on duty.
 
@@ -1013,16 +1049,21 @@ Where `slot_definition` is the recurring slot identifier — a tuple of (house_i
 
 **Procedure:**
 
-1. Resolve `semester_end_date` — the last operating date of the current semester — using the `scheduling_periods` table (Section 2.10):
+1. Resolve `semester_end_date` — the last operating date of the current operating period — using the `scheduling_periods` table (Section 2.10):
 
    ```sql
    SELECT end_date AS semester_end_date
    FROM scheduling_periods
-   WHERE :drop_date BETWEEN start_date AND end_date
-     AND profile_name = 'regular_school_year';
+   WHERE :drop_date <= end_date
+   ORDER BY start_date
+   LIMIT 1;
    ```
 
-   This is a single point lookup. If it returns a row, `semester_end_date = scheduling_periods.end_date`. The `scheduling_periods.end_date` was set at calendar-population time as the last regular_school_year date of the semester, which is exactly the boundary needed.
+   If it returns a row, `semester_end_date = scheduling_periods.end_date`. The `scheduling_periods.end_date` was set at calendar-population time as the last operating date of the period, which is exactly the boundary needed.
+
+   **The period's profile is not constrained** (corrected 2026-07-29). A `regular_school_year` term and a compiled `s_%` season are both SM-built periods with a `scheduling_periods` row, and a recurring slot in either is permanently droppable. Restricting this lookup to `regular_school_year` made summer recurrences undroppable: `semester_boundary_not_found` was raised for a date inside the current period, and the seats stayed assigned. Taking the earliest not-yet-ended period (rather than a `BETWEEN` point lookup) also keeps the resolution correct when the drop date falls just before a period opens or between periods.
+
+   **Occurrence filter — exclude claim-based days, by mode not by name.** The bulk UPDATE joins `operating_calendar` through to `operating_profiles` and keeps only `scheduling_mode = 'sm_built'` dates. This is what excludes an embedded break occurrence (Behavioral Spec Section 8.4.1): a break day is claim-based and has no recurring slot to drop. Stating it as a mode rather than as `profile_name = 'regular_school_year'` is load-bearing — a season spans several phase profiles (`s_summer2026_20260601`, `s_summer2026_20260701`, …), so matching the period's own `profile_name` would vacate only the first phase.
 
    **Fallback if the lookup returns no row (data integrity error).** If no `scheduling_periods` row covers the drop date, the system must not silently proceed with an unbounded drop. Instead, raise an application-layer error: "Cannot determine semester boundary for this date. Contact the administrator to verify the scheduling_periods table." Do not fall back to the recursive CTE silently. The CTE walk remains documented below as the source of truth for what `scheduling_periods.end_date` should equal, and may be used by an administrator to diagnose and repair a misconfigured `scheduling_periods` entry.
 
@@ -1065,12 +1106,14 @@ WHERE sba.user_id = :dropping_user_id
       AND TO_CHAR(sb.block_start_at, 'HH24:MI') IN :slot_block_start_times
       AND sb.block_start_at > :drop_initiated_at
       AND sb.block_start_at::date <= :semester_end_date
-      AND oc.profile_name = 'regular_school_year'  -- short-break dates in the semester have a different profile and no recurring slot
+      AND op.scheduling_mode = 'sm_built'  -- claim-based (break) dates have no recurring slot
   )
   AND sba.status NOT IN ('floated_out', 'pending_float_out');
 ```
 
-The `profile_name = 'regular_school_year'` predicate ensures embedded short-break dates within the semester are naturally excluded (they have a different profile and no recurring assignments under SM-built scheduling). The `semester_end_date` boundary ensures the drop does not carry into the next semester's regular_school_year period across a winter_break or summer interruption.
+(`op` is `operating_profiles`, joined from `oc.profile_name`.)
+
+The `scheduling_mode = 'sm_built'` predicate ensures embedded break dates are naturally excluded (they are claim-based and have no recurring assignments). The `semester_end_date` boundary ensures the drop does not carry into the next period. **Corrected 2026-07-29:** this predicate was `profile_name = 'regular_school_year'`, which excluded break dates correctly but also excluded every summer-season date, so a season recurrence could not be dropped at all. See the mode-not-name note above.
 
 The trailing AND-clause excludes blocks where the dropping worker is currently committed to a float — those commitments are firm and the no-takeback rule applies.
 
@@ -1106,6 +1149,8 @@ The slot_definition identifies blocks currently in `vacant` / `permanent_drop` s
 2. Resolve the current operating profile's end date.
 
 3. Identify candidate blocks: all blocks matching `vacancy_origin = 'permanent_drop'`, the slot's recurring pattern (house_id, day-of-week, block-start-time), date strictly after the moment of the pickup operation, and date within the current operating profile.
+
+   **Which dates qualify (widened 2026-07-29).** `candidateBlocks()` keeps dates whose calendar profile is **schedule-built** (`operating_profiles.scheduling_mode = 'sm_built'`), and `semesterEndDate()` resolves the boundary from the current-or-upcoming `scheduling_periods` row **whatever its profile** — the same two rules `permanent_drop_slot` uses (Section 7.1) and the same rule `worker_open_shifts.schedule_built` uses (Section 5.x). Both previously read `profile_name = 'regular_school_year'`, so a summer season's recurrence could not be picked up as a unit and had to be claimed week by week. These three predicates must move together: the feed advertises, the count quantifies, and this step delivers, and any drift between them reintroduces the mismatch the symmetry rule (`20260617000004`) exists to prevent.
 
    The candidate set is **distinct by `block_id`**. `shift_block_assignments` holds one row per seat, so a multi-staff desk (Harnwell `required_headcount` 2, Quad 3) whose recurring slot was permanently dropped by both of its owners carries two `permanent_drop` vacancies on the same block — the mirror image of the one-seat-per-block claim in step 6. The seats of a block are interchangeable (Section 1.7), and an occurrence is 0.5 hours once, not once per seat, so a block listed per seat would double its contribution to the step 4c projection. Because a cap-exceeding week is skipped **in full**, that over-projection does not merely trim a block — it silently drops the whole week, and it emits duplicate ids in the queued and skipped sets.
 
@@ -1508,6 +1553,15 @@ Duty slots are filled by the **existing** resolvers, not new ones: `resolve_hmod
 
 - **Life safety** (fire / medical / emergency door) and **access decisions** are matched by high-recall keyword heuristics. High recall is intentional: a false positive adds a redundant safety preamble, a false negative omits the one that mattered.
 - **Incident probes** ("what happened the other day") are refused at the ask, rather than relying on retrieval returning nothing.
+
+The two flags inject **different kinds** of framing, and `da-ask` keeps them in separate lists (corrected 2026-07-30):
+
+| Flag        | Constant                 | Where it goes                                                         | Worker sees it |
+| ----------- | ------------------------ | --------------------------------------------------------------------- | -------------- |
+| Life safety | `lifeSafetyPreamble()`   | `preambles` → leading synthetic SSE delta, persisted with the message | **Yes**        |
+| Access      | `ACCESS_MODEL_DIRECTIVE` | `systemDirectives` → appended to the system prompt for that request   | **No**         |
+
+A life-safety preamble is content the worker must read ("call the emergency line now"). An access directive only constrains how the model writes the answer, so it is an instruction, not copy. Both were originally pushed onto the same visible `preambles` list, which streamed the access instruction to the worker as the answer's first paragraph and persisted it into `da_messages` — the exact meta-narration BSpec §17.3b forbids. Putting the directive on the **system** prompt rather than the user turn also removes the echo risk, since the model does not relay system content. `GROUNDED_SYSTEM_PROMPT` additionally bans opening by classifying the question. da-ask has no Deno test, so the split is pinned from `packages/core/tests/desk-assistant/mirror.test.ts`, which reads the Edge Function's source and asserts that `preambles` receives nothing but `lifeSafetyPreamble` and that no instruction text is hardcoded inline.
 
 The real control on incident disclosure is that raw incidents are never in the index (§13.2). The output filter is defense in depth, not the primary mechanism — if raw sensitive text lived in the vector store, a retrieval bug or an injection could surface it.
 
@@ -1918,6 +1972,56 @@ notification about a seat the worker cannot claim is worse than no notification.
 Kotlin defaults in `settings/NotificationPreferences` mirror the column defaults and the
 function; **if you change one, change all three.**
 
+### 21.3a The Instant Shift-Opened Notification
+
+_(Added 2026-07-29, migrations `20260729000012` + `20260729000013`.)_
+
+`notify_shift_opened(house_id, block_id, start_at, end_at, actor_user_id, now, recurring)`
+emits ONE `shift_opened` notification per dropped SPAN. It is called by `drop_shift` and by
+`permanent_drop_slot`, both already `SECURITY DEFINER`, so no client holds EXECUTE on it.
+
+Three things about the design are load-bearing:
+
+**One row per span, not per block.** A four-hour drop vacates eight `shift_block_assignments`
+rows. Eight pushes for one human event is how a worker mutes the app at the OS level, which
+would silently take the mandatory float-acknowledgment pushes down with it, since they share
+the channel. The span's start and end ride in the payload instead.
+
+**The recipient predicate is `home_house_id = p_house_id OR wants_open_shift_notification(...)`.**
+The left side is what makes the home house mandatory: it short-circuits before the preference
+is ever read. The right side, for a non-home house, resolves to `open_shifts_other_houses`
+(default false). This is the ONLY place the two channels diverge from
+`process_broadcast_step`, which consults the preference for both houses. `open_shifts_home_house`
+therefore now governs the T-3h broadcast alone.
+
+**The Harnwell guard sits ABOVE the opt-in**, as a separate `AND`. An opted-in non-Harnwell
+worker must never be told about a Harnwell seat (hard invariant #1), and ordering it as part
+of the preference clause would let the opt-in override it.
+
+`drop_shift` calls it AFTER the compare-and-swap vacate, so a losing racer, which raises and
+rolls back, cannot announce a seat it did not vacate. It skips the call when the block carries
+`coverage_locked_at` (§5.5): that seat is not claimable and the copy says "Open the app to
+claim it." `permanent_drop_slot` captures the earliest affected occurrence BEFORE its `UPDATE`,
+while the rows still carry the dropping worker's `user_id`; that capture query mirrors the
+`UPDATE`'s predicate exactly, including the `operating_profiles.scheduling_mode = 'sm_built'`
+break exclusion, and **the two must be changed together** or the notification will describe a
+different slot than the one vacated.
+
+Payload copy (`title` / `body`) is composed in SQL and read verbatim by both clients through
+`pushDisplayFromData` and the Updates feed, so the notification needs no client release to
+render. Float-out seat reopening and admin removal deliberately do NOT call this; they still
+rely on the feed plus the T-3h broadcast.
+
+**The in-app toast was dead code until the same date.** `observeNotifications` streams
+realtime INSERTs on `notifications` and mapped each record with a function that read
+`row["title"]`. That is not a column: the row is `notification_id / recipient_user_id / type
+/ delivered_at / scheduled_for / payload / acknowledged_at`, and every producer writes its
+copy inside `payload`. The mapping returned null for every notification ever sent, so the
+foreground toast never fired once on either platform. It now reads `payload` first, keeping
+the top-level lookup as a fallback, and moved out of `WorkerShiftsRepository` (AGENTS §5.2
+quarantine) into the pure `notifications/ToastNotification.kt`, where `ToastNotificationTest`
+covers it.
+
 ### 21.4 Pending Swaps on the Live Calendars
 
 `pending_swap_seat_marks` is one row per SEAT held in a pending, unexpired swap, resolving
@@ -1995,3 +2099,111 @@ because omitting it would make turning every reminder off impossible.
 
 The default exists in three places that must agree: the column default, the
 `worker_shift_reminder_offsets` fallback, and Kotlin's `NotificationPreferences`.
+
+---
+
+## 22. Worker Sign-In and the Mobile Auth Gateway
+
+Added 2026-07-31, documenting a surface that shipped undescribed and revising its failure
+handling (BSpec §23). No migration: this is entirely client-side over GoTrue.
+
+### 22.1 The Split
+
+Sign-in follows the same pure-logic/adapter split as the rest of `apps/mobile`:
+
+- **`shared/.../auth/`** — pure, no I/O. `LoginReducer` is a total function of
+  `(LoginUiState, LoginEvent)` over four phases (EDITING, SUBMITTING, AUTHENTICATED,
+  ERROR); `LoginFormValidator` does field validation; `AuthGateway` is the interface the
+  reducer's hosts call. Covered by `LoginReducerTest` / `LoginFormValidatorTest`.
+- **`shared/.../data/SupabaseAuthGateway`** — the adapter over supabase-kt 3.1.1 Auth.
+  Part of the data layer the unit suite scopes out; verified against a running backend.
+- **The two hosts** — Android `LoginHost` + `LoginRoute` (Compose), iOS `LoginObservable`
+  (SwiftUI). Each owns the in-flight call and feeds results back through the reducer.
+
+There is no SSO flow. `signInWith(Email)` posts to GoTrue's `token?grant_type=password`;
+there is no provider redirect and no passkey anywhere in the stack.
+
+### 22.2 Every Path Out of `signIn` Terminates
+
+This is the invariant the 2026-07-31 change added, and the one not to break.
+
+`AuthError` has four buckets — `INVALID_CREDENTIALS`, `NETWORK`, `TIMEOUT`, `UNKNOWN` —
+and the gateway maps to them in a **fixed catch order**:
+
+1. `TimeoutCancellationException` → `TIMEOUT`. The outer `withTimeout(SIGN_IN_TIMEOUT)`.
+2. `CancellationException` → **rethrown**. Must come before the `Throwable` arm, which
+   would otherwise swallow it. Swallowing cancellation reports a bogus failure for a
+   deliberate user action _and_ leaves the caller running inside a cancelled coroutine.
+3. `HttpRequestTimeoutException` → `TIMEOUT`. supabase-kt's own per-request bound.
+4. `IOException` → `NETWORK`. Catches supabase-kt's `HttpRequestException`, which extends
+   `kotlinx.io.IOException` — connectivity failures arrive as that, not as a raw socket
+   exception.
+5. `RestException` → 400/401/403/422 to `INVALID_CREDENTIALS`, anything else `UNKNOWN`.
+6. `Throwable` → `UNKNOWN`.
+
+**`SIGN_IN_TIMEOUT` is 15 seconds** and is the outer backstop, deliberately wider than
+supabase-kt's 10s `requestTimeout` so a genuine HTTP timeout still reports with its own
+cause and this only fires when something _outside_ the request stalls. supabase-kt's
+timeout covers only the POST; session persistence, the `sessionStatus` update, and
+engine-level DNS sit outside it. Without the outer bound a stall leaves the reducer in
+SUBMITTING forever, which is a dead end because SUBMITTING honours no other event.
+
+Do not remove the bound on the grounds that the HTTP layer already has one. They cover
+different spans, and the screen's only escape from SUBMITTING is a result or a cancel.
+
+### 22.3 Cancellation
+
+`LoginEvent.CancelRequested` is the one event SUBMITTING honours; it returns the machine to
+EDITING with the credentials intact and no error set. The state change alone is not enough
+— each host also tears down the in-flight call: Android holds the `submitJob` and cancels
+it in `LoginHost.onEvent`; iOS holds `signInTask` and cancels it in `LoginObservable.cancel`.
+
+**Late results are dropped structurally, not by a flag.** `AuthSucceeded` and `AuthFailed`
+are honoured only from SUBMITTING, and a cancel has already left it, so a response landing
+afterwards cannot sign the worker in or raise a stale banner. iOS reimplements the host in
+Swift and so re-states the same rule as an explicit `guard !Task.isCancelled, submitting`
+before it touches any published property.
+
+`formErrorDetail` carries the raw diagnostic (HTTP status, exception class, the configured
+URL) and is rendered **only** under `BuildConfig.DEBUG` / `#if DEBUG`. It is what
+distinguishes a misconfigured `SUPABASE_URL` from a wrong password during development, and
+it must never reach a release build — it contains the backend address.
+
+### 22.4 The Post-Sign-In Home-House Gate Is Also Bounded
+
+Added 2026-07-31. Sign-in succeeding is not the end of the wait: both hosts then resolve
+the staggered-launch gate (§16) for the worker's home house before showing anything real,
+behind the launch splash (Android: `MainActivity.LiveOrLoginRoot`'s `produceState<HomeHouseGate?>`,
+which keeps `SplashOverlay` up while the value is null; iOS: `iOSApp.swift`'s equivalent
+`gate` state). This used to be **three sequential Postgrest calls** (`fetchHomeHouseGate` in
+`WorkerShiftsRepository`), each independently bounded only by supabase-kt's 10s HTTP
+timeout and each `runCatching`-wrapped, so a slow or unreachable backend could strand the
+splash for up to ~30s with nothing the worker could do about it — the same shape of failure
+as the unbounded sign-in call in §22.2, just one screen later.
+
+**`HomeHouseGateRepository`** (its own file, `shared/.../data/HomeHouseGateRepository.kt` —
+extracted out of `WorkerShiftsRepository`, which AGENTS.md quarantines as a God class) fixes
+both halves:
+
+1. **Fewer round trips.** The `home_house_id` lookup and the house-name lookup are now ONE
+   PostgREST call: `from("users").select("home_house_id,houses!inner(name)")`, an embedded
+   join over the `users.home_house_id → houses.id` FK (own-row `users` RLS covers both
+   sides of the join). Three sequential calls become two — the embedded read, then the
+   `house_is_live` RPC, which still must run second because it needs the resolved house id.
+2. **A hard bound.** The whole gate resolves inside `withTimeoutOrNull(HOME_HOUSE_GATE_TIMEOUT)`
+   (8s, matching `WorkerBackend.BOOT_NETWORK_TIMEOUT`'s existing convention for a
+   best-effort launch-time read). On expiry it resolves the same fail-open default every
+   other step in the function already used — `HomeHouseGate(isLive = true, houseName =
+"your house")` — so a stalled gate check degrades to "assume live" rather than an
+   indefinite splash. Verified against a real Postgrest client pointed at a black-holed
+   address: the call returns in ~8.0s with the fail-open result, not the ~20-30s the old
+   three-call chain could take.
+
+**What is still open.** The bound covers only the gate. After it resolves live, the app
+still waits on the first worker-week emission with no bound and no cancel affordance
+(`onWeekLoaded`/`onContentReady`). A slow backend can still produce a long wait at that
+step; closing it is future work, not part of this change.
+
+Launch-time session restore is separately bounded by `BOOT_NETWORK_TIMEOUT` (8s) in
+`WorkerBackend`; on expiry `currentSession()` resolves to null and the app shows login
+rather than stranding the splash.

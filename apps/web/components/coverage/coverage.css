@@ -1,0 +1,149 @@
+/* ============================================================
+   coverage.css — Allied coverage requests (ladder cards, close-out,
+   and the app-wide alert banner).
+
+   The base .cov-card / .cov-grid / .cov-house / .cov-when / .cov-reason /
+   .cov-foot / .cov-error rules are defined in inbox/inbox.css and are
+   reused as-is. This file adds ONLY what the ladder model introduced.
+   ============================================================ */
+
+/* An overdue request is the loudest thing on the page. It means a coverage
+   window has already passed with no recorded outcome. */
+.cov-card.is-overdue {
+  border-left-color: var(--st-danger);
+  border-color: var(--st-danger);
+  background: color-mix(in srgb, var(--st-danger) 6%, var(--surface));
+}
+
+.cov-ladder {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.cov-escalates {
+  color: var(--text-secondary);
+}
+.cov-countdown {
+  font-weight: 600;
+  color: var(--st-danger);
+}
+
+/* ---------- Close-out ---------- */
+.cov-closeout {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 10px;
+  margin-top: 2px;
+  border-top: 1px solid var(--border-subtle);
+}
+.cov-closeout-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.cov-outcomes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+}
+@media (max-width: 560px) {
+  .cov-outcomes {
+    grid-template-columns: 1fr;
+  }
+}
+.cov-outcome {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.cov-note-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.cov-note {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+  font-size: 13px;
+}
+
+/* ---------- App-wide alert banner ----------
+   Rendered by the shell on EVERY page, not only /inbox. The bell alone was not
+   enough: it is a small grey number on a page nobody happens to be looking at. */
+.cov-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  background: var(--st-danger);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+.cov-banner-icon {
+  display: inline-flex;
+  align-items: center;
+}
+.cov-banner-text {
+  flex: 1 1 auto;
+  min-width: 200px;
+}
+.cov-banner-text b {
+  font-weight: 700;
+}
+.cov-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cov-banner a,
+.cov-banner button.cov-banner-link {
+  color: #fff;
+  text-decoration: underline;
+  background: none;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+.cov-banner-mute {
+  opacity: 0.85;
+  font-size: 12px;
+}
+
+/* Respect a reduced-motion preference: no pulse for people who asked for none. */
+@media (prefers-reduced-motion: no-preference) {
+  .cov-banner.is-overdue {
+    animation: cov-banner-pulse 2.4s ease-in-out infinite;
+  }
+}
+@keyframes cov-banner-pulse {
+  0%,
+  100% {
+    background: var(--st-danger);
+  }
+  50% {
+    background: color-mix(in srgb, var(--st-danger) 82%, #000);
+  }
+}
+
+/* ---------- Report table ---------- */
+.cov-report-incident td {
+  background: color-mix(in srgb, var(--st-danger) 7%, transparent);
+}
+.cov-report-note {
+  color: var(--text-secondary);
+  font-size: 12px;
+}

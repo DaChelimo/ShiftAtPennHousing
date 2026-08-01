@@ -20,12 +20,13 @@
 // `evaluateAdminRemoval` →
 //   { ok: true } | { ok: false; hardBlocks: AdminHardBlock[] }
 // Reasons / kinds are short snake_case literals fixed by the contract:
-//   AdminHardBlock.reason ∈ { worker_inactive, hard_cap_exceeded, block_started,
+//   AdminHardBlock.reason ∈ { worker_inactive, hard_cap_exceeded,
 //     float_committed, seat_not_assignable, not_occupied_by_worker,
 //     cross_house_not_supported }
 //   AdminAdvisory.kind ∈ { cannot, opted_out, soft_cap, over_target }
-// Pinned decisions exercised here: D1 (no T-2h cutoff; block_started iff
-// block_start_at <= now), D2 (hard cap absolute — NOT overridable even with
+// Pinned decisions exercised here: D1 (no T-2h cutoff; AMENDED 2026-07-29 —
+// block_started no longer exists as a hard block, a past/started block is a
+// normal editable seat), D2 (hard cap absolute — NOT overridable even with
 // overrideAdvisories), D3 (float-committed = hard block), D4 (success shape),
 // D8 (Harnwell satisfied by same-house construction; the DB trigger is the
 // asserted backstop in pgTAP — not re-tested in the pure layer).
@@ -95,18 +96,23 @@ describe('evaluateAdminAssignment — hard blocks (§4.3 / §1.5 / §9.3)', () =
     expect(hardReasons(result)).toContain('hard_cap_exceeded');
   });
 
-  it('assigning to a block whose start <= now → hard block block_started (D1 — edits never run after start)', () => {
+  it('assigning to a block whose start <= now → no longer a hard block (D1, amended 2026-07-29)', () => {
     const result = evaluateAdminAssignment(makeAssignmentInput({ blockStartAt: NOW }));
-    expect(result.ok).toBe(false);
-    expect(hardReasons(result)).toContain('block_started');
+    expect(result).toEqual({ ok: true, advisories: [] });
   });
 
-  it('a block that started in the past → hard block block_started', () => {
+  it('a block that started in the past → still assignable (D1, amended 2026-07-29)', () => {
     const result = evaluateAdminAssignment(
       makeAssignmentInput({ blockStartAt: plusHours(NOW, -1) }),
     );
-    expect(result.ok).toBe(false);
-    expect(hardReasons(result)).toContain('block_started');
+    expect(result).toEqual({ ok: true, advisories: [] });
+  });
+
+  it('a block that started far in the past (weeks) → still assignable, unbounded (D1, amended 2026-07-29)', () => {
+    const result = evaluateAdminAssignment(
+      makeAssignmentInput({ blockStartAt: plusHours(NOW, -24 * 30) }),
+    );
+    expect(result).toEqual({ ok: true, advisories: [] });
   });
 
   it('assigning to a floated_out seat → hard block float_committed (D3 — float seats out of scope)', () => {
@@ -261,10 +267,16 @@ describe('evaluateAdminRemoval (§4.3)', () => {
     expect(result).toEqual({ ok: true });
   });
 
-  it('removing a block already started → hard block block_started (D1)', () => {
+  it('removing a block already started → still removable, no longer a hard block (D1, amended 2026-07-29)', () => {
     const result = evaluateAdminRemoval(makeRemovalInput({ blockStartAt: NOW }));
-    expect(result.ok).toBe(false);
-    expect(result.ok ? [] : result.hardBlocks.map((b) => b.reason)).toContain('block_started');
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('removing a block that started far in the past → still removable, unbounded (D1, amended 2026-07-29)', () => {
+    const result = evaluateAdminRemoval(
+      makeRemovalInput({ blockStartAt: plusHours(NOW, -24 * 30) }),
+    );
+    expect(result).toEqual({ ok: true });
   });
 
   it('removing a float-committed seat → hard block float_committed (D3)', () => {

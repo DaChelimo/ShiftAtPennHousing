@@ -492,7 +492,7 @@ final class FloatCarouselObservable: ObservableObject {
     deinit { task?.cancel() }
 }
 
-private enum Tab: Int { case mine, openShifts, house, updates, preferences, breakShifts, settings, swaps, assistant }
+private enum Tab: Int { case mine, openShifts, house, updates, preferences, breakShifts, settings, swaps, assistant, coverage, hours }
 
 /// Observes the §11.4 house-schedule `StateFlow` (T3b), now week-paged (last week … +4).
 /// Demo by default; the live host calls `activateLive` to swap in the worker's real
@@ -602,6 +602,22 @@ struct ShiftsRootView: View {
         self.onSignOut = onSignOut
         self.liveUserId = liveUserId
         self.signingIn = signingIn
+        // THE APP SHAPE, RESOLVED BEFORE THE FIRST FRAME (docs/manager-app/SPEC.md §5.1).
+        //
+        // Mirrors the Android fix exactly (MainActivity.kt's synchronous `remember` read):
+        // without this, capabilities default to plain-worker while the network role read is
+        // in flight, so a manager's bottom bar visibly flips on every cold launch. Read
+        // `ManagerModePrefs` synchronously here — `UserDefaults` is in-memory after first
+        // touch, so this costs nothing — and seed `capabilities` from a cache hit for this
+        // EXACT user id. A miss (or a different user) keeps the plain-worker default; the
+        // splash then holds via `roleShapeSettled` (see the profile `.task`) until the live
+        // read completes, rather than guessing.
+        let cached = ManagerModePrefs.read()
+        _cachedRoleShapeAtLaunch = State(initialValue: cached)
+        if let uid = liveUserId, let resolution = ManagerRoleCacheKt.resolveRoleShape(cached: cached, userId: uid) as? RoleShapeResolutionUseCached {
+            _capabilities = State(initialValue: resolution.capabilities)
+            _roleShapeSettled = State(initialValue: true)
+        }
         guard liveUserId != nil else { return } // demo build keeps the DemoFactory seeds
         _model = StateObject(wrappedValue: ShiftsObservable(vm: LiveDefaults.shared.shiftsViewModel(), weeklyHours: 0))
         _calendarModel = StateObject(wrappedValue: CalendarObservable(vm: LiveDefaults.shared.calendarViewModel()))
@@ -636,6 +652,20 @@ struct ShiftsRootView: View {
     @StateObject private var updatesModel = UpdatesObservable(vm: DemoFactory.shared.updatesViewModel())
     @StateObject private var swapsModel = SwapsObservable(vm: DemoFactory.shared.swapsViewModel())
     @StateObject private var assistantModel = AssistantObservable()
+    // ----- Manager mode (docs/manager-app/SPEC.md §5). -----
+    // Defaults to a plain worker so demo, tests, and a failed role read are all unaffected —
+    // never let a missing capability read accidentally draw manager surfaces.
+    @State private var capabilities = LiveDefaults.shared.plainWorkerCapabilities()
+    // True once the app shape is KNOWN enough to draw: a cache hit in `init` sets this
+    // immediately; otherwise it flips true when the profile `.task` completes (success OR
+    // failure — see the SPEC's ProfileLoad rationale). The warm-up splash additionally waits
+    // on this, mirroring `roleShapeSettled` on Android.
+    @State private var roleShapeSettled = false
+    // The shape that was cached AT LAUNCH, so the profile task can write through only on a
+    // real change (`shouldRewriteRoleShape`) rather than on every launch.
+    @State private var cachedRoleShapeAtLaunch: CachedRoleShape?
+    @StateObject private var coverageModel = CoverageObservable(vm: CoverageViewModel(requests: [], now: LiveDefaults.shared.now(), rungTimeoutMinutes: 60))
+    @State private var hoursReport: HouseHoursResult?
     // Onboarding — the first-run welcome tour + one-time contextual tips. The shared
     // OnboardingViewModel sequences everything; this wrapper seeds it from the persisted
     // seen-keys and persists on change. See Onboarding.swift.
@@ -898,7 +928,12 @@ struct ShiftsRootView: View {
 
     /// Both landing surfaces hold real data: the calendar (the My-Shifts agenda the app
     /// opens on) and the shifts model (the week chip + the Open feeds one tap away).
-    private var liveDataLanded: Bool { model.hasLiveSnapshot && calendarModel.hasLiveSnapshot }
+    ///
+    /// ALSO requires `roleShapeSettled` (docs/manager-app/SPEC.md §5.1): on a cache MISS the
+    /// splash must not drop until the app shape is known, or the bottom bar would flip from
+    /// worker to manager right in front of the worker the instant the profile read lands. On
+    /// a cache HIT this is already true from `init`, so it costs nothing on the common launch.
+    private var liveDataLanded: Bool { model.hasLiveSnapshot && calendarModel.hasLiveSnapshot && roleShapeSettled }
 
     var body: some View {
         ZStack {
@@ -998,6 +1033,14 @@ struct ShiftsRootView: View {
             if breakModel.state.phase == .claimWindow && tab != .breakShifts {
                 BreakOpenBanner(breakName: breakModel.state.breakName) { tab = .breakShifts }
             }
+            // BSpec §5.4a — while a house this manager covers has an UNACKNOWLEDGED coverage
+            // request, a non-dismissable banner rides on every screen. It disappears once
+            // somebody acknowledges (`showsBanner` counts only action-required requests), so
+            // a manager already on the phone to Allied is not nagged. Mirrors the break
+            // banner above exactly.
+            if coverageModel.state.showsBanner && tab != .coverage {
+                CoverageBannerView(count: coverageModel.state.badgeCount) { tab = .coverage }
+            }
             // The break calendar and the House grid manage their OWN scroll + a bottom bar
             // pinned above the nav, so they render OUTSIDE the shared ScrollView (the grid is
             // a bounded scroll window with its week navigator pinned to the screen bottom);
@@ -1009,6 +1052,23 @@ struct ShiftsRootView: View {
                     houseTab
                 } else if tab == .assistant {
                     AssistantTabView(model: assistantModel, onBack: { requestTab(previousBeforeAssistant) })
+                } else if tab == .coverage {
+                    // Manager only (docs/manager-app/SPEC.md §6.1). Renders its own internal
+                    // ScrollView (empty state vs. the request list), so it lives outside the
+                    // shared page ScrollView — same reasoning as Preferences/House above.
+                    CoverageView(
+                        model: coverageModel,
+                        onCallAllied: { phone in if let phone { PhoneDialer.dial(phone) } },
+                        onForceTrigger: { _ in }, // wired with the grid override pass
+                        repo: WorkerBackend.shared.coverageRepository
+                    )
+                } else if tab == .hours {
+                    // Manager only. Tapping an away-shift chip jumps to the House tab on that
+                    // house's current week — the verification mechanism (SPEC §6.5).
+                    HoursView(result: hoursReport) { houseId in
+                        houseModel.vm.selectHouse(houseId: houseId)
+                        requestTab(.house)
+                    }
                 } else if tab == .preferences {
                     // Preferences owns its own bounded scroll window (pinned header + a
                     // scrolling timeline), so it renders OUTSIDE the shared page ScrollView.
@@ -1029,11 +1089,14 @@ struct ShiftsRootView: View {
                         case .preferences: EmptyView() // rendered above, outside the ScrollView
                         case .breakShifts: EmptyView() // rendered above, outside the ScrollView
                         case .assistant: EmptyView() // rendered above, outside the ScrollView
+                        case .coverage: EmptyView() // rendered above, outside the ScrollView
+                        case .hours: EmptyView() // rendered above, outside the ScrollView
                         case .settings: settingsTab
                         }
                     }
                 }
             }
+            .frame(maxHeight: .infinity, alignment: .top)
             // Toasts now sit at the BOTTOM (above the tab bar) — the intuitive place
             // for transient confirmations, and clear of the notch / status bar.
             .overlay(alignment: .bottom) { toastStack }
@@ -1520,12 +1583,41 @@ struct ShiftsRootView: View {
             async let floats = repo.fetchPendingFloats(userId: uid)
             async let recentFloats = repo.fetchRecentFloats(userId: uid)
 
-            let isManager = ((try? await profile)?.profile.role ?? "sw") != "sw"
+            let profileSnapshot = try? await profile
+            let isManager = (profileSnapshot?.profile.role ?? "sw") != "sw"
             async let prefs: Void = prefsModel.activateLive(
                 repo: WorkerBackend.shared.preferencesRepository, userId: uid, isManager: isManager)
             // The home-house grid + contacts (§11.4, T3b). A manager (sm/hm/bm/rsm) also gets
             // the open-seat actions on the home house.
             async let house: Void = houseModel.activateLive(repo: repo, userId: uid, isManager: isManager)
+
+            // ----- Manager mode (docs/manager-app/SPEC.md §5). -----
+            // Reuses the SAME profile read `isManager` came from — no second fetch. A failed
+            // or slow read falls back to whatever the launch cache already resolved
+            // (`capabilities`'s current value), never to a plain worker: a manager must not
+            // lose their Coverage tab because the network hiccupped.
+            if let snapshot = profileSnapshot {
+                capabilities = snapshot.capabilities
+                let fresh = CachedRoleShape(userId: uid, homeHouseId: snapshot.homeHouseId, roles: snapshot.roles)
+                if ManagerRoleCacheKt.shouldRewriteRoleShape(cached: cachedRoleShapeAtLaunch, fresh: fresh) {
+                    ManagerModePrefs.write(fresh)
+                }
+            }
+            // "Settled" includes a FAILED read (`profileSnapshot == nil`) — a manager on a
+            // dead connection must not stare at the splash forever.
+            roleShapeSettled = true
+
+            if capabilities.hasCoverage {
+                coverageModel.activateLive(repo: WorkerBackend.shared.coverageRepository, now: LiveDefaults.shared.now())
+            }
+            if capabilities.hasManagerSurface {
+                let hoursRepo = WorkerBackend.shared.hoursRepository
+                let homeName = profileSnapshot?.profile.homeHouseName ?? capabilities.adminHouseId
+                hoursReport = try? await hoursRepo.fetchHouseHours(
+                    houseId: capabilities.adminHouseId, houseName: homeName,
+                    weekStart: LiveDefaults.shared.now(), awayVisible: capabilities.isScheduleAdmin,
+                    zone: ShiftsKt.NEW_YORK)
+            }
 
             floatCarouselModel.rebuild(
                 floats: (try? await floats) ?? [], recentFloats: (try? await recentFloats) ?? [])
@@ -1605,7 +1697,27 @@ struct ShiftsRootView: View {
 
     /// True when the active tab is one of the overflow ("More") destinations.
     private var isSecondary: Bool {
+        // `Hours` lights "More" for a plain worker/manager (no bar slot for it there) but NOT
+        // for an SM, whose bar carries it directly — see `moreSelects` in `bottomBarTabs`.
         tab == .updates || tab == .preferences || tab == .breakShifts || tab == .settings || tab == .assistant
+            || (tab == .hours && !capabilities.isStudentManager)
+    }
+
+    /// Which four tabs the bar shows, in order — the Swift mirror of Android's
+    /// `ShiftDestination.bottomBarFor` (docs/manager-app/SPEC.md §5). A plain worker's bar is
+    /// UNCHANGED from before manager mode existed.
+    private var bottomBarTabs: [Tab] {
+        if capabilities.hasCoverage {
+            // Coverage leads: it's the reason the app rings. My Shifts keeps a slot because
+            // managers work desk shifts themselves; Swaps is absent (managers do not swap).
+            return [.coverage, .house, .openShifts, .mine]
+        }
+        if capabilities.isStudentManager {
+            // The Allied ladder never routes to an SM, so Coverage would be a dead tab; Hours
+            // takes its slot instead.
+            return [.mine, .openShifts, .house, .hours]
+        }
+        return [.mine, .openShifts, .house, .swaps]
     }
 
     /// The native-style BOTTOM tab bar (iOS HIG): four frequent destinations plus a
@@ -1615,14 +1727,9 @@ struct ShiftsRootView: View {
     private var bottomBar: some View {
         let c = ShiftColors.resolve(scheme)
         return HStack(alignment: .top, spacing: 0) {
-            barItem("My Shifts", ShiftIcons.calendar, "tab_my_shifts", selected: tab == .mine) { requestTab(.mine) }
-                .onboardingAnchor(OnboardingAnchorId.myShifts)
-            barItem("Open", ShiftIcons.plus, "tab_open_shifts", selected: tab == .openShifts) { requestTab(.openShifts) }
-                .onboardingAnchor(OnboardingAnchorId.open)
-            barItem("House", ShiftIcons.building, "tab_house", selected: tab == .house) { requestTab(.house) }
-                .onboardingAnchor(OnboardingAnchorId.house)
-            barItem("Swaps", ShiftIcons.refresh, "tab_swaps", selected: tab == .swaps) { requestTab(.swaps) }
-                .onboardingAnchor(OnboardingAnchorId.swaps)
+            ForEach(bottomBarTabs, id: \.self) { t in
+                barItemFor(t)
+            }
             barItem("More", ShiftIcons.more, "tab_more", selected: isSecondary, badge: updatesModel.hasUnread) { showMore = true }
                 .onboardingAnchor(OnboardingAnchorId.more)
         }
@@ -1631,12 +1738,43 @@ struct ShiftsRootView: View {
         .background(c.surface)
     }
 
+    /// Title/icon/id/action/anchor for one bar tab. Onboarding anchors exist only for the four
+    /// destinations the welcome tour already teaches; Coverage and Hours have none yet (no
+    /// tour covers manager mode).
+    @ViewBuilder
+    private func barItemFor(_ t: Tab) -> some View {
+        switch t {
+        case .mine:
+            barItem("My Shifts", ShiftIcons.calendar, "tab_my_shifts", selected: tab == .mine) { requestTab(.mine) }
+                .onboardingAnchor(OnboardingAnchorId.myShifts)
+        case .openShifts:
+            barItem("Open", ShiftIcons.plus, "tab_open_shifts", selected: tab == .openShifts) { requestTab(.openShifts) }
+                .onboardingAnchor(OnboardingAnchorId.open)
+        case .house:
+            barItem("House", ShiftIcons.building, "tab_house", selected: tab == .house) { requestTab(.house) }
+                .onboardingAnchor(OnboardingAnchorId.house)
+        case .swaps:
+            barItem("Swaps", ShiftIcons.refresh, "tab_swaps", selected: tab == .swaps) { requestTab(.swaps) }
+                .onboardingAnchor(OnboardingAnchorId.swaps)
+        case .coverage:
+            barItem(
+                "Coverage", ShiftIcons.warning, "tab_coverage", selected: tab == .coverage,
+                badgeCount: coverageModel.state.badgeCount
+            ) { requestTab(.coverage) }
+        case .hours:
+            barItem("Hours", ShiftIcons.clock, "tab_hours", selected: tab == .hours) { requestTab(.hours) }
+        default:
+            EmptyView()
+        }
+    }
+
     private func barItem(
         _ title: String,
         _ icon: String,
         _ id: String,
         selected: Bool,
         badge: Bool = false,
+        badgeCount: Int32? = nil,
         _ action: @escaping () -> Void
     ) -> some View {
         let c = ShiftColors.resolve(scheme)
@@ -1646,7 +1784,16 @@ struct ShiftsRootView: View {
                     Image(systemName: icon)
                         .font(.system(size: 24, weight: selected ? .semibold : .regular))
                         .frame(height: 28)
-                    if badge {
+                    if let count = badgeCount, count > 0 {
+                        // A NUMBERED badge, not a dot: "three desks are about to be empty" is a
+                        // materially different message from "something happened", and it is
+                        // the one number in this app a manager must read at a glance.
+                        Text("\(count)")
+                            .font(ShiftFont.sans(10, .bold)).foregroundColor(.white)
+                            .padding(.horizontal, 4).frame(minWidth: 15, minHeight: 15)
+                            .background(c.danger.accent).clipShape(Capsule())
+                            .offset(x: 10, y: -3)
+                    } else if badge {
                         Circle().fill(c.danger.accent).frame(width: 8, height: 8).offset(x: 8, y: -1)
                     }
                 }
@@ -1677,8 +1824,17 @@ struct ShiftsRootView: View {
             }
             .padding(.horizontal, 18).padding(.top, 18).padding(.bottom, 6)
 
+            // Manager mode: Hours leads the sheet for a manager whose bar does not carry it
+            // (docs/manager-app/SPEC.md §6) — an SM's bar already has it, so it is absent here
+            // for them. Absent entirely for a plain worker.
+            if capabilities.hasManagerSurface && !bottomBarTabs.contains(.hours) {
+                moreRow("Hours", ShiftIcons.clock, "tab_hours_more", .hours)
+            }
             moreRow("Updates", ShiftIcons.bell, "tab_updates", .updates)
-            moreRow("Preferences", ShiftIcons.heart, "tab_preferences", .preferences)
+            // Managers do not submit shift preferences.
+            if !capabilities.hasManagerSurface {
+                moreRow("Preferences", ShiftIcons.heart, "tab_preferences", .preferences)
+            }
             moreRow("Break shifts", ShiftIcons.snowflake, "tab_break", .breakShifts)
             moreRow("Settings", ShiftIcons.tune, "tab_settings", .settings)
             moreRow("Assistant", ShiftIcons.sparkles, "tab_assistant", .assistant)
@@ -1694,7 +1850,9 @@ struct ShiftsRootView: View {
         .overlay(alignment: .topLeading) {
             Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("more_sheet")
         }
-        .presentationDetents([.height(368)])
+        // One extra row (Hours) for a manager-with-coverage needs a taller sheet; every other
+        // role keeps the original fixed height untouched.
+        .presentationDetents([.height(capabilities.hasCoverage ? 428 : 368)])
         .presentationDragIndicator(.visible)
     }
 
@@ -1724,7 +1882,7 @@ struct ShiftsRootView: View {
         switch which {
         case .mine: model.vm.selectTab(tab: .myShifts)
         case .openShifts: model.vm.selectTab(tab: openSub == 0 ? .openHome : .openOther)
-        case .house, .updates, .swaps, .preferences, .breakShifts, .settings, .assistant: break
+        case .house, .updates, .swaps, .preferences, .breakShifts, .settings, .assistant, .coverage, .hours: break
         }
     }
 
@@ -2554,7 +2712,7 @@ struct ShiftsRootView: View {
             PageTitle(title: "My Shifts") { myShiftsHelpButton }
             // The "This week — Xh of cap" total, carried over from the old My-Shifts tab
             // and placed directly under the title (the hours follow the shown week).
-            WeekTotalChip(currentWeeklyHours: st.weekHours, weekOffset: Int(st.weekOffset))
+            WeekTotalChip(currentWeeklyHours: st.weekHours, cap: st.weekCap, weekOffset: Int(st.weekOffset))
                 .padding(.horizontal, 16).padding(.vertical, 4)
                 .accessibilityIdentifier("week_total_chip")
             // §7.1 — the float-request carousel sits directly under the hours chip, above
@@ -3234,10 +3392,11 @@ struct BlockRangeSlider: View {
 
 /// The claim / pick-up sheet (worker-app.html `ClaimSheet`): a shift summary, the
 /// "this brings your week to Xh of Yh" meter, and the §5.3 cap gating. A soft-cap
-/// claim is a two-step confirm (warning → "Claim anyway" → `claim_confirm_button`)
-/// so the Maestro `soft_cap_*` contract holds; a break hard-cap disables the
-/// confirm. On confirm the sheet dismisses and the screen shows the `claim_success`
-/// toast — the picked-up shift is already in My Shifts.
+/// claim shows a warning banner with a single "Claim anyway" button
+/// (`soft_cap_confirm_button`) that claims immediately — one tap, no second
+/// confirm step; a break hard-cap disables the confirm entirely. On confirm the
+/// sheet dismisses and the screen shows the `claim_success` toast — the picked-up
+/// shift is already in My Shifts.
 private struct ClaimFlowSheet: View {
     let vm: ShiftsScreenViewModel
     let shift: OpenShift
@@ -3251,7 +3410,6 @@ private struct ClaimFlowSheet: View {
     let onConfirmed: (OpenShift, String) -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
-    @State private var warningAccepted = false
     @State private var permanentScope: PermanentPickupScope?
     // §5.3 partial range (T2-10) — block indexes on the opening's own grid, [from, to).
     // rangeTo < 0 means "whole opening" (the default; planClaimRange clamps).
@@ -3260,6 +3418,27 @@ private struct ClaimFlowSheet: View {
 
     private var blockCount: Int { shift.blockIds.count }
     private var effectiveTo: Int { rangeTo < 0 ? blockCount : rangeTo }
+
+    /// Confirms the claim: permanent pickup of the WHOLE slot → "Picked up X of Y weeks"
+    /// from the dry-run scope; a sub-range pickup or unknown scope → the generic
+    /// confirmation; a weekly claim → the claim toast. One tap end to end — used by both
+    /// the plain confirm button and "Claim anyway" (no separate confirm step).
+    private func confirmClaim(effective: OpenShift, permanent: Bool, plan: PartialClaimPlan) {
+        let message: String
+        if permanent, plan.wholeShift, let scope = permanentScope {
+            message = permanentPickupToast(
+                weeksPickedUp: scope.weeksPickedUp,
+                totalWeeks: scope.totalWeeksInScope,
+                weeksSkipped: scope.weeksSkipped
+            )
+        } else if permanent {
+            message = "Picked up. It's now in My Shifts"
+        } else {
+            message = "Claimed. It's now in My Shifts"
+        }
+        onConfirmed(effective, message)
+        dismiss()
+    }
 
     var body: some View {
         let c = ShiftColors.resolve(scheme)
@@ -3270,10 +3449,13 @@ private struct ClaimFlowSheet: View {
         // The shift the confirm actually claims; the meter + cap gating recompute from
         // this SELECTED span (§5.3) — for BOTH weekly and permanent openings.
         let effective = plan.wholeShift ? shift : subOpenShiftFor(shift: shift, plan: plan)
+        // The cap for the week THIS shift lands in, from the server snapshot. The open
+        // feeds carry their own week offset, so it is the shift, not the shown week,
+        // that decides which cap applies.
         let meter = claimMeter(
             currentWeeklyHours: currentWeeklyHours,
             addedHours: hoursBetween(start: effective.start, end: effective.end),
-            breakProfile: false
+            cap: vm.capFor(shift: shift)
         )
         let overHard = meter.verdict.isBlocked
         let overSoft = meter.verdict.needsWarning
@@ -3315,7 +3497,7 @@ private struct ClaimFlowSheet: View {
 
                 if overSoft {
                     ShiftBanner(
-                        title: "Puts you over the 20h soft cap",
+                        title: meter.overCapTitle,
                         bodyText: "Allowed this period, but your manager sees the overage.",
                         tone: .warning
                     )
@@ -3323,17 +3505,22 @@ private struct ClaimFlowSheet: View {
                 }
                 if overHard {
                     ShiftBanner(
-                        title: "Over the 40h limit, can't claim",
-                        bodyText: "Break-period hard cap. Drop another shift first.",
+                        title: "Over the \(meter.capLabel) limit, can't claim",
+                        bodyText: "This period has a hard cap. Drop another shift first.",
                         tone: .error
                     )
                 }
 
                 HStack(spacing: 10) {
                     ShiftButton(title: "Cancel", action: { dismiss() }, variant: .outlined, fullWidth: true)
-                    if overSoft && !warningAccepted {
-                        ShiftButton(title: "Claim anyway", action: { warningAccepted = true }, fullWidth: true)
-                            .accessibilityIdentifier("soft_cap_confirm_button")
+                    if overSoft {
+                        // One tap claims immediately — no second confirm step.
+                        ShiftButton(
+                            title: "Claim anyway",
+                            action: { confirmClaim(effective: effective, permanent: permanent, plan: plan) },
+                            fullWidth: true
+                        )
+                        .accessibilityIdentifier("soft_cap_confirm_button")
                     } else {
                         ShiftButton(
                             // The duration ("Claim 1h"), not the range — the half-width
@@ -3342,25 +3529,7 @@ private struct ClaimFlowSheet: View {
                             title: permanent
                                 ? (plan.wholeShift ? "Confirm pickup" : "Pick up \(plan.durationLabel)")
                                 : (plan.wholeShift ? "Claim shift" : "Claim \(plan.durationLabel)"),
-                            action: {
-                                // Permanent pickup of the WHOLE slot → "Picked up X of Y weeks"
-                                // from the dry-run scope; a sub-range pickup or unknown scope →
-                                // the generic confirmation; a weekly claim → the claim toast.
-                                let message: String
-                                if permanent, plan.wholeShift, let scope = permanentScope {
-                                    message = permanentPickupToast(
-                                        weeksPickedUp: scope.weeksPickedUp,
-                                        totalWeeks: scope.totalWeeksInScope,
-                                        weeksSkipped: scope.weeksSkipped
-                                    )
-                                } else if permanent {
-                                    message = "Picked up. It's now in My Shifts"
-                                } else {
-                                    message = "Claimed. It's now in My Shifts"
-                                }
-                                onConfirmed(effective, message)
-                                dismiss()
-                            },
+                            action: { confirmClaim(effective: effective, permanent: permanent, plan: plan) },
                             fullWidth: true
                         )
                         .disabled(overHard)
@@ -4376,7 +4545,9 @@ private struct PendingSwapNoticeSheetView: View {
 /// The "This week — 14h of 20h soft cap" summary chip (design My-Shifts header).
 private struct WeekTotalChip: View {
     let currentWeeklyHours: Double
-    var breakProfile: Bool = false
+    /// The SHOWN week's server cap (CalendarUiState.weekCap). Not client-derived: a
+    /// season sets its own cap, so there is nothing to branch on locally.
+    var cap: WeeklyCap = WeeklyCap.companion.FALLBACK
     /// The shown week (0 = this week) — the label follows it so the hours never read
     /// as "this week" when the worker has navigated forward/back.
     var weekOffset: Int = 0
@@ -4394,7 +4565,7 @@ private struct WeekTotalChip: View {
 
     var body: some View {
         let c = ShiftColors.resolve(scheme)
-        let summary = weeklyHoursSummary(currentWeeklyHours: currentWeeklyHours, breakProfile: breakProfile)
+        let summary = weeklyHoursSummary(currentWeeklyHours: currentWeeklyHours, cap: cap)
         HStack(spacing: 8) {
             Image(systemName: ShiftIcons.clock).font(.system(size: 17, weight: .regular)).foregroundColor(c.blue)
             Text(label).font(ShiftFont.sans(13.5, .medium)).foregroundColor(c.sec)

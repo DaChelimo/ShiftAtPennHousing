@@ -1,6 +1,8 @@
 package com.pennhousing.shift.shared.live
 
 import com.pennhousing.shift.shared.breakclaim.noBreakCalendar
+import com.pennhousing.shift.shared.manager.ManagerCapabilities
+import com.pennhousing.shift.shared.manager.managerCapabilitiesOf
 import com.pennhousing.shift.shared.house.HouseScheduleSnapshot
 import com.pennhousing.shift.shared.model.FloatAck
 import com.pennhousing.shift.shared.model.House
@@ -48,6 +50,17 @@ import kotlin.time.Instant
  */
 object LiveDefaults {
     fun now(): Instant = SimClock.now()
+
+    /**
+     * No manager surface at all: the shape a plain Student Worker has, and the shape used while
+     * the real profile is still loading.
+     *
+     * Defaulting to unprivileged is the load-bearing part. A failed or in-flight role read must
+     * never briefly render manager controls, and it must never be the reason a manager surface
+     * appears for somebody who is not one.
+     */
+    fun plainWorkerCapabilities(): ManagerCapabilities =
+        managerCapabilitiesOf(roles = emptyList(), homeHouseId = "")
 
     /** No shifts and no open feed — the My-Shifts / Open-Shifts tabs render their empty states. */
     fun shiftsViewModel(): ShiftsScreenViewModel = ShiftsScreenViewModel(emptyList(), emptyList(), now())

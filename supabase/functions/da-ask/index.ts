@@ -26,6 +26,7 @@ import {
   type RoutingRule,
 } from '../_shared/desk-assistant-routing.ts';
 import {
+  ACCESS_MODEL_DIRECTIVE,
   buildCitations,
   buildDeferralMessage,
   classifyQuery,
@@ -539,15 +540,25 @@ Deno.serve(
       });
     }
 
-    // Grounded generation — real token streaming. Preambles (life-safety / access) lead
-    // the answer and are sent as an initial synthetic delta (they're static safe text,
-    // not model output, so they never need the leakage check below).
+    // Grounded generation — real token streaming.
+    //
+    // TWO kinds of framing, deliberately kept apart (2026-07-30):
+    //   * `preambles` are WORKER-FACING. Only life-safety qualifies: "call the emergency line
+    //     now" is something the person at the desk must read. These lead the answer as an
+    //     initial synthetic delta (static safe text, not model output, so they never need the
+    //     leakage check below) and are persisted with the message.
+    //   * `systemDirectives` are MODEL-ONLY. The access rule shapes HOW the answer is written;
+    //     it is not information for the worker. It goes on the SYSTEM prompt, never the user
+    //     turn and never the stream. Putting it in the visible list is what made every access
+    //     answer open by classifying itself and reciting its own instructions, which is
+    //     exactly the meta-narration BSpec §17.3b forbids. mirror.test.ts pins the split.
     const preambles: string[] = [];
     if (lifeSafety) preambles.push(lifeSafetyPreamble(lifeSafety));
-    if (access)
-      preambles.push(
-        'This is an access question. State the policy from the sources. If it is unclear, do not grant access and escalate.',
-      );
+    const systemDirectives: string[] = [];
+    if (access) systemDirectives.push(ACCESS_MODEL_DIRECTIVE);
+    const systemPrompt = systemDirectives.length
+      ? `${GROUNDED_SYSTEM_PROMPT} ${systemDirectives.join(' ')}`
+      : GROUNDED_SYSTEM_PROMPT;
 
     const contextBlock = context
       .map((c, i) => `[Source ${i + 1}] (${c.sourceRef})\n${c.content}`)
@@ -604,7 +615,7 @@ Deno.serve(
       try {
         for await (const delta of claudeStream({
           apiKey: anthropicKey,
-          system: GROUNDED_SYSTEM_PROMPT,
+          system: systemPrompt,
           messages: [{ role: 'user', content: userContent }],
           // Headroom over the 1024 default. claude-sonnet-5 runs ADAPTIVE THINKING when the
           // request omits `thinking`, and thinking tokens are charged against max_tokens, so

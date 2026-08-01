@@ -7,6 +7,7 @@ import {
   type InboxFilterInput,
 } from '@shift/core';
 
+import { getSessionUser } from '../auth';
 import { createClient } from '../supabase/server';
 
 // ===========================================================================
@@ -218,9 +219,10 @@ function endMs(row: NotificationRow): number {
 
 export async function getInboxData(now: Date = new Date()): Promise<InboxData> {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // getSessionUser() rather than supabase.auth.getUser(): the latter is a GoTrue HTTP
+  // round trip on every call, and all this needs is whether someone is signed in. The
+  // layout has already resolved (and cached) the session for this request.
+  const user = await getSessionUser();
   const empty: InboxData = {
     alliedPages: [],
     alliedActive: [],

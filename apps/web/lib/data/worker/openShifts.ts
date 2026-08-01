@@ -26,7 +26,10 @@ import { createClient } from '../../supabase/server';
 // ===========================================================================
 
 const NY = 'America/New_York';
-const SOFT_HOURS_CAP = 20;
+// Fallback ONLY. The cap is per-week server config (effective_weekly_cap); this file
+// used to hardcode 20 and hand it to the meter as `hoursCap`, so the worker portal
+// showed "of 20h soft cap" in a 40h summer season exactly like mobile did.
+const FALLBACK_HOURS_CAP = 20;
 const WINDOW_DAYS = 21;
 
 /** The recurring-slot descriptor a permanent pickup needs (permanent-pickup EF contract). */
@@ -61,6 +64,8 @@ export type OpenShiftsBoard = {
   cards: OpenShiftCardView[];
   currentWeekHours: number;
   hoursCap: number;
+  /** 'soft' warns and is overridable; 'hard' is refused. Drives the meter's wording. */
+  capEnforcement: 'soft' | 'hard';
 };
 
 type WireRow = {
@@ -199,5 +204,19 @@ export async function getOpenShiftsBoard(userId: string, now: Date): Promise<Ope
     .gte('start_at', start.toISOString())
     .lt('start_at', end.toISOString());
 
-  return { cards, currentWeekHours: (count ?? 0) * 0.5, hoursCap: SOFT_HOURS_CAP };
+  // The CURRENT week's cap from the server (weekly_cap_overrides -> the week's
+  // operating_calendar profiles -> operating_profiles.default_hours_cap). Claiming is
+  // always current-week, so one lookup is enough here.
+  const { data: capRows } = await supabase.rpc('effective_weekly_cap', {
+    p_week_start_date: start.toISOString().slice(0, 10),
+    p_block_start_at: start.toISOString(),
+  });
+  const cap = capRows?.[0];
+
+  return {
+    cards,
+    currentWeekHours: (count ?? 0) * 0.5,
+    hoursCap: cap?.hours_cap ?? FALLBACK_HOURS_CAP,
+    capEnforcement: cap?.cap_enforcement ?? 'soft',
+  };
 }

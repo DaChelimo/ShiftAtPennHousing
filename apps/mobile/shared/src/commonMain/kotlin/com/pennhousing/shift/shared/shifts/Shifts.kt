@@ -25,6 +25,10 @@ val NEW_YORK: kotlinx.datetime.TimeZone = kotlinx.datetime.TimeZone.of("America/
 val CLAIM_CUTOFF_BEFORE_START = 2.hours // T-2h unpickable (§5.4)
 val SHORT_NOTICE_WINDOW = 20.minutes // §5.2
 val BLOCK = 30.minutes // invariant #5
+
+// §5.3 caps. These are NOT the cap: the effective weekly cap is per-week server config
+// (see [WeeklyCap]). SOFT_HOURS_CAP is the pre-load fallback and the school-year default;
+// BREAK_HOURS_CAP is the fixed hard ceiling the break-claim calendar draws against.
 const val SOFT_HOURS_CAP = 20.0 // §5.3 regular / spring fling
 const val BREAK_HOURS_CAP = 40.0 // §5.3 break
 
@@ -218,21 +222,22 @@ fun hoursBetween(
 ): Double = (end - start).toDouble(DurationUnit.HOURS)
 
 /**
- * §5.3 / decision #8: break → total > 40 blocks (HARD_CAP_BLOCKED), else OK;
- * regular/spring-fling → total > 20 warns (SOFT_CAP_WARNING), else OK. "Over"
- * is strictly greater — exactly at the cap is OK.
+ * §5.3 / decision #8: over a HARD cap is refused (HARD_CAP_BLOCKED), over a SOFT cap
+ * warns (SOFT_CAP_WARNING), else OK. "Over" is strictly greater — exactly at the cap is
+ * OK.
+ *
+ * [cap] is the server's cap for the week the claim lands in, NOT a client-derived one.
+ * It used to be a `breakProfile: Boolean` selecting between two constants, which pinned
+ * every non-break week to 20h regardless of what the season was configured for.
  */
 fun evaluateClaimCap(
     currentWeeklyHours: Double,
     addedHours: Double,
-    breakProfile: Boolean,
+    cap: WeeklyCap,
 ): ClaimCapVerdict {
     val total = currentWeeklyHours + addedHours
-    return if (breakProfile) {
-        if (total > BREAK_HOURS_CAP) ClaimCapVerdict.HARD_CAP_BLOCKED else ClaimCapVerdict.OK
-    } else {
-        if (total > SOFT_HOURS_CAP) ClaimCapVerdict.SOFT_CAP_WARNING else ClaimCapVerdict.OK
-    }
+    if (total <= cap.hours) return ClaimCapVerdict.OK
+    return if (cap.isHard) ClaimCapVerdict.HARD_CAP_BLOCKED else ClaimCapVerdict.SOFT_CAP_WARNING
 }
 
 // ===================================================================
@@ -312,8 +317,10 @@ fun weeklyHours(
 ): Double =
     myShifts
         .filter { !it.droppedStillOpen }
-        .filter { com.pennhousing.shift.shared.calendar.weekDayIndexInWeekOf(it.start, now, zone) != null }
-        .sumOf { hoursBetween(it.start, it.end) }
+        .filter {
+            com.pennhousing.shift.shared.calendar
+                .weekDayIndexInWeekOf(it.start, now, zone) != null
+        }.sumOf { hoursBetween(it.start, it.end) }
 
 // ===================================================================
 // Open-shift week scoping + past split (UI filter — design, this session).
@@ -340,7 +347,8 @@ fun openShiftsInWeekOf(
 ): List<OpenShift> =
     openShifts.filter {
         it.feed == OpenFeed.PERMANENT_OPENING ||
-            com.pennhousing.shift.shared.calendar.weekDayIndexInWeekOf(it.start, anchor, zone) != null
+            com.pennhousing.shift.shared.calendar
+                .weekDayIndexInWeekOf(it.start, anchor, zone) != null
     }
 
 /**

@@ -17,6 +17,7 @@ export * from './force-trigger/index.js';
 export * from './hmod-context/index.js';
 export * from './hours/index.js';
 export * from './inbox/index.js';
+export * from './coverage/index.js';
 export * from './notifications/index.js';
 export * from './orchestrator/index.js';
 // Operating Seasons compiler. Targeted re-export: ChainStep (orchestrator) and

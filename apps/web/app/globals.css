@@ -1169,7 +1169,7 @@ textarea {
   display: flex;
   align-items: center;
   gap: 0;
-  padding-right: 8px;
+  padding-right: 14px;
   border-bottom: 1px solid var(--header-border);
   position: relative;
   z-index: 50;
@@ -1452,14 +1452,17 @@ textarea {
   background: var(--field-hover);
 }
 
-/* ---------- Side nav (persistent grid column) ---------- */
+/* ---------- Side nav (persistent grid column) ----------
+   Black / white / blue: near-black column, white label text on hover/active,
+   brand-blue accent for the active item. Generous outer + inter-item spacing
+   so the drawer reads as a set of distinct rows, not a dense list. */
 .nav {
   grid-area: nav;
   background: var(--nav-bg);
   color: var(--nav-text);
   display: flex;
   flex-direction: column;
-  padding: 8px 0;
+  padding: 20px 14px;
   overflow-y: auto;
   overflow-x: hidden;
   border-right: 1px solid var(--header-border);
@@ -1478,32 +1481,35 @@ textarea {
     visibility 0s linear 220ms;
 }
 .nav-group {
-  padding: 8px 0;
+  padding: 10px 0;
 }
 .nav-group + .nav-group {
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  margin-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: 8px;
 }
 .nav-group-label {
   font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-weight: 700;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #6f6f6f;
-  padding: 6px 16px;
+  color: #7a7a7a;
+  padding: 6px 10px 10px;
 }
 .nav-item {
   width: 100%;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 16px;
-  height: 42px;
+  padding: 0 12px;
+  height: 46px;
+  margin: 3px 0;
   background: none;
   border: none;
+  border-radius: var(--radius);
   color: var(--nav-text);
   text-align: left;
   font-size: 14px;
+  font-weight: 500;
   text-decoration: none;
   position: relative;
   transition:
@@ -1511,13 +1517,22 @@ textarea {
     color var(--motion);
 }
 .nav-item:hover {
-  background: var(--nav-bg-hover);
+  background: rgba(255, 255, 255, 0.06);
   color: #fff;
 }
 .nav-item.is-active {
-  background: var(--nav-bg-active);
+  background: color-mix(in srgb, var(--brand) 22%, transparent);
   color: #fff;
-  box-shadow: inset 3px 0 0 var(--brand);
+}
+.nav-item.is-active::before {
+  content: '';
+  position: absolute;
+  left: -14px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--brand);
 }
 .nav-label {
   flex: 1;
@@ -1538,18 +1553,18 @@ textarea {
 }
 .nav-soon {
   font-size: 10px;
-  color: #6f6f6f;
+  color: #7a7a7a;
   border: 1px solid #393939;
   border-radius: 99px;
   padding: 1px 6px;
 }
 .nav-foot {
   margin-top: auto;
-  padding: 12px 0 4px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 16px 10px 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 .nav-foot .t-meta {
-  color: #6f6f6f;
+  color: #7a7a7a;
   font-family: var(--font-mono);
   font-size: 11px;
 }
@@ -4092,4 +4107,12 @@ textarea {
   grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
   align-content: start;
   gap: 12px;
+}
+
+/* Urgent bell badge: an open Allied coverage request. Deliberately louder than the
+   plain unread badge, because an unstaffed desk is not a swap request. */
+.bell-count.is-urgent {
+  background: var(--st-danger);
+  color: #fff;
+  font-weight: 700;
 }

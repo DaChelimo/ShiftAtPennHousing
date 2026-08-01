@@ -1,5 +1,6 @@
 import { cache } from 'react';
 
+import { cachedGlobal, invalidateGlobal } from '../cache/ttl';
 import { createServiceClient } from '../supabase/server';
 
 export type SystemConfigRow = {
@@ -11,18 +12,37 @@ export type SystemConfigRow = {
   notes: string | null;
 };
 
-// Wrapped in React's cache() (per-request, not cross-request): AppLayout calls this
-// twice on every render (nav-building + the HMOD-context block below it), so without
-// dedup it was a duplicate DB round trip on every single navigation.
+// Who is the designated project administrator? This is ONE globally-shared config row
+// that changes about never, but the admin shell read it on every navigation (twice per
+// render before React cache() landed, once after). Memoize the row itself process-wide
+// with a short TTL — it is not user-scoped, so it is safe to share — and keep the
+// per-user comparison outside the cache. React cache() still wraps the exported
+// function so repeat calls in one render are free even on a TTL miss.
+const PROJECT_ADMIN_KEY = 'system_config:project_administrator_user_id';
+const PROJECT_ADMIN_TTL_MS = 60_000;
+
+async function projectAdministratorId(): Promise<string | null> {
+  return cachedGlobal(PROJECT_ADMIN_KEY, PROJECT_ADMIN_TTL_MS, async () => {
+    const service = createServiceClient();
+    const { data } = await service
+      .from('system_config')
+      .select('config_value')
+      .eq('config_key', 'project_administrator_user_id')
+      .maybeSingle();
+    return data?.config_value ?? null;
+  });
+}
+
 export const isProjectAdministrator = cache(async (userId: string): Promise<boolean> => {
-  const service = createServiceClient();
-  const { data } = await service
-    .from('system_config')
-    .select('config_value')
-    .eq('config_key', 'project_administrator_user_id')
-    .maybeSingle();
-  return data?.config_value === userId;
+  const adminId = await projectAdministratorId();
+  return adminId !== null && adminId === userId;
 });
+
+// Called by the config editor after a write so a changed project administrator takes
+// effect on the next render rather than after the TTL lapses.
+export function invalidateProjectAdministrator(): void {
+  invalidateGlobal(PROJECT_ADMIN_KEY);
+}
 
 // Staggered-launch master switch. When absent/false the gate is disabled and every
 // house behaves as live (matches the DB helper is_staggered_launch_enabled()).

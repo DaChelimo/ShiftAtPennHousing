@@ -1,9 +1,13 @@
 package com.pennhousing.shift.ui
 
 import com.pennhousing.shift.shared.settings.NotificationPreferences
+import com.pennhousing.shift.shared.data.HouseHoursResult
 import com.pennhousing.shift.shared.data.PermanentPickupScope
-import com.pennhousing.shift.shared.data.ToastNotification
+import com.pennhousing.shift.shared.notifications.ToastNotification
 import com.pennhousing.shift.shared.house.HouseSeat
+import com.pennhousing.shift.shared.manager.ManagerCapabilities
+import com.pennhousing.shift.shared.manager.managerCapabilitiesOf
+import com.pennhousing.shift.shared.viewmodel.CoverageViewModel
 import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.model.OpenShift
 import com.pennhousing.shift.shared.model.PendingFloat
@@ -47,6 +51,12 @@ internal data class ShiftsViewModels(
     val breakCalendarVm: BreakCalendarViewModel,
     val settingsVm: SettingsViewModel,
     val assistantVm: AssistantViewModel,
+    /**
+     * MANAGER ONLY (docs/manager-app/SPEC.md §6.1). Null for a plain worker or an SM, which is
+     * what keeps a worker's app byte-identical to before manager mode existed: no Coverage
+     * tab, no banner, no subscription.
+     */
+    val coverageVm: CoverageViewModel? = null,
 )
 
 /**
@@ -78,6 +88,27 @@ internal data class ShiftsHostState(
     // The live worker id for swap initiation (null = demo → use [swapDemoSeats] for the week).
     val swapMeUserId: String? = null,
     val swapDemoSeats: List<HouseSeat> = emptyList(),
+    /**
+     * What manager surfaces this user gets (docs/manager-app/SPEC.md §5). Defaults to a plain
+     * worker, so every existing call site and test is unaffected and a failed role read can
+     * never accidentally read as privileged.
+     *
+     * This shapes the UI only. Every manager write re-checks authorization server-side.
+     */
+    val capabilities: ManagerCapabilities = managerCapabilitiesOf(emptyList(), homeHouseId = ""),
+    /**
+     * Non-null when the app was opened from an Allied coverage push → jump to Coverage and open
+     * the Respond sheet for this request on launch.
+     */
+    val launchCoverageRequestId: String? = null,
+    /**
+     * MANAGER ONLY — the Hours report for the viewed house (docs/manager-app/SPEC.md §6.5). Null
+     * while it loads, or for a plain worker who has no Hours tab.
+     *
+     * This is a plain snapshot rather than a ViewModel because the screen holds no state of its
+     * own beyond which row is expanded, which is local UI state.
+     */
+    val hoursReport: HouseHoursResult? = null,
 )
 
 /**
@@ -122,4 +153,18 @@ internal data class ShiftsActions(
     val onAcknowledgeAlliedPage: (String) -> Unit = {},
     val onCreateSwap: suspend (SwapProposal) -> Boolean = { false },
     val onVoidSwap: (String) -> Unit = {},
+    // ----- Manager mode (docs/manager-app/SPEC.md §6.1). -----
+    /**
+     * "I am handling this" — fired the moment the Respond sheet OPENS, not on a button. Stops
+     * the ladder and the reminders. The Boolean the host reports back is whether the write
+     * landed; false means the ViewModel must revert so the banner returns and the alert keeps
+     * going. NEVER queue this offline.
+     */
+    val onAcknowledgeCoverage: suspend (String) -> Boolean = { false },
+    /** Record the outcome and close: (requestId, outcome wire value, note). */
+    val onCloseCoverage: suspend (String, String, String?) -> Boolean = { _, _, _ -> false },
+    /** Dial the desk / Allied. The host opens a `tel:` intent; null number → no-op. */
+    val onCallPhone: (String?) -> Unit = {},
+    /** One more attempt at an internal float before committing to Allied, from the Respond sheet. */
+    val onForceTriggerCoverage: (String) -> Unit = {},
 )

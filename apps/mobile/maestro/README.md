@@ -94,9 +94,9 @@ The screens MUST expose these stable ids. On Android attach them with
 | `claim_button`              | Claim affordance on an open-shift card.                  |
 | `claim_range_selector`      | Open-shift partial-claim "How much can you cover?" selector (multi-block opening). |
 | `claim_range_label`         | Live range/duration summary in the claim sheet.          |
-| `soft_cap_warning_modal`    | >20h soft-cap warning (§5.3).                            |
-| `soft_cap_confirm_button`   | Confirm-through-warning button.                          |
-| `claim_confirm_button`      | Final claim confirmation.                                |
+| `soft_cap_warning_modal`    | >20h soft-cap warning (§5.3).                             |
+| `soft_cap_confirm_button`   | "Claim anyway" — claims immediately, one tap, no second confirm step. |
+| `claim_confirm_button`      | Final claim confirmation (shown when there is no soft-cap warning). |
 | `claim_success`             | Claim success state.                                     |
 | `manage_shift_sheet`        | The manage-shift sheet, opened by tapping a `calendar_shift_card`. Holds the Drop/Swap intent cards, the shared scope, and the shared "How much" range. |
 | `intent_drop` / `intent_swap` | Equal-weight intent cards — "Drop the shift" vs "Swap it" (`intent_swap` is disabled when the card can't swap). |
@@ -215,7 +215,8 @@ The screens MUST expose these stable ids. On Android attach them with
 | `settings_theme_segmented`  | Appearance theme segmented control (System/Light/Dark).  |
 | `settings_sign_out`         | Sign-out row.                                            |
 | `login_screen`              | Login screen root (live path only).                      |
-| `login_email`               | PennKey email field.                                     |
+| `login_email`               | Email field.                                             |
 | `login_password`            | Password field.                                          |
 | `login_submit`              | Sign-in button.                                          |
+| `login_cancel`              | Cancels an in-flight sign-in (rendered only while submitting). |
 | `login_error`               | Sign-in error banner.                                    |

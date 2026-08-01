@@ -65,7 +65,7 @@ clock reads inside pure logic — `now` is always a parameter. If any `@Volatile
 // --- domain ---
 data class AuthSession(val userId: String, val accessToken: String, val expiresAt: Instant)
 
-enum class AuthError { INVALID_CREDENTIALS, NETWORK, UNKNOWN }
+enum class AuthError { INVALID_CREDENTIALS, NETWORK, TIMEOUT, UNKNOWN }
 
 sealed interface AuthOutcome {
     data class Success(val session: AuthSession) : AuthOutcome
@@ -103,6 +103,7 @@ sealed interface LoginEvent {
     data class EmailChanged(val value: String) : LoginEvent
     data class PasswordChanged(val value: String) : LoginEvent
     data object SubmitRequested : LoginEvent
+    data object CancelRequested : LoginEvent
     data class AuthSucceeded(val session: AuthSession) : LoginEvent
     data class AuthFailed(val error: AuthError) : LoginEvent
 }

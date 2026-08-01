@@ -152,7 +152,7 @@ class OpenShiftPresentationTest {
     // ----- claim-sheet hours meter -----
 
     @Test fun meter_under_soft_cap_is_ok() {
-        val m = claimMeter(currentWeeklyHours = 8.0, addedHours = 2.0, breakProfile = false)
+        val m = claimMeter(currentWeeklyHours = 8.0, addedHours = 2.0, cap = WeeklyCap.FALLBACK)
         assertEquals("10h", m.afterLabel)
         assertEquals("20h", m.capLabel)
         assertEquals(ClaimCapVerdict.OK, m.verdict)
@@ -161,19 +161,19 @@ class OpenShiftPresentationTest {
     }
 
     @Test fun meter_over_soft_cap_warns() {
-        val m = claimMeter(currentWeeklyHours = 19.0, addedHours = 2.0, breakProfile = false)
+        val m = claimMeter(currentWeeklyHours = 19.0, addedHours = 2.0, cap = WeeklyCap.FALLBACK)
         assertEquals("21h", m.afterLabel)
         assertEquals(ClaimCapVerdict.SOFT_CAP_WARNING, m.verdict)
     }
 
     @Test fun meter_break_over_hard_cap_blocks() {
-        val m = claimMeter(currentWeeklyHours = 39.0, addedHours = 2.0, breakProfile = true)
+        val m = claimMeter(currentWeeklyHours = 39.0, addedHours = 2.0, cap = WeeklyCap(40.0, CapEnforcement.HARD))
         assertEquals("40h", m.capLabel)
         assertEquals(ClaimCapVerdict.HARD_CAP_BLOCKED, m.verdict)
     }
 
     @Test fun meter_fractions_clamp_to_one() {
-        val m = claimMeter(currentWeeklyHours = 30.0, addedHours = 20.0, breakProfile = false)
+        val m = claimMeter(currentWeeklyHours = 30.0, addedHours = 20.0, cap = WeeklyCap.FALLBACK)
         assertEquals(1.0, m.afterFraction)
     }
 

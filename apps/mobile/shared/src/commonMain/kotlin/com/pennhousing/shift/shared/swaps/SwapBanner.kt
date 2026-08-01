@@ -99,12 +99,12 @@ fun buildSwapBanner(
                     SwapBannerEntry(
                         swapId = swap.swapId,
                         tone = SwapBannerTone.AWAITING_YOU,
-                        title = "${swap.otherUserName} is waiting on your answer",
+                        title = "Swap awaiting your approval",
                         detail =
                             if (lapsed) {
-                                "Their $word request has run out of time. Nothing will change."
+                                "${swap.otherUserName}'s $word request has run out of time. Nothing will change."
                             } else {
-                                "Respond to their $word by ${deadline(swap.expiresAt, zone)}."
+                                "${swap.otherUserName}'s $word. Respond by ${deadline(swap.expiresAt, zone)}."
                             },
                         actionLabel = "Review",
                     )
@@ -112,12 +112,12 @@ fun buildSwapBanner(
                     SwapBannerEntry(
                         swapId = swap.swapId,
                         tone = SwapBannerTone.AWAITING_THEM,
-                        title = "Waiting on ${swap.otherUserName}",
+                        title = "Swap pending",
                         detail =
                             if (lapsed) {
-                                "Your $word request has run out of time. Your shift stays yours."
+                                "${swap.otherUserName}'s $word request has run out of time. Your shift stays yours."
                             } else {
-                                "Your $word request expires ${deadline(swap.expiresAt, zone)} if they do not answer."
+                                "${swap.otherUserName}'s $word. Expires ${deadline(swap.expiresAt, zone)}."
                             },
                         actionLabel = "View",
                     )

@@ -14,6 +14,7 @@ import com.pennhousing.shift.shared.model.House
 import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.model.OpenFeed
 import com.pennhousing.shift.shared.model.OpenShift
+import com.pennhousing.shift.shared.shifts.WeeklyCapSchedule
 import com.pennhousing.shift.shared.model.PendingFloat
 import com.pennhousing.shift.shared.model.RecentFloat
 import com.pennhousing.shift.shared.model.RecentFloatStatus
@@ -21,7 +22,9 @@ import com.pennhousing.shift.shared.network.ClaimOutcome
 import com.pennhousing.shift.shared.network.EdgeFunctionClient
 import com.pennhousing.shift.shared.network.EdgeResult
 import com.pennhousing.shift.shared.notifications.NotificationItem
+import com.pennhousing.shift.shared.notifications.ToastNotification
 import com.pennhousing.shift.shared.notifications.notificationFromPayload
+import com.pennhousing.shift.shared.notifications.toastFromNotificationRow
 import com.pennhousing.shift.shared.shifts.BLOCK
 import com.pennhousing.shift.shared.shifts.NEW_YORK
 import com.pennhousing.shift.shared.swaps.HandoffWorker
@@ -90,17 +93,19 @@ import kotlin.time.Instant
 data class WorkerSnapshot(
     val myShifts: List<MyShift>,
     val openShifts: List<OpenShift>,
-)
-
-/** A new `notifications` row, mapped for the in-app toast (deliverable #7). */
-data class ToastNotification(
-    val title: String,
-    val body: String,
+    /**
+     * The server's hours cap for each week in the navigable window. Carried on the
+     * snapshot so the ViewModel never derives a cap itself — the same rule the
+     * coverage lock follows for claimability. Falls back per-week when absent.
+     */
+    val weeklyCaps: WeeklyCapSchedule = WeeklyCapSchedule.PENDING,
 )
 
 class WorkerShiftsRepository(
     private val supabase: SupabaseClient,
     private val edge: EdgeFunctionClient = EdgeFunctionClient(),
+    private val weeklyCaps: WeeklyCapRepository = WeeklyCapRepository(supabase),
+    private val homeHouseGate: HomeHouseGateRepository = HomeHouseGateRepository(supabase),
 ) {
     /**
      * Scope that owns the shared worker-week subscriptions (cost audit F-02/F-11).
@@ -552,40 +557,8 @@ class WorkerShiftsRepository(
             .map { HouseOption(id = it.id, name = it.name, deskPhone = it.deskPhone) }
             .sortedBy { it.name }
 
-    /**
-     * Staggered-launch gate (rollout): has the signed-in worker's home house gone live yet?
-     * Resolves the worker's `home_house_id` (own-row RLS) + its display name (authenticated
-     * `houses` read), then delegates to the `house_is_live` RPC (SECURITY DEFINER, folds in
-     * the master switch), so a worker at a not-yet-launched house sees the "coming soon"
-     * placeholder (named after their house) instead of an empty app.
-     * FAIL-OPEN: any unreadable step defaults to live, so a transient error never locks a
-     * worker out of an already-launched house (the gate is a soft UX guard, not security).
-     */
-    suspend fun fetchHomeHouseGate(userId: String): HomeHouseGate {
-        val homeHouseId =
-            runCatching {
-                supabase
-                    .from(TABLE_USERS)
-                    .select(Columns.list("home_house_id")) { filter { eq("user_id", userId) } }
-                    .decodeSingleOrNull<HomeHouseRow>()
-                    ?.homeHouseId
-            }.getOrNull() ?: return HomeHouseGate(isLive = true, houseName = "your house")
-        val houseName =
-            runCatching {
-                supabase
-                    .from(TABLE_HOUSES)
-                    .select(Columns.list("name")) { filter { eq("id", homeHouseId) } }
-                    .decodeSingleOrNull<LaunchHouseNameRow>()
-                    ?.name
-            }.getOrNull() ?: homeHouseId
-        val isLive =
-            runCatching {
-                supabase.postgrest
-                    .rpc("house_is_live", buildJsonObject { put("p_house_id", homeHouseId) })
-                    .decodeAs<Boolean>()
-            }.getOrDefault(true)
-        return HomeHouseGate(isLive = isLive, houseName = houseName)
-    }
+    /** See [HomeHouseGateRepository.fetchHomeHouseGate]. */
+    suspend fun fetchHomeHouseGate(userId: String): HomeHouseGate = homeHouseGate.fetchHomeHouseGate(userId)
 
     /**
      * Any house's schedule grid for the NY week containing [anchor] (2026-06-23 cross-house
@@ -799,7 +772,13 @@ class WorkerShiftsRepository(
                 }
                 .decodeList<OpenShiftRow>()
                 .map { it.toModel() }
-        return WorkerSnapshot(myShifts = myShifts, openShifts = openShifts)
+        // Per-week caps for the same window. One extra RPC per snapshot, and it cannot
+        // fail the snapshot: WeeklyCapRepository swallows its own errors into PENDING.
+        return WorkerSnapshot(
+            myShifts = myShifts,
+            openShifts = openShifts,
+            weeklyCaps = weeklyCaps.fetchWindow(now),
+        )
     }
 
     /**
@@ -1241,21 +1220,6 @@ internal data class HomeHouseRow(
     @SerialName("home_house_id") val homeHouseId: String,
 )
 
-/** A house display name by id (authenticated `houses` read) — for the launch gate. */
-@Serializable
-internal data class LaunchHouseNameRow(
-    val name: String,
-)
-
-/**
- * Result of the staggered-launch home-house gate: whether the worker's home house is live
- * yet, plus its display name for the "coming soon" placeholder.
- */
-data class HomeHouseGate(
-    val isLive: Boolean,
-    val houseName: String,
-)
-
 // ----- Wire rows (the client read-model views) → pure domain models. -----
 
 @Serializable
@@ -1405,6 +1369,12 @@ internal fun NotificationWireRow.toNotificationItem(): NotificationItem =
         // block to acknowledge + the desk phone to call.
         alliedPageBlockId = payload["block_id"]?.jsonPrimitive?.content,
         deskPhone = payload["desk_phone"]?.jsonPrimitive?.content,
+        // A manager's Allied coverage request (BSpec §5.4a): `hmod_urgent` rows carry
+        // `payload.request_id`, stamped by `emit_allied_coverage_notification`. The pure mapper
+        // turns that into the urgent ALLIED_COVERAGE entry whose row opens the Respond sheet.
+        // Note these rows ALSO carry `block_id`, but the anchor block is not what a manager acts
+        // on: adjacent blocks coalesce into one request, so the REQUEST is the unit of work.
+        coverageRequestId = payload["request_id"]?.jsonPrimitive?.content,
     )
 
 // ----- Edge-Function request bodies. -----
@@ -1547,8 +1517,4 @@ fun parseProjectedHours(body: String): Double? =
             ?.toDoubleOrNull()
     }.getOrNull()
 
-private fun JsonObject.toToast(): ToastNotification? {
-    val title = this["title"]?.jsonPrimitive?.content ?: return null
-    val body = this["body"]?.jsonPrimitive?.content ?: this["message"]?.jsonPrimitive?.content ?: ""
-    return ToastNotification(title = title, body = body)
-}
+private fun JsonObject.toToast(): ToastNotification? = toastFromNotificationRow(this)

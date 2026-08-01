@@ -11,9 +11,13 @@ import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.user.UserSession
 import io.github.jan.supabase.exceptions.RestException
 import io.ktor.client.plugins.HttpRequestTimeoutException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.toStdlibInstant
 import kotlinx.io.IOException
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Worker auth — the real GoTrue-backed [AuthGateway] (adapter layer, DESIGN §5.1).
@@ -35,7 +39,26 @@ import kotlinx.io.IOException
  * `0.7.1-0.6.x-compat` artifact keeps it a distinct class, not yet the
  * `kotlin.time.Instant` typealias), so we bridge it with `.toStdlibInstant()` to the
  * `kotlin.time.Instant` the pure [AuthSession] uses.
+ *
+ * EVERY path out of [signIn] terminates. supabase-kt installs its own Ktor
+ * `HttpTimeout` (10s per request by default) which covers the GoTrue POST, but that
+ * bound does not cover the rest of the call — session persistence, the
+ * `sessionStatus` update, engine-level DNS on some platforms — so [SIGN_IN_TIMEOUT]
+ * wraps the whole thing. Without an outer bound a stalled sign-in leaves the login
+ * screen in SUBMITTING indefinitely, which is precisely the "signing in forever with
+ * no error" the worker cannot escape.
  */
+/**
+ * Hard upper bound on one sign-in attempt, from tap to outcome.
+ *
+ * Sized to sit just outside supabase-kt's own 10s per-request timeout so that a
+ * genuine HTTP timeout still reports with its real cause, and this only fires when
+ * something outside the request itself stalls. 15s is also about as long as a worker
+ * will wait at a desk before deciding the app is broken — the point of the bound is
+ * that they get an error and a retry, not a spinner.
+ */
+internal val SIGN_IN_TIMEOUT = 15.seconds
+
 class SupabaseAuthGateway(
     private val client: SupabaseClient,
 ) : AuthGateway {
@@ -44,21 +67,37 @@ class SupabaseAuthGateway(
         password: String,
     ): AuthOutcome =
         try {
-            client.auth.signInWith(Email) {
-                this.email = email
-                this.password = password
+            withTimeout(SIGN_IN_TIMEOUT) {
+                client.auth.signInWith(Email) {
+                    this.email = email
+                    this.password = password
+                }
+                // signInWith updates sessionStatus; read the resulting session back.
+                val session = client.auth.currentSessionOrNull()
+                if (session != null) {
+                    AuthOutcome.Success(session.toAuthSession())
+                } else {
+                    // Authenticated with no readable session is an unexpected backend state.
+                    AuthOutcome.Failure(AuthError.UNKNOWN, "signInWith returned no session (unexpected backend state)")
+                }
             }
-            // signInWith updates sessionStatus; read the resulting session back.
-            val session = client.auth.currentSessionOrNull()
-            if (session != null) {
-                AuthOutcome.Success(session.toAuthSession())
-            } else {
-                // Authenticated with no readable session is an unexpected backend state.
-                AuthOutcome.Failure(AuthError.UNKNOWN, "signInWith returned no session (unexpected backend state)")
-            }
+        } catch (e: TimeoutCancellationException) {
+            // The outer bound fired: something inside signInWith did not come back.
+            AuthOutcome.Failure(
+                AuthError.TIMEOUT,
+                "signIn exceeded $SIGN_IN_TIMEOUT against ${AppConfig.supabaseUrl}",
+            )
+        } catch (e: CancellationException) {
+            // The WORKER cancelled (tapped Cancel), or the host scope went away. This is
+            // not a failure and must not be reported as one — and swallowing it here
+            // would leave the caller running inside an already-cancelled coroutine.
+            // Must be caught before the `Throwable` arm below, which would otherwise eat it.
+            throw e
         } catch (e: HttpRequestTimeoutException) {
-            AuthOutcome.Failure(AuthError.NETWORK, "Timeout reaching ${AppConfig.supabaseUrl}: ${e.message}")
+            // supabase-kt's own per-request bound (10s by default) beat ours to it.
+            AuthOutcome.Failure(AuthError.TIMEOUT, "HTTP request to ${AppConfig.supabaseUrl} timed out: ${e.message}")
         } catch (e: IOException) {
+            // Includes supabase-kt's HttpRequestException, which extends kotlinx.io.IOException.
             AuthOutcome.Failure(AuthError.NETWORK, "Cannot reach ${AppConfig.supabaseUrl} (${e::class.simpleName}): ${e.message}")
         } catch (e: RestException) {
             AuthOutcome.Failure(e.toAuthError(), "HTTP ${e.statusCode} from GoTrue: ${e.message}")

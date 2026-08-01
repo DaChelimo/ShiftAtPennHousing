@@ -1,5 +1,6 @@
 import { cache } from 'react';
 
+import { cachedGlobal } from '../cache/ttl';
 import { createServiceClient } from '../supabase/server';
 
 // S6 — HMOD context I/O (web-remediation #18a/#8/#9). Thin service-client wrappers
@@ -46,18 +47,26 @@ export const getUnreadCount = cache(
 // (Allied) and are not places anyone is scheduled. This list also gates `?house=`
 // for the calendar, builder, hours and preferences pages, and supplies the
 // transfer-destination menu, so a pseudo-house leaking in here is load-bearing.
+// The 13 staffable houses are reference data: the row set changes only when a house is
+// added or retired, yet the shell re-read it on every navigation for anyone who can
+// switch houses. Memoized process-wide (it takes no arguments and is identical for every
+// caller, so there is nothing user-scoped to leak) behind a short TTL, with React cache()
+// still collapsing repeat calls inside a single render.
+const SHELL_HOUSES_TTL_MS = 300_000;
+
 export const getShellHouses = cache(
-  async (): Promise<{ id: string; name: string; restricted: boolean }[]> => {
-    const svc = createServiceClient();
-    const { data } = await svc
-      .from('houses')
-      .select('id, name')
-      .eq('is_staffable', true)
-      .order('id');
-    return (data ?? []).map((h) => ({
-      id: h.id,
-      name: h.name,
-      restricted: h.id === 'harnwell',
-    }));
-  },
+  async (): Promise<{ id: string; name: string; restricted: boolean }[]> =>
+    cachedGlobal('houses:staffable', SHELL_HOUSES_TTL_MS, async () => {
+      const svc = createServiceClient();
+      const { data } = await svc
+        .from('houses')
+        .select('id, name')
+        .eq('is_staffable', true)
+        .order('id');
+      return (data ?? []).map((h) => ({
+        id: h.id,
+        name: h.name,
+        restricted: h.id === 'harnwell',
+      }));
+    }),
 );

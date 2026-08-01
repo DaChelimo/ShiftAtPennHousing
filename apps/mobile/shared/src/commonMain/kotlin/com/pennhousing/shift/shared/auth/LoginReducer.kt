@@ -26,6 +26,13 @@ sealed interface LoginEvent {
 
     data object SubmitRequested : LoginEvent
 
+    /**
+     * The worker backed out of an in-flight sign-in. The only event the machine
+     * honours while SUBMITTING, and the reason SUBMITTING is no longer a one-way
+     * door: without it a slow or hung gateway leaves the screen with no way out.
+     */
+    data object CancelRequested : LoginEvent
+
     data class AuthSucceeded(val session: AuthSession) : LoginEvent
 
     data class AuthFailed(val error: AuthError, val detail: String? = null) : LoginEvent
@@ -52,6 +59,7 @@ object LoginReducer {
                     it.copy(password = event.value, errors = it.errors.copy(password = null))
                 }
             LoginEvent.SubmitRequested -> submit(state)
+            LoginEvent.CancelRequested -> cancel(state)
             is LoginEvent.AuthSucceeded ->
                 if (state.phase == LoginPhase.SUBMITTING) {
                     state.copy(
@@ -90,6 +98,29 @@ object LoginReducer {
         val next = mutate(state).copy(formError = null, formErrorDetail = null)
         return if (next.phase == LoginPhase.ERROR) next.copy(phase = LoginPhase.EDITING) else next
     }
+
+    /**
+     * CancelRequested: only meaningful while SUBMITTING — drop back to EDITING with
+     * the typed credentials intact and no error banner (the worker chose this; it is
+     * not a failure). The host cancels the in-flight gateway call alongside.
+     *
+     * Returning to EDITING is also what makes a late result harmless: [AuthSucceeded]
+     * and [AuthFailed] are both honoured ONLY from SUBMITTING, so a response that
+     * lands after the cancel is dropped rather than signing the worker in or
+     * flashing a stale error at them.
+     */
+    private fun cancel(state: LoginUiState): LoginUiState =
+        if (state.phase == LoginPhase.SUBMITTING) {
+            state.copy(
+                phase = LoginPhase.EDITING,
+                errors = FormErrors(null, null),
+                formError = null,
+                formErrorDetail = null,
+                session = null,
+            )
+        } else {
+            state
+        }
 
     /**
      * SubmitRequested (§3.2): no effect while SUBMITTING/AUTHENTICATED; otherwise

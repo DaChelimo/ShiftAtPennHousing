@@ -93,14 +93,27 @@ function parseSlotDefinition(raw: Record<string, unknown>): SlotDefinition | nul
   return { houseId, dayOfWeek, blockStartLocals };
 }
 
+/**
+ * The end of the current-or-upcoming operating period, WHATEVER its profile (a
+ * `regular_school_year` term or a compiled `s_%` season) — widened 2026-07-29 so a
+ * recurring SUMMER slot can be picked up for the rest of the season instead of one week
+ * at a time. Mirrors `permanent_drop_slot`'s boundary resolution (20260729000003) so the
+ * two halves of the same recurrence agree on where it ends; give and take must be
+ * symmetric.
+ *
+ * Earliest not-yet-ended period rather than a BETWEEN point lookup, also matching the
+ * drop: it stays correct when `asOf` falls just before a period opens or between two
+ * periods. It still throws when no period covers or follows the date, so a pickup is
+ * never unbounded.
+ */
 async function semesterEndDate(supabase: Supabase, asOf: Date): Promise<string> {
   const date = localParts(asOf).date;
   const { data, error } = await supabase
     .from('scheduling_periods')
     .select('end_date')
-    .eq('profile_name', 'regular_school_year')
-    .lte('start_date', date)
     .gte('end_date', date)
+    .order('start_date', { ascending: true })
+    .limit(1)
     .maybeSingle();
 
   if (error !== null) throw error;
@@ -158,19 +171,28 @@ async function candidateBlocks(
   ];
   if (dates.length === 0) return [];
 
+  // Keep only SCHEDULE-BUILT days. Widened 2026-07-29 from
+  // `profile_name === 'regular_school_year'` to the profile's MODE, so a summer season's
+  // occurrences are pickable as a whole recurrence. Two reasons it is the mode and not a
+  // name: a season compiles into SEVERAL phase profiles (s_summer2026_20260601,
+  // _20260701, ...), so no single name identifies it; and what the old equality actually
+  // excluded was claim-based BREAK days, which have no recurring slot to pick up —
+  // `sm_built` keeps exactly that exclusion.
+  //
+  // This predicate MUST match worker_open_shifts' `schedule_built`
+  // (20260729000011) and permanent_drop_slot's occurrence filter (20260729000003).
+  // The feed must never advertise a recurrence this function cannot take
+  // (20260617000004); the three move together or not at all.
   const { data: calendar, error: calendarError } = await supabase
     .from('operating_calendar')
-    .select('date,profile_name')
-    .in('date', dates);
+    .select('date,operating_profiles!inner(scheduling_mode)')
+    .in('date', dates)
+    .eq('operating_profiles.scheduling_mode', 'sm_built');
 
   if (calendarError !== null) throw calendarError;
-  const regularDates = new Set(
-    (calendar ?? [])
-      .filter((day) => day.profile_name === 'regular_school_year')
-      .map((day) => day.date),
-  );
+  const scheduleBuiltDates = new Set((calendar ?? []).map((day) => day.date));
   return matching.filter((block) =>
-    regularDates.has(localParts(new Date(block.blockStartAt)).date),
+    scheduleBuiltDates.has(localParts(new Date(block.blockStartAt)).date),
   );
 }
 

@@ -4,8 +4,10 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { acknowledgeAlliedPage, markRead, setAlliedResolved } from '../../lib/actions/inbox';
+import type { CoverageData } from '../../lib/data/coverage';
 import type { InboxData, InboxItem as InboxItemT } from '../../lib/data/inbox';
 import { createClient } from '../../lib/supabase/client';
+import { CoverageSection } from '../coverage/CoverageSection';
 import { Button, EmptyState, Icon, PageHead, Tabs, Tag, type IconName } from '../ui';
 import './inbox.css';
 
@@ -256,13 +258,14 @@ function NotificationRow({ item }: { item: InboxItemT }) {
 
 type Tab = 'coverage' | 'archive' | 'other';
 
-export function ActionInbox({ data }: { data: InboxData }) {
+export function ActionInbox({ data, coverage }: { data: InboxData; coverage: CoverageData }) {
   const [tab, setTab] = useState<Tab>('coverage');
   useInboxRealtime();
 
+  const actionCount = coverage.actionRequiredCount + data.alliedPages.length;
   const sub =
-    data.actionRequiredCount > 0
-      ? `${String(data.actionRequiredCount)} Allied request${data.actionRequiredCount === 1 ? '' : 's'} need attention.`
+    actionCount > 0
+      ? `${String(actionCount)} Allied request${actionCount === 1 ? '' : 's'} need attention.`
       : 'No open Allied requests. New alerts appear here in real time.';
 
   return (
@@ -274,7 +277,11 @@ export function ActionInbox({ data }: { data: InboxData }) {
           active={tab}
           onChange={(k) => setTab(k as Tab)}
           tabs={[
-            { key: 'coverage', label: 'Coverage', count: data.activeCount },
+            {
+              key: 'coverage',
+              label: 'Coverage',
+              count: coverage.openCount + data.alliedPages.length,
+            },
             { key: 'archive', label: 'Archive', count: data.archivedCount },
             { key: 'other', label: 'Notifications', count: data.otherUnreadCount },
           ]}
@@ -282,28 +289,29 @@ export function ActionInbox({ data }: { data: InboxData }) {
       </div>
 
       <div style={{ marginTop: 16 }}>
-        {tab === 'coverage' &&
-          (data.alliedPages.length === 0 && data.alliedActive.length === 0 ? (
-            <div className="card">
-              <EmptyState
-                title="All clear. No coverage needed"
-                desc="Allied-coverage requests appear here, soonest first, in real time."
-              />
-            </div>
-          ) : (
-            <>
-              {data.alliedPages.length > 0 && (
-                <div className="cov-grid" data-testid="inbox-allied-page-grid">
-                  {data.alliedPages.map((n) => (
-                    <AlliedPageCard key={n.id} item={n} />
-                  ))}
-                </div>
-              )}
-              {data.alliedActive.length > 0 && (
+        {tab === 'coverage' && (
+          <>
+            {/* Off-hours ladder "call the desk" pages (pilot, default off). These are a
+                direct instruction rather than a tracked request, so they keep their own
+                card and their own acknowledge path. */}
+            {data.alliedPages.length > 0 && (
+              <div className="cov-grid" data-testid="inbox-allied-page-grid">
+                {data.alliedPages.map((n) => (
+                  <AlliedPageCard key={n.id} item={n} />
+                ))}
+              </div>
+            )}
+            {/* Legacy hmod_urgent alerts opened BEFORE the ladder migration. They have no
+                request row, so they keep the old resolve control until they age out. */}
+            {data.alliedActive.length > 0 && (
+              <>
+                <div className="inbox-group-label muted">Earlier alerts</div>
                 <CoverageGrid items={data.alliedActive} testId="inbox-active-grid" />
-              )}
-            </>
-          ))}
+              </>
+            )}
+            <CoverageSection data={coverage} />
+          </>
+        )}
 
         {tab === 'archive' &&
           (data.alliedArchived.length === 0 ? (

@@ -7,6 +7,9 @@ import com.pennhousing.shift.shared.model.MyShiftsSection
 import com.pennhousing.shift.shared.model.OpenFeed
 import com.pennhousing.shift.shared.model.OpenShift
 import com.pennhousing.shift.shared.shifts.ClaimCapVerdict
+import com.pennhousing.shift.shared.shifts.CapEnforcement
+import com.pennhousing.shift.shared.shifts.WeeklyCap
+import com.pennhousing.shift.shared.shifts.WeeklyCapSchedule
 import com.pennhousing.shift.shared.shifts.OpenShiftSort
 import com.pennhousing.shift.shared.shifts.buildMyShiftsTab
 import com.pennhousing.shift.shared.shifts.buildOtherHousesTab
@@ -80,7 +83,10 @@ class ShiftsScreenViewModelTest {
 
     private val noon = at("2026-01-15T12:00:00-05:00")
 
-    private fun vm(now: Instant = noon) = ShiftsScreenViewModel(myShifts = myWeek, openShifts = feeds, now = now)
+    private fun vm(
+        now: Instant = noon,
+        caps: WeeklyCapSchedule = WeeklyCapSchedule.PENDING,
+    ) = ShiftsScreenViewModel(myShifts = myWeek, openShifts = feeds, now = now, weeklyCaps = caps)
 
     // ===================================================================
     // Tab 1 — My Shifts: three subsections (§5.6 Tab 1).
@@ -287,22 +293,57 @@ class ShiftsScreenViewModelTest {
     @Test
     fun claimOverSoftCapWarnsButIsAllowed() {
         // §5.3: claiming over the 20h regular/spring-fling cap is permitted with a warning.
-        assertEquals(ClaimCapVerdict.SOFT_CAP_WARNING, evaluateClaimCap(currentWeeklyHours = 18.0, addedHours = 3.0, breakProfile = false))
-        assertEquals(ClaimCapVerdict.OK, evaluateClaimCap(currentWeeklyHours = 17.0, addedHours = 3.0, breakProfile = false)) // exactly 20 → not over
+        assertEquals(ClaimCapVerdict.SOFT_CAP_WARNING, evaluateClaimCap(currentWeeklyHours = 18.0, addedHours = 3.0, WeeklyCap.FALLBACK))
+        assertEquals(ClaimCapVerdict.OK, evaluateClaimCap(currentWeeklyHours = 17.0, addedHours = 3.0, WeeklyCap.FALLBACK)) // exactly 20 → not over
     }
 
     @Test
     fun claimOverBreakHardCapIsBlocked() {
         // §5.3: claiming over the 40h break cap is prohibited.
-        assertEquals(ClaimCapVerdict.HARD_CAP_BLOCKED, evaluateClaimCap(currentWeeklyHours = 38.0, addedHours = 3.0, breakProfile = true))
-        assertEquals(ClaimCapVerdict.OK, evaluateClaimCap(currentWeeklyHours = 37.0, addedHours = 3.0, breakProfile = true)) // exactly 40 → ok
+        assertEquals(ClaimCapVerdict.HARD_CAP_BLOCKED, evaluateClaimCap(currentWeeklyHours = 38.0, addedHours = 3.0, WeeklyCap(40.0, CapEnforcement.HARD)))
+        assertEquals(ClaimCapVerdict.OK, evaluateClaimCap(currentWeeklyHours = 37.0, addedHours = 3.0, WeeklyCap(40.0, CapEnforcement.HARD))) // exactly 40 → ok
     }
 
     @Test
     fun viewModelClaimCapDerivesAddedHoursFromTheShiftSpan() {
         // A 3h open shift (18:00-21:00) on top of 18h this week → 21h → soft-cap warning.
         val threeHour = quadWeekly.copy(start = at("2026-01-15T18:00:00-05:00"), end = at("2026-01-15T21:00:00-05:00"))
-        assertEquals(ClaimCapVerdict.SOFT_CAP_WARNING, vm().claimCap(threeHour, currentWeeklyHours = 18.0, breakProfile = false))
+        assertEquals(ClaimCapVerdict.SOFT_CAP_WARNING, vm().claimCap(threeHour, currentWeeklyHours = 18.0))
+    }
+
+    @Test
+    fun theShownWeeksCapComesFromTheServerNotFromAConstant() {
+        // The reported bug: a summer worker was shown "of 20h soft cap" no matter what
+        // /admin/operations had the season set to. The chip must read the server's cap
+        // for the week being SHOWN, so it follows week navigation across a boundary.
+        val caps =
+            WeeklyCapSchedule.of(
+                listOf(
+                    Triple("2026-01-12", 20.0, CapEnforcement.SOFT),
+                    Triple("2026-01-19", 40.0, CapEnforcement.HARD),
+                ),
+            )
+        val m = vm(caps = caps)
+        assertEquals(20.0, m.uiState.value.weekCap.hours)
+        m.nextWeek()
+        assertEquals(40.0, m.uiState.value.weekCap.hours)
+        assertEquals(CapEnforcement.HARD, m.uiState.value.weekCap.enforcement)
+    }
+
+    @Test
+    fun aClaimIsJudgedAgainstTheWeekTheShiftLandsIn() {
+        // Not against the shown week: the open feeds carry their own week offset, so a
+        // worker can claim into a week the My-Shifts tab is not currently displaying.
+        val caps = WeeklyCapSchedule.of(listOf(Triple("2026-01-19", 40.0, CapEnforcement.HARD)))
+        val nextWeekShift =
+            quadWeekly.copy(start = at("2026-01-22T18:00:00-05:00"), end = at("2026-01-22T21:00:00-05:00"))
+        // 22h in a 40h week is fine; under the old fixed 20h soft cap this warned.
+        assertEquals(ClaimCapVerdict.OK, vm(caps = caps).claimCap(nextWeekShift, currentWeeklyHours = 19.0))
+        // And the hard cap actually blocks, which no non-break week could ever do before.
+        assertEquals(
+            ClaimCapVerdict.HARD_CAP_BLOCKED,
+            vm(caps = caps).claimCap(nextWeekShift, currentWeeklyHours = 38.0),
+        )
     }
 
     // ===================================================================

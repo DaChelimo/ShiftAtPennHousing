@@ -97,11 +97,11 @@ class PartialClaimTest {
         val twoBlocks = planPartialClaim(shift, 0, 2)
         assertEquals(
             ClaimCapVerdict.SOFT_CAP_WARNING,
-            evaluateClaimCap(19.0, hoursBetween(threeBlocks.claimStart, threeBlocks.claimEnd), breakProfile = false),
+            evaluateClaimCap(19.0, hoursBetween(threeBlocks.claimStart, threeBlocks.claimEnd), WeeklyCap.FALLBACK),
         )
         assertEquals(
             ClaimCapVerdict.OK,
-            evaluateClaimCap(19.0, hoursBetween(twoBlocks.claimStart, twoBlocks.claimEnd), breakProfile = false),
+            evaluateClaimCap(19.0, hoursBetween(twoBlocks.claimStart, twoBlocks.claimEnd), WeeklyCap.FALLBACK),
         )
     }
 }

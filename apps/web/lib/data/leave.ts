@@ -1,7 +1,25 @@
 import { adminHouseId, type SessionUser } from '../auth';
 import { createServiceClient } from '../supabase/server';
 
-export type ReplacementOption = { userId: string; name: string; role: string };
+/** An active leave the candidate is already on. Used for the availability hint. */
+export type BusyRange = { startDate: string; endDate: string };
+
+export type ReplacementOption = {
+  userId: string;
+  name: string;
+  role: string;
+  /**
+   * `primary` is offered up-front: the leaver's OWN-house managers (§2.6 #1's default
+   * pool) plus the project administrator (the guaranteed terminal, never hidden).
+   * `other` is the cross-house pool, revealed on request — still fully selectable,
+   * because §2.6 #7 requires it when a house's HM and BM are both out on a date.
+   */
+  group: 'primary' | 'other';
+  /** House the candidate manages. Null for a project administrator with no scope. */
+  houseName: string | null;
+  /** The candidate's own active leaves, so the picker can flag a date clash. */
+  busy: BusyRange[];
+};
 
 export type ActiveLeave = {
   leaveId: string;
@@ -60,14 +78,24 @@ export async function getLeaveAdminData(me: SessionUser): Promise<LeaveAdminData
     activeById.set(u.user_id, u.is_active);
   }
 
+  const { data: houseRows } = await svc.from('houses').select('id, name');
+  const houseNameById = new Map<string, string>();
+  for (const h of houseRows ?? []) houseNameById.set(h.id, h.name);
+
   // Active leave chain: user → their current replacement. Used to detect cycles.
+  // The same rows carry each candidate's own leave dates, which feed the
+  // availability hint in the picker (§2.6 #1).
   const { data: leaveRows } = await svc
     .from('hm_leave')
     .select('user_id, replacement_user_id, start_date, end_date, status')
     .eq('status', 'active');
   const replacementOf = new Map<string, string | null>();
+  const busyByUser = new Map<string, BusyRange[]>();
   for (const l of leaveRows ?? []) {
     replacementOf.set(l.user_id, l.replacement_user_id);
+    const ranges = busyByUser.get(l.user_id) ?? [];
+    ranges.push({ startDate: l.start_date, endDate: l.end_date });
+    busyByUser.set(l.user_id, ranges);
   }
 
   // A candidate is in `me`'s INCOMING chain iff following their forward replacement
@@ -120,11 +148,17 @@ export async function getLeaveAdminData(me: SessionUser): Promise<LeaveAdminData
   // The default and the project administrator are always offered.
   if (defaultReplacementUserId !== null) optionIds.add(defaultReplacementUserId);
 
-  const candidates: ReplacementOption[] = [...optionIds].map((id) => ({
-    userId: id,
-    name: nameById.get(id) ?? id,
-    role: roleLabel(roleByUser.get(id)?.role ?? 'hm'),
-  }));
+  const candidates: ReplacementOption[] = [...optionIds].map((id) => {
+    const house = roleByUser.get(id)?.house ?? null;
+    return {
+      userId: id,
+      name: nameById.get(id) ?? id,
+      role: roleLabel(roleByUser.get(id)?.role ?? 'hm'),
+      group: house === myHouse || id === projectAdminId ? 'primary' : 'other',
+      houseName: house !== null ? (houseNameById.get(house) ?? house) : null,
+      busy: busyByUser.get(id) ?? [],
+    };
+  });
 
   if (projectAdminId !== null && !optionIds.has(projectAdminId)) {
     const { data: adminUser } = await svc
@@ -136,6 +170,9 @@ export async function getLeaveAdminData(me: SessionUser): Promise<LeaveAdminData
       userId: projectAdminId,
       name: adminUser?.name ?? 'Project Administrator',
       role: roleLabel('admin'),
+      group: 'primary',
+      houseName: null,
+      busy: busyByUser.get(projectAdminId) ?? [],
     });
   }
   candidates.sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));

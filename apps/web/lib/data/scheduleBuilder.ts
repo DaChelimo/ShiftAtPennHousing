@@ -64,7 +64,7 @@ export type BuilderBlock = {
   requiredHeadcount: number; // concurrent staffing limit for this block (1 regular / 2 Harnwell / 3 Quad)
 };
 
-export type BuilderWorker = { userId: string; name: string };
+export type BuilderWorker = { userId: string; name: string; isRsm: boolean };
 
 export type BuilderTarget = { targetHours: number; optedOut: boolean };
 
@@ -94,21 +94,26 @@ export type BuilderData = {
 // The caller (`/schedule-builder`) gates on `canBuildSchedule` + scopes to the admin's
 // own house, so this server-side snapshot read is authorized — the same pattern as the
 // leave/rotor reads and the phase-07 orchestrator's state snapshot.
+type BlockRow = { block_id: string; block_start_at: string; required_headcount: number };
+
 export async function getBuilderData(houseId: string): Promise<BuilderData> {
   const supabase = createServiceClient();
 
   // 1. Blocks for the house; choose the week of the earliest block as the build week.
-  const { data: blockRows } = await supabase
+  //
+  // Only the FIRST week is ever used (everything below filters to `wkStart`..`wkEnd`),
+  // so this reads the earliest block first and then fetches just that week's rows
+  // instead of pulling the house's entire block history to look at its head. On a house
+  // with a full season seeded that was thousands of rows crossing the wire per render,
+  // and it sat right up against PostgREST's 1000-row cap.
+  const { data: firstBlockRows } = await supabase
     .from('shift_blocks')
-    .select('block_id, block_start_at, required_headcount')
+    .select('block_start_at')
     .eq('house_id', houseId)
-    .order('block_start_at');
+    .order('block_start_at')
+    .limit(1);
 
-  const allBlocks = (blockRows ?? []).map((b) => ({
-    blockId: b.block_id,
-    startAtIso: b.block_start_at,
-    requiredHeadcount: b.required_headcount,
-  }));
+  const firstBlockStart = firstBlockRows?.[0]?.block_start_at ?? null;
 
   // 2. Roster: active student workers whose house membership covers the build
   //    week (as-of its first day). A worker with a scheduled transfer shows in
@@ -116,16 +121,51 @@ export async function getBuilderData(houseId: string): Promise<BuilderData> {
   //    from the old house for those weeks; without a transfer this is just their
   //    home house. Falls back to today when the house has no blocks yet.
   //    See house_roster_as_of / membership_house_for_date (20260719000001).
-  const rosterAsOf = allBlocks.length
-    ? nyDate(allBlocks[0]!.startAtIso)
-    : nyDate(new Date().toISOString());
-  const { data: rosterRows } = await supabase.rpc('house_roster_as_of', {
-    p_house_id: houseId,
-    p_as_of: rosterAsOf,
-  });
-  const workers: BuilderWorker[] = (rosterRows ?? []).map((u) => ({
+  //
+  //    Fetched alongside the build week's blocks and its scheduling period: all three
+  //    key off the first block's DATE, which we already have, so they no longer run one
+  //    after another.
+  const rosterAsOf =
+    firstBlockStart !== null ? nyDate(firstBlockStart) : nyDate(new Date().toISOString());
+  const weekLo = firstBlockStart === null ? null : weekStart(nyDate(firstBlockStart));
+  const weekHi = weekLo === null ? null : addDays(weekLo, 7);
+
+  const [rosterResult, weekBlockResult, periodResult] = await Promise.all([
+    supabase.rpc('house_roster_as_of', { p_house_id: houseId, p_as_of: rosterAsOf }),
+    weekLo === null
+      ? Promise.resolve({ data: [] as BlockRow[] })
+      : // A ±12h UTC envelope around the NY week, filtered precisely by NY date below —
+        // same DST-safe pattern the live calendar uses.
+        supabase
+          .from('shift_blocks')
+          .select('block_id, block_start_at, required_headcount')
+          .eq('house_id', houseId)
+          .gte('block_start_at', `${weekLo}T00:00:00.000Z`)
+          .lt('block_start_at', `${weekHi!}T12:00:00.000Z`)
+          .order('block_start_at'),
+    // The scheduling period covering the build week's first day. `rosterAsOf` IS that
+    // day (it falls back to today only when the house has no blocks, in which case the
+    // empty-blocks return below fires before the period is ever read).
+    supabase
+      .from('scheduling_periods')
+      .select('period_id, start_date, end_date')
+      .lte('start_date', rosterAsOf)
+      .gte('end_date', rosterAsOf),
+  ]);
+
+  const allBlocks = ((weekBlockResult.data ?? []) as BlockRow[]).map((b) => ({
+    blockId: b.block_id,
+    startAtIso: b.block_start_at,
+    requiredHeadcount: b.required_headcount,
+  }));
+
+  // Cast until `database.types.ts` is regenerated against the 20260729000001
+  // migration (adds is_rsm); the generated RPC return type doesn't know it yet.
+  const roster = (rosterResult.data ?? []) as { user_id: string; name: string; is_rsm: boolean }[];
+  const workers: BuilderWorker[] = roster.map((u) => ({
     userId: u.user_id,
     name: u.name,
+    isRsm: u.is_rsm,
   }));
   const workerIds = workers.map((w) => w.userId);
 
@@ -168,76 +208,88 @@ export async function getBuilderData(houseId: string): Promise<BuilderData> {
     });
   const weekBlockIds = blocks.map((b) => b.blockId);
 
-  // 3. The scheduling period covering this build week.
-  const { data: periodRows } = await supabase
-    .from('scheduling_periods')
-    .select('period_id, start_date, end_date')
-    .lte('start_date', firstDay)
-    .gte('end_date', firstDay);
-  const periodId = periodRows?.[0]?.period_id ?? null;
+  // 3. The scheduling period covering this build week (fetched in the wave above).
+  const periodId = periodResult.data?.[0]?.period_id ?? null;
 
   if (periodId === null) {
     return { ...empty, blocks, weekStartDate: wkStart };
   }
 
-  // 4. Preferences for the week's blocks (the Phase-1 pool = workers with any pref row).
-  const prefRows = await selectByBlockIdChunks(weekBlockIds, (chunk) =>
+  // 4-7. Everything keyed off the period. None of these five reads depends on another,
+  // but they used to run strictly in sequence — preferences, then targets, then drafts,
+  // then the publication row, then the deadline RPC — with the two chunked reads each
+  // paying five serial round trips of their own on top. One wave now.
+  const [prefRows, targetResult, draftRows, pubResult, deadlineResult] = await Promise.all([
+    // Preferences for the week's blocks (the Phase-1 pool = workers with any pref row).
+    selectByBlockIdChunks(weekBlockIds, (chunk) =>
+      supabase
+        .from('preferences')
+        .select('user_id, block_id, status')
+        .eq('period_id', periodId)
+        .in('block_id', chunk),
+    ),
+    // Period targets.
     supabase
-      .from('preferences')
-      .select('user_id, block_id, status')
+      .from('period_targets')
+      .select('user_id, target_hours, opted_out')
       .eq('period_id', periodId)
-      .in('block_id', chunk),
-  );
+      .in('user_id', workerIds.length > 0 ? workerIds : ['00000000-0000-0000-0000-000000000000']),
+    // Existing draft assignments for the week (same chunking — 224 ids 414s).
+    selectByBlockIdChunks(weekBlockIds, (chunk) =>
+      supabase
+        .from('draft_block_assignments')
+        .select('block_id, user_id')
+        .eq('period_id', periodId)
+        .in('block_id', chunk),
+    ),
+    // Published?
+    supabase
+      .from('period_house_publications')
+      .select('house_id')
+      .eq('period_id', periodId)
+      .eq('house_id', houseId)
+      .maybeSingle(),
+    // Is preference submission still open? (The AI panel may only generate after the
+    // deadline closes; the RPC honors app_now().)
+    supabase.rpc('preference_deadline_is_open', { check_period_id: periodId }),
+  ]);
+
   const preferences: PreferenceRecord[] = prefRows.map((p) => ({
     userId: p.user_id,
     blockId: p.block_id,
     status: p.status as PreferenceStatus,
   }));
 
-  // 5. Period targets.
-  const { data: targetRows } = await supabase
-    .from('period_targets')
-    .select('user_id, target_hours, opted_out')
-    .eq('period_id', periodId)
-    .in('user_id', workerIds.length > 0 ? workerIds : ['00000000-0000-0000-0000-000000000000']);
   const targets: Record<string, BuilderTarget> = {};
-  for (const t of targetRows ?? []) {
+  for (const t of targetResult.data ?? []) {
     targets[t.user_id] = { targetHours: t.target_hours, optedOut: t.opted_out };
   }
 
-  // The Phase-1 pool is everyone who SUBMITTED — any preference row OR any
+  // The Phase-1 pool is everyone who SUBMITTED: any preference row OR any
   // period_targets row (incl. a "no hours" opt-out). Workers with neither are
   // "none / unspecified" (§4.2) and appear only in the Phase-2 full roster. A
   // submitted worker with no preference for a span block lands in `blocked`
-  // (missing) per phase1Grouping — not assignable in Phase 1, matching §4.1.
+  // (missing) per phase1Grouping, not assignable in Phase 1, matching §4.1.
+  //
+  // The house's RSM never submits preferences (2026-07-29 desk-assignment
+  // decision) but must still be visible in Phase 1, so they're unioned in
+  // here too; `buildPhase1Card` special-cases them (isRsm) to skip phase-04's
+  // preference grouping instead of always landing them in `blocked: missing`.
   const submittedUserIds = [
-    ...new Set([...preferences.map((p) => p.userId), ...Object.keys(targets)]),
+    ...new Set([
+      ...preferences.map((p) => p.userId),
+      ...Object.keys(targets),
+      ...workers.filter((w) => w.isRsm).map((w) => w.userId),
+    ]),
   ];
 
-  // 6. Existing draft assignments for the week (same chunking — 224 ids 414s).
-  const draftRows = await selectByBlockIdChunks(weekBlockIds, (chunk) =>
-    supabase
-      .from('draft_block_assignments')
-      .select('block_id, user_id')
-      .eq('period_id', periodId)
-      .in('block_id', chunk),
-  );
   const drafts: Record<string, string[]> = {};
   for (const d of draftRows) {
     (drafts[d.block_id] ??= []).push(d.user_id);
   }
 
-  // 7. Published? And is preference submission still open? (The AI panel
-  // may only generate after the deadline closes; the RPC honors app_now().)
-  const { data: pub } = await supabase
-    .from('period_house_publications')
-    .select('house_id')
-    .eq('period_id', periodId)
-    .eq('house_id', houseId)
-    .maybeSingle();
-  const { data: deadlineOpenData } = await supabase.rpc('preference_deadline_is_open', {
-    check_period_id: periodId,
-  });
+  const pub = pubResult.data;
+  const deadlineOpenData = deadlineResult.data;
 
   return {
     periodId,

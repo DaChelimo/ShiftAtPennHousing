@@ -59,11 +59,12 @@ import com.pennhousing.shift.ui.theme.ShiftTheme
 /**
  * The claim / pick-up sheet (worker-app.html `ClaimSheet`): a shift summary, the
  * "this brings your week to Xh of Yh" hours meter, and the §5.3 cap gating. A
- * soft-cap claim is a two-step confirm (warning banner → "Claim anyway" →
- * `claim_confirm_button`) so the Maestro `soft_cap_*` contract holds; a break
- * hard-cap claim disables the confirm. On confirm the sheet dismisses and the
- * screen shows the `claim_success` toast — the picked-up shift is already in My
- * Shifts (the optimistic [ShiftsScreenViewModel.claim], decision #13).
+ * soft-cap claim shows a warning banner with a single "Claim anyway" button
+ * (`soft_cap_confirm_button`) that claims immediately — one tap, no second
+ * confirm step; a break hard-cap claim disables the confirm entirely. On
+ * confirm the sheet dismisses and the screen shows the `claim_success` toast —
+ * the picked-up shift is already in My Shifts (the optimistic
+ * [ShiftsScreenViewModel.claim], decision #13).
  *
  * T2-10 — an opening that coalesces several 30-min blocks gains a "How much can you
  * cover?" block-range slider (default: the whole opening, so the Maestro 02 whole-claim
@@ -77,7 +78,6 @@ internal fun ClaimSheet(
     shift: OpenShift,
     vm: ShiftsScreenViewModel,
     currentWeeklyHours: Double,
-    breakProfile: Boolean,
     onConfirmed: (OpenShift, String) -> Unit,
     onDismiss: () -> Unit,
     loadPermanentScope: suspend (OpenShift) -> PermanentPickupScope? = { null },
@@ -103,13 +103,15 @@ internal fun ClaimSheet(
     val effective = if (claimPlan.wholeShift) shift else subOpenShiftFor(shift, claimPlan)
 
     // Meter + cap gating recompute from the SELECTED span (§5.3).
+    // The cap for the week THIS shift lands in, from the server snapshot. The open feeds
+    // carry their own week offset, so it is the shift, not the shown week, that decides.
+    val cap = vm.capFor(shift)
     val meter =
-        remember(shift, claimPlan, currentWeeklyHours, breakProfile) {
-            claimMeter(currentWeeklyHours, hoursBetween(effective.start, effective.end), breakProfile)
+        remember(shift, claimPlan, currentWeeklyHours, cap) {
+            claimMeter(currentWeeklyHours, hoursBetween(effective.start, effective.end), cap)
         }
     val overHard = meter.verdict == ClaimCapVerdict.HARD_CAP_BLOCKED
     val overSoft = meter.verdict == ClaimCapVerdict.SOFT_CAP_WARNING
-    var warningAccepted by remember { mutableStateOf(false) }
 
     ShiftBottomSheet(onDismiss = onDismiss, title = if (permanent) "Pick up permanently" else "Claim shift") {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -147,7 +149,7 @@ internal fun ClaimSheet(
 
             if (overSoft) {
                 ShiftBanner(
-                    title = "Puts you over the 20h soft cap",
+                    title = meter.overCapTitle,
                     body = "Allowed this period, but your manager sees the overage.",
                     tone = BannerTone.Warning,
                     modifier = Modifier.testTag("soft_cap_warning_modal"),
@@ -155,18 +157,39 @@ internal fun ClaimSheet(
             }
             if (overHard) {
                 ShiftBanner(
-                    title = "Over the 40h limit, can't claim",
-                    body = "Break-period hard cap. Drop another shift first.",
+                    title = "Over the ${meter.capLabel} limit, can't claim",
+                    body = "This period has a hard cap. Drop another shift first.",
                     tone = BannerTone.Error,
                 )
             }
 
+            // Confirms the claim: permanent pickup of the WHOLE slot → "Picked up X of Y
+            // weeks" from the dry-run scope; a sub-range pickup or unknown scope → the
+            // generic confirmation; a weekly claim → the claim toast.
+            val confirm = {
+                val scope = permanentScope
+                val message =
+                    when {
+                        permanent && claimPlan.wholeShift && scope != null ->
+                            permanentPickupToast(
+                                weeksPickedUp = scope.weeksPickedUp,
+                                totalWeeks = scope.totalWeeksInScope,
+                                weeksSkipped = scope.weeksSkipped,
+                            )
+                        permanent -> PICKUP_SUCCESS_TOAST_GENERIC
+                        else -> CLAIM_SUCCESS_TOAST
+                    }
+                onConfirmed(effective, message)
+                onDismiss()
+            }
+
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 ShiftButton("Cancel", onDismiss, modifier = Modifier.weight(1f), variant = ButtonVariant.Outlined)
-                if (overSoft && !warningAccepted) {
+                if (overSoft) {
+                    // One tap claims immediately — no second confirm step.
                     ShiftButton(
                         "Claim anyway",
-                        onClick = { warningAccepted = true },
+                        onClick = confirm,
                         modifier = Modifier.weight(1f).testTag("soft_cap_confirm_button"),
                     )
                 } else {
@@ -180,25 +203,7 @@ internal fun ClaimSheet(
                             !claimPlan.wholeShift -> "Claim ${claimPlan.durationLabel}"
                             else -> "Claim shift"
                         },
-                        onClick = {
-                            // Permanent pickup of the WHOLE slot → "Picked up X of Y weeks"
-                            // from the dry-run scope; a sub-range pickup or unknown scope →
-                            // the generic confirmation; a weekly claim → the claim toast.
-                            val scope = permanentScope
-                            val message =
-                                when {
-                                    permanent && claimPlan.wholeShift && scope != null ->
-                                        permanentPickupToast(
-                                            weeksPickedUp = scope.weeksPickedUp,
-                                            totalWeeks = scope.totalWeeksInScope,
-                                            weeksSkipped = scope.weeksSkipped,
-                                        )
-                                    permanent -> PICKUP_SUCCESS_TOAST_GENERIC
-                                    else -> CLAIM_SUCCESS_TOAST
-                                }
-                            onConfirmed(effective, message)
-                            onDismiss()
-                        },
+                        onClick = confirm,
                         modifier = Modifier.weight(1f).testTag("claim_confirm_button"),
                         enabled = !overHard,
                     )

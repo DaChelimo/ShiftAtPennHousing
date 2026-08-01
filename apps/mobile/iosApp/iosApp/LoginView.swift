@@ -9,9 +9,11 @@ import Shared
 /// orchestration is reimplemented in Swift, but the field validation (the tested pure
 /// logic) is shared. Selector `accessibilityIdentifier`s match the Maestro contract.
 ///
-/// Like Android, login is the LIVE path only (the demo bypasses it). A true PennKey
-/// SSO redirect is not wired (the gateway is email+password); "keep me signed in" is
-/// informational (the Supabase session persists via storage regardless).
+/// Like Android, login is the LIVE path only (the demo bypasses it). PennKey SSO is not
+/// wired — the gateway is plain email+password, which is why the CTA reads "Sign in"
+/// rather than naming an identity provider the app does not actually redirect to.
+/// "Keep me signed in" is informational (the Supabase session persists via storage
+/// regardless).
 @MainActor
 final class LoginObservable: ObservableObject {
     @Published var email = ""
@@ -28,6 +30,10 @@ final class LoginObservable: ObservableObject {
     @Published var authedSession: AuthSession?
 
     private let gateway: AuthGateway
+    /// The in-flight sign-in, so `cancel()` can actually stop it. Cancelling the Swift
+    /// Task cancels the bridged Kotlin coroutine, which the gateway lets propagate
+    /// rather than reporting as a failure.
+    private var signInTask: Task<Void, Never>?
 
     init(gateway: AuthGateway) {
         self.gateway = gateway
@@ -53,6 +59,7 @@ final class LoginObservable: ObservableObject {
         switch error {
         case .invalidCredentials: return "Incorrect email or password."
         case .network: return "Network error. Check your connection and try again."
+        case .timeout: return "Signing in took too long. Check your connection and try again."
         case .unknown: return "Something went wrong. Please try again."
         @unknown default: return "Something went wrong. Please try again."
         }
@@ -65,34 +72,55 @@ final class LoginObservable: ObservableObject {
             passwordError = errors.password
             return
         }
+        signInTask?.cancel()
         submitting = true
         formError = nil
         formErrorDetail = nil
-        Task {
+        signInTask = Task { [weak self] in
+            guard let self else { return }
             do {
                 // Switch on the gateway's classified outcome (like Android's LoginHost) so a
                 // network/config failure is distinguishable from a wrong password. The success
                 // case already carries the session, so no second currentSession() probe/race.
-                let outcome = try await gateway.signIn(email: email, password: password)
+                let outcome = try await self.gateway.signIn(email: self.email, password: self.password)
+                // A result that lands after the worker cancelled must not sign them in or
+                // flash a stale error. Mirrors the reducer arm on Android, which honours
+                // AuthSucceeded/AuthFailed only while still SUBMITTING.
+                guard !Task.isCancelled, self.submitting else { return }
                 switch onEnum(of: outcome) {
                 case .success(let ok):
                     WorkerBackend.shared.wireAccessToken()
                     // Deliberately leaves `submitting` TRUE. The host swaps to the splash on
                     // the very next frame; clearing it first would flash the button back to
                     // its idle state, which reads as "nothing happened, tap again".
-                    authedSession = ok.session
+                    self.authedSession = ok.session
                 case .failure(let fail):
-                    submitting = false
-                    formError = Self.message(for: fail.error)
-                    formErrorDetail = fail.detail
+                    self.submitting = false
+                    self.formError = Self.message(for: fail.error)
+                    self.formErrorDetail = fail.detail
                 }
             } catch {
-                // signIn only throws on cancellation; surface it as a transient network issue.
-                submitting = false
-                formError = "Network error. Check your connection and try again."
-                formErrorDetail = "signIn threw: \(error.localizedDescription)"
+                // The gateway converts every terminal condition (including its own timeout)
+                // into an outcome, so a throw here is cancellation — the worker tapped Cancel,
+                // and `cancel()` has already reset the screen. Reporting an error would blame
+                // them for their own deliberate action.
+                guard !Task.isCancelled else { return }
+                self.submitting = false
+                self.formError = "Something went wrong. Please try again."
+                self.formErrorDetail = "signIn threw: \(error.localizedDescription)"
             }
         }
+    }
+
+    /// Backs out of an in-flight sign-in: stops the gateway call and returns the form to
+    /// its editable state with the typed credentials intact. The worker chose this, so no
+    /// error banner is raised.
+    func cancel() {
+        signInTask?.cancel()
+        signInTask = nil
+        submitting = false
+        formError = nil
+        formErrorDetail = nil
     }
 }
 
@@ -109,7 +137,7 @@ struct LoginScreen: View {
             VStack(spacing: 0) {
                 Spacer().frame(height: 40)
                 BrandMark(size: 72)
-                Text("Shift@PennHousing")
+                Text("SHIFT")
                     .font(ShiftFont.sans(27, .bold)).tracking(-0.5).foregroundColor(c.ink)
                     .padding(.top, 20)
                 Text("Your schedule, floats and open shifts, for Residential Services staff.")
@@ -119,7 +147,8 @@ struct LoginScreen: View {
 
                 VStack(spacing: 16) {
                     field(
-                        label: "PennKey email", icon: ShiftIcons.person, text: model.email,
+                        label: "Your email", placeholder: "bob@engineering.upenn.edu",
+                        icon: ShiftIcons.person, text: model.email,
                         onChange: model.setEmail, error: model.emailError, isFocused: focused == .email
                     )
                     .focused($focused, equals: .email)
@@ -154,7 +183,7 @@ struct LoginScreen: View {
                 .padding(.top, 16)
 
                 ShiftButton(
-                    title: model.submitting ? "Signing in…" : "Sign in with PennKey",
+                    title: model.submitting ? "Signing in…" : "Sign in",
                     action: { model.submit() },
                     variant: .filled, size: .lg, systemIcon: model.submitting ? nil : ShiftIcons.lock, fullWidth: true,
                     loading: model.submitting
@@ -164,16 +193,21 @@ struct LoginScreen: View {
                 .accessibilityIdentifier("login_submit")
 
                 if model.submitting {
-                    // Says what is actually happening while the gateway call is out. Without
-                    // it the whole screen sits motionless after the tap, and a worker on a
-                    // slow connection concludes the button is broken and taps it again.
-                    Text("Checking your PennKey details. This only takes a moment.")
-                        .font(ShiftFont.sans(13))
-                        .foregroundColor(c.sec)
-                        .multilineTextAlignment(.center)
-                        .padding(.top, 14)
-                        .transition(.opacity)
-                        .accessibilityIdentifier("login_submitting_note")
+                    // The way out of a slow sign-in. The CTA is disabled while the gateway
+                    // call is in flight, so without this the worker has no control at all —
+                    // they either wait out the timeout or force-quit the app. Shown from the
+                    // first frame rather than on a delay: a sign-in that resolves quickly
+                    // barely renders it, and one that does not is exactly when it is needed.
+                    Button(action: { model.cancel() }) {
+                        Text("Cancel")
+                            .font(ShiftFont.sans(14, .semibold))
+                            .foregroundColor(c.blue)
+                            .padding(.horizontal, 16).padding(.vertical, 8)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 14)
+                    .transition(.opacity)
+                    .accessibilityIdentifier("login_cancel")
                 }
 
                 if let formError = model.formError {
@@ -262,7 +296,7 @@ struct LoginScreen: View {
     }
 
     private func field(
-        label: String, icon: String, text: String, onChange: @escaping (String) -> Void,
+        label: String, placeholder: String = "", icon: String, text: String, onChange: @escaping (String) -> Void,
         error: String?, isFocused: Bool
     ) -> some View {
         let c = ShiftColors.resolve(scheme)
@@ -270,7 +304,7 @@ struct LoginScreen: View {
             Text(label).font(ShiftFont.sans(12.5, .semibold)).foregroundColor(c.sec)
             HStack(spacing: 10) {
                 Image(systemName: icon).font(.system(size: 18)).foregroundColor(c.ter)
-                TextField("", text: Binding(get: { text }, set: onChange))
+                TextField(placeholder, text: Binding(get: { text }, set: onChange))
                     .font(ShiftFont.sans(16, .medium)).foregroundColor(c.ink)
             }
             .padding(.horizontal, 14).frame(height: 52)
@@ -287,63 +321,23 @@ struct LoginScreen: View {
     }
 }
 
-/// One chevron of the mark, drawn from `BrandMarkGeometry`. `holes` are the three
-/// plates; they are cut with the even-odd rule so they show the ground through,
-/// exactly as the SVG and Android vector drawable do.
-private struct ChevronShape: Shape {
-    let outline: [CGPoint]
-    var holes: [CGPoint] = []
-    /// Matches the `inset` the icon generator uses when centring the mark on a tile.
-    let inset: CGFloat
-
-    private func map(_ p: CGPoint, in rect: CGRect) -> CGPoint {
-        let art = BrandMarkGeometry.artboard
-        let b = BrandMarkGeometry.markBounds
-        let x = p.x * inset + (art / 2 - b.midX * inset)
-        let y = p.y * inset + (art / 2 - b.midY * inset)
-        return CGPoint(x: rect.minX + x / art * rect.width,
-                       y: rect.minY + y / art * rect.height)
-    }
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        guard let first = outline.first else { return path }
-        path.move(to: map(first, in: rect))
-        for point in outline.dropFirst() { path.addLine(to: map(point, in: rect)) }
-        path.closeSubpath()
-
-        let r = BrandMarkGeometry.plateRadius * inset / BrandMarkGeometry.artboard * rect.width
-        for hole in holes {
-            let c = map(hole, in: rect)
-            path.addEllipse(in: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
-        }
-        return path
-    }
-}
-
-/// The brand mark: the chevronel on its paper ground.
+/// The brand mark: the Penn crest, matching the web login mark (`Logo.tsx`) and the
+/// mobile splash lockup.
 ///
-/// The geometry comes from `BrandMarkGeometry.swift`, generated by
-/// scripts/brand/build-icons.mjs from the same source as the AppIcon, the
-/// Android launcher icon and the web favicon, so this cannot drift from them.
-/// The mark carries its own ground, which is why it reads identically in light
-/// and dark and needs no colour-scheme branch. See docs/design/logo.md.
+/// `LoginMark` is generated by scripts/brand/build-icons.mjs from the same crest crop
+/// as the AppIcon, the Android launcher icon and the web favicon, so this cannot drift
+/// from them. The asset switches light/dark crop by appearance (see the imageset's
+/// Contents.json), so no colour-scheme branch is needed here. 2026-07-29: supersedes
+/// the geometry-derived chevron this surface held onto during the crest rebrand — see
+/// docs/design/brand-source/README.md.
 struct BrandMark: View {
     let size: CGFloat
-    private let inset: CGFloat = 0.94
 
     var body: some View {
-        ZStack {
-            Color(red: 244 / 255, green: 243 / 255, blue: 240 / 255)
-            ChevronShape(outline: BrandMarkGeometry.upper, inset: inset)
-                .fill(Color(red: 153 / 255, green: 0, blue: 0))
-            ChevronShape(outline: BrandMarkGeometry.lower,
-                         holes: BrandMarkGeometry.plates,
-                         inset: inset)
-                .fill(Color(red: 1 / 255, green: 31 / 255, blue: 91 / 255), style: FillStyle(eoFill: true))
-        }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: size * 0.2237, style: .continuous))
-        .accessibilityHidden(true)
+        Image("LoginMark")
+            .resizable()
+            .scaledToFit()
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
     }
 }

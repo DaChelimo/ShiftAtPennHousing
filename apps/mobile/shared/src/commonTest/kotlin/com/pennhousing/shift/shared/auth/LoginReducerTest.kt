@@ -108,10 +108,53 @@ class LoginReducerTest {
     }
 
     @Test
+    fun cancelWhileSubmittingReturnsToEditingWithCredentialsIntact() {
+        val s = LoginReducer.reduce(submitting(), LoginEvent.CancelRequested)
+        assertEquals(LoginPhase.EDITING, s.phase)
+        assertEquals("sw@pennhousing.test", s.email)
+        assertEquals("pw-123456", s.password)
+        // The worker chose this; it is not a failure and must not raise a banner.
+        assertNull(s.formError)
+        assertFalse(s.errors.hasError)
+    }
+
+    @Test
+    fun cancelThenResubmitEntersSubmittingAgain() {
+        val cancelled = LoginReducer.reduce(submitting(), LoginEvent.CancelRequested)
+        val s = LoginReducer.reduce(cancelled, LoginEvent.SubmitRequested)
+        assertEquals(LoginPhase.SUBMITTING, s.phase)
+    }
+
+    @Test
+    fun resultArrivingAfterCancelIsIgnored() {
+        val cancelled = LoginReducer.reduce(submitting(), LoginEvent.CancelRequested)
+        // The in-flight gateway call may still land. Neither outcome may take effect:
+        // a late success must not sign the worker in, a late failure must not accuse them.
+        assertEquals(cancelled, LoginReducer.reduce(cancelled, LoginEvent.AuthSucceeded(session)))
+        assertEquals(cancelled, LoginReducer.reduce(cancelled, LoginEvent.AuthFailed(AuthError.TIMEOUT)))
+    }
+
+    @Test
+    fun cancelWhenNotSubmittingIsIgnored() {
+        val editing = LoginUiState(email = "a@b.co", password = "pw-123456")
+        assertEquals(editing, LoginReducer.reduce(editing, LoginEvent.CancelRequested))
+        val errored = editing.copy(phase = LoginPhase.ERROR, formError = AuthError.TIMEOUT)
+        assertEquals(errored, LoginReducer.reduce(errored, LoginEvent.CancelRequested))
+    }
+
+    @Test
+    fun timeoutFailureSurfacesAsItsOwnError() {
+        val s = LoginReducer.reduce(submitting(), LoginEvent.AuthFailed(AuthError.TIMEOUT))
+        assertEquals(LoginPhase.ERROR, s.phase)
+        assertEquals(AuthError.TIMEOUT, s.formError)
+    }
+
+    @Test
     fun authenticatedIsTerminal() {
         val auth = LoginUiState(phase = LoginPhase.AUTHENTICATED, session = session)
         assertEquals(auth, LoginReducer.reduce(auth, LoginEvent.EmailChanged("x@y.co")))
         assertEquals(auth, LoginReducer.reduce(auth, LoginEvent.SubmitRequested))
+        assertEquals(auth, LoginReducer.reduce(auth, LoginEvent.CancelRequested))
         assertEquals(auth, LoginReducer.reduce(auth, LoginEvent.AuthFailed(AuthError.NETWORK)))
     }
 }

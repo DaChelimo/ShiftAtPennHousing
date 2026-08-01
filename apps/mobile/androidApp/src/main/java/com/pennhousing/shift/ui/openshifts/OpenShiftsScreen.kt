@@ -61,7 +61,6 @@ internal fun OpenShiftsTabContent(
     vm: ShiftsScreenViewModel,
     calendarVm: CalendarViewModel,
     currentWeeklyHours: Double,
-    breakProfile: Boolean,
     onClaimed: (String) -> Unit,
     onClaimShift: (OpenShift) -> Unit = {},
     onPickUpPermanent: (OpenShift) -> Unit = {},
@@ -100,7 +99,6 @@ internal fun OpenShiftsTabContent(
                         vm = vm,
                         calendarVm = calendarVm,
                         currentWeeklyHours = currentWeeklyHours,
-                        breakProfile = breakProfile,
                         onClaimed = onClaimed,
                         onClaimShift = onClaimShift,
                         onPickUpPermanent = onPickUpPermanent,
@@ -112,7 +110,6 @@ internal fun OpenShiftsTabContent(
                         vm = vm,
                         calendarVm = calendarVm,
                         currentWeeklyHours = currentWeeklyHours,
-                        breakProfile = breakProfile,
                         onClaimed = onClaimed,
                         onClaimShift = onClaimShift,
                         onPickUpPermanent = onPickUpPermanent,
@@ -182,7 +179,6 @@ internal fun HomeOpenTabContent(
     vm: ShiftsScreenViewModel,
     calendarVm: CalendarViewModel,
     currentWeeklyHours: Double,
-    breakProfile: Boolean,
     onClaimed: (String) -> Unit,
     onClaimShift: (OpenShift) -> Unit = {},
     onPickUpPermanent: (OpenShift) -> Unit = {},
@@ -238,7 +234,6 @@ internal fun HomeOpenTabContent(
             shift = shift,
             vm = vm,
             currentWeeklyHours = currentWeeklyHours,
-            breakProfile = breakProfile,
             loadPermanentScope = loadPermanentScope,
             onConfirmed = { effective, message ->
                 confirmOpenShift(effective, vm, calendarVm, onClaimShift, onPickUpPermanent, message, onClaimed)
@@ -254,7 +249,6 @@ internal fun OtherHousesTabContent(
     vm: ShiftsScreenViewModel,
     calendarVm: CalendarViewModel,
     currentWeeklyHours: Double,
-    breakProfile: Boolean,
     onClaimed: (String) -> Unit,
     onClaimShift: (OpenShift) -> Unit = {},
     onPickUpPermanent: (OpenShift) -> Unit = {},
@@ -320,7 +314,6 @@ internal fun OtherHousesTabContent(
             shift = shift,
             vm = vm,
             currentWeeklyHours = currentWeeklyHours,
-            breakProfile = breakProfile,
             loadPermanentScope = loadPermanentScope,
             onConfirmed = { effective, message ->
                 confirmOpenShift(effective, vm, calendarVm, onClaimShift, onPickUpPermanent, message, onClaimed)

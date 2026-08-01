@@ -111,16 +111,6 @@ struct SettingsScreen: View {
                 .padding(.horizontal, 14).padding(.vertical, 12)
             }
 
-            group("Hours & limits", c) {
-                settingsRow(icon: ShiftIcons.tune, tint: c.blue, title: "Weekly soft cap", c: c) {
-                    AnyView(Text(st.hours.softCapLabel).font(ShiftFont.mono(14, .semibold)).monospacedDigit().foregroundColor(c.sec))
-                }
-                divider(c)
-                settingsRow(icon: ShiftIcons.ban, tint: c.danger.accent, title: "Break-period hard cap", c: c) {
-                    AnyView(Text(st.hours.hardCapLabel).font(ShiftFont.mono(14, .semibold)).monospacedDigit().foregroundColor(c.sec))
-                }
-            }
-
             group("Account", c) {
                 settingsRow(icon: ShiftIcons.person, tint: c.blue, title: "PennKey & security", c: c) {
                     AnyView(Image(systemName: ShiftIcons.chevronRight).font(.system(size: 15, weight: .semibold)).foregroundColor(c.outline))
@@ -196,7 +186,7 @@ struct SettingsScreen: View {
                 .accessibilityIdentifier("settings_sign_out")
             }
 
-            Text("Shift@PennHousing · v\(st.appVersion)")
+            Text("SHIFT · v\(st.appVersion)")
                 .font(ShiftFont.mono(11.5)).monospacedDigit().foregroundColor(c.ter)
                 .frame(maxWidth: .infinity, alignment: .center)
             }

@@ -502,19 +502,51 @@ export async function getHouseCalendar(
   const today = nyToday(now);
   const thisWeekMon = mondayOf(today);
 
+  // WAVE 1 — everything that depends only on (houseId, weekStartDate). These used to
+  // be awaited one after another: closures, then the house row, then the roster, then
+  // the cap, then the blocks. Each is a round trip to a remote Postgres, so the week
+  // grid paid their full sum before it could even start reading assignments. Nothing
+  // here reads anything else here, so it all goes out at once.
+  //
   // §3.4/§11.3: ask the backend which of the week's dates this house is CLOSED for
   // (winter break → only Harnwell open; no-operating-calendar date → all closed).
-  // One RPC per column (≤7) is fine; resolve in parallel.
+  // One RPC per column (≤7).
   const dateKeys = Array.from({ length: 7 }, (_, i) => addDays(weekStartDate, i));
-  const closedFlags = await Promise.all(
-    dateKeys.map(async (dateKey) => {
-      const { data } = await supabase.rpc('house_closure', {
-        p_house_id: houseId,
-        p_on_date: dateKey,
-      });
-      return data === true;
+  const [closedFlags, houseResult, rosterResult, capResult, blockResult] = await Promise.all([
+    Promise.all(
+      dateKeys.map(async (dateKey) => {
+        const { data } = await supabase.rpc('house_closure', {
+          p_house_id: houseId,
+          p_on_date: dateKey,
+        });
+        return data === true;
+      }),
+    ),
+    // House name.
+    supabase.from('houses').select('id, name').eq('id', houseId).maybeSingle(),
+    // Same-house roster for the inline-override picker (S1). Mirrors people.ts's
+    // home_house_id-scoped read; the override RPC rejects a cross-house target, so
+    // the picker is filtered to this house (Harnwell ⇒ only Harnwell-home, D8).
+    supabase
+      .from('users')
+      .select('user_id, name, is_active')
+      .eq('home_house_id', houseId)
+      .order('name'),
+    // Campus-wide cap for the week (no per-user/house arg — confirmed global).
+    supabase.rpc('effective_weekly_cap', {
+      p_week_start_date: weekStartDate,
+      p_block_start_at: `${weekStartDate}T00:00:00-05:00`,
     }),
-  );
+    // Blocks for the house in (a generous UTC envelope around) the NY week, then
+    // filter precisely by NY date to avoid DST edge math.
+    supabase
+      .from('shift_blocks')
+      .select('block_id, block_start_at, required_headcount')
+      .eq('house_id', houseId)
+      .gte('block_start_at', `${weekStartDate}T00:00:00.000Z`)
+      .lt('block_start_at', `${weekEnd}T12:00:00.000Z`)
+      .order('block_start_at'),
+  ]);
 
   const days: CalendarDay[] = dateKeys.map((dateKey, i) => ({
     index: i,
@@ -545,46 +577,51 @@ export async function getHouseCalendar(
     blocksPerDay: (24 * 60 - DEFAULT_DAY_START_MIN) / 30,
   };
 
-  // House name.
-  const { data: house } = await supabase
-    .from('houses')
-    .select('id, name')
-    .eq('id', houseId)
-    .maybeSingle();
+  const house = houseResult.data;
   if (house) base.houseName = house.name;
 
-  // Same-house roster for the inline-override picker (S1). Mirrors people.ts's
-  // home_house_id-scoped read; the override RPC rejects a cross-house target, so
-  // the picker is filtered to this house (Harnwell ⇒ only Harnwell-home, D8).
-  const { data: rosterRows } = await supabase
-    .from('users')
-    .select('user_id, name, is_active')
-    .eq('home_house_id', houseId)
-    .order('name');
-  const roster = (rosterRows ?? []).filter((u) => u.is_active);
+  const roster = (rosterResult.data ?? []).filter((u) => u.is_active);
   const rosterIds = roster.map((u) => u.user_id);
 
-  // Per-candidate weekly hours (the Replace cards' decision number) + the campus
-  // soft cap for the week. Mirrors lib/data/people.ts: counting-status seats whose
-  // block lands in the NY week, summed in JS (×0.5). A ±12h UTC buffer on the query
-  // bound keeps it DST-safe; the precise NY-week filter happens in JS. Hours span
-  // ALL houses (a home worker may also hold a cross-house pickup that week).
-  const hoursByUser = new Map<string, number>();
-  if (rosterIds.length > 0) {
-    const lo = new Date(
-      new Date(`${weekStartDate}T00:00:00Z`).getTime() - 12 * 3600 * 1000,
-    ).toISOString();
-    const hi = new Date(
-      new Date(`${weekEnd}T00:00:00Z`).getTime() + 12 * 3600 * 1000,
-    ).toISOString();
-    const { data: asg } = await supabase
-      .from('shift_block_assignments')
-      .select('user_id, shift_blocks!inner(block_start_at)')
-      .in('user_id', rosterIds)
-      .in('status', ['scheduled', 'claimed', 'floated_in', 'pending_float_in'])
-      .gte('shift_blocks.block_start_at', lo)
-      .lt('shift_blocks.block_start_at', hi);
-    for (const row of (asg ?? []) as unknown as HoursRow[]) {
+  const cap = capResult.data?.[0];
+  if (cap) {
+    base.softCapHours = cap.hours_cap;
+    base.capEnforcement = cap.cap_enforcement;
+  }
+
+  // WAVE 2 — the two reads that need wave 1's output, and need nothing from each
+  // other: per-candidate weekly hours (keyed by the roster) and this week's seats +
+  // escalation steps (keyed by the blocks). Kicked off together below; the hours read
+  // starts here so it overlaps the chunked block reads rather than preceding them.
+  //
+  // Per-candidate weekly hours are the Replace cards' decision number. Mirrors
+  // lib/data/people.ts: counting-status seats whose block lands in the NY week, summed
+  // in JS (×0.5). A ±12h UTC buffer on the query bound keeps it DST-safe; the precise
+  // NY-week filter happens in JS. Hours span ALL houses (a home worker may also hold a
+  // cross-house pickup that week).
+  const hoursPromise: Promise<HoursRow[]> =
+    rosterIds.length === 0
+      ? Promise.resolve([])
+      : (async () => {
+          const lo = new Date(
+            new Date(`${weekStartDate}T00:00:00Z`).getTime() - 12 * 3600 * 1000,
+          ).toISOString();
+          const hi = new Date(
+            new Date(`${weekEnd}T00:00:00Z`).getTime() + 12 * 3600 * 1000,
+          ).toISOString();
+          const { data: asg } = await supabase
+            .from('shift_block_assignments')
+            .select('user_id, shift_blocks!inner(block_start_at)')
+            .in('user_id', rosterIds)
+            .in('status', ['scheduled', 'claimed', 'floated_in', 'pending_float_in'])
+            .gte('shift_blocks.block_start_at', lo)
+            .lt('shift_blocks.block_start_at', hi);
+          return (asg ?? []) as unknown as HoursRow[];
+        })();
+
+  const applyHours = async (): Promise<void> => {
+    const hoursByUser = new Map<string, number>();
+    for (const row of await hoursPromise) {
       const startAt = embeddedStartAt(row);
       if (startAt === null || row.user_id === null) continue;
       const d = nyDate(startAt);
@@ -592,40 +629,24 @@ export async function getHouseCalendar(
         hoursByUser.set(row.user_id, (hoursByUser.get(row.user_id) ?? 0) + 1);
       }
     }
-  }
-  base.assignableWorkers = roster.map((u) => ({
-    userId: u.user_id,
-    name: u.name,
-    isActive: u.is_active,
-    weeklyHours: (hoursByUser.get(u.user_id) ?? 0) * 0.5,
-  }));
+    base.assignableWorkers = roster.map((u) => ({
+      userId: u.user_id,
+      name: u.name,
+      isActive: u.is_active,
+      weeklyHours: (hoursByUser.get(u.user_id) ?? 0) * 0.5,
+    }));
+  };
 
-  // Campus-wide cap for the week (no per-user/house arg — confirmed global).
-  const { data: capRows } = await supabase.rpc('effective_weekly_cap', {
-    p_week_start_date: weekStartDate,
-    p_block_start_at: `${weekStartDate}T00:00:00-05:00`,
-  });
-  const cap = capRows?.[0];
-  if (cap) {
-    base.softCapHours = cap.hours_cap;
-    base.capEnforcement = cap.cap_enforcement;
-  }
-
-  // Blocks for the house in (a generous UTC envelope around) the NY week, then
-  // filter precisely by NY date to avoid DST edge math.
-  const { data: blockRows } = await supabase
-    .from('shift_blocks')
-    .select('block_id, block_start_at, required_headcount')
-    .eq('house_id', houseId)
-    .gte('block_start_at', `${weekStartDate}T00:00:00.000Z`)
-    .lt('block_start_at', `${weekEnd}T12:00:00.000Z`)
-    .order('block_start_at');
-
-  const weekBlocks = (blockRows ?? []).filter((b) => {
+  const weekBlocks = (blockResult.data ?? []).filter((b) => {
     const d = nyDate(b.block_start_at);
     return d >= weekStartDate && d < weekEnd;
   });
-  if (weekBlocks.length === 0) return base;
+  if (weekBlocks.length === 0) {
+    // Still populate the override picker's candidate list before bailing — a week with
+    // no blocks yet is exactly when a manager reaches for it.
+    await applyHours();
+    return base;
+  }
 
   // Grid origin = the earliest block actually seen this week, floored to a block
   // boundary and never LATER than the 08:00 default (so a normal 08:00 house's
@@ -663,49 +684,94 @@ export async function getHouseCalendar(
 
   // Assignments + escalation steps for these blocks. Chunk the block_id filter —
   // a full week is 224 ids, which 414s ("URI too long") as a single `.in(...)`.
-  const assignments = (await selectByBlockIdChunks(blockIds, (chunk) =>
-    supabase
-      .from('shift_block_assignments')
-      .select(
-        'assignment_id, block_id, status, user_id, vacancy_origin, is_float, is_cross_house_pickup, source_house_id',
-      )
-      .in('block_id', chunk),
-  )) as AssignmentRow[];
+  // These two reads are independent of each other and of the weekly-hours read
+  // started above, so all three overlap instead of running back to back. The chunks
+  // within each read also overlap now (see blockChunks.ts).
+  const [assignmentRows, stepRows] = await Promise.all([
+    selectByBlockIdChunks(blockIds, (chunk) =>
+      supabase
+        .from('shift_block_assignments')
+        .select(
+          'assignment_id, block_id, status, user_id, vacancy_origin, is_float, is_cross_house_pickup, source_house_id',
+        )
+        .in('block_id', chunk),
+    ),
+    selectByBlockIdChunks(blockIds, (chunk) =>
+      supabase
+        .from('block_step_status')
+        .select('block_id, step_name, fired_at')
+        .in('block_id', chunk)
+        .order('fired_at', { ascending: true }),
+    ),
+    applyHours(),
+  ]);
+  const assignments = assignmentRows as AssignmentRow[];
 
-  const stepRows = await selectByBlockIdChunks(blockIds, (chunk) =>
-    supabase
-      .from('block_step_status')
-      .select('block_id, step_name, fired_at')
-      .in('block_id', chunk)
-      .order('fired_at', { ascending: true }),
-  );
   const stepByBlock = new Map<string, EscalationStep | null>();
   for (const s of stepRows) stepByBlock.set(s.block_id, mapStep(s.step_name));
 
-  // Worker identities (name, phone, home, role) — service-client read.
+  // WAVE 3 — everything keyed off the seats we just read: worker identities, their
+  // roles, and any pending swap on those seats. All three are independent, so they go
+  // out together (they were three sequential round trips, with the swap read waiting
+  // until after the pure span-building below).
   const userIds = [
     ...new Set(assignments.map((a) => a.user_id).filter((x): x is string => x !== null)),
   ];
+  const assignmentIds = assignments.map((a) => a.assignment_id);
+  const [userResult, roleResult, markRows] = await Promise.all([
+    // Worker identities (name, phone, home) — service-client read.
+    userIds.length === 0
+      ? Promise.resolve({
+          data: [] as {
+            user_id: string;
+            name: string;
+            phone: string | null;
+            home_house_id: string;
+          }[],
+        })
+      : supabase.from('users').select('user_id, name, phone, home_house_id').in('user_id', userIds),
+    userIds.length === 0
+      ? Promise.resolve({ data: [] as { user_id: string; role: string }[] })
+      : supabase.from('user_roles').select('user_id, role').in('user_id', userIds),
+    // Pending swaps on any of this week's seats (BSpec §11.4). One read over the
+    // `pending_swap_seat_marks` view, which resolves BOTH sides of every pending swap,
+    // so the two shifts in an exchange are both labelled. Same chunking rule as the
+    // block filter: a full week is hundreds of ids and a single `.in(...)` 414s.
+    assignmentIds.length === 0
+      ? Promise.resolve([])
+      : selectByAssignmentIdChunks(assignmentIds, (chunk) =>
+          supabase.from('pending_swap_seat_marks').select('*').in('assignment_id', chunk),
+        ),
+  ]);
+
   const usersById = new Map<string, { name: string; phone: string | null; home: string }>();
+  for (const u of userResult.data ?? []) {
+    usersById.set(u.user_id, { name: u.name, phone: u.phone, home: u.home_house_id });
+  }
   const roleById = new Map<string, string>();
-  if (userIds.length > 0) {
-    const { data: userRows } = await supabase
-      .from('users')
-      .select('user_id, name, phone, home_house_id')
-      .in('user_id', userIds);
-    for (const u of userRows ?? []) {
-      usersById.set(u.user_id, { name: u.name, phone: u.phone, home: u.home_house_id });
-    }
-    const { data: roleRows } = await supabase
-      .from('user_roles')
-      .select('user_id, role')
-      .in('user_id', userIds);
-    const rank = ['bm', 'hm', 'rsm', 'sm', 'sw'];
-    for (const r of roleRows ?? []) {
-      const prev = roleById.get(r.user_id);
-      if (prev === undefined || rank.indexOf(r.role) < rank.indexOf(prev))
-        roleById.set(r.user_id, r.role);
-    }
+  const rank = ['bm', 'hm', 'rsm', 'sm', 'sw'];
+  for (const r of roleResult.data ?? []) {
+    const prev = roleById.get(r.user_id);
+    if (prev === undefined || rank.indexOf(r.role) < rank.indexOf(prev))
+      roleById.set(r.user_id, r.role);
+  }
+
+  const swapByAssignment = new Map<string, CalSwapMark>();
+  for (const r of markRows) {
+    // The view's assignment_id is nullable in the generated types (it comes out of an
+    // unnest), but a row without one cannot be keyed, so skip rather than coerce.
+    if (r.assignment_id === null) continue;
+    swapByAssignment.set(r.assignment_id, {
+      swapId: r.swap_id ?? '',
+      swapType: r.swap_type ?? '',
+      side: r.side === 'initiator' ? 'initiator' : 'counterparty',
+      initiatorName: r.initiator_name,
+      counterpartyName: r.counterparty_name,
+      awaitingName: r.awaiting_name,
+      initiatorSpan: r.initiator_span,
+      counterpartySpan: r.counterparty_span,
+      expiresAt: r.expires_at ?? '',
+    });
   }
 
   // Group atoms by day → block.
@@ -723,35 +789,6 @@ export async function getHouseCalendar(
   }
 
   const spans = buildShifts(perDay);
-
-  // Pending swaps on any of this week's seats (BSpec §11.4). One read over the
-  // `pending_swap_seat_marks` view, which resolves BOTH sides of every pending swap, so
-  // the two shifts in an exchange are both labelled. Keyed by assignment_id.
-  const assignmentIds = assignments.map((a) => a.assignment_id);
-  const swapByAssignment = new Map<string, CalSwapMark>();
-  if (assignmentIds.length > 0) {
-    // Same chunking rule as the block filter: a full week is hundreds of ids and a
-    // single `.in(...)` 414s with "URI too long".
-    const markRows = await selectByAssignmentIdChunks(assignmentIds, (chunk) =>
-      supabase.from('pending_swap_seat_marks').select('*').in('assignment_id', chunk),
-    );
-    for (const r of markRows) {
-      // The view's assignment_id is nullable in the generated types (it comes out of an
-      // unnest), but a row without one cannot be keyed, so skip rather than coerce.
-      if (r.assignment_id === null) continue;
-      swapByAssignment.set(r.assignment_id, {
-        swapId: r.swap_id ?? '',
-        swapType: r.swap_type ?? '',
-        side: r.side === 'initiator' ? 'initiator' : 'counterparty',
-        initiatorName: r.initiator_name,
-        counterpartyName: r.counterparty_name,
-        awaitingName: r.awaiting_name,
-        initiatorSpan: r.initiator_span,
-        counterpartySpan: r.counterparty_span,
-        expiresAt: r.expires_at ?? '',
-      });
-    }
-  }
 
   // Hydrate worker identity + any pending swap onto the spans (kept out of the pure
   // transform). A coalesced card is marked when ANY of its seats is in a pending swap:

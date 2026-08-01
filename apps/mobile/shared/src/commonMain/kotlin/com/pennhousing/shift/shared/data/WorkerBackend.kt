@@ -67,6 +67,16 @@ object WorkerBackend {
     val managerRepository: ManagerRepository by lazy { ManagerRepository(client) }
 
     /**
+     * Allied coverage requests for manager mode (BSpec §5.4a). Carries its own Realtime channel,
+     * like [swapActivityRepository], so an escalation landing on this manager appears without a
+     * refresh.
+     */
+    val coverageRepository: CoverageRepository by lazy { CoverageRepository(client) }
+
+    /** The manager Hours report (docs/manager-app/SPEC.md §6.5). Read-only, no Realtime. */
+    val hoursRepository: HoursRepository by lazy { HoursRepository(client) }
+
+    /**
      * Point `AppConfig.accessTokenProvider` at the live worker JWT and wire
      * `AppConfig.ensureFreshSession` to Supabase Auth (call after sign-in / valid restore).
      *

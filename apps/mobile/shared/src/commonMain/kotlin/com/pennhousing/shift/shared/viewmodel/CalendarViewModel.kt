@@ -6,10 +6,10 @@ import com.pennhousing.shift.shared.calendar.CalendarAgenda
 import com.pennhousing.shift.shared.calendar.CalendarWeek
 import com.pennhousing.shift.shared.calendar.CalendarWeekOverview
 import com.pennhousing.shift.shared.calendar.TemplateSlot
+import com.pennhousing.shift.shared.calendar.WeekOption
 import com.pennhousing.shift.shared.calendar.buildCalendarAgenda
 import com.pennhousing.shift.shared.calendar.buildCalendarWeek
 import com.pennhousing.shift.shared.calendar.buildCalendarWeekOverview
-import com.pennhousing.shift.shared.calendar.WeekOption
 import com.pennhousing.shift.shared.calendar.buildTypicalWeek
 import com.pennhousing.shift.shared.calendar.shiftWeekAnchor
 import com.pennhousing.shift.shared.calendar.shiftsInWeekOf
@@ -18,6 +18,8 @@ import com.pennhousing.shift.shared.model.AssignmentKind
 import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.model.OpenShift
 import com.pennhousing.shift.shared.shifts.PendingWrite
+import com.pennhousing.shift.shared.shifts.WeeklyCap
+import com.pennhousing.shift.shared.shifts.WeeklyCapSchedule
 import com.pennhousing.shift.shared.shifts.applyTemporaryDrop
 import com.pennhousing.shift.shared.shifts.coalesceMyShifts
 import com.pennhousing.shift.shared.shifts.hoursBetween
@@ -56,6 +58,8 @@ data class CalendarUiState(
     val template: List<TemplateSlot> = emptyList(),
     /** Held hours in the SHOWN week — the "This week — Xh of cap" chip total (now lives on this tab). */
     val weekHours: Double = 0.0,
+    /** The SHOWN week's server cap, for the hours chip. Follows [weekOffset]. */
+    val weekCap: WeeklyCap = WeeklyCap.FALLBACK,
     /**
      * Pending swaps surfaced at the top of My Shifts, both directions (BSpec §10.1).
      * NOT week-scoped: a request that needs an answer must be visible whatever week the
@@ -86,6 +90,9 @@ class CalendarViewModel(
     // Writes the worker started that the server has not answered (shifts/PendingWrites.kt).
     // Live only; the demo path keeps its optimistic [drop]/[claim] moves.
     private val pendingWrites: List<PendingWrite> = emptyList(),
+    // Per-week server caps (`effective_weekly_caps`), so the hours chip names the SHOWN
+    // week's real cap. Mirrors ShiftsScreenViewModel; both read the same snapshot field.
+    private val weeklyCaps: WeeklyCapSchedule = WeeklyCapSchedule.PENDING,
 ) : ViewModel() {
     // Mutable: an optimistic [drop] flags blocks dropped-still-open so they leave the
     // agenda (the builders exclude them); the open feed gains them on the Shifts VM.
@@ -153,6 +160,7 @@ class CalendarViewModel(
             // Held hours in the shown week (dropped-still-open blocks don't count) —
             // mirrors ShiftsScreenViewModel.weekHours so the chip reads the same total.
             weekHours = shiftsInWeekOf(shown, anchor).filter { !it.droppedStillOpen }.sumOf { hoursBetween(it.start, it.end) },
+            weekCap = weeklyCaps.capAt(anchor),
             // The always-on swap banner (BSpec §10.1): what is waiting on this worker and
             // what this worker is waiting on, from the same `swaps` the card marks use.
             swapBanner = buildSwapBanner(swaps, now),

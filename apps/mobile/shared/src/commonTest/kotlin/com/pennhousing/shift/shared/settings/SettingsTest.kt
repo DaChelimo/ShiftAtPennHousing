@@ -8,8 +8,8 @@ import kotlin.test.assertTrue
 
 /**
  * Settings / Profile presentation (shared) — role labels, the avatar monogram, the
- * notification-channel rows (only the broadcast row is user-toggleable), the read-only
- * hours limits, and the theme choices. Pure; no clock, no I/O.
+ * notification-channel rows (only the broadcast row is user-toggleable), and the theme
+ * choices. Pure; no clock, no I/O.
  */
 class SettingsTest {
     private val profile =
@@ -159,13 +159,10 @@ class SettingsTest {
         assertFalse(off.first { it.channel == NotificationChannel.GENERAL_UPDATES }.on)
     }
 
-    // ----- hours + theme -----
-
-    @Test fun hours_limits_use_the_shared_caps() {
-        val h = hoursLimits()
-        assertEquals("20h", h.softCapLabel)
-        assertEquals("40h", h.hardCapLabel)
-    }
+    // ----- theme -----
+    // `hours_limits_use_the_shared_caps` was removed with the Settings "Hours & limits"
+    // group (2026-07-29): it asserted a static 20h/40h pair that the per-week server cap
+    // replaced.
 
     @Test fun theme_choices_order_and_labels() {
         assertEquals(listOf(ThemeChoice.SYSTEM, ThemeChoice.LIGHT, ThemeChoice.DARK), THEME_CHOICES)
@@ -176,9 +173,17 @@ class SettingsTest {
 
     @Test fun viewmodel_toggle_broadcast_flips_only_the_updates_row() {
         val vm = SettingsViewModel(profile, broadcastSubscribed = false, appVersion = "2.4.0")
-        assertFalse(vm.uiState.value.notifications.first { it.channel == NotificationChannel.GENERAL_UPDATES }.on)
+        assertFalse(
+            vm.uiState.value.notifications
+                .first { it.channel == NotificationChannel.GENERAL_UPDATES }
+                .on,
+        )
         vm.toggleBroadcast()
-        assertTrue(vm.uiState.value.notifications.first { it.channel == NotificationChannel.GENERAL_UPDATES }.on)
+        assertTrue(
+            vm.uiState.value.notifications
+                .first { it.channel == NotificationChannel.GENERAL_UPDATES }
+                .on,
+        )
         assertEquals("Andrew P.", vm.uiState.value.profile.name) // profile unchanged
     }
 

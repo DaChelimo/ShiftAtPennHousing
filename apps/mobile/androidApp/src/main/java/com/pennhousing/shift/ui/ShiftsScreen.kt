@@ -16,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -32,7 +33,7 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
 import com.pennhousing.shift.shared.breakclaim.BreakPhase
 import com.pennhousing.shift.shared.data.PermanentPickupScope
-import com.pennhousing.shift.shared.data.ToastNotification
+import com.pennhousing.shift.shared.notifications.ToastNotification
 import com.pennhousing.shift.shared.house.HouseSeat
 import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.model.OpenShift
@@ -74,13 +75,16 @@ import com.pennhousing.shift.ui.kit.ShiftIcons
 import com.pennhousing.shift.ui.kit.ShiftToast
 import com.pennhousing.shift.ui.kit.ToastTone
 import com.pennhousing.shift.ui.manage.ManageShiftSheet
+import com.pennhousing.shift.ui.manager.CoverageBanner
+import com.pennhousing.shift.ui.manager.CoverageScreen
+import com.pennhousing.shift.ui.manager.HoursScreen
+import com.pennhousing.shift.ui.manager.NotAManagerPlaceholder
 import com.pennhousing.shift.ui.navigation.MoreNavRow
 import com.pennhousing.shift.ui.navigation.ShiftBottomNav
 import com.pennhousing.shift.ui.navigation.ShiftDestination
 import com.pennhousing.shift.ui.navigation.rememberAssistantReturnState
 import com.pennhousing.shift.ui.navigation.rememberShiftNavigationState
 import com.pennhousing.shift.ui.navigation.rememberShiftNavigator
-import com.pennhousing.shift.ui.onboarding.AskAssistantButton
 import com.pennhousing.shift.ui.onboarding.BreakTourHelpButton
 import com.pennhousing.shift.ui.onboarding.BreakTourOverlay
 import com.pennhousing.shift.ui.onboarding.BreakTourPointerCallout
@@ -187,6 +191,17 @@ internal fun ShiftsApp(
     val onAcknowledgeAlliedPage = actions.onAcknowledgeAlliedPage
     val onCreateSwap = actions.onCreateSwap
     val onVoidSwap = actions.onVoidSwap
+    // Manager mode (docs/manager-app/SPEC.md). A plain worker has coverageVm == null and
+    // default capabilities, so every branch below is inert for them.
+    val coverageVm = viewModels.coverageVm
+    val capabilities = hostState.capabilities
+    val onAcknowledgeCoverage = actions.onAcknowledgeCoverage
+    val onCloseCoverage = actions.onCloseCoverage
+    val onCallPhone = actions.onCallPhone
+    val onForceTriggerCoverage = actions.onForceTriggerCoverage
+    // The coverage writes are suspend (they must report success so a failure can revert), and
+    // they are fired from tap handlers rather than from composition.
+    val coverageAckScope = rememberCoroutineScope()
     // Appearance override: the settings VM holds the live choice so an in-app toggle
     // re-themes the whole app immediately (System → follow OS). Collected OUTSIDE the
     // theme so it can pick the palette.
@@ -240,7 +255,17 @@ internal fun ShiftsApp(
         // instead of hanging off the forward-navigation helper only. The Calendar and
         // Open-Shifts destinations still read the same snapshot regardless of the
         // ShiftsScreenViewModel's own tab; the Open-Shifts sub-tabs set that themselves.
-        val navState = rememberShiftNavigationState()
+        // Manager mode: the Coverage tab is a manager's START destination, because it is the
+        // one surface where a delay means a desk goes empty. A worker's start is unchanged.
+        val coverageState = coverageVm?.uiState?.collectAsStateWithLifecycle()?.value
+        val managerBar =
+            remember(capabilities) {
+                ShiftDestination.bottomBarFor(
+                    hasCoverage = capabilities.hasCoverage,
+                    isStudentManager = capabilities.isStudentManager,
+                )
+            }
+        val navState = rememberShiftNavigationState(startRoute = ShiftDestination.startFor(capabilities.hasCoverage))
         val nav =
             rememberShiftNavigator(
                 state = navState,
@@ -405,6 +430,7 @@ internal fun ShiftsApp(
                         onReplayShiftTour = shiftTourVm::replay,
                         onShiftTourHelpPositioned = { shiftTour.helpRect = it },
                         swapTourVm = swapTourVm,
+                        onAskAssistant = assistantReturn::open,
                     )
                 }
                 entry<ShiftDestination.OpenShifts> {
@@ -413,7 +439,6 @@ internal fun ShiftsApp(
                         vm = shiftsVm,
                         calendarVm = calendarVm,
                         currentWeeklyHours = currentWeeklyHours,
-                        breakProfile = breakProfile,
                         onClaimed = { msg -> onClaimSuccessMessage(msg) },
                         onClaimShift = onClaimShift,
                         onPickUpPermanent = onPickUpPermanent,
@@ -532,6 +557,64 @@ internal fun ShiftsApp(
                     }
                 }
                 entry<ShiftDestination.Assistant> { AssistantScreen(assistantVm, onBack = assistantReturn::returnToPrevious) }
+
+                // ----- Manager mode (docs/manager-app/SPEC.md §6). -----
+                // Both entries render an explanatory empty state rather than nothing when the
+                // signed-in user is not a manager. A destination reachable only from a
+                // role-gated bar should still be safe to land on: Nav3 restores a serialized
+                // back stack across process death, so a manager whose role was revoked between
+                // launches would otherwise get a blank screen.
+                entry<ShiftDestination.Coverage> {
+                    if (coverageVm != null && coverageState != null) {
+                        CoverageScreen(
+                            state = coverageState,
+                            // Tapping a card ACKNOWLEDGES. The ViewModel flips local state and
+                            // hands back the id to write; a failed write reverts so the banner
+                            // returns and the ladder keeps going.
+                            onRespond = { requestId ->
+                                val toAck = coverageVm.openRespond(requestId)
+                                if (toAck != null) {
+                                    coverageAckScope.launch {
+                                        if (!onAcknowledgeCoverage(toAck)) coverageVm.revertAcknowledge(toAck)
+                                    }
+                                }
+                            },
+                            onSelectOutcome = coverageVm::selectOutcome,
+                            onNoteChange = coverageVm::updateNote,
+                            onSubmit = {
+                                val intent = coverageVm.submitClose()
+                                if (intent != null) {
+                                    coverageAckScope.launch {
+                                        val ok = onCloseCoverage(intent.requestId, intent.outcome.wire, intent.note)
+                                        if (!ok) coverageVm.revertClose(intent)
+                                    }
+                                }
+                            },
+                            onDismissSheet = coverageVm::dismissSheet,
+                            onCallAllied = onCallPhone,
+                            onForceTrigger = onForceTriggerCoverage,
+                            onClearAlreadyHandled = coverageVm::clearAlreadyHandled,
+                        )
+                    } else {
+                        NotAManagerPlaceholder("Coverage")
+                    }
+                }
+                entry<ShiftDestination.Hours> {
+                    if (capabilities.hasManagerSurface) {
+                        HoursScreen(
+                            result = hostState.hoursReport,
+                            // Verify an away shift: jump to the House tab on that house's
+                            // CURRENT week. `selectHouse` resets to week offset 0, which always
+                            // matches the Hours report's week (current week only, SPEC §6.5).
+                            onOpenHouseCalendar = { houseId ->
+                                houseVm.selectHouse(houseId)
+                                nav.navigate(ShiftDestination.House)
+                            },
+                        )
+                    } else {
+                        NotAManagerPlaceholder("Hours")
+                    }
+                }
             }
 
         CompositionLocalProvider(LocalOnboardingAnchors provides onboardingAnchors) {
@@ -552,18 +635,15 @@ internal fun ShiftsApp(
                             hasUnread = updatesState.hasUnread,
                             onSelect = nav::navigate,
                             onMore = { showMore = true },
+                            bar = managerBar,
+                            coverageBadgeCount = coverageState?.badgeCount ?: 0,
                         )
                     },
-                    // The "Ask" affordance lives on the My-Shifts home screen ONLY. It used to ride
-                    // every tab, but a floating button that follows you everywhere is noise rather
-                    // than discoverability: it covers content on feeds and grids where the Assistant
-                    // isn't what you came to do. The Assistant stays reachable from "More" everywhere.
-                    // The first-run tour rings this button (on My Shifts, where the tour runs).
-                    floatingActionButton = {
-                        if (current == ShiftDestination.MyShifts) {
-                            AskAssistantButton(onClick = assistantReturn::open)
-                        }
-                    },
+                    // The "Ask" affordance is NOT a Scaffold FAB. The FAB slot floats above the
+                    // bottom bar, which on My Shifts put the pill straight on top of the week
+                    // navigator ("This week - Jul 27 - Aug 2"), covering its arrows. It now
+                    // renders inside the My-Shifts agenda area, anchored above the week bar,
+                    // matching iOS. See CalendarTabContent's `onAskAssistant`.
                 ) { padding ->
                     Box(Modifier.fillMaxSize().padding(padding)) {
                         Column(Modifier.fillMaxSize()) {
@@ -571,6 +651,19 @@ internal fun ShiftsApp(
                             // with a visible banner from every other tab (it otherwise lives in More).
                             if (current != ShiftDestination.BreakShifts && breakState.phase == BreakPhase.CLAIM_WINDOW) {
                                 BreakOpenBanner(breakState.breakName) { nav.navigate(ShiftDestination.BreakShifts) }
+                            }
+                            // BSpec §5.4a — while a house this manager covers has an
+                            // UNACKNOWLEDGED coverage request, a non-dismissable banner rides on
+                            // every screen. It disappears once somebody acknowledges (the count
+                            // only includes action-required requests), so a manager already on
+                            // the phone to Allied is not nagged. Deliberately not a full-screen
+                            // takeover: the float-ack modal was moved off auto-cover for exactly
+                            // that reason.
+                            if (current != ShiftDestination.Coverage && coverageState?.showsBanner == true) {
+                                CoverageBanner(
+                                    count = coverageState.badgeCount,
+                                    onOpen = { nav.navigate(ShiftDestination.Coverage) },
+                                )
                             }
                             NavDisplay(
                                 entries = navState.decoratedEntries(shiftEntryProvider),
@@ -791,13 +884,24 @@ internal fun ShiftsApp(
             // original tab selectors; the Maestro flows open More first, then tap them.
             ShiftBottomSheet(onDismiss = { showMore = false }, title = "More") {
                 Column(Modifier.testTag("more_sheet"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    // Manager mode: Hours leads the sheet for a manager whose bar does not
+                    // carry it (docs/manager-app/SPEC.md §6), and is absent for a plain worker.
+                    if (capabilities.hasManagerSurface && ShiftDestination.Hours !in managerBar) {
+                        MoreNavRow("Hours", ShiftIcons.Clock, "tab_hours_more") {
+                            showMore = false
+                            nav.navigate(ShiftDestination.Hours)
+                        }
+                    }
                     MoreNavRow("Updates", ShiftIcons.Bell, "tab_updates") {
                         showMore = false
                         nav.navigate(ShiftDestination.Updates)
                     }
-                    MoreNavRow("Preferences", ShiftIcons.Heart, "tab_preferences") {
-                        showMore = false
-                        nav.navigate(ShiftDestination.Preferences)
+                    // Managers do not submit shift preferences (docs/manager-app/SPEC.md §6).
+                    if (!capabilities.hasManagerSurface) {
+                        MoreNavRow("Preferences", ShiftIcons.Heart, "tab_preferences") {
+                            showMore = false
+                            nav.navigate(ShiftDestination.Preferences)
+                        }
                     }
                     MoreNavRow("Break shifts", ShiftIcons.Snowflake, "tab_break") {
                         showMore = false

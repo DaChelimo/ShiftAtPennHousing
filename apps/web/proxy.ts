@@ -30,14 +30,19 @@ export async function proxy(request: NextRequest) {
     },
   });
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // getClaims(), not getUser(). Both are safe on the server — getClaims verifies the
+  // access token's signature rather than trusting it — but getUser() is an HTTP round
+  // trip to GoTrue on EVERY request, measured at 100-150ms against the hosted project
+  // (and multi-second when it is under load). This project signs with ES256, so
+  // getClaims verifies locally against a JWKS it fetches once per process: ~3-6ms.
+  // Session refresh still happens underneath (getClaims reads the session first, which
+  // renews an expired token and writes the refreshed cookie through setAll above).
+  const { data: claims } = await supabase.auth.getClaims();
 
   const { pathname } = request.nextUrl;
   const isProtected = PROTECTED_PREFIXES.some((p) => pathname.startsWith(p));
 
-  if (user === null && isProtected) {
+  if (claims === null && isProtected) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = '/login';
     loginUrl.searchParams.set('redirectTo', pathname);
@@ -48,6 +53,10 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Run on everything except static assets and the favicon.
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.svg).*)'],
+  // Run on everything except static assets and generated icons. The icon/manifest
+  // routes were previously matched, so every favicon or PWA-manifest request paid a
+  // full session check before serving a static byte stream.
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|icon|apple-icon|manifest.webmanifest|brand/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)).*)',
+  ],
 };

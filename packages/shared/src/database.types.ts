@@ -94,6 +94,158 @@ export type Database = {
           },
         ];
       };
+      allied_coverage_requests: {
+        Row: {
+          acknowledged_at: string | null;
+          acknowledged_by: string | null;
+          block_id: string;
+          close_note: string | null;
+          closed_at: string | null;
+          closed_by: string | null;
+          created_at: string;
+          current_recipient: string | null;
+          current_rung: string;
+          house_id: string;
+          last_reminder_at: string | null;
+          outcome: Database['public']['Enums']['allied_coverage_outcome'] | null;
+          reason: string;
+          request_id: string;
+          rung_fired_at: string;
+          window_end_at: string;
+          window_start_at: string;
+        };
+        Insert: {
+          acknowledged_at?: string | null;
+          acknowledged_by?: string | null;
+          block_id: string;
+          close_note?: string | null;
+          closed_at?: string | null;
+          closed_by?: string | null;
+          created_at?: string;
+          current_recipient?: string | null;
+          current_rung: string;
+          house_id: string;
+          last_reminder_at?: string | null;
+          outcome?: Database['public']['Enums']['allied_coverage_outcome'] | null;
+          reason: string;
+          request_id?: string;
+          rung_fired_at: string;
+          window_end_at: string;
+          window_start_at: string;
+        };
+        Update: {
+          acknowledged_at?: string | null;
+          acknowledged_by?: string | null;
+          block_id?: string;
+          close_note?: string | null;
+          closed_at?: string | null;
+          closed_by?: string | null;
+          created_at?: string;
+          current_recipient?: string | null;
+          current_rung?: string;
+          house_id?: string;
+          last_reminder_at?: string | null;
+          outcome?: Database['public']['Enums']['allied_coverage_outcome'] | null;
+          reason?: string;
+          request_id?: string;
+          rung_fired_at?: string;
+          window_end_at?: string;
+          window_start_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'allied_coverage_requests_acknowledged_by_fkey';
+            columns: ['acknowledged_by'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'allied_coverage_requests_acknowledged_by_fkey';
+            columns: ['acknowledged_by'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'allied_coverage_requests_acknowledged_by_fkey';
+            columns: ['acknowledged_by'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
+          {
+            foreignKeyName: 'allied_coverage_requests_block_id_fkey';
+            columns: ['block_id'];
+            isOneToOne: false;
+            referencedRelation: 'house_schedule_grid';
+            referencedColumns: ['block_id'];
+          },
+          {
+            foreignKeyName: 'allied_coverage_requests_block_id_fkey';
+            columns: ['block_id'];
+            isOneToOne: false;
+            referencedRelation: 'shift_blocks';
+            referencedColumns: ['block_id'];
+          },
+          {
+            foreignKeyName: 'allied_coverage_requests_closed_by_fkey';
+            columns: ['closed_by'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'allied_coverage_requests_closed_by_fkey';
+            columns: ['closed_by'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'allied_coverage_requests_closed_by_fkey';
+            columns: ['closed_by'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
+          {
+            foreignKeyName: 'allied_coverage_requests_current_recipient_fkey';
+            columns: ['current_recipient'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'allied_coverage_requests_current_recipient_fkey';
+            columns: ['current_recipient'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'allied_coverage_requests_current_recipient_fkey';
+            columns: ['current_recipient'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
+          {
+            foreignKeyName: 'allied_coverage_requests_house_id_fkey';
+            columns: ['house_id'];
+            isOneToOne: false;
+            referencedRelation: 'houses';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'allied_coverage_requests_house_id_fkey';
+            columns: ['house_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_visible_houses';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       allied_page_ladder: {
         Row: {
           acknowledged_at: string | null;
@@ -1483,18 +1635,21 @@ export type Database = {
         Row: {
           open_shifts_home_house: boolean;
           open_shifts_other_houses: boolean;
+          shift_reminder_offsets: number[];
           updated_at: string;
           user_id: string;
         };
         Insert: {
           open_shifts_home_house?: boolean;
           open_shifts_other_houses?: boolean;
+          shift_reminder_offsets?: number[];
           updated_at?: string;
           user_id: string;
         };
         Update: {
           open_shifts_home_house?: boolean;
           open_shifts_other_houses?: boolean;
+          shift_reminder_offsets?: number[];
           updated_at?: string;
           user_id?: string;
         };
@@ -2466,6 +2621,55 @@ export type Database = {
           },
         ];
       };
+      shift_reminder_sends: {
+        Row: {
+          enqueued_at: string;
+          first_assignment_id: string;
+          notification_id: string;
+          offset_minutes: number;
+          shift_start_at: string;
+          user_id: string;
+        };
+        Insert: {
+          enqueued_at?: string;
+          first_assignment_id: string;
+          notification_id?: string;
+          offset_minutes: number;
+          shift_start_at: string;
+          user_id: string;
+        };
+        Update: {
+          enqueued_at?: string;
+          first_assignment_id?: string;
+          notification_id?: string;
+          offset_minutes?: number;
+          shift_start_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'shift_reminder_sends_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'shift_reminder_sends_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'shift_reminder_sends_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_open_shifts';
+            referencedColumns: ['eligible_user_id'];
+          },
+        ];
+      };
       staffing_patterns: {
         Row: {
           block_headcounts: Json;
@@ -3378,6 +3582,10 @@ export type Database = {
         Args: { p_accepting_user_id: string; p_now?: string; p_swap_id: string };
         Returns: Json;
       };
+      acknowledge_allied_coverage_request: {
+        Args: { p_now: string; p_request_id: string; p_user_id: string };
+        Returns: Json;
+      };
       acknowledge_allied_page: {
         Args: { p_block_id: string; p_now: string; p_user_id: string };
         Returns: Json;
@@ -3442,11 +3650,21 @@ export type Database = {
           target_upserted: number;
         }[];
       };
+      advance_allied_coverage_ladder: {
+        Args: { p_limit?: number; p_now: string };
+        Returns: Json;
+      };
       advance_offhours_allied_ladder: {
         Args: { p_now: string; p_timeout_minutes?: number };
         Returns: number;
       };
+      allied_ladder_next_manager_rung: {
+        Args: { p_rung: string };
+        Returns: string;
+      };
       allied_ladder_next_rung: { Args: { p_rung: string }; Returns: string };
+      allied_ladder_reminder_minutes: { Args: never; Returns: number };
+      allied_ladder_rung_timeout_minutes: { Args: never; Returns: number };
       app_now: { Args: never; Returns: string };
       app_runtime_setting: { Args: { p_name: string }; Returns: string };
       apply_compiled_break: {
@@ -3590,6 +3808,16 @@ export type Database = {
         Returns: string;
       };
       clear_break_period: { Args: { p_break_id: string }; Returns: number };
+      close_allied_coverage_request: {
+        Args: {
+          p_note: string;
+          p_now: string;
+          p_outcome: Database['public']['Enums']['allied_coverage_outcome'];
+          p_request_id: string;
+          p_user_id: string;
+        };
+        Returns: Json;
+      };
       close_break_claim_pool: { Args: { p_break_id: string }; Returns: number };
       commit_kb_intake: {
         Args: {
@@ -3648,6 +3876,18 @@ export type Database = {
           hours_cap: number;
         }[];
       };
+      effective_weekly_caps: {
+        Args: { p_from_week_start: string; p_to_week_start: string };
+        Returns: {
+          cap_enforcement: Database['public']['Enums']['cap_enforcement_enum'];
+          hours_cap: number;
+          week_start_date: string;
+        }[];
+      };
+      emit_allied_coverage_notification: {
+        Args: { p_now: string; p_request_id: string };
+        Returns: string;
+      };
       emit_allied_page_notifications: {
         Args: {
           p_block_id: string;
@@ -3663,6 +3903,10 @@ export type Database = {
       end_hm_leave_early: {
         Args: { p_leave_id: string; p_now: string; p_user_id: string };
         Returns: string;
+      };
+      enqueue_shift_reminders: {
+        Args: { p_lookahead?: string; p_now?: string };
+        Returns: number;
       };
       execute_due_break_transitions: { Args: never; Returns: number };
       expire_pending_swaps: { Args: { p_now: string }; Returns: number };
@@ -3744,6 +3988,7 @@ export type Database = {
       house_roster_as_of: {
         Args: { p_as_of: string; p_house_id: string };
         Returns: {
+          is_rsm: boolean;
           name: string;
           user_id: string;
         }[];
@@ -3761,6 +4006,10 @@ export type Database = {
       is_staggered_launch_enabled: { Args: never; Returns: boolean };
       is_valid_block_headcounts: { Args: { p: Json }; Returns: boolean };
       is_valid_escalation_chain: { Args: { p: Json }; Returns: boolean };
+      is_valid_shift_reminder_offsets: {
+        Args: { p_offsets: number[] };
+        Returns: boolean;
+      };
       leave_resolution_walk: {
         Args: { p_resolution_date: string; p_user_id: string };
         Returns: Record<string, unknown>;
@@ -3826,6 +4075,17 @@ export type Database = {
         Returns: string;
       };
       offhours_ladder_timeout_minutes: { Args: never; Returns: number };
+      open_allied_coverage_request: {
+        Args: {
+          p_block_id: string;
+          p_house_id: string;
+          p_now: string;
+          p_reason: string;
+          p_window_end_at: string;
+          p_window_start_at: string;
+        };
+        Returns: Json;
+      };
       open_break_claim_calendar: {
         Args: { p_break_id: string; p_house_id: string };
         Returns: number;
@@ -3999,6 +4259,13 @@ export type Database = {
         };
         Returns: string[];
       };
+      resolve_allied_ladder_rung: {
+        Args: { p_from_rung: string; p_house_id: string; p_now: string };
+        Returns: {
+          recipient_user_id: string;
+          rung: string;
+        }[];
+      };
       resolve_ba_for_house: {
         Args: { p_at: string; p_house_id: string };
         Returns: string;
@@ -4052,10 +4319,12 @@ export type Database = {
         Args: {
           p_open_shifts_home_house: boolean;
           p_open_shifts_other_houses: boolean;
+          p_shift_reminder_offsets?: number[];
         };
         Returns: {
           open_shifts_home_house: boolean;
           open_shifts_other_houses: boolean;
+          shift_reminder_offsets: number[];
           updated_at: string;
           user_id: string;
         };
@@ -4133,6 +4402,10 @@ export type Database = {
       };
       swap_expiry_is_cron_scheduled: { Args: never; Returns: boolean };
       sweep_suppressed_ack_reminders: {
+        Args: { p_now: string };
+        Returns: number;
+      };
+      system_close_obsolete_coverage_requests: {
         Args: { p_now: string };
         Returns: number;
       };
@@ -4264,8 +4537,29 @@ export type Database = {
           swap_type: string;
         }[];
       };
+      worker_shift_reminder_offsets: {
+        Args: { p_user_id: string };
+        Returns: number[];
+      };
+      worker_shift_runs: {
+        Args: { p_from: string; p_to: string };
+        Returns: {
+          block_count: number;
+          first_assignment_id: string;
+          house_id: string;
+          house_name: string;
+          run_end_at: string;
+          run_start_at: string;
+          user_id: string;
+        }[];
+      };
     };
     Enums: {
+      allied_coverage_outcome:
+        | 'allied_secured'
+        | 'covered_internally'
+        | 'desk_unstaffed'
+        | 'no_longer_needed';
       block_step_status_enum: 'fired' | 'completed_via_force_trigger' | 'rolled_back';
       break_type_enum:
         | 'thanksgiving'
@@ -4311,7 +4605,8 @@ export type Database = {
         | 'hm_leave_notice'
         | 'sm_permanent_drop_alert'
         | 'sw_permanent_removal_alert'
-        | 'allied_page';
+        | 'allied_page'
+        | 'shift_reminder';
       preference_status_enum: 'preferred' | 'available' | 'cannot' | 'none';
       scheduling_mode_enum: 'sm_built' | 'claim_based';
       shift_status_enum:
@@ -4463,6 +4758,12 @@ export const Constants = {
   },
   public: {
     Enums: {
+      allied_coverage_outcome: [
+        'allied_secured',
+        'covered_internally',
+        'desk_unstaffed',
+        'no_longer_needed',
+      ],
       block_step_status_enum: ['fired', 'completed_via_force_trigger', 'rolled_back'],
       break_type_enum: [
         'thanksgiving',
@@ -4512,6 +4813,7 @@ export const Constants = {
         'sm_permanent_drop_alert',
         'sw_permanent_removal_alert',
         'allied_page',
+        'shift_reminder',
       ],
       preference_status_enum: ['preferred', 'available', 'cannot', 'none'],
       scheduling_mode_enum: ['sm_built', 'claim_based'],

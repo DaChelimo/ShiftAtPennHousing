@@ -94,7 +94,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         let display = pushDisplayFromData(
             type: userInfo["type"] as? String,
             payloadJson: userInfo["payload"] as? String,
-            appName: "Shift@PennHousing"
+            appName: "SHIFT"
         )
         if let floatId = display.floatId {
             DispatchQueue.main.async { DeepLinkRouter.shared.floatAckId = floatId }

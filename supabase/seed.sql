@@ -592,3 +592,52 @@ SELECT (s.d - (((extract(isodow FROM s.d)::int + 2) % 7)))::date,
        'a0000000-0000-4000-8000-000000000008'
 FROM (SELECT ((now() AT TIME ZONE 'America/New_York') - interval '8 hours')::date AS d) s
 ON CONFLICT (week_start_date) DO UPDATE SET hmod_user_id = EXCLUDED.hmod_user_id;
+
+-- =====================================================================
+-- LOCAL ONLY: keep this stack cron-free.
+--
+-- 20260727000001_enable_scheduling_extensions.sql creates pg_cron/pg_net and registers
+-- the seven scheduled jobs, because hosted Supabase leaves pg_cron off and every
+-- cron.schedule() call site is wrapped in a guard that silently skips when it is absent
+-- (production-migration landmine L1). That migration must stay unguarded so a hosted push
+-- fails loudly rather than handing back an inert database.
+--
+-- seed.sql runs ONLY on `supabase db reset`, never on `supabase db push`, so undoing the
+-- registration here leaves hosted staging and production identical and fully autonomous
+-- while the local stack keeps the behaviour it has always had:
+--
+--   * the orchestrator runs from the web "Run orchestrator now" harness, not once a
+--     minute. app.supabase_url / app.service_role_key are unset locally, so a live
+--     orchestrator-tick job would raise into cron.job_run_details every minute forever.
+--   * expire_pending_swaps_if_uncronned() keeps returning >= 0 rather than -1, which is
+--     what supabase/tests/cost-audit-remediation.sql (F-10) asserts.
+--
+-- To rehearse hosted behaviour locally, comment this block out, set the two settings with
+-- ALTER DATABASE, and expect that F-10 assertion to flip.
+-- =====================================================================
+DO $$
+DECLARE
+  v_job text;
+BEGIN
+  IF to_regprocedure('cron.unschedule(text)') IS NULL THEN
+    RETURN;
+  END IF;
+
+  FOREACH v_job IN ARRAY ARRAY[
+    'preference-reminders',
+    'orchestrator-tick',
+    'swap-expiry',
+    'break-phase-transitions',
+    'deliver-notifications',
+    'apply-house-transfers',
+    'operational-retention'
+  ] LOOP
+    BEGIN
+      PERFORM cron.unschedule(v_job);
+    EXCEPTION
+      WHEN OTHERS THEN
+        NULL;
+    END;
+  END LOOP;
+END;
+$$;

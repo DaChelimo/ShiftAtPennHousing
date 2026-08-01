@@ -62,8 +62,8 @@ struct ShiftComponentGallery: View {
                 }
                 ShiftSection(title: "Dropped", isEmpty: true) { EmptyView() }
                 VStack(spacing: 0) {
-                    KeyValueRow(label: "Weekly soft cap", value: "20h")
-                    KeyValueRow(label: "Break hard cap", value: "40h", last: true)
+                    KeyValueRow(label: "Home house", value: "Harnwell")
+                    KeyValueRow(label: "Role", value: "Student Worker", last: true)
                 }
 
                 group("Controls")

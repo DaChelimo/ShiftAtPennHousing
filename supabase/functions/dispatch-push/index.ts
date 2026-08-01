@@ -2,6 +2,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { cert, getApps, initializeApp } from 'npm:firebase-admin@13/app';
 import { getMessaging } from 'npm:firebase-admin@13/messaging';
 
+import { buildFcmMessage, resolvePushPresentation } from '../_shared/push-presentation.ts';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -176,14 +178,22 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
       try {
         const messaging = firebaseMessaging();
+        // Platform-aware presentation. This block used to send `data` ALONE, with no
+        // `notification`, no `apns` and no `android` config. Android coped, because its
+        // messaging service rebuilds a local notification from the data map, but iOS
+        // displayed NOTHING: APNs was never asked to present anything, so the
+        // AppDelegate's `willPresent` never fired. Every iOS push in this system was
+        // silently dropped. The data map is unchanged, so existing clients keep
+        // working and the deep-link path is untouched.
+        const presentation = resolvePushPresentation(notification.type, notification.payload);
         for (const batch of chunk(attemptedTokens, TOKEN_BATCH_SIZE)) {
           const result = await messaging.sendEachForMulticast({
             tokens: batch.map((pushToken) => pushToken.device_token),
-            data: {
+            ...buildFcmMessage(presentation, {
               notification_id: notification.notification_id,
               type: notification.type,
               payload: JSON.stringify(notification.payload),
-            },
+            }),
           });
           successCount += result.successCount;
           failureCount += result.failureCount;

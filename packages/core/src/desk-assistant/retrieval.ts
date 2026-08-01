@@ -173,10 +173,15 @@ export function selectContext(
   // better estimate over the whole candidate set, and the best chunk is the same either way.
   const grounded = isGroundedByDistribution(
     readable.map((c) => c.similarity),
+    // Spread the optional keys conditionally rather than passing them as explicit
+    // `undefined`: under `exactOptionalPropertyTypes` an absent key and a key set to
+    // undefined are different types, and the callee declares these as optional-absent.
     {
       groundingThreshold: threshold,
-      groundingFloor: options.groundingFloor,
-      groundingMargin: options.groundingMargin,
+      ...(options.groundingFloor === undefined ? {} : { groundingFloor: options.groundingFloor }),
+      ...(options.groundingMargin === undefined
+        ? {}
+        : { groundingMargin: options.groundingMargin }),
     },
   );
   return { context, grounded };

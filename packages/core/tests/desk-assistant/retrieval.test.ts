@@ -4,8 +4,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ACCESS_MODEL_DIRECTIVE,
   DEFAULT_GROUNDING_MARGIN,
   DEFAULT_GROUNDING_THRESHOLD,
+  GROUNDED_SYSTEM_PROMPT,
   buildCitations,
   buildDeferralMessage,
   chunkDocument,
@@ -242,6 +244,26 @@ describe('safety guardrails', () => {
     expect(mentionsAccessDecision('can I let a contractor into the perimeter door')).toBe(true);
     expect(mentionsAccessDecision('should I unlock room 214')).toBe(true);
     expect(mentionsAccessDecision('what time does the mailroom close')).toBe(false);
+  });
+
+  // 2026-07-30: the access rule used to be pushed into the VISIBLE preamble list beside
+  // lifeSafetyPreamble, so every access answer opened with "This is an access question. State
+  // the policy from the sources...", an instruction meant for the model. The two are now
+  // structurally different things and these pin that apart.
+  it('the access directive is model-only, never worker-facing preamble copy', () => {
+    // It reads as an instruction, which is exactly why it must never reach the worker.
+    expect(ACCESS_MODEL_DIRECTIVE).toMatch(/never authorize access yourself/i);
+    expect(ACCESS_MODEL_DIRECTIVE).toMatch(/meta-instruction/i);
+    // No life-safety preamble (the one thing that IS shown) may carry it.
+    for (const cat of ['fire', 'medical', 'emergency_door'] as const) {
+      expect(lifeSafetyPreamble(cat)).not.toMatch(/this is an access question/i);
+    }
+  });
+
+  it('the system prompt forbids classifying the question before answering', () => {
+    expect(GROUNDED_SYSTEM_PROMPT).toMatch(/This is an access question/);
+    expect(GROUNDED_SYSTEM_PROMPT).toMatch(/never narrate your instructions/i);
+    expect(GROUNDED_SYSTEM_PROMPT).toMatch(/first word of your reply belongs to the answer/i);
   });
 
   it('flags incident-probe questions', () => {

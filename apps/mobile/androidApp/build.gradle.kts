@@ -29,6 +29,29 @@ val localProps = Properties().also { props ->
 }
 fun localOrGradle(key: String) = project.findProperty(key) as String? ?: localProps.getProperty(key) ?: ""
 
+// Named environments. A device build must not depend on the Mac's current LAN IP, so the
+// hosted projects get stable names instead of a single hand-edited SUPABASE_URL:
+//
+//   ./gradlew :androidApp:assembleDebug -PSUPABASE_ENV=staging
+//
+// resolves SUPABASE_URL_STAGING / SUPABASE_ANON_KEY_STAGING from local.properties (or a
+// -P flag / CI secret). Recognised envs: LOCAL, STAGING, PROD.
+//
+// Precedence is deliberate and backwards-compatible:
+//   1. an explicit -PSUPABASE_URL=… still wins outright (existing scripts keep working)
+//   2. otherwise SUPABASE_ENV selects the suffixed key
+//   3. otherwise empty -> the app runs on DemoData with no backend, which is what the
+//      Maestro flows exercise. Never let a missing env silently resolve to a real project.
+fun supabaseSetting(base: String): String {
+    val explicit = localOrGradle(base)
+    if (explicit.isNotEmpty()) return explicit
+
+    val env = localOrGradle("SUPABASE_ENV")
+    if (env.isEmpty()) return ""
+
+    return localOrGradle("${base}_${env.uppercase()}")
+}
+
 android {
     namespace = "com.pennhousing.shift"
     compileSdk = 36
@@ -42,8 +65,8 @@ android {
         // Supabase config is injected at build time (gradle property / CI secret /
         // -PSUPABASE_URL=…). Empty by default → the app runs on DemoData with no
         // backend, which is what the Maestro flows exercise.
-        buildConfigField("String", "SUPABASE_URL", "\"${localOrGradle("SUPABASE_URL")}\"")
-        buildConfigField("String", "SUPABASE_ANON_KEY", "\"${localOrGradle("SUPABASE_ANON_KEY")}\"")
+        buildConfigField("String", "SUPABASE_URL", "\"${supabaseSetting("SUPABASE_URL")}\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"${supabaseSetting("SUPABASE_ANON_KEY")}\"")
     }
     buildFeatures {
         compose = true

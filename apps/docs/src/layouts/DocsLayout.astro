@@ -1,0 +1,219 @@
+---
+/*
+ * §4 Layout: 218px sidebar | fluid content | 178px on-page contents,
+ * collapsing to a drawer plus content on tablet and mobile.
+ */
+import type { MarkdownHeading } from 'astro'
+import BaseLayout from './BaseLayout.astro'
+import Sidebar from '../components/Sidebar.astro'
+import PageContents from '../components/PageContents.astro'
+import ThemeToggle from '../components/ThemeToggle.astro'
+import { readingOrder, sectionOf } from '../nav'
+
+type Props = {
+  slug: string
+  title: string
+  description: string
+  headings: MarkdownHeading[]
+  draft?: boolean
+}
+
+const { slug, title, description, headings, draft = false } = Astro.props
+
+const section = sectionOf(slug)
+const index = readingOrder.findIndex((entry) => entry.slug === slug)
+const previous = index > 0 ? readingOrder[index - 1] : undefined
+const next = index >= 0 && index < readingOrder.length - 1 ? readingOrder[index + 1] : undefined
+---
+
+<BaseLayout title={title} description={description}>
+  <div class="topbar">
+    <button type="button" class="topbar__menu" data-drawer-toggle aria-expanded="false" aria-controls="sidebar">
+      <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+        <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path>
+      </svg>
+      Menu
+    </button>
+    <span class="topbar__title">{title}</span>
+    <ThemeToggle />
+  </div>
+  <div class="topbar__scrim" data-drawer-scrim aria-hidden="true"></div>
+
+  <div class="shell">
+    <Sidebar current={slug} />
+
+    <main class="shell__main" id="content">
+      <article class="prose" data-pagefind-body>
+        <header class="page-head">
+          {section && <p class="eyebrow">{section.label}</p>}
+          <h1>{title}</h1>
+          <p class="lede">{description}</p>
+          {
+            draft && (
+              <p class="page-head__draft">
+                This page is a placeholder. Its structure is fixed; the writing lands in a later phase.
+              </p>
+            )
+          }
+        </header>
+
+        <slot />
+      </article>
+
+      {
+        (previous || next) && (
+          <nav class="pager" aria-label="Previous and next page">
+            {previous ? (
+              <a class="pager__link" href={`/${previous.slug}`}>
+                <span class="eyebrow">Previous</span>
+                <span class="pager__label">{previous.label}</span>
+              </a>
+            ) : (
+              <span />
+            )}
+            {next && (
+              <a class="pager__link pager__link--next" href={`/${next.slug}`}>
+                <span class="eyebrow">Next</span>
+                <span class="pager__label">{next.label}</span>
+              </a>
+            )}
+          </nav>
+        )
+      }
+    </main>
+
+    <aside class="shell__contents">
+      <PageContents headings={headings} />
+    </aside>
+  </div>
+</BaseLayout>
+
+<script>
+  const body = document.body
+  const toggle = document.querySelector<HTMLButtonElement>('[data-drawer-toggle]')
+  const scrim = document.querySelector<HTMLElement>('[data-drawer-scrim]')
+
+  const setDrawer = (open: boolean) => {
+    body.toggleAttribute('data-drawer-open', open)
+    toggle?.setAttribute('aria-expanded', String(open))
+  }
+
+  toggle?.addEventListener('click', () => setDrawer(!body.hasAttribute('data-drawer-open')))
+  scrim?.addEventListener('click', () => setDrawer(false))
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') setDrawer(false)
+  })
+</script>
+
+<style>
+  .page-head {
+    margin-bottom: 24px;
+    max-width: var(--measure);
+  }
+
+  .page-head .eyebrow {
+    margin-bottom: 8px;
+  }
+
+  .page-head__draft {
+    margin-top: 12px;
+    padding: 9px 12px;
+    border: 1px dashed var(--rule);
+    border-radius: var(--radius);
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+
+  .pager {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 30px;
+    padding-top: 18px;
+    border-top: 1px solid var(--rule-2);
+    max-width: 860px;
+  }
+
+  .pager__link {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 9px 12px;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    text-decoration: none;
+    max-width: 48%;
+    transition:
+      border-color 120ms ease,
+      background-color 120ms ease;
+  }
+
+  .pager__link:hover {
+    border-color: var(--mark-line);
+    background: var(--mark-bg);
+  }
+
+  .pager__link--next {
+    margin-left: auto;
+    text-align: right;
+  }
+
+  .pager__label {
+    font-size: 13.5px;
+    font-weight: 560;
+    color: var(--ink);
+  }
+
+  .topbar {
+    display: none;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--bg);
+  }
+
+  .topbar__menu {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 9px;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-nav);
+    background: var(--bg);
+    font-size: 12.5px;
+    color: var(--ink-2);
+    cursor: pointer;
+  }
+
+  .topbar__title {
+    flex: 1;
+    font-size: 12.5px;
+    font-weight: 560;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .topbar__scrim {
+    display: none;
+  }
+
+  @media (max-width: 900px) {
+    .topbar {
+      display: flex;
+    }
+
+    :global(body[data-drawer-open]) .topbar__scrim {
+      display: block;
+      position: fixed;
+      inset: 0;
+      z-index: 25;
+      background: rgba(16, 19, 26, 0.4);
+    }
+  }
+</style>

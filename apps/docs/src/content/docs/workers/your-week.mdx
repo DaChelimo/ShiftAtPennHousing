@@ -1,0 +1,120 @@
+---
+title: 'Your week: My Shifts'
+description: 'My Shifts is your own week, day by day, and the place you go to hand a shift off or trade it.'
+minutes: 5
+---
+
+import myShifts from '../../../assets/screenshots/slide-10a-ios-my-shifts.png'
+
+My Shifts opens first because it is the answer to the only question most people open the
+app for. It is your week as a running list: one day after another, with what you are
+working on each one.
+
+<Figure
+  src={myShifts}
+  alt="The My Shifts tab on iPhone, showing a week as a list of days. Wednesday July 29 has one 2 hour shift marked swap request, Friday July 31 has a 2 hour Harnwell shift marked picked up, and Thursday, Saturday and Sunday read no shifts."
+  figure="Figure 1"
+  caption="My Shifts on iOS. Each day carries its own shift count and hours."
+  maxWidth={280}
+/>
+
+## Do it
+
+<Steps>
+  <li>
+    Open the app. My Shifts is the first tab.
+    <span class="step-note">On the web portal it is the home page after you sign in.</span>
+  </li>
+  <li>
+    Check the week navigator, above the tab bar, to confirm which week you are looking at.
+  </li>
+  <li>
+    Move between weeks with its arrows, or tap it to jump to a specific week.
+    <span class="step-note">
+      A shift you pick up for a future week appears under that week, not this one.
+    </span>
+  </li>
+  <li>
+    Tap a shift to manage it.
+    <span class="step-note">
+      One sheet handles both giving it up and trading it. See
+      <a href="/workers/dropping">Dropping a shift</a> and
+      <a href="/workers/swapping">Swapping and handing off</a>.
+    </span>
+  </li>
+</Steps>
+
+## What you'll see
+
+Each day is its own heading, with the number of shifts and the hours on it. A day you are
+not working says so rather than being left out, so the week reads as a week and not as a
+list of exceptions.
+
+Once the week is underway, the days that have already passed fold into a single collapsed
+**Earlier this week** card. Today sits near the top of the screen instead of below
+yesterday. Tap it to open the days back up.
+
+The screen also shows the **hours you hold in the week you are looking at**, against your
+cap. That total follows the week you navigate to, so it is not always this week's.
+
+### The badges on a card
+
+<Table>
+
+| Badge | What it means |
+| --- | --- |
+| Picked up | You claimed this yourself rather than being scheduled for it. |
+| Swap request | Somebody has asked to trade with you and is waiting on your answer. |
+| Swap pending | You asked to trade and are waiting on theirs. |
+| A house name | The shift is at a house that is not your own, either a pickup or a float. |
+
+</Table>
+
+A shift card is tinted with the colour of whoever holds it, so a week grid reads as people
+rather than as blocks. The states below override that, because a state means something the
+colour has to carry.
+
+<StateList>
+  <StateCard state="float-out" label="Floating out">
+    You are scheduled here, but part of this shift is being worked at another desk.
+  </StateCard>
+  <StateCard state="float-in" label="Floating in">
+    You are covering another house for this stretch. It is not extra hours.
+  </StateCard>
+  <StateCard state="pending" label="Awaiting your acknowledgment">
+    A float has been assigned to you and the app is waiting on your answer.
+  </StateCard>
+</StateList>
+
+## Rules that apply
+
+- **The week navigator scopes the whole screen**, including the hours total.
+- **A shift you drop leaves this screen.** It becomes an opening in the Open Shifts tab,
+  where anyone at the house can claim it, including you. There is no separate reclaim: you
+  take it back the same way anybody else would. See [Dropping a shift](/workers/dropping).
+- **The screen updates itself.** A swap your partner just accepted, or a float just
+  assigned to you, appears without a pull to refresh.
+- **Hours worked at another house count toward the same weekly total.** See
+  [Your hours](/workers/hours).
+
+## If it goes wrong
+
+<Callout label="A shift is missing">
+  Check the week navigator first. A shift picked up for next week is filed under next week,
+  which is the single most common reason a shift seems to disappear. If it was earlier
+  today, open the **Earlier this week** card.
+</Callout>
+
+**A shift you dropped is gone from your week entirely.** That is expected. It is no longer
+yours. Look for it in Open Shifts, where it now sits as an opening.
+
+**A card shows a house that is not yours.** You either picked that shift up at that house
+or you were floated there. A float carries its own label; a pickup just names the house.
+
+<Related
+  links={[
+    { href: '/workers/picking-up', label: 'Picking up open shifts' },
+    { href: '/workers/dropping', label: 'Dropping a shift' },
+    { href: '/system/floating', label: 'Floating: overview' },
+  ]}
+/>

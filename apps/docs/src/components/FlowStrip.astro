@@ -1,0 +1,89 @@
+---
+/*
+ * §5 Flow strip: equal bordered panels, mono step label, terminal panel tinted
+ * --mark-bg. §7: every diagram is HTML and CSS, not an image, so it inherits
+ * dark mode and reflows on mobile for free.
+ */
+type Step = { label: string; text: string; terminal?: boolean }
+type Props = { steps: Step[]; caption?: string; label?: string }
+const { steps, caption, label = 'Flow diagram' } = Astro.props
+---
+
+<figure class="flow-strip" role="group" aria-label={label}>
+  <div class="flow-strip__rail scroll-x">
+    {
+      steps.map((step, i) => (
+        <div class:list={['flow-strip__panel', step.terminal && 'flow-strip__panel--terminal']}>
+          <span class="flow-strip__label">
+            <span class="flow-strip__num">{String(i + 1).padStart(2, '0')}</span>
+            {step.label}
+          </span>
+          <span class="flow-strip__text">{step.text}</span>
+        </div>
+      ))
+    }
+  </div>
+  {caption && <figcaption class="flow-strip__caption">{caption}</figcaption>}
+</figure>
+
+<style>
+  .flow-strip {
+    margin: 0;
+  }
+
+  .flow-strip__rail {
+    display: flex;
+    gap: 6px;
+    align-items: stretch;
+  }
+
+  .flow-strip__panel {
+    flex: 1 1 0;
+    min-width: 116px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 11px 12px 12px;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    background: var(--bg-2);
+  }
+
+  .flow-strip__panel--terminal {
+    background: var(--mark-bg);
+    border-color: var(--mark-line);
+  }
+
+  .flow-strip__label {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  .flow-strip__num {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.11em;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+  }
+
+  .flow-strip__panel--terminal .flow-strip__num {
+    color: var(--mark);
+  }
+
+  .flow-strip__text {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--ink-2);
+  }
+
+  @media (max-width: 700px) {
+    .flow-strip__rail {
+      flex-direction: column;
+    }
+  }
+</style>

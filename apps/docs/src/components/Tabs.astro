@@ -1,0 +1,138 @@
+---
+/*
+ * §5 Tabs: segmented control on a --bg-3 track, raised active segment.
+ * §9: real tabs, role="tablist" / aria-selected / arrow-key navigation.
+ *
+ * SKETCH.md §3: tabs are only for the same task on a different surface
+ * (iOS / Android / Web) and for one tab per role on /managers/roles.
+ * Anywhere else they hide content from search and from a scanning reader.
+ *
+ * Panels come in as named slots so the markup stays explicit in MDX:
+ *   <Tabs labels={['iOS', 'Android', 'Web']}>
+ *     <Fragment slot="panel-0">...</Fragment>
+ *   </Tabs>
+ */
+type Props = { labels: string[]; group?: string }
+const { labels, group = 'tabs' } = Astro.props
+const uid = `${group}-${Math.random().toString(36).slice(2, 8)}`
+
+// Slot names have to be static in the template, so the panels are rendered here
+// and injected. This is what lets a page declare any number of surfaces.
+const panels = await Promise.all(
+  labels.map((_, i) =>
+    Astro.slots.has(`panel-${i}`) ? Astro.slots.render(`panel-${i}`) : Promise.resolve(''),
+  ),
+)
+---
+
+<div class="tabs">
+  <div class="tabs__track scroll-x" role="tablist" aria-label={group}>
+    {
+      labels.map((label, i) => (
+        <button
+          type="button"
+          role="tab"
+          id={`${uid}-tab-${i}`}
+          aria-controls={`${uid}-panel-${i}`}
+          aria-selected={i === 0 ? 'true' : 'false'}
+          tabindex={i === 0 ? 0 : -1}
+          class="tabs__segment"
+        >
+          {label}
+        </button>
+      ))
+    }
+  </div>
+  {
+    labels.map((_, i) => (
+      <div
+        role="tabpanel"
+        id={`${uid}-panel-${i}`}
+        aria-labelledby={`${uid}-tab-${i}`}
+        class="tabs__panel"
+        hidden={i !== 0}
+        set:html={panels[i]}
+      />
+    ))
+  }
+</div>
+
+<script>
+  // One delegated controller for every tablist on the page.
+  document.querySelectorAll<HTMLElement>('[role="tablist"]').forEach((list) => {
+    const tabs = Array.from(list.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+    if (tabs.length === 0) return
+
+    const select = (index: number, focus = true) => {
+      tabs.forEach((tab, i) => {
+        const active = i === index
+        tab.setAttribute('aria-selected', String(active))
+        tab.tabIndex = active ? 0 : -1
+        const panel = document.getElementById(tab.getAttribute('aria-controls') ?? '')
+        if (panel) panel.hidden = !active
+      })
+      if (focus) tabs[index].focus()
+    }
+
+    tabs.forEach((tab, i) => {
+      tab.addEventListener('click', () => select(i, false))
+      tab.addEventListener('keydown', (event) => {
+        const keys: Record<string, number> = {
+          ArrowRight: i + 1,
+          ArrowLeft: i - 1,
+          Home: 0,
+          End: tabs.length - 1,
+        }
+        const next = keys[event.key]
+        if (next === undefined) return
+        event.preventDefault()
+        select((next + tabs.length) % tabs.length)
+      })
+    })
+  })
+</script>
+
+<style>
+  .tabs__track {
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: var(--radius);
+    background: var(--bg-3);
+    max-width: 100%;
+  }
+
+  .tabs__segment {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    border-radius: 4px;
+    padding: 5px 12px;
+    font-size: 12.5px;
+    font-weight: 520;
+    color: var(--muted);
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+      color 120ms ease,
+      background-color 120ms ease;
+  }
+
+  .tabs__segment:hover {
+    color: var(--ink-2);
+  }
+
+  .tabs__segment[aria-selected='true'] {
+    background: var(--bg);
+    color: var(--ink);
+    box-shadow: var(--lift-segment);
+  }
+
+  .tabs__panel {
+    margin-top: 14px;
+  }
+
+  .tabs__panel :global(> * + *) {
+    margin-top: 12px;
+  }
+</style>

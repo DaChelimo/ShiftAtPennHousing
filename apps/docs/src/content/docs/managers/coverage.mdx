@@ -1,0 +1,163 @@
+---
+title: 'The coverage inbox and Allied requests'
+description: 'A coverage request means the system ran out of internal options for a desk, and a person now has to decide what happens to it.'
+minutes: 8
+---
+
+import actionInbox from '../../../assets/screenshots/extra-web-action-inbox.png'
+
+This page is a runbook. Read the boxed rule, then the three rungs, then the close-out
+outcomes. Everything else is detail you can come back for.
+
+<Callout label="The one rule" critical>
+  **An open coverage request never clears itself.** When its window passes without a
+  close-out, it goes overdue and stays visible until a human records what happened. It does
+  not archive, expire, or quietly resolve. If you acknowledge it and walk away, it is still
+  yours.
+</Callout>
+
+## What the alert means
+
+A coverage request is opened at the moment the automated chain runs out of internal
+options: the block was broadcast, nobody claimed it, and the float lookup found no eligible
+worker. Unless somebody procures Allied, that desk will be empty.
+
+One request covers one contiguous uncovered stretch at one house. The chain fires once
+every 30 minutes, so adjacent blocks are merged into a single request rather than paging
+you eight times for one empty evening. Merging never re-pages.
+
+<Figure
+  src={actionInbox}
+  alt="The manager action inbox in the web console, showing a coverage alert card with the house, the coverage window, and acknowledge and close out controls."
+  figure="Figure 1"
+  caption="The coverage inbox. The alert persists on every page of the console while any request needs attention."
+  maxWidth={520}
+/>
+
+## The three rungs
+
+The request escalates on its own until somebody acknowledges it.
+
+<Ladder
+  label="The Allied coverage ladder"
+  heads={['Rung', 'Who is paged', 'What happens']}
+  rungs={[
+    {
+      when: 'Immediately',
+      who: 'RSM for the house',
+      what: 'Held for 60 minutes, re-paging every 15 until acknowledged.',
+    },
+    {
+      when: 'After the timeout',
+      who: 'HM for the house',
+      what: 'Follows the leave-delegation chain if the HM is out.',
+      state: 'pending',
+    },
+    {
+      when: 'After the timeout',
+      who: 'Housing Manager on duty',
+      what: 'Terminal. Nobody is above this rung, so it stays here and keeps reminding.',
+      state: 'urgent',
+    },
+  ]}
+/>
+
+A rung with nobody reachable is **skipped immediately** rather than holding the request for
+its full hour. If all three are unreachable the request falls to the project administrator.
+It is never fanned out to any other manager, and never to another house's RSM.
+
+The hold and reminder intervals are configurable, and default to 60 and 15 minutes.
+
+## Acknowledge and close out are different
+
+They are separate on purpose, and the difference is the whole point of the surface.
+
+<Table>
+
+| Action | What it means | What it does |
+| --- | --- | --- |
+| Acknowledge | I have seen this and I am handling it. | Stops the ladder and the reminders. The request stays open. |
+| Close out | Here is what actually happened. | Removes the request from the active view. Requires an outcome. |
+
+</Table>
+
+**Any manager who can build for that house may acknowledge**, not only the rung currently
+holding it. An RSM picking up a request that has already passed to their HM is a good
+outcome, not an error.
+
+### The four close-out outcomes
+
+<Steps>
+  <li>
+    <strong>Allied secured.</strong> You called Allied and the window is covered.
+  </li>
+  <li>
+    <strong>Covered internally.</strong> A worker picked it up, or you assigned somebody by
+    hand.
+  </li>
+  <li>
+    <strong>Desk went unstaffed.</strong> Nobody covered it.
+    <span class="step-note">
+      Requires a written note, and is recorded as a missed-coverage incident.
+    </span>
+  </li>
+  <li>
+    <strong>No longer needed.</strong> The window stopped existing, or the desk regained a
+    worker.
+  </li>
+</Steps>
+
+The system records one of these on its own in exactly one case: the block was voided by a
+configuration change, or the desk got a worker back. Everything else is your call.
+
+## Do it
+
+<Steps>
+  <li>Open the alert from the banner. It is on every page of the console while anything is open.</li>
+  <li>
+    Acknowledge it, so the ladder stops paging and your colleagues can see it is being
+    handled.
+  </li>
+  <li>Call Allied, or find internal coverage.</li>
+  <li>
+    Come back and close it out with what actually happened.
+    <span class="step-note">This is the step that gets skipped. It is the one that matters.</span>
+  </li>
+</Steps>
+
+## Rules that apply
+
+- **Coverage is secured at most four hours at a time.** A longer empty window is never sent
+  to Allied all at once. The later hours stay claimable and re-escalate on their own, so
+  students are not locked out of hours that were still fillable.
+- **Securing Allied does not re-open the seats.** Once an empty desk reaches the two-hour
+  step, its vacant seats stay locked, whether a floater or Allied fills it. Nobody piles
+  onto a window that has already been paid for.
+- **A desk with one worker on it is not a coverage failure.** The chain only fires for a
+  block that would have nobody present. Empty seats on a still-staffed desk stay quietly
+  claimable. See [How a shift gets covered](/system/coverage-ladder).
+- **Every unstaffed close-out and every overdue request** appears in the coverage report
+  for review.
+
+## If it goes wrong
+
+<Callout label="The alert will not load">
+  You are told that explicitly, at the same prominence as a real alert. It never resolves
+  to an all-clear. Silence on this surface means every desk is accounted for, so a failed
+  read is never allowed to look like quiet. Treat it as unknown coverage and check the
+  house schedule directly.
+</Callout>
+
+**You acknowledged something that was not yours.** That is fine and it is by design.
+Acknowledge stops the ladder; it does not transfer ownership away from anyone who can act.
+
+**A request you closed came back.** It did not. A new stretch at the same house opens its
+own request. Check the coverage window on the card.
+
+<Related
+  links={[
+    { href: '/system/coverage-ladder', label: 'How a shift gets covered' },
+    { href: '/system/floating', label: 'Floating: overview' },
+    { href: '/managers/roles', label: 'Which manager are you?' },
+  ]}
+/>

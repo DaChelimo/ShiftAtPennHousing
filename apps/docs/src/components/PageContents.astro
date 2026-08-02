@@ -1,0 +1,91 @@
+---
+/*
+ * §5 Page contents, right rail: left border track, active item blue.
+ * Fed by Astro's generated heading list, so it cannot drift from the page.
+ */
+import type { MarkdownHeading } from 'astro'
+
+type Props = { headings: MarkdownHeading[] }
+const { headings } = Astro.props
+const items = headings.filter((h) => h.depth === 2 || h.depth === 3)
+---
+
+{
+  items.length > 1 && (
+    <nav class="contents" aria-label="On this page">
+      <p class="eyebrow contents__title">On this page</p>
+      <ul class="contents__list">
+        {items.map((item) => (
+          <li>
+            <a class="contents__link" data-depth={item.depth} href={`#${item.slug}`}>
+              {item.text}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  )
+}
+
+<script>
+  const links = Array.from(document.querySelectorAll<HTMLAnchorElement>('.contents__link'))
+  if (links.length > 0) {
+    const byId = new Map(links.map((link) => [decodeURIComponent(link.hash.slice(1)), link]))
+    const targets = Array.from(byId.keys())
+      .map((id) => document.getElementById(id))
+      .filter((el): el is HTMLElement => el !== null)
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries
+          .filter((entry) => entry.isIntersecting)
+          .forEach((entry) => {
+            links.forEach((link) => link.classList.remove('is-active'))
+            byId.get(entry.target.id)?.classList.add('is-active')
+          })
+      },
+      { rootMargin: '-72px 0px -70% 0px', threshold: 0 },
+    )
+
+    targets.forEach((target) => observer.observe(target))
+  }
+</script>
+
+<style>
+  .contents {
+    position: sticky;
+    top: 64px;
+    padding: 26px 20px 40px 0;
+    max-height: calc(100vh - 64px);
+    overflow-y: auto;
+  }
+
+  .contents__list {
+    margin-top: 9px;
+    padding: 0 0 0 11px;
+    list-style: none;
+    border-left: 1px solid var(--rule);
+  }
+
+  .contents__link {
+    display: block;
+    padding: 3px 0;
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: var(--muted);
+    text-decoration: none;
+    transition: color 120ms ease;
+  }
+
+  .contents__link[data-depth='3'] {
+    padding-left: 10px;
+  }
+
+  .contents__link:hover {
+    color: var(--ink-2);
+  }
+
+  .contents__link.is-active {
+    color: var(--mark);
+  }
+</style>

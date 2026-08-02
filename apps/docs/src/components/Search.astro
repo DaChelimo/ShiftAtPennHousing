@@ -1,0 +1,245 @@
+---
+/*
+ * §5 Sidebar search: bordered field with a ⌘K hint.
+ * Backed by Pagefind, which indexes the built output at the end of `pnpm build`.
+ * There is no index in `astro dev`, so the dialog says so rather than failing silently.
+ */
+---
+
+<button type="button" class="search-field" data-search-open>
+  <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+    <circle cx="7" cy="7" r="4.4" fill="none" stroke="currentColor" stroke-width="1.4"></circle>
+    <path d="M10.4 10.4 14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path>
+  </svg>
+  <span class="search-field__label">Search</span>
+  <kbd class="search-field__hint">⌘K</kbd>
+</button>
+
+<dialog class="search-dialog" data-search-dialog aria-label="Search the guide">
+  <form class="search-dialog__bar" data-search-form>
+    <input
+      type="search"
+      class="search-dialog__input"
+      placeholder="Search the guide"
+      aria-label="Search the guide"
+      autocomplete="off"
+      data-search-input
+    />
+    <button type="button" class="search-dialog__close" data-search-close>Esc</button>
+  </form>
+  <div class="search-dialog__results" data-search-results>
+    <p class="search-dialog__empty">Type to search across every page.</p>
+  </div>
+</dialog>
+
+<script>
+  type PagefindResult = {
+    id: string
+    data: () => Promise<{ url: string; meta: { title?: string }; excerpt: string }>
+  }
+  type Pagefind = { search: (q: string) => Promise<{ results: PagefindResult[] }> }
+
+  const dialog = document.querySelector<HTMLDialogElement>('[data-search-dialog]')
+  const input = document.querySelector<HTMLInputElement>('[data-search-input]')
+  const results = document.querySelector<HTMLElement>('[data-search-results]')
+
+  if (dialog && input && results) {
+    let engine: Pagefind | null = null
+    let loadFailed = false
+
+    const load = async () => {
+      if (engine || loadFailed) return
+      try {
+        // Built by `pagefind --site dist`, so it exists only in a production build.
+        // The path is held in a variable so neither dev nor build tries to resolve it.
+        const bundle = '/pagefind/pagefind.js'
+        engine = (await import(/* @vite-ignore */ bundle)) as unknown as Pagefind
+      } catch {
+        loadFailed = true
+      }
+    }
+
+    const open = async () => {
+      dialog.showModal()
+      input.focus()
+      await load()
+      if (loadFailed) {
+        results.innerHTML =
+          '<p class="search-dialog__empty">Search is built with the site. Run the production build to try it.</p>'
+      }
+    }
+
+    document
+      .querySelectorAll<HTMLButtonElement>('[data-search-open]')
+      .forEach((button) => button.addEventListener('click', open))
+
+    document
+      .querySelector<HTMLButtonElement>('[data-search-close]')
+      ?.addEventListener('click', () => dialog.close())
+
+    document.querySelector('[data-search-form]')?.addEventListener('submit', (e) => e.preventDefault())
+
+    document.addEventListener('keydown', (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        dialog.open ? dialog.close() : void open()
+      }
+    })
+
+    dialog.addEventListener('click', (event) => {
+      if (event.target === dialog) dialog.close()
+    })
+
+    let token = 0
+    input.addEventListener('input', async () => {
+      const query = input.value.trim()
+      const mine = ++token
+      if (!engine || query.length < 2) {
+        if (!loadFailed) {
+          results.innerHTML = '<p class="search-dialog__empty">Type to search across every page.</p>'
+        }
+        return
+      }
+
+      const found = await engine.search(query)
+      if (mine !== token) return
+
+      const top = await Promise.all(found.results.slice(0, 8).map((result) => result.data()))
+      if (mine !== token) return
+
+      results.innerHTML = top.length
+        ? top
+            .map(
+              (hit) =>
+                `<a class="search-hit" href="${hit.url}"><span class="search-hit__title">${
+                  hit.meta.title ?? hit.url
+                }</span><span class="search-hit__excerpt">${hit.excerpt}</span></a>`,
+            )
+            .join('')
+        : '<p class="search-dialog__empty">Nothing matched.</p>'
+    })
+  }
+</script>
+
+<style>
+  .search-field {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-nav);
+    background: var(--bg);
+    color: var(--muted);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition:
+      border-color 120ms ease,
+      color 120ms ease;
+  }
+
+  .search-field:hover {
+    border-color: var(--mark-line);
+    color: var(--ink-2);
+  }
+
+  .search-field__label {
+    flex: 1;
+    text-align: left;
+  }
+
+  .search-field__hint {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    padding: 1px 4px;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    background: var(--bg-3);
+  }
+
+  .search-dialog {
+    width: min(560px, calc(100vw - 32px));
+    padding: 0;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    background: var(--bg);
+    color: var(--ink);
+    margin-top: 12vh;
+  }
+
+  .search-dialog::backdrop {
+    background: rgba(16, 19, 26, 0.4);
+  }
+
+  .search-dialog__bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .search-dialog__input {
+    flex: 1;
+    border: 0;
+    background: transparent;
+    font-size: 14.5px;
+    outline: none;
+  }
+
+  .search-dialog__close {
+    appearance: none;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    background: var(--bg-3);
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    padding: 2px 6px;
+    cursor: pointer;
+  }
+
+  .search-dialog__results {
+    max-height: 58vh;
+    overflow-y: auto;
+    padding: 6px;
+  }
+
+  .search-dialog__empty {
+    padding: 12px;
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+
+  .search-dialog :global(.search-hit) {
+    display: block;
+    padding: 9px 10px;
+    border-radius: var(--radius-nav);
+    text-decoration: none;
+  }
+
+  .search-dialog :global(.search-hit:hover) {
+    background: var(--bg-2);
+  }
+
+  .search-dialog :global(.search-hit__title) {
+    display: block;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  .search-dialog :global(.search-hit__excerpt) {
+    display: block;
+    margin-top: 2px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--muted);
+  }
+
+  .search-dialog :global(mark) {
+    background: var(--mark-bg);
+    color: var(--mark);
+  }
+</style>

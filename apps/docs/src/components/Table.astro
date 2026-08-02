@@ -1,0 +1,62 @@
+---
+/*
+ * §5 Comparison table: rounded bordered frame, tinted uppercase header row,
+ * hairline rows, no zebra. §4: it scrolls inside its own container.
+ * Wraps a plain markdown table so authors keep writing markdown.
+ */
+type Props = { caption?: string }
+const { caption } = Astro.props
+---
+
+<div class="table-frame">
+  <div class="scroll-x"><slot /></div>
+  {caption && <p class="table-frame__caption">{caption}</p>}
+</div>
+
+<style>
+  .table-frame {
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .table-frame :global(table) {
+    width: 100%;
+    min-width: 420px;
+    border-collapse: collapse;
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+
+  .table-frame :global(th) {
+    background: var(--bg-2);
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    font-weight: 500;
+    text-align: left;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+  }
+
+  .table-frame :global(td) {
+    padding: 9px 12px;
+    color: var(--ink-2);
+    border-top: 1px solid var(--rule-2);
+    vertical-align: top;
+  }
+
+  .table-frame :global(tbody tr:first-child td) {
+    border-top: 0;
+  }
+
+  .table-frame__caption {
+    padding: 8px 12px 10px;
+    border-top: 1px solid var(--rule-2);
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+</style>

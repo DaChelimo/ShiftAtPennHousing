@@ -1,0 +1,52 @@
+---
+// §5 Numbered steps: 21px blue disc, mono numeral, optional muted second line.
+// The disc numbers are also what a screenshot figure's callouts key to.
+---
+
+<ol class="steps"><slot /></ol>
+
+<style>
+  .steps {
+    counter-reset: step;
+    list-style: none;
+    padding: 0;
+  }
+
+  .steps :global(> li) {
+    counter-increment: step;
+    position: relative;
+    padding-left: 32px;
+    color: var(--ink-2);
+  }
+
+  .steps :global(> li + li) {
+    margin-top: 12px;
+  }
+
+  .steps :global(> li)::before {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: 1px;
+    display: grid;
+    place-items: center;
+    width: 21px;
+    height: 21px;
+    border-radius: 999px;
+    background: var(--mark-bg);
+    border: 1px solid var(--mark-line);
+    color: var(--mark);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+
+  .steps :global(> li > .step-note) {
+    display: block;
+    margin-top: 2px;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--muted);
+  }
+</style>

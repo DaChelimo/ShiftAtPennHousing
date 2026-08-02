@@ -1,0 +1,95 @@
+---
+/*
+ * §5 Screenshot figure: flat card, soft lift, numbered blue discs keyed to the
+ * steps, caption with a mono figure number. No device bezel, no browser chrome (§1).
+ *
+ * §9 / SKETCH.md §8: alt is required and must state what the screenshot shows,
+ * because alt text is what a reader on a slow connection or a screen reader gets
+ * instead of the image.
+ */
+import { Image } from 'astro:assets'
+
+type Pin = { n: number; x: number; y: number }
+type Props = {
+  src: ImageMetadata
+  alt: string
+  figure: string
+  caption: string
+  /** Callout discs, positioned as percentages of the image box. */
+  pins?: Pin[]
+  /** Phone screenshots are tall; cap them so they do not dominate the column. */
+  maxWidth?: number
+}
+
+const { src, alt, figure, caption, pins = [], maxWidth = 300 } = Astro.props
+---
+
+<figure class="figure">
+  <div class="figure__card" style={`max-width:${maxWidth}px`}>
+    <Image src={src} alt={alt} widths={[maxWidth, maxWidth * 2]} sizes={`${maxWidth}px`} />
+    {
+      pins.map((pin) => (
+        <span class="figure__pin" style={`left:${pin.x}%;top:${pin.y}%`} aria-hidden="true">
+          {pin.n}
+        </span>
+      ))
+    }
+  </div>
+  <figcaption class="figure__caption">
+    <span class="figure__num">{figure}</span>
+    {caption}
+  </figcaption>
+</figure>
+
+<style>
+  .figure {
+    margin: 0;
+  }
+
+  .figure__card {
+    position: relative;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    background: var(--bg-2);
+    box-shadow: var(--lift);
+    overflow: hidden;
+  }
+
+  .figure__card :global(img) {
+    width: 100%;
+    height: auto;
+  }
+
+  .figure__pin {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    display: grid;
+    place-items: center;
+    width: 21px;
+    height: 21px;
+    border-radius: 999px;
+    background: var(--mark);
+    color: #fff;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    box-shadow: 0 0 0 2px var(--bg);
+  }
+
+  .figure__caption {
+    margin-top: 8px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--muted);
+  }
+
+  .figure__num {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    margin-right: 8px;
+  }
+</style>

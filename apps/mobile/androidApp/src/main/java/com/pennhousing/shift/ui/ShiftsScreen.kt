@@ -42,21 +42,18 @@ import com.pennhousing.shift.shared.model.RecentFloat
 import com.pennhousing.shift.shared.network.TOAST_DURATION_MS
 import com.pennhousing.shift.shared.onboarding.BreakTour
 import com.pennhousing.shift.shared.onboarding.HouseGridTour
-import com.pennhousing.shift.shared.onboarding.Onboarding
+import com.pennhousing.shift.shared.onboarding.NotificationPriming
 import com.pennhousing.shift.shared.onboarding.OpenClaimTour
 import com.pennhousing.shift.shared.onboarding.PreferencesTour
 import com.pennhousing.shift.shared.onboarding.ShiftTour
-import com.pennhousing.shift.shared.onboarding.TipTrigger
 import com.pennhousing.shift.shared.swaps.SwapProposal
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
-import com.pennhousing.shift.shared.viewmodel.AssistantViewModel
 import com.pennhousing.shift.shared.viewmodel.BreakCalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.BreakTourViewModel
 import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.FloatCarouselViewModel
 import com.pennhousing.shift.shared.viewmodel.HouseGridTourViewModel
 import com.pennhousing.shift.shared.viewmodel.HouseScheduleViewModel
-import com.pennhousing.shift.shared.viewmodel.OnboardingViewModel
 import com.pennhousing.shift.shared.viewmodel.OpenClaimTourViewModel
 import com.pennhousing.shift.shared.viewmodel.PreferencesTourViewModel
 import com.pennhousing.shift.shared.viewmodel.PreferencesViewModel
@@ -70,7 +67,6 @@ import com.pennhousing.shift.ui.calendar.CalendarTabContent
 import com.pennhousing.shift.ui.common.NotificationToast
 import com.pennhousing.shift.ui.common.PageTitle
 import com.pennhousing.shift.ui.house.HouseTabContent
-import com.pennhousing.shift.ui.kit.ShiftBottomSheet
 import com.pennhousing.shift.ui.kit.ShiftIcons
 import com.pennhousing.shift.ui.kit.ShiftToast
 import com.pennhousing.shift.ui.kit.ToastTone
@@ -79,10 +75,9 @@ import com.pennhousing.shift.ui.manager.CoverageBanner
 import com.pennhousing.shift.ui.manager.CoverageScreen
 import com.pennhousing.shift.ui.manager.HoursScreen
 import com.pennhousing.shift.ui.manager.NotAManagerPlaceholder
-import com.pennhousing.shift.ui.navigation.MoreNavRow
+import com.pennhousing.shift.ui.navigation.MoreSheet
 import com.pennhousing.shift.ui.navigation.ShiftBottomNav
 import com.pennhousing.shift.ui.navigation.ShiftDestination
-import com.pennhousing.shift.ui.navigation.rememberAssistantReturnState
 import com.pennhousing.shift.ui.navigation.rememberShiftNavigationState
 import com.pennhousing.shift.ui.navigation.rememberShiftNavigator
 import com.pennhousing.shift.ui.onboarding.BreakTourHelpButton
@@ -94,11 +89,8 @@ import com.pennhousing.shift.ui.onboarding.HouseGridTourOverlay
 import com.pennhousing.shift.ui.onboarding.HouseGridTourPointerCallout
 import com.pennhousing.shift.ui.onboarding.HouseGridTourPointerStore
 import com.pennhousing.shift.ui.onboarding.HouseGridTourPrefs
-import com.pennhousing.shift.ui.onboarding.LocalOnboardingAnchors
-import com.pennhousing.shift.ui.onboarding.NotificationPrimingHost
-import com.pennhousing.shift.ui.onboarding.OnboardingAnchors
-import com.pennhousing.shift.ui.onboarding.OnboardingOverlay
-import com.pennhousing.shift.ui.onboarding.OnboardingPrefs
+import com.pennhousing.shift.ui.onboarding.NotificationNudgeRow
+import com.pennhousing.shift.ui.onboarding.NotificationPrefs
 import com.pennhousing.shift.ui.onboarding.OpenClaimTourOverlay
 import com.pennhousing.shift.ui.onboarding.OpenClaimTourPointerCallout
 import com.pennhousing.shift.ui.onboarding.OpenClaimTourPointerStore
@@ -114,6 +106,7 @@ import com.pennhousing.shift.ui.onboarding.ShiftTourPointerStore
 import com.pennhousing.shift.ui.onboarding.ShiftTourPrefs
 import com.pennhousing.shift.ui.onboarding.SwapTourPrefs
 import com.pennhousing.shift.ui.onboarding.TourWirings
+import com.pennhousing.shift.ui.onboarding.rememberNotificationNudge
 import com.pennhousing.shift.ui.onboarding.rememberTourHost
 import com.pennhousing.shift.ui.onboarding.rememberTourSeenWriter
 import com.pennhousing.shift.ui.openshifts.OpenShiftsTabContent
@@ -158,7 +151,6 @@ internal fun ShiftsApp(
     val preferencesVm = viewModels.preferencesVm
     val breakCalendarVm = viewModels.breakCalendarVm
     val settingsVm = viewModels.settingsVm
-    val assistantVm = viewModels.assistantVm
     val now = hostState.now
     val currentWeeklyHours = hostState.currentWeeklyHours
     val pendingFloats = hostState.pendingFloats
@@ -274,42 +266,56 @@ internal fun ShiftsApp(
                 onBlocked = { pendingTab = it },
             )
         val current = nav.current
-        // See ui/navigation/AssistantReturn.kt — where the Assistant's back button returns to.
-        val assistantReturn = rememberAssistantReturnState(nav)
 
-        // Onboarding (the first-run welcome tour + one-time contextual tips). The shared
-        // OnboardingViewModel sequences everything; here we seed it from the persisted
-        // seen-keys, persist on change, kick off the tour once, and raise tips as the
-        // worker first reaches each root-level surface. See ui/onboarding/Onboarding.kt.
         val onboardingContext = LocalContext.current
-        val onboardingVm = remember { OnboardingViewModel(OnboardingPrefs.read(onboardingContext)) }
-        val onboardingState by onboardingVm.uiState.collectAsStateWithLifecycle()
-        val onboardingAnchors = remember { OnboardingAnchors() }
-        LaunchedEffect(Unit) { onboardingVm.start() }
-        LaunchedEffect(onboardingState.seen) { OnboardingPrefs.write(onboardingContext, onboardingState.seen) }
-        LaunchedEffect(current) {
-            when (current) {
-                ShiftDestination.MyShifts -> onboardingVm.triggerTip(TipTrigger.MY_SHIFTS)
-                // The Open-Shifts claim tour (openClaimTourVm, below) supersedes this flat
-                // tip — its whole point is teaching one-time vs permanent pickup, which the
-                // tip never covered.
-                // The House-grid tour (houseGridTourVm, below) supersedes this flat tip.
-                ShiftDestination.Swaps -> onboardingVm.triggerTip(TipTrigger.INCOMING_SWAP)
-                else -> Unit
+
+        // The notification ask. Re-read on every tab change so a grant made in the OS dialog
+        // (or in system settings, after the row deep-links there) retires the row without a
+        // restart. See ui/onboarding/NotificationNudge.kt for the shape and the shared
+        // `NotificationPriming` for why this replaced the first-run modal.
+        val notificationNudge = rememberNotificationNudge(refreshToken = current)
+        // The two once-per-install contextual asks, latched when their moment first fires so
+        // the row survives the recomposition that marks the flag.
+        var askedAfterClaim by remember {
+            mutableStateOf(NotificationPrefs.hasAsked(onboardingContext, NotificationPriming.ASKED_AFTER_CLAIM_KEY))
+        }
+        var askedAfterSwap by remember {
+            mutableStateOf(NotificationPrefs.hasAsked(onboardingContext, NotificationPriming.ASKED_AFTER_SWAP_KEY))
+        }
+        // Each contextual row is LATCHED for the life of the toast it rides, and its
+        // once-per-install flag is burned the moment it appears. Deriving visibility from the
+        // flag instead would make the row erase itself in the same frame it rendered.
+        var claimNudgeShowing by remember { mutableStateOf(false) }
+        var swapNudgeShowing by remember { mutableStateOf(false) }
+        LaunchedEffect(claimSuccessMessage, notificationNudge.granted) {
+            if (claimSuccessMessage == null) {
+                claimNudgeShowing = false
+            } else if (!claimNudgeShowing &&
+                NotificationPriming.shouldShowContextualNudge(notificationNudge.granted, askedAfterClaim)
+            ) {
+                claimNudgeShowing = true
+                NotificationPrefs.markAsked(onboardingContext, NotificationPriming.ASKED_AFTER_CLAIM_KEY)
+                askedAfterClaim = true
             }
         }
-        // The Break tour (breakTourVm, below) supersedes the old flat break-window tip.
-        LaunchedEffect(carouselState.total) {
-            if (carouselState.total > 0) onboardingVm.triggerTip(TipTrigger.FLOAT_REQUEST)
+        LaunchedEffect(swapProposed, notificationNudge.granted) {
+            if (!swapProposed) {
+                swapNudgeShowing = false
+            } else if (!swapNudgeShowing &&
+                NotificationPriming.shouldShowContextualNudge(notificationNudge.granted, askedAfterSwap)
+            ) {
+                swapNudgeShowing = true
+                NotificationPrefs.markAsked(onboardingContext, NotificationPriming.ASKED_AFTER_SWAP_KEY)
+                askedAfterSwap = true
+            }
         }
 
         // The six interactive tours. Each owns its OWN seen-key store and pointer flag
         // (persisting one must never clobber another) and auto-opens the first time the
-        // worker reaches its surface, once the welcome tour is done. `rememberTourHost`
-        // holds the five effects they all used to repeat verbatim; the per-tour keys and
-        // auto-show rule live in TourWirings. See ui/onboarding/TourHost.kt.
-        val welcomeDone = Onboarding.WELCOME_DONE_KEY in onboardingState.seen
-
+        // worker reaches its surface. `rememberTourHost` holds the five effects they all used
+        // to repeat verbatim; the per-tour keys and auto-show rule live in TourWirings. These
+        // six ARE the app's onboarding now: the first-run welcome tour and the flat one-card
+        // tips were cut on 2026-08-03 (BSpec §20.1). See ui/onboarding/TourHost.kt.
         val shiftTourVm = remember { ShiftTourViewModel(ShiftTourPrefs.read(onboardingContext)) }
         val shiftTourState by shiftTourVm.uiState.collectAsStateWithLifecycle()
         val shiftTour =
@@ -317,7 +323,7 @@ internal fun ShiftsApp(
                 wiring = TourWirings.Shift,
                 seen = shiftTourState.seen,
                 active = shiftTourState.active,
-                autoStartWhen = current == ShiftDestination.MyShifts && welcomeDone,
+                autoStartWhen = current == ShiftDestination.MyShifts,
                 onAutoStart = shiftTourVm::autoStart,
             )
 
@@ -329,7 +335,7 @@ internal fun ShiftsApp(
                 wiring = TourWirings.Preferences,
                 seen = preferencesTourState.seen,
                 active = preferencesTourState.active,
-                autoStartWhen = current == ShiftDestination.Preferences && welcomeDone,
+                autoStartWhen = current == ShiftDestination.Preferences,
                 onAutoStart = preferencesTourVm::autoStart,
             )
 
@@ -341,7 +347,7 @@ internal fun ShiftsApp(
                 wiring = TourWirings.Break,
                 seen = breakTourState.seen,
                 active = breakTourState.active,
-                autoStartWhen = breakState.phase == BreakPhase.CLAIM_WINDOW && welcomeDone,
+                autoStartWhen = breakState.phase == BreakPhase.CLAIM_WINDOW,
                 onAutoStart = breakTourVm::autoStart,
             )
 
@@ -352,7 +358,7 @@ internal fun ShiftsApp(
                 wiring = TourWirings.HouseGrid,
                 seen = houseGridTourState.seen,
                 active = houseGridTourState.active,
-                autoStartWhen = current == ShiftDestination.House && welcomeDone,
+                autoStartWhen = current == ShiftDestination.House,
                 onAutoStart = houseGridTourVm::autoStart,
             )
 
@@ -363,16 +369,15 @@ internal fun ShiftsApp(
                 wiring = TourWirings.OpenClaim,
                 seen = openClaimTourState.seen,
                 active = openClaimTourState.active,
-                autoStartWhen = current == ShiftDestination.OpenShifts && welcomeDone,
+                autoStartWhen = current == ShiftDestination.OpenShifts,
                 onAutoStart = openClaimTourVm::autoStart,
             )
 
         // The swap-composer tour is the one exception. It does NOT auto-open on a landing:
         // it opens the first time the worker reaches the swap PAGE inside the manage-shift
         // sheet, having already chosen "Swap it" over "Drop the shift" (that decision is
-        // ShiftTour's job). It is also deliberately NOT gated on the welcome tour, mirroring
-        // iOS's `ManageShiftSheet.onChange(of: page)` — this deep into a flow, welcome-tour
-        // sequencing no longer applies. The ViewModel and seen-key store live here because
+        // ShiftTour's job), mirroring iOS's `ManageShiftSheet.onChange(of: page)`. The
+        // ViewModel and seen-key store live here because
         // the Settings replay row shares them, but the autoStart trigger, overlay, help
         // button and pointer all render from INSIDE ManageShiftSheet: a root-level overlay
         // would render BEHIND the modal bottom sheet.
@@ -430,7 +435,6 @@ internal fun ShiftsApp(
                         onReplayShiftTour = shiftTourVm::replay,
                         onShiftTourHelpPositioned = { shiftTour.helpRect = it },
                         swapTourVm = swapTourVm,
-                        onAskAssistant = assistantReturn::open,
                     )
                 }
                 entry<ShiftDestination.OpenShifts> {
@@ -525,7 +529,6 @@ internal fun ShiftsApp(
                             onSignOut,
                             onToggleBroadcast,
                             onToggleNotification = onToggleNotification,
-                            onReplayTour = onboardingVm::replayTour,
                             onReplayShiftTour = {
                                 nav.navigate(ShiftDestination.MyShifts)
                                 shiftTourVm.replay()
@@ -556,8 +559,6 @@ internal fun ShiftsApp(
                         )
                     }
                 }
-                entry<ShiftDestination.Assistant> { AssistantScreen(assistantVm, onBack = assistantReturn::returnToPrevious) }
-
                 // ----- Manager mode (docs/manager-app/SPEC.md §6). -----
                 // Both entries render an explanatory empty state rather than nothing when the
                 // signed-in user is not a manager. A destination reachable only from a
@@ -617,210 +618,224 @@ internal fun ShiftsApp(
                 }
             }
 
-        CompositionLocalProvider(LocalOnboardingAnchors provides onboardingAnchors) {
-            Box(Modifier.fillMaxSize()) {
-                Scaffold(
-                    modifier =
-                        Modifier
-                            .fillMaxSize()
-                            // Maestro matches Compose testTags only when they surface as
-                            // resource-ids — without this every `id:` selector silently fails.
-                            .semantics { testTagsAsResourceId = true }
-                            .testTag("shifts_screen"),
-                    // Bottom nav (Material 3): four frequent destinations + a "More" overflow
-                    // sheet for the episodic ones (Preferences / Break shifts / Settings).
-                    bottomBar = {
-                        ShiftBottomNav(
-                            current = current,
-                            hasUnread = updatesState.hasUnread,
-                            onSelect = nav::navigate,
-                            onMore = { showMore = true },
-                            bar = managerBar,
-                            coverageBadgeCount = coverageState?.badgeCount ?: 0,
-                        )
-                    },
-                    // The "Ask" affordance is NOT a Scaffold FAB. The FAB slot floats above the
-                    // bottom bar, which on My Shifts put the pill straight on top of the week
-                    // navigator ("This week - Jul 27 - Aug 2"), covering its arrows. It now
-                    // renders inside the My-Shifts agenda area, anchored above the week bar,
-                    // matching iOS. See CalendarTabContent's `onAskAssistant`.
-                ) { padding ->
-                    Box(Modifier.fillMaxSize().padding(padding)) {
-                        Column(Modifier.fillMaxSize()) {
-                            // §4.4 — while a break's claim window is open, promote the Break calendar
-                            // with a visible banner from every other tab (it otherwise lives in More).
-                            if (current != ShiftDestination.BreakShifts && breakState.phase == BreakPhase.CLAIM_WINDOW) {
-                                BreakOpenBanner(breakState.breakName) { nav.navigate(ShiftDestination.BreakShifts) }
-                            }
-                            // BSpec §5.4a — while a house this manager covers has an
-                            // UNACKNOWLEDGED coverage request, a non-dismissable banner rides on
-                            // every screen. It disappears once somebody acknowledges (the count
-                            // only includes action-required requests), so a manager already on
-                            // the phone to Allied is not nagged. Deliberately not a full-screen
-                            // takeover: the float-ack modal was moved off auto-cover for exactly
-                            // that reason.
-                            if (current != ShiftDestination.Coverage && coverageState?.showsBanner == true) {
-                                CoverageBanner(
-                                    count = coverageState.badgeCount,
-                                    onOpen = { nav.navigate(ShiftDestination.Coverage) },
-                                )
-                            }
-                            NavDisplay(
-                                entries = navState.decoratedEntries(shiftEntryProvider),
-                                onBack = { nav.goBack() },
+        Box(Modifier.fillMaxSize()) {
+            Scaffold(
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        // Maestro matches Compose testTags only when they surface as
+                        // resource-ids — without this every `id:` selector silently fails.
+                        .semantics { testTagsAsResourceId = true }
+                        .testTag("shifts_screen"),
+                // Bottom nav (Material 3): four frequent destinations + a "More" overflow
+                // sheet for the episodic ones (Preferences / Break shifts / Settings).
+                bottomBar = {
+                    ShiftBottomNav(
+                        current = current,
+                        hasUnread = updatesState.hasUnread,
+                        onSelect = nav::navigate,
+                        onMore = { showMore = true },
+                        bar = managerBar,
+                        coverageBadgeCount = coverageState?.badgeCount ?: 0,
+                    )
+                },
+            ) { padding ->
+                Box(Modifier.fillMaxSize().padding(padding)) {
+                    Column(Modifier.fillMaxSize()) {
+                        // BSpec §20.2 — the standing notification ask, pinned above the
+                        // schedule on My Shifts while alerts are off. My Shifts only: this is
+                        // the surface where "a reminder before your shift" means something,
+                        // and one ask per app is the point. It has no dismiss control, so it
+                        // stays until alerts are actually on.
+                        if (current == ShiftDestination.MyShifts &&
+                            NotificationPriming.shouldShowStandingNudge(notificationNudge.granted)
+                        ) {
+                            NotificationNudgeRow(
+                                body = NotificationPriming.BODY_MY_SHIFTS,
+                                state = notificationNudge,
+                                tag = "notification_nudge",
                             )
                         }
-                        // Toasts now sit at the BOTTOM (above the nav bar) — the intuitive place
-                        // for transient confirmations; a swallowed write failure no longer hides.
-                        Column(
-                            Modifier
-                                .align(Alignment.BottomCenter)
-                                .fillMaxWidth()
-                                .padding(bottom = 10.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            writeError?.let {
-                                // A swallowed EF write failure (edge runtime down, timeout, expired
-                                // token) used to be invisible — the optimistic card stayed put while
-                                // the server never changed. Surface it; the host reverts to server truth.
-                                ShiftToast(
-                                    message = it,
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 16.dp)
-                                            .testTag("write_error"),
-                                    tone = ToastTone.Error,
-                                    icon = ShiftIcons.Warning,
-                                )
-                            }
-                            claimSuccessMessage?.let { msg ->
-                                ShiftToast(
-                                    message = msg,
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 16.dp)
-                                            .testTag("claim_success"),
-                                    tone = ToastTone.Success,
-                                    icon = ShiftIcons.Check,
-                                )
-                            }
-                            if (swapProposed) {
-                                ShiftToast(
-                                    message = "Swap proposed. Your housemate has been asked",
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 16.dp)
-                                            .testTag("swap_proposed_toast"),
-                                    tone = ToastTone.Success,
-                                    icon = ShiftIcons.Check,
-                                )
-                            }
-                            toast?.let { NotificationToast(it) }
+                        // §4.4 — while a break's claim window is open, promote the Break calendar
+                        // with a visible banner from every other tab (it otherwise lives in More).
+                        if (current != ShiftDestination.BreakShifts && breakState.phase == BreakPhase.CLAIM_WINDOW) {
+                            BreakOpenBanner(breakState.breakName) { nav.navigate(ShiftDestination.BreakShifts) }
                         }
+                        // BSpec §5.4a — while a house this manager covers has an
+                        // UNACKNOWLEDGED coverage request, a non-dismissable banner rides on
+                        // every screen. It disappears once somebody acknowledges (the count
+                        // only includes action-required requests), so a manager already on
+                        // the phone to Allied is not nagged. Deliberately not a full-screen
+                        // takeover: the float-ack modal was moved off auto-cover for exactly
+                        // that reason.
+                        if (current != ShiftDestination.Coverage && coverageState?.showsBanner == true) {
+                            CoverageBanner(
+                                count = coverageState.badgeCount,
+                                onOpen = { nav.navigate(ShiftDestination.Coverage) },
+                            )
+                        }
+                        NavDisplay(
+                            entries = navState.decoratedEntries(shiftEntryProvider),
+                            onBack = { nav.goBack() },
+                        )
+                    }
+                    // Toasts now sit at the BOTTOM (above the nav bar) — the intuitive place
+                    // for transient confirmations; a swallowed write failure no longer hides.
+                    Column(
+                        Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .padding(bottom = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        writeError?.let {
+                            // A swallowed EF write failure (edge runtime down, timeout, expired
+                            // token) used to be invisible — the optimistic card stayed put while
+                            // the server never changed. Surface it; the host reverts to server truth.
+                            ShiftToast(
+                                message = it,
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp)
+                                        .testTag("write_error"),
+                                tone = ToastTone.Error,
+                                icon = ShiftIcons.Warning,
+                            )
+                        }
+                        claimSuccessMessage?.let { msg ->
+                            ShiftToast(
+                                message = msg,
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp)
+                                        .testTag("claim_success"),
+                                tone = ToastTone.Success,
+                                icon = ShiftIcons.Check,
+                            )
+                        }
+                        if (swapProposed) {
+                            ShiftToast(
+                                message = "Swap proposed. Your housemate has been asked",
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp)
+                                        .testTag("swap_proposed_toast"),
+                                tone = ToastTone.Success,
+                                icon = ShiftIcons.Check,
+                            )
+                        }
+                        // BSpec §20.2 — the two contextual asks, riding the success toast of an
+                        // action whose payoff IS a push: the reminder for the shift just
+                        // claimed, and the reply to the swap just sent. Latched (above) rather
+                        // than derived, because writing the once-per-install flag would
+                        // otherwise pull the row out from under the worker as it appeared.
+                        if (claimNudgeShowing) {
+                            NotificationNudgeRow(
+                                body = NotificationPriming.BODY_AFTER_CLAIM,
+                                state = notificationNudge,
+                                tag = "notification_nudge_claim",
+                            )
+                        }
+                        if (swapNudgeShowing) {
+                            NotificationNudgeRow(
+                                body = NotificationPriming.BODY_AFTER_SWAP,
+                                state = notificationNudge,
+                                tag = "notification_nudge_swap",
+                            )
+                        }
+                        toast?.let { NotificationToast(it) }
                     }
                 }
-                OnboardingOverlay(
-                    state = onboardingState,
-                    anchors = onboardingAnchors,
-                    onNext = onboardingVm::next,
-                    onBack = onboardingVm::back,
-                    onSkip = onboardingVm::skipTour,
-                    onDismissTip = onboardingVm::dismissTip,
-                )
-                // Notification priming — once the welcome tour is done, explain WHY alerts matter
-                // and (only on Confirm) fire the real OS permission request. Replaces the cold
-                // launch-time prompt that used to fire in MainActivity.onCreate.
-                NotificationPrimingHost(tourDone = Onboarding.WELCOME_DONE_KEY in onboardingState.seen)
-                // The interactive "Manage a shift" tour — above the whole screen; auto-opens on the
-                // first My-Shifts landing and on replay (from the header "?" or Settings row).
-                if (shiftTourState.active) {
-                    ShiftTourOverlay(
-                        state = shiftTourState,
-                        onNext = shiftTourVm::next,
-                        onBack = shiftTourVm::back,
-                        onSkip = shiftTourVm::skip,
-                        // Tapping away is a quick "not now", not the natural finish the one-time
-                        // store gates on -- always re-point at the header "?" so the worker still
-                        // learns where to pick the tour back up, every time this happens.
-                        onDismissOutside = {
-                            shiftTourVm.skip()
-                            shiftTour.showPointer = true
-                        },
-                    )
-                }
-                // The one-time "look here" pointer at the header "?", positioned from the real
-                // button's reported bounds so it always lands on the actual control.
-                if (shiftTour.showPointer) {
-                    ShiftTourPointerCallout(targetRect = shiftTour.helpRect)
-                }
-                // Four more interactive tours, identical shape to shiftTourVm's block above.
-                if (preferencesTourState.active) {
-                    PreferencesTourOverlay(
-                        state = preferencesTourState,
-                        onNext = preferencesTourVm::next,
-                        onBack = preferencesTourVm::back,
-                        onSkip = preferencesTourVm::skip,
-                        onDismissOutside = {
-                            preferencesTourVm.skip()
-                            preferencesTour.showPointer = true
-                        },
-                    )
-                }
-                if (preferencesTour.showPointer) {
-                    PreferencesTourPointerCallout(targetRect = preferencesTour.helpRect)
-                }
-                if (breakTourState.active) {
-                    BreakTourOverlay(
-                        state = breakTourState,
-                        onNext = breakTourVm::next,
-                        onBack = breakTourVm::back,
-                        onSkip = breakTourVm::skip,
-                        onDismissOutside = {
-                            breakTourVm.skip()
-                            breakTour.showPointer = true
-                        },
-                    )
-                }
-                if (breakTour.showPointer) {
-                    BreakTourPointerCallout(targetRect = breakTour.helpRect)
-                }
-                if (houseGridTourState.active) {
-                    HouseGridTourOverlay(
-                        state = houseGridTourState,
-                        onNext = houseGridTourVm::next,
-                        onBack = houseGridTourVm::back,
-                        onSkip = houseGridTourVm::skip,
-                        onDismissOutside = {
-                            houseGridTourVm.skip()
-                            houseGridTour.showPointer = true
-                        },
-                    )
-                }
-                if (houseGridTour.showPointer) {
-                    HouseGridTourPointerCallout(targetRect = houseGridTour.helpRect)
-                }
-                if (openClaimTourState.active) {
-                    OpenClaimTourOverlay(
-                        state = openClaimTourState,
-                        onNext = openClaimTourVm::next,
-                        onBack = openClaimTourVm::back,
-                        onSkip = openClaimTourVm::skip,
-                        onDismissOutside = {
-                            openClaimTourVm.skip()
-                            openClaimTour.showPointer = true
-                        },
-                    )
-                }
-                if (openClaimTour.showPointer) {
-                    OpenClaimTourPointerCallout(targetRect = openClaimTour.helpRect)
-                }
-                // The swap-composer tour overlay + pointer are rendered from INSIDE
-                // ManageShiftSheet (via CalendarTabContent), not here — see the swapTourVm comment
-                // above: a root-level overlay would render BEHIND the modal bottom sheet.
             }
+            // The interactive "Manage a shift" tour — above the whole screen; auto-opens on the
+            // first My-Shifts landing and on replay (from the header "?" or Settings row).
+            if (shiftTourState.active) {
+                ShiftTourOverlay(
+                    state = shiftTourState,
+                    onNext = shiftTourVm::next,
+                    onBack = shiftTourVm::back,
+                    onSkip = shiftTourVm::skip,
+                    // Tapping away is a quick "not now", not the natural finish the one-time
+                    // store gates on -- always re-point at the header "?" so the worker still
+                    // learns where to pick the tour back up, every time this happens.
+                    onDismissOutside = {
+                        shiftTourVm.skip()
+                        shiftTour.showPointer = true
+                    },
+                )
+            }
+            // The one-time "look here" pointer at the header "?", positioned from the real
+            // button's reported bounds so it always lands on the actual control.
+            if (shiftTour.showPointer) {
+                ShiftTourPointerCallout(targetRect = shiftTour.helpRect)
+            }
+            // Four more interactive tours, identical shape to shiftTourVm's block above.
+            if (preferencesTourState.active) {
+                PreferencesTourOverlay(
+                    state = preferencesTourState,
+                    onNext = preferencesTourVm::next,
+                    onBack = preferencesTourVm::back,
+                    onSkip = preferencesTourVm::skip,
+                    onDismissOutside = {
+                        preferencesTourVm.skip()
+                        preferencesTour.showPointer = true
+                    },
+                )
+            }
+            if (preferencesTour.showPointer) {
+                PreferencesTourPointerCallout(targetRect = preferencesTour.helpRect)
+            }
+            if (breakTourState.active) {
+                BreakTourOverlay(
+                    state = breakTourState,
+                    onNext = breakTourVm::next,
+                    onBack = breakTourVm::back,
+                    onSkip = breakTourVm::skip,
+                    onDismissOutside = {
+                        breakTourVm.skip()
+                        breakTour.showPointer = true
+                    },
+                )
+            }
+            if (breakTour.showPointer) {
+                BreakTourPointerCallout(targetRect = breakTour.helpRect)
+            }
+            if (houseGridTourState.active) {
+                HouseGridTourOverlay(
+                    state = houseGridTourState,
+                    onNext = houseGridTourVm::next,
+                    onBack = houseGridTourVm::back,
+                    onSkip = houseGridTourVm::skip,
+                    onDismissOutside = {
+                        houseGridTourVm.skip()
+                        houseGridTour.showPointer = true
+                    },
+                )
+            }
+            if (houseGridTour.showPointer) {
+                HouseGridTourPointerCallout(targetRect = houseGridTour.helpRect)
+            }
+            if (openClaimTourState.active) {
+                OpenClaimTourOverlay(
+                    state = openClaimTourState,
+                    onNext = openClaimTourVm::next,
+                    onBack = openClaimTourVm::back,
+                    onSkip = openClaimTourVm::skip,
+                    onDismissOutside = {
+                        openClaimTourVm.skip()
+                        openClaimTour.showPointer = true
+                    },
+                )
+            }
+            if (openClaimTour.showPointer) {
+                OpenClaimTourPointerCallout(targetRect = openClaimTour.helpRect)
+            }
+            // The swap-composer tour overlay + pointer are rendered from INSIDE
+            // ManageShiftSheet (via CalendarTabContent), not here — see the swapTourVm comment
+            // above: a root-level overlay would render BEHIND the modal bottom sheet.
         }
 
         if (showAckModal) {
@@ -879,44 +894,12 @@ internal fun ShiftsApp(
         }
 
         if (showMore) {
-            // The "More" overflow sheet — episodic destinations (Preferences once a
-            // semester, Break shifts only during breaks, Settings rarely). Rows keep the
-            // original tab selectors; the Maestro flows open More first, then tap them.
-            ShiftBottomSheet(onDismiss = { showMore = false }, title = "More") {
-                Column(Modifier.testTag("more_sheet"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    // Manager mode: Hours leads the sheet for a manager whose bar does not
-                    // carry it (docs/manager-app/SPEC.md §6), and is absent for a plain worker.
-                    if (capabilities.hasManagerSurface && ShiftDestination.Hours !in managerBar) {
-                        MoreNavRow("Hours", ShiftIcons.Clock, "tab_hours_more") {
-                            showMore = false
-                            nav.navigate(ShiftDestination.Hours)
-                        }
-                    }
-                    MoreNavRow("Updates", ShiftIcons.Bell, "tab_updates") {
-                        showMore = false
-                        nav.navigate(ShiftDestination.Updates)
-                    }
-                    // Managers do not submit shift preferences (docs/manager-app/SPEC.md §6).
-                    if (!capabilities.hasManagerSurface) {
-                        MoreNavRow("Preferences", ShiftIcons.Heart, "tab_preferences") {
-                            showMore = false
-                            nav.navigate(ShiftDestination.Preferences)
-                        }
-                    }
-                    MoreNavRow("Break shifts", ShiftIcons.Snowflake, "tab_break") {
-                        showMore = false
-                        nav.navigate(ShiftDestination.BreakShifts)
-                    }
-                    MoreNavRow("Settings", ShiftIcons.Tune, "tab_settings") {
-                        showMore = false
-                        nav.navigate(ShiftDestination.Settings)
-                    }
-                    MoreNavRow("Ask Snoopy", ShiftIcons.Sparkle, "tab_assistant") {
-                        showMore = false
-                        assistantReturn.open()
-                    }
-                }
-            }
+            MoreSheet(
+                capabilities = capabilities,
+                managerBar = managerBar,
+                nav = nav,
+                onDismiss = { showMore = false },
+            )
         }
     }
 }

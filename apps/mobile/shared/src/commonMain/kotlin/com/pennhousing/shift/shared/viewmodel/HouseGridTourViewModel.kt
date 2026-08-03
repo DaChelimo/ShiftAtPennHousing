@@ -34,7 +34,7 @@ data class HouseGridTourUiState(
  * `viewModelScope`, no clock). It sequences the three steps and owns the seen-flag; the
  * platform renders the overlay and persists [HouseGridTourUiState.seen].
  *
- * This tour is independent of the welcome tour / contextual tips / every other Tier-3
+ * This tour is independent of every other Tier-3
  * tour: it has its OWN seen-key store on each platform (so persisting one never clobbers
  * another). The host auto-starts it the first time the worker lands on the House tab,
  * and re-opens it from the House-tab help button or the Settings row.

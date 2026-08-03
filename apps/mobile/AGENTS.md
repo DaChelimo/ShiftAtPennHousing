@@ -136,6 +136,24 @@ Some rules exist **twice** and drift silently, recolouring or rewording one plat
 Six interactive tours (Shift, Preferences, Break, House grid, Open-claim, Swap). Read
 `docs/design/interactive-onboarding-pattern.md` **before** building a new one.
 
+**These six are the entire in-app teaching layer, and the list is closed.** The first-run
+walkthrough of the bottom tabs (`Onboarding.WELCOME_TOUR`) and the six one-card contextual
+tips (`Onboarding.CONTEXTUAL_TIPS`) were deleted 2026-08-03, along with the overlay chrome
+on both platforms and the "Replay app tour" Settings row. Do not reintroduce a passive
+one-card tier: a card that arrives uninvited, before the worker has a reason to care,
+teaches nothing and trains the dismiss reflex the tours then inherit. A surface that needs
+teaching earns a full interactive tour or a knowledge-base guide, and nothing in between.
+BSpec §20.1 records the decision.
+
+**The notification ask is an inline row, never a modal** (BSpec §20.2). Three placements:
+standing on My Shifts while alerts are off (**no dismiss control** — only granting retires
+it), and once each after a claim and after a swap or hand-off is sent. Copy is one line;
+the old three-line body went unread. The action fires the OS dialog while `osCanPrompt`,
+and deep-links to app notification settings after — required, because a row that persists
+until granted outlives the one-shot OS prompt. Shared decision + copy in
+`shared/.../onboarding/NotificationPriming.kt`; rendering in Android
+`ui/onboarding/NotificationNudge.kt` and iOS `Onboarding.swift`.
+
 All six dismiss on a scrim tap, gated per step. The scrim swallow is preserved **only** on
 steps carrying a real continuous drag gesture: `Shift` / `OpenClaim` / `Swap` protect only
 `AMOUNT` (range slider), `Preferences` protects only `PAINT` (press-and-drag canvas), `Break`

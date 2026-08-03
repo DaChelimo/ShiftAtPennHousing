@@ -82,7 +82,6 @@ import com.pennhousing.shift.shared.shifts.weeklyHours
 import com.pennhousing.shift.shared.swaps.PendingSwap
 import com.pennhousing.shift.shared.swaps.swapCandidates
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
-import com.pennhousing.shift.shared.viewmodel.AssistantViewModel
 import com.pennhousing.shift.shared.viewmodel.BreakCalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.HouseScheduleViewModel
@@ -103,6 +102,7 @@ import com.pennhousing.shift.ui.kit.SkeletonShiftCard
 import com.pennhousing.shift.ui.theme.ShiftTheme
 import com.pennhousing.shift.ui.theme.ThemePrefs
 import com.pennhousing.shift.ui.theme.rememberPersistedDarkTheme
+import com.pennhousing.shift.ui.theme.resolveDark
 import com.pennhousing.shift.widget.WidgetSync
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -142,15 +142,20 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         // The POST_NOTIFICATIONS runtime request is no longer fired cold on launch. It is
-        // now primed after the welcome tour finishes (NotificationPrimingHost in
-        // ui/onboarding/Onboarding.kt), so the worker learns WHY alerts matter before the
-        // OS dialog appears — and a decline never burns the one-shot iOS-style prompt.
+        // raised by the inline ask on My Shifts (NotificationNudgeRow in
+        // ui/onboarding/NotificationNudge.kt), so the worker sees WHY alerts matter, on the
+        // screen where it matters, before the OS dialog appears.
 
         val backendConfigured = AppConfig.supabaseUrl.isNotBlank()
         // T2-13: a float push tap / external deep link (pennshift://float-ack/{id})
         // opens the FULL-SCREEN FloatAckSurface on launch. Pure parser; null when the
         // app was launched normally.
         val launchFloatAckId = parseFloatAckDeepLink(intent?.dataString)
+        // Resolved BEFORE setContent, via the non-Compose ThemeChoice.resolveDark(Configuration)
+        // (a plain field read), not the @Composable rememberPersistedDarkTheme() — see that
+        // function's doc for why: the splash is the first thing SplashOverlay ever paints, and
+        // isSystemInDarkTheme() can misresolve on exactly that first composition pass.
+        val initialDarkTheme = ThemePrefs.read(this).resolveDark(resources.configuration)
 
         setContent {
             LaunchedEffect(Unit) { keepNativeSplash = false }
@@ -181,7 +186,9 @@ class MainActivity : ComponentActivity() {
                     DemoRoot(launchFloatAckId)
                     LaunchedEffect(Unit) { contentReady = true }
                 }
-                if (!contentReady || !minSplashElapsed) SplashOverlay(caption = splashCaption)
+                if (!contentReady || !minSplashElapsed) {
+                    SplashOverlay(caption = splashCaption, darkTheme = initialDarkTheme)
+                }
             }
         }
     }
@@ -204,7 +211,6 @@ private fun DemoRoot(launchFloatAckId: String? = null) {
     val houseVm = remember { HouseScheduleViewModel(DemoData.houseSchedule(now), now, meUserId = DemoData.DEMO_ME_USER_ID) }
     val preferencesVm = remember { PreferencesViewModel(DemoData.preferencePeriod(now)) }
     val breakCalendarVm = remember { BreakCalendarViewModel(DemoData.breakCalendar(now), now) }
-    val assistantVm = remember { AssistantViewModel() }
     val context = LocalContext.current
     val settingsVm =
         remember {
@@ -235,7 +241,6 @@ private fun DemoRoot(launchFloatAckId: String? = null) {
                 preferencesVm = preferencesVm,
                 breakCalendarVm = breakCalendarVm,
                 settingsVm = settingsVm,
-                assistantVm = assistantVm,
             ),
         hostState =
             ShiftsHostState(
@@ -727,7 +732,6 @@ private fun LiveShiftsRoot(
                         initialOptedOut = liveBreakOptedOut,
                     )
                 }
-            val assistantVm = remember { AssistantViewModel() }
             // Settings reuses `liveProfile` (loaded above the House VM): the worker's real
             // profile + live `broadcast_subscribed` (own users / user_roles + houses, all
             // RLS-readable); it falls back to the demo profile while the read is in flight.
@@ -840,7 +844,6 @@ private fun LiveShiftsRoot(
                         preferencesVm = preferencesVm,
                         breakCalendarVm = breakCalendarVm,
                         settingsVm = settingsVm,
-                        assistantVm = assistantVm,
                         coverageVm = coverageVm,
                     ),
                 hostState =

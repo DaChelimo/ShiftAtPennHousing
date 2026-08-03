@@ -24,6 +24,28 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        // Fixes the "white flash on launch" bug: the native UILaunchScreen (LaunchBackground
+        // in Assets.xcassets) is drawn by the OS before this method even runs, and can only
+        // ever resolve off the SYSTEM light/dark setting — it has no way to consult
+        // UserDefaults. The handoff to SwiftUI is where an EXPLICIT in-app override used to
+        // visibly flash: `.preferredColorScheme` on the root view sets the window's
+        // `overrideUserInterfaceStyle`, but only once SwiftUI has mounted and laid out the
+        // first view — one frame after the window's trait collection (and so
+        // `@Environment(\.colorScheme)`) has already resolved with the default `.light`
+        // value. Setting it here, via the `UIAppearance` proxy, applies to every `UIView`
+        // (including the window) at CREATION time, so the very first SwiftUI frame already
+        // carries the correct trait — no lag, no flash.
+        //
+        // Deliberately skipped for `.system` (nil): touching `overrideUserInterfaceStyle` at
+        // all — even setting it to `.unspecified` — is a documented way to desync the window
+        // from SwiftUI's own tracking of `.preferredColorScheme`, which silently breaks live
+        // system Dark Mode tracking later (system chrome updates, app content does not; see
+        // regression fixed 2026-08-01). System-choice users were never at risk of the launch
+        // flash anyway — a freshly created window's untouched trait already matches system.
+        if let style = ThemeChoice.fromPersisted(UserDefaults.standard.string(forKey: ThemeController.storageKey)).uiUserInterfaceStyle {
+            UIView.appearance().overrideUserInterfaceStyle = style
+        }
+
         #if canImport(FirebaseCore)
         FirebaseApp.configure()
         #endif
@@ -39,9 +61,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         Messaging.messaging().delegate = self
         #endif
         // The notification authorization request is no longer fired cold at launch. It is
-        // primed after the welcome tour finishes (see NotificationPrimingCardView in
-        // Onboarding.swift → NotificationAuthorizer.request), so the worker learns WHY
-        // alerts matter before the one-shot OS dialog appears.
+        // raised by the inline ask on My Shifts (see NotificationNudgeRow in Onboarding.swift
+        // → NotificationAuthorizer.request), so the worker sees WHY alerts matter, on the
+        // screen where it matters, before the one-shot OS dialog appears.
         return true
     }
 
@@ -126,11 +148,4 @@ enum NotificationAuthorizer {
         }
     }
 
-    /// Whether the OS would still surface a prompt (status is `.notDetermined`, i.e. never
-    /// asked). The settings read is asynchronous; the result is delivered on the main queue.
-    static func osCanPrompt(_ completion: @escaping (Bool) -> Void) {
-        UNUserNotificationCenter.current().getNotificationSettings { settings in
-            DispatchQueue.main.async { completion(settings.authorizationStatus == .notDetermined) }
-        }
-    }
 }

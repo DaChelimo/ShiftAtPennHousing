@@ -20,7 +20,7 @@ final class OpenClaimTourObservable: ObservableObject {
     let vm: OpenClaimTourViewModel
     @Published var state: OpenClaimTourUiState
     private var task: Task<Void, Never>?
-    // Its OWN seen-key store, separate from the welcome tour / tips / the "Manage a shift"
+    // Its OWN seen-key store, separate from the "Manage a shift"
     // tour, so persisting one never clobbers another (they observe + write independently).
     private static let storageKey = "openclaim_tour_seen_keys"
 

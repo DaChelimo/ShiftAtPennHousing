@@ -455,10 +455,13 @@ user_roles
   scope_house_id    (foreign key; for sm/hm/rsm/bm, the house their role covers)
 ```
 
-A user can hold multiple roles. The `hm`, `rsm`, and `bm` roles share identical **administrative** capabilities (overrides, force-triggers, notifications, leave, weekly-cap) but differ in **worker** behavior and in two role-specific carve-outs (RSM cannot be HMOD; RSM has cross-house read):
+A user can hold multiple roles. The `hm`, `rsm`, and `bm` roles share identical **administrative** capabilities (overrides, force-triggers, notifications, leave, weekly-cap) but differ in **worker** behavior and in one role-specific carve-out (RSM cannot be HMOD). All three hold cross-house schedule authority as a tier; see the elevated-tier note below.
 
 - A user holding `hm` may also hold `sw`/`sm` roles and act as a worker (scheduled shifts, claimed pickups, schedule preferences). However, the float lookup eligibility and broadcast subscription pipelines exclude any user with the `hm` role: HMs are never assigned floats and never receive open-shifts broadcasts. They may still manually browse the open-shifts feed and claim.
-- A user holding `rsm` (Residential Services Manager — Behavioral Spec §2.3a) is below the HM and above the SM. The `rsm` role carries **every** HM power **except HMOD**: it is admitted to `user_has_house_admin_role` and `user_can_build_schedule` exactly like `hm`/`bm` (own-house, scope-matched), so an RSM builds/overrides, administers people, sets the cap, and takes leave for their own house. Like an HM, an RSM holds shifts (claim pool) but is never auto-floated and never receives broadcast. As of migration `20260729000002`, an RSM is also assignable from the schedule-builder roster to their **own** house's desk, exempt from every hours check (see below). Two carve-outs: (a) an RSM is **never** placed on the `hmod_rotor` and is never a valid HMOD-transfer target; (b) an RSM has **read-only** visibility into _every_ house's live schedule (the `user_is_rsm(uuid)` predicate ORs into the schedule-visibility SELECT policies), while every write stays scope-matched to their own house.
+- A user holding `rsm` (Residential Services Manager — Behavioral Spec §2.3a) is below the HM and above the SM. The `rsm` role carries **every** HM power **except HMOD**: it is admitted to `user_has_house_admin_role` (own-house, scope-matched) and to `user_can_build_schedule`, so an RSM builds/overrides, administers people, sets the cap, and takes leave. Like an HM, an RSM holds shifts (claim pool) but is never auto-floated and never receives broadcast. As of migration `20260729000002`, an RSM is also assignable from the schedule-builder roster to their **own** house's desk, exempt from every hours check (see below). Two carve-outs: (a) an RSM is **never** placed on the `hmod_rotor` and is never a valid HMOD-transfer target; (b) an RSM has read visibility into _every_ house's live schedule via the `user_is_rsm(uuid)` predicate, which ORs into the schedule-visibility SELECT policies.
+
+  **Scope of RSM writes (amended 2026-06-27, migration `20260627000002`).** The original rule that "every RSM write stays scope-matched to their own house" no longer holds for the schedule. `user_is_schedule_admin(uid)` is house-agnostic and true for `hm`/`bm`/`rsm` anywhere; `user_can_build_schedule` is redefined as `(user_is_schedule_admin OR sm-scoped-to-house)`. Every RPC gating on it — `publish_schedule` (3-arg, migration `20260614000002`), `admin_assign_worker`, `admin_remove_worker` — and the draft / `period_targets` / preferences admin RLS therefore become **cross-house** for the elevated tier. Publishing and overriding ride the same gate, so there is no house an elevated admin may override but not publish. `user_has_house_admin_role` is unchanged and still scope-matched for `hm`/`bm`/`rsm`, which is what keeps people administration, HM leave, and weekly-cap own-house; the lone exception is the top-level `admin` role, which ORs in unconditionally. **SM is untouched and stays own-house on both predicates.**
+
 - A user holding `bm` is admin-only. The schema enforces this by treating `bm` as exclusive of worker roles for scheduling purposes: a user with `bm` is excluded from preference submission, schedule-builder rosters, claim eligibility, and float lookup. They may still hold the `bm` role alongside `hm` or other admin roles, but worker-facing pipelines treat them as inactive.
 
 HMOD eligibility is implicit: any user with `hm` or `bm` role can appear in the `hmod_rotor`. The `rsm` role is **never** HMOD-eligible — the rotor population query and FK intent stay `hm`/`bm` only.
@@ -1676,12 +1679,12 @@ Every move — forward taps and the system back button — routes through `Shift
 
 This is Android-only. iOS (`ContentView.swift`) still uses its tab state with no back stack; the SwiftUI equivalent (a hoisted `NavigationStack` path) is a pending TODO, so only Android currently has back navigation (behavioral §20.4).
 
-- `shared/.../onboarding/` holds the pure modules — `Onboarding` (the first-run coach-mark program and contextual tips), the per-surface tours (`ShiftTour`, `SwapTour`, `OpenClaimTour`, `HouseGridTour`, `PreferencesTour`, `BreakTour`), and `NotificationPriming` — each with no clock and no I/O: seen-keys are injected and every function is a deterministic transform, which is what makes them unit-testable on the JVM host.
+- `shared/.../onboarding/` holds the pure modules — the six per-surface tours (`ShiftTour`, `SwapTour`, `OpenClaimTour`, `HouseGridTour`, `PreferencesTour`, `BreakTour`) and `NotificationPriming` — each with no clock and no I/O: seen-keys are injected and every function is a deterministic transform, which is what makes them unit-testable on the JVM host. **The `Onboarding` module (the first-run coach-mark walkthrough of the bottom tabs and the six one-card contextual tips) and its `OnboardingViewModel` were DELETED 2026-08-03**, along with the Android `OnboardingOverlay` / `OnboardingAnchors` / `Modifier.onboardingAnchor` and the iOS `OnboardingObservable` / `OnboardingOverlayView` / `OnboardingAnchorKey` that rendered them, the bottom-bar anchor registrations on both platforms, and the "Replay app tour" Settings row. Behavioral §20.1 states why. Do not reintroduce a passive one-card teaching layer; a new surface that needs teaching gets an interactive tour or a knowledge-base guide.
 - **Persistence is a platform concern** (SharedPreferences on Android, UserDefaults on iOS). These are per-device UX flags, **not server state**, and they must never become scheduling state.
-- **Notification priming** is presentation only: the in-app pre-prompt never touches the OS permission, so declining it leaves the system prompt unspent. Which notifications are mandatory is unchanged (§4.6, behavioral §10.1).
-- Each per-surface tour auto-starts the first time its host screen is reached (gated on the welcome tour being done), independent of whether that screen is reached via a tab-change or is the app's default landing tab — a screen that is the default landing surface (`ShiftTour` on My Shifts on iOS) needs its auto-start checked both on initial appearance and on the welcome tour finishing, not only on a subsequent tab change, since SwiftUI's `onChange` never fires for an unchanged initial value. **A behavioral prompt to add a home-screen widget after repeated opens (formerly documented here) was removed 2026-07-23** — it fired before the interactive tour on iOS's default tab and was superseded by the tours; see behavioral §20.3.
-- Each tour owns an independent seen-key store, not a shared one: its shared `{Tour}` object defines a `DONE_KEY` string constant (e.g. `ShiftTour.DONE_KEY = "tour.myshifts.done"`), the corresponding `{Tour}ViewModel` holds it in an in-memory `seen: Set<String>` and adds `DONE_KEY` to it only when the tour finishes or is skipped, and each platform persists that set under its own storage key (Android `{Tour}Prefs` over `SharedPreferences`; iOS `{Tour}Observable` over `UserDefaults`) — separate from the `Onboarding` welcome/tips store, so persisting one tour's progress never clobbers another tour's or the welcome tour's.
-- Auto-start is wired per platform, not inside the shared `{Tour}ViewModel`. On Android, `ShiftsScreen.kt` drives all six through one shared holder, `rememberTourHost` (`ui/onboarding/TourHost.kt`), which collapses the five effects each tour used to repeat (persist the seen-set, auto-start, raise the one-time pointer, fade it) into a single reusable unit configured by a per-tour `TourWiring`. `ShiftTour`, `PreferencesTour`, `HouseGridTour`, and `OpenClaimTour` each auto-start when their surface is the current navigation destination (keyed on the typed `ShiftDestination`, not an Int tab index — see Section 18.1), gated on the welcome tour's done-key; `BreakTour` instead auto-starts when the break state machine reaches its claim window, still gated on the welcome tour; `SwapTour` auto-starts when the in-sheet manage-shift composer reaches its swap page, and is the one tour that does not gate on the welcome tour at all. On iOS, the five tab-hosted tours are centralized in `ContentView.swift`'s `autoStartTourForCurrentTab()`, invoked from `.onAppear` (the initial landing — needed because the default tab never fires `.onChange(of: tab)`), `.onChange(of: tab)` (subsequent tab switches), and `.onChange(of: onboardingTourDone)` (the welcome tour finishing while already parked on a tab); `SwapTour` is wired the same way as Android, off the manage-shift sheet's own page state.
+- **Notification priming** is presentation only: the in-app ask never touches the OS permission on its own, so ignoring it leaves the system prompt unspent. Which notifications are mandatory is unchanged (§4.6, behavioral §10.1). **Reshaped 2026-08-03** from a blocking full-screen card fired once at the tail of first-run onboarding into three inline rows (behavioral §20.2). The shared `NotificationPriming` object now exposes the per-surface one-line copy, two predicates — `shouldShowStandingNudge(granted)` and `shouldShowContextualNudge(granted, alreadyAsked)` — and `confirmLabel(osCanPrompt)`; the old `shouldShowPrimer(tourDone, osCanPrompt, alreadyResponded)`, `TITLE`, `BODY` and `DISMISS` are gone, as is the single `notif.primer.responded` flag. The standing My-Shifts row is gated on `granted` ALONE: there is deliberately no dismiss or responded input, so the only thing that retires it is the worker turning alerts on. Each platform renders it as `NotificationNudgeRow` (Android `ui/onboarding/NotificationNudge.kt`, iOS `Onboarding.swift`), reading live authorization rather than a stored answer — Android via `NotificationManagerCompat.areNotificationsEnabled()`, iOS via `UNUserNotificationCenter.getNotificationSettings`, both re-read on every tab change so a grant made in system settings takes effect without a relaunch. When `osCanPrompt` is false (iOS status is not `.notDetermined`; Android has stopped surfacing `POST_NOTIFICATIONS`) the action deep-links to the app's notification settings instead of firing a request the OS would ignore — required, because a row that persists until granted is guaranteed to outlive the OS dialog. The two contextual rows are latched into their own boolean for the life of the success toast they ride, and their once-per-install flags (`notif.asked.claim` / `notif.asked.swap`) are burned the moment the row appears; deriving visibility from the flag instead would erase the row in the same frame it rendered.
+- Each per-surface tour auto-starts the first time its host screen is reached, independent of whether that screen is reached via a tab-change or is the app's default landing tab — a screen that is the default landing surface (`ShiftTour` on My Shifts on iOS) needs its auto-start checked on initial appearance as well as on a subsequent tab change, since SwiftUI's `onChange` never fires for an unchanged initial value. **A behavioral prompt to add a home-screen widget after repeated opens (formerly documented here) was removed 2026-07-23** — it fired before the interactive tour on iOS's default tab and was superseded by the tours; see behavioral §20.3.
+- Each tour owns an independent seen-key store, not a shared one: its shared `{Tour}` object defines a `DONE_KEY` string constant (e.g. `ShiftTour.DONE_KEY = "tour.myshifts.done"`), the corresponding `{Tour}ViewModel` holds it in an in-memory `seen: Set<String>` and adds `DONE_KEY` to it only when the tour finishes or is skipped, and each platform persists that set under its own storage key (Android `{Tour}Prefs` over `SharedPreferences`; iOS `{Tour}Observable` over `UserDefaults`), so persisting one tour's progress never clobbers another tour's.
+- Auto-start is wired per platform, not inside the shared `{Tour}ViewModel`. On Android, `ShiftsScreen.kt` drives all six through one shared holder, `rememberTourHost` (`ui/onboarding/TourHost.kt`), which collapses the five effects each tour used to repeat (persist the seen-set, auto-start, raise the one-time pointer, fade it) into a single reusable unit configured by a per-tour `TourWiring`. `ShiftTour`, `PreferencesTour`, `HouseGridTour`, and `OpenClaimTour` each auto-start when their surface is the current navigation destination (keyed on the typed `ShiftDestination`, not an Int tab index — see Section 18.1); `BreakTour` instead auto-starts when the break state machine reaches its claim window; `SwapTour` auto-starts when the in-sheet manage-shift composer reaches its swap page. On iOS, the five tab-hosted tours are centralized in `ContentView.swift`'s `autoStartTourForCurrentTab()`, invoked from `.onAppear` (the initial landing — needed because the default tab never fires `.onChange(of: tab)`) and `.onChange(of: tab)` (subsequent tab switches); `SwapTour` is wired the same way as Android, off the manage-shift sheet's own page state.
 - Tapping outside a tour step's highlighted content skips the whole tour through the same path as the Skip control (marking the done-key immediately), except on the step or steps that demonstrate a real drag gesture — the range-drag step shared by `ShiftTour`, `SwapTour`, and `OpenClaimTour`, the paint-drag step in `PreferencesTour`, and both drag steps in `BreakTour` — where a per-step `dismissible` flag disables the scrim's tap handler so a stray tap mid-drag cannot lose the worker's place; `HouseGridTour` has no drag step and is always dismissible by an outside tap. Once a tour first finishes, by any of completion, Skip, or an outside tap, a one-time pointer callout points at the surface's help control before auto-fading, gated on its own per-tour "pointer shown" flag kept separate from the done-key, so it fires exactly once regardless of which of the three ways the tour ended. Every tour also has its own "Replay" row in Settings, which re-opens it from step one without needing to clear the done-key.
 
 Widgets are **read-only snapshots** written by the app: iOS WidgetKit (`iosApp/ShiftWidgets/` — an upcoming-shifts widget and a house-configurable open-shifts widget via an AppIntent, fed through an App Group) and Android Glance (`androidApp/.../widget/` — `ShiftWidget` + `WidgetSync`). A widget performs no writes; tapping deep-links into the app. Widget content may lag the app, and no behavior may depend on a widget existing.
@@ -2207,3 +2210,225 @@ step; closing it is future work, not part of this change.
 Launch-time session restore is separately bounded by `BOOT_NETWORK_TIMEOUT` (8s) in
 `WorkerBackend`; on expiry `currentSession()` resolves to null and the app shows login
 rather than stranding the splash.
+
+## 23. Web Sign-In: Passwordless Email OTP
+
+Added 2026-08-01 (Behavioral Spec §24). Mobile (§22 above) is unaffected by this section and
+keeps password auth; only `apps/web` moved to passwordless in production.
+
+**Mechanism.** Two GoTrue calls, both against the browser Supabase client
+(`apps/web/lib/supabase/client.ts`):
+
+- Request: `supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: false } })`.
+  `shouldCreateUser: false` is load-bearing — every real account is admin-provisioned into
+  `auth.users` already (locally via `supabase/seed.sql`'s direct `crypt()` insert), so this
+  flag is what turns an OTP request for an unrecognized email into a rejection instead of a
+  silent self-registration.
+- Verify: `supabase.auth.verifyOtp({ email, token, type: 'email' })`. `type: 'email'`
+  verifies a bare token string (the typed 6 digits) — GoTrue issues the same underlying
+  token whether the delivery channel is a code or a clickable link; the distinction is
+  entirely in the email template (below), not the API.
+
+Both calls are gated in `apps/web/app/login/page.tsx` behind `PASSWORDLESS_AUTH_ENABLED`
+(`apps/web/lib/env.ts`), which renders `OtpLoginForm` in production and falls back to the
+pre-existing `PasswordLoginForm` (`signInWithPassword`) otherwise. `apps/web/app/auth/forgot`
+and `apps/web/app/auth/update-password` (the password-reset flow) redirect to `/login`
+whenever the flag is on, since there is no password to reset there; both pages are otherwise
+unchanged and still serve development.
+
+**Email template.** GoTrue routes `signInWithOtp` mail through the `magic_link` template slot
+regardless of code-vs-link delivery. `supabase/config.toml`'s
+`[auth.email.template.magic_link]` override points at `supabase/templates/otp-login.html`,
+which renders `{{ .Token }}` (the code) prominently and does not surface
+`{{ .ConfirmationURL }}` as a clickable link — a link opened on a worker's phone would
+authenticate the phone's browser, not the shared desk kiosk they are signing into.
+`[auth.rate_limit] email_sent` is raised from GoTrue's default of 2/hour to 30/hour, since
+every sign-in now sends an email rather than only occasional password resets.
+
+**Deploy-time requirements** (mirrors the pattern in `supabase/AGENTS.md` "Required deploy
+configuration" — every deployed environment must set these or behavior silently degrades):
+
+- `NEXT_PUBLIC_AUTH_MODE=production` on the web deploy target only. Unset (or any other
+  value) keeps password auth — this is the local/dev default and requires no configuration.
+  Deliberately an environment variable, not a `system_config` row: it decides whether a
+  password `<input>` exists in the rendered UI at all, and changing it must force a
+  redeploy rather than being flippable by a runtime `UPDATE` (see Behavioral Spec §14).
+- SMTP credentials for the production Supabase project's GoTrue (`[auth.email.smtp]` in
+  `config.toml` is commented out; local dev relies on the bundled Inbucket catcher, port
+  54324, instead of real SMTP).
+
+**Deliberately not built in this change.** The production Supabase project's password auth
+provider is not separately disabled at the dashboard/Management-API level — enforcement is
+app-UI gating only for now (`signInWithPassword` would still technically succeed against a
+seeded account if called directly). Mobile passwordless support (a parallel
+`AppConfig.passwordlessAuthEnabled` flag feeding `SupabaseAuthGateway.kt`, mirroring the
+existing `SUPABASE_ENV` build-flavor split) is scoped but not implemented.
+
+**What did not change.** Role and scope resolution (`apps/web/lib/auth.ts`'s
+`getSessionUser`) reads only the JWT's `sub` claim, so it is identical regardless of which
+sign-in mode produced the session — this section adds no new authorization logic.
+
+## 24. Harnwell Pilot: Manager-Directed Floating
+
+Added 2026-08-01 (docs/harnwell-pilot/PLAN.md; behavior in BSpec §25). Mechanism for BSpec
+§25's manager-directed float, plus the pilot-scope derivation and the Desk Assistant entry
+point removal (BSpec §17).
+
+### 24.1 No Pilot Flag
+
+Neither pilot-scoped cut-down is config. `floatLookupStep` (`supabase/functions/
+orchestrator-tick/floatLookup.ts`) calls the SQL function `count_live_houses()`
+(`20260801000001_harnwell_pilot_scoping.sql`) immediately after the T-2h coverage lock and
+short-circuits to `'no_float'` when it returns less than 2, so `block_step_status` and the
+coverage lock are unaffected and broadcast/Allied escalation still fire normally.
+`worker_open_shifts` gained a `house_is_live(sb.house_id)` predicate in its `vacant_seats`
+CTE, matching the style already used by `orchestrator_vacant_seats` and
+`worker_visible_houses`. Both derive from `houses.launch_state` / `house_is_live()`
+(`20260712000001`), so launching a house is what widens the pilot; no separate flag exists to
+forget.
+
+### 24.2 Destination Blocks Are Minted On Demand
+
+`shift_blocks.origin` (`'generated' | 'manual_float'`, default `'generated'`) marks a block
+minted purely to host a manager-float destination seat. `mint_manual_float_blocks(house_id,
+block_starts[])` is the single place that creates or reuses one: `INSERT ... ON CONFLICT
+(house_id, block_start_at) DO NOTHING` against the existing `UNIQUE` constraint, then reuse
+or create the block's single vacant seat (`required_headcount = 1`), refusing to mint into a
+block that already exists with `origin = 'generated'` (a real staffed block). Because a
+`manual_float` block always has exactly one seat, occupied by the float, it never enters
+escalation or the open-shifts feed.
+
+`reconcile_config_blocks` (the season-apply reconciler) gained an `AND sb.origin =
+'generated'` predicate on its future-block scan, so a manually-minted destination — whose
+house has no `staffing_patterns` row and would otherwise read a target headcount of zero —
+is never voided out from under an in-progress float by an unrelated season apply. Publish
+was checked and found not to be a threat: it only ever writes onto blocks that already exist
+and guards on `voided_at IS NULL`, so it needs no equivalent guard.
+
+`retire_manual_float_blocks(block_ids[])` is the unconditional inverse, used only by the edit
+path (§24.4): it deletes a `manual_float` block regardless of occupancy — shrinking or
+cancelling a float deliberately ends the block — relying on `shift_block_assignments.
+block_id`'s `ON DELETE CASCADE` to remove the seat with it.
+
+### 24.3 `manager_float_worker`
+
+One SECURITY DEFINER transaction (`20260801000002_manager_directed_float.sql`):
+
+1. Authorize the initiator via `user_can_build_schedule(initiator, 'harnwell')` — the same
+   predicate the schedule builder and calendar override editor already use.
+2. Reject Harnwell as a destination, and reject a worker whose `home_house_id <> 'harnwell'`
+   — both re-checked server-side, never trusted from the client, per the existing
+   never-trust-the-client convention for the Harnwell training and float-direction
+   invariants.
+3. Resolve the worker's existing `scheduled`/`claimed` Harnwell seats across the requested
+   30-minute-aligned range into `source_assignment_ids`; if any block in the range is not
+   currently held by that worker, abort.
+4. Call `mint_manual_float_blocks` for the destination seats (§24.2).
+5. Delegate everything else — TOCTOU-guarded destination/source validation, the seat writes,
+   the source-seat reopen (§24.5), the ack-reminder snapshot, the personal notification — to
+   the **existing, unmodified** `force_trigger_float` body
+   (`20260623000002_float_source_seat_reopen.sql`), passing `initiated_by =
+'force_triggered'` / `force_triggered_by` = the acting manager. This is a deliberate reuse:
+   `force_trigger_float`'s existing schema CHECK and every downstream read path (notification
+   payload shape, `block_step_status` pre-marks) keep working unmodified.
+
+If `force_trigger_float` reports failure, `manager_float_worker` `RAISE EXCEPTION`s rather
+than returning a soft failure, which rolls back the mint from step 4 alongside it — the "one
+transaction" the plan calls for, achieved via Postgres's own rollback rather than manual
+cleanup.
+
+### 24.4 `manager_edit_float`
+
+Takes the **desired final range**, not a delta — the server computes the diff against the
+float's current destination blocks, so a client that raced a concurrent claim cannot
+desynchronize. Diffing matches source and destination blocks **by time**
+(`block_start_at`, same slot at different houses), not by array index, which is more robust
+than relying on the two id arrays staying index-aligned.
+
+- **Extend**: mint the additional destination seats, resolve the worker's Harnwell seats for
+  the newly-added range (aborting if any is missing), write both sides to the float's
+  in-progress ack state (`pending_float_in`/`pending_float_out` if still unacknowledged,
+  `floated_in`/`floated_out` if already acknowledged), and call `reopen_float_source_seats`
+  with only the newly-freed source ids — which is what fires the "shift opened" notification
+  for exactly those blocks (§24.5), reusing the existing mechanism rather than adding a
+  second one.
+- **Shrink/cancel**: for each removed block, look for a gap seat `reopen_float_source_seats`
+  may have created at that Harnwell block for this float. If it is still vacant, the worker's
+  original source row resumes as `scheduled` and the gap seat is deleted. If a third worker
+  has claimed it, the worker's original row goes to `vacant` / `vacancy_origin =
+'displaced_decliner'` (visible again for pickup, per the claim-wins rule) rather than being
+  silently deleted, and one span-collapsed notification is queued for the affected worker.
+  The now-empty destination block is retired via `retire_manual_float_blocks`. Cancel is
+  shrink applied to every remaining block; because `float_assignments` requires nonempty id
+  arrays (an existing CHECK constraint), a full cancel sets `status = 'voided'` and leaves the
+  arrays as the float's last live span — a historical record, the same convention
+  `decline_float` and `process_no_ack_float` already use.
+
+### 24.5 Directive Semantics: No Decline, No No-Acknowledgment Void
+
+Two existing functions gained a scope to `initiated_by = 'automated'`, so a manager-directed
+float is simply never selected by either:
+
+- `pending_floats_due_for_no_ack` (the orchestrator's per-tick discovery query for the
+  no-acknowledgment sweep) — a manager float is never discovered, so `process_no_ack_float`
+  (unchanged) never runs against it, and by extension neither does the Allied escalation it
+  would otherwise trigger.
+- `decline_float` — returns `{declined: false, reason: 'directive_cannot_be_declined'}` for
+  any `force_triggered` float rather than running its reconciliation body.
+
+`reopen_float_source_seats` (the shared helper both `force_trigger_float` and
+`process_float_lookup_assignment` call to reopen a floater's vacated Harnwell seat) now also
+calls `notify_shift_opened` once per invocation — i.e. once per float, or once per edit's
+newly-freed span — for the reopened block(s), span-collapsed exactly like `drop_shift`'s own
+call site. `notify_shift_opened` already resolves recipients correctly (home-Harnwell only,
+per the training invariant), so no new recipient logic was needed.
+
+### 24.6 Swap Interaction
+
+`swap_acceptance_ineligibility_reason`'s `block_in_pending_float` guard is scoped to
+`fa.initiated_by = 'automated'` in its `EXISTS` clause (replacing the old unconditional
+`status IN ('pending_float_in', 'pending_float_out')` check, which would otherwise have
+blocked a pending manager float from ever being swapped, since force_trigger_float sets
+those same statuses regardless of `initiated_by`). An automated float keeps the identical
+protection it always had.
+
+`accept_swap`'s float branch now loops per **distinct** `float_assignments` row the swap's
+touched assignment ids overlap. When the touched destination ids equal the float's _entire_
+`destination_assignment_ids`, the original single-row reassignment runs unchanged. When they
+are a **strict subset**, the row splits:
+
+1. Resolve the touched destination ids' corresponding source ids by time (same
+   `block_start_at`, Harnwell side), and the remainder on both sides.
+2. `INSERT` a new `float_assignments` row for the touched subset: `status = 'pending'`,
+   `initiated_by`/`force_triggered_by` copied from the original row, fresh
+   `acknowledged_at`/`declined_at`/`no_ack_at` (all `NULL`).
+3. Repoint the touched seats' `parent_float_id` to the new row, and call
+   `snapshot_float_ack_reminders` for it — the new floater's row starts unacknowledged with
+   its own reminder cadence, per BSpec §25.5.
+4. `UPDATE` the original row's arrays down to the remainder — it keeps its existing
+   `user_id` and ack state untouched.
+
+Everything else in `accept_swap` (the concurrency structure, the handoff branch, the
+symmetric-swap seat transfer, the invalidation backstops) is unchanged from
+`20260726000009`.
+
+### 24.7 Web Surface
+
+`floatWorker` and `editFloat` (`apps/web/lib/actions/override.ts`) are new server actions
+alongside the existing `assignWorker`/`removeWorker`, sharing `authorizeForBlocks`'s
+house-scoping. `ShiftOverrideEditor`'s action pill (`components/calendar/
+ShiftOverrideEditor.tsx`) gained a third "Float" segment, shown only when the viewed house is
+Harnwell and the seat is occupied, revealing a destination-house picker (Harnwell excluded)
+in place of the worker-card list. The floaters view (BSpec §25.4) is a new route,
+`app/(app)/floaters/`, reading through the service client (the same pattern SM builder
+snapshots already use) rather than relying on `float_assignments`' destination-scoped RLS
+policy, since a Harnwell manager needs visibility into floats going to _any_ destination
+house.
+
+### 24.8 Desk Assistant Entry-Point Removal
+
+BSpec §17's status note. Every UI entry point (web nav, the worker-portal and kiosk desk
+routes, the mobile Ask chip and screen on both platforms) was removed; the knowledge base,
+the classification/answer pipeline, and every Edge Function behind it (`supabase/functions/
+da-*`) are untouched. This is scoped as a permanent product removal rather than a
+pilot-scoped one, so restoring it later is a UI-only change, not a backend rebuild.

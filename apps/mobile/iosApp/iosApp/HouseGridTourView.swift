@@ -19,7 +19,7 @@ final class HouseGridTourObservable: ObservableObject {
     let vm: HouseGridTourViewModel
     @Published var state: HouseGridTourUiState
     private var task: Task<Void, Never>?
-    // Its OWN seen-key store, separate from the shift tour / welcome tour / tips sets, so
+    // Its OWN seen-key store, separate from every other tour's set, so
     // persisting one never clobbers another (they observe + write independently).
     private static let storageKey = "housegrid_tour_seen_keys"
 

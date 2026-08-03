@@ -16,8 +16,7 @@ the "how".
 ## The problem this replaces
 
 The pre-existing pattern for teaching a feature was a single contextual tip: a grey card,
-one paragraph, a "Got it" button (`Onboarding.CONTEXTUAL_TIPS`, still used for simpler
-surfaces — see "When NOT to build an interactive tour" below). For My Shifts specifically,
+one paragraph, a "Got it" button (`Onboarding.CONTEXTUAL_TIPS`, deleted 2026-08-03). For My Shifts specifically,
 that paragraph was doing too much work: _"Tap any shift to drop it, swap it, or hand it
 off to a housemate. You can give just part of a shift, or make it permanent."_ That's
 three verbs and a part/whole × once/permanent matrix, compressed into one sentence nobody
@@ -137,27 +136,31 @@ Each principle below names the mechanism, then says exactly where it shows up in
 ## The three-tier system (where a new tour fits)
 
 ```
-Tier 1 — WELCOME TOUR        Tier 2 — CONTEXTUAL TIP       Tier 3 — INTERACTIVE TOUR
-(orientation, once,          (one card, first visit        (multi-step, gesture-driven,
- ~20s, all 5 tabs +           to a surface, teaches         teaches ONE feature that is
- Assistant)                   one idea)                     multi-verb or has a non-
-                                                             standard control)
+INTERACTIVE TOUR                   WRITTEN GUIDE
+(multi-step, gesture-driven,       (knowledge base, sought out,
+ teaches ONE feature that is        answers a question the worker
+ multi-verb or has a non-           already has)
+ standard control)
 ```
+
+**Tiers 1 and 2 no longer exist (removed 2026-08-03).** The old Tier 1 was a first-run
+walkthrough of the five bottom tabs; Tier 2 was the one-card contextual tip above. Both
+were cut, and the reason is worth keeping: a card that arrives uninvited, before the
+worker has a reason to care, teaches nothing and trains a dismiss reflex — which the
+interactive tours then inherit. There is now no passive teaching layer at all, by design.
+See BEHAVIORAL_SPECIFICATION.md §20.1.
 
 Decision framework for a new screen/feature:
 
-- **Does the feature involve exactly one action, and is every control on it a standard OS
-  control (button, switch, tab)?** → Tier 2, a plain contextual tip is enough. Don't
-  over-build.
 - **Does the feature involve two or more distinct outcomes (verbs), OR a custom
   interactive control whose affordance isn't obvious, OR a "this happens, then that
-  happens elsewhere" flow worth demonstrating spatially?** → Tier 3, build an interactive
-  tour using this pattern.
-- **Is it something every worker needs oriented to on day one regardless of whether they
-  ever use it that session (a tab, a persistent nav element)?** → Tier 1, add a step to
-  the welcome tour. Keep Tier 1 short; don't let it become the dumping ground for every
-  feature — that recreates the original wall-of-text problem at tour scale instead of
-  paragraph scale.
+  happens elsewhere" flow worth demonstrating spatially?** → Build an interactive tour
+  using this pattern.
+- **Anything less than that** → No in-app teaching. Write a knowledge-base guide and let
+  the worker (or the Assistant) find it. Do NOT reach for a one-card tip: that tier was
+  deliberately deleted, and reintroducing it for one surface reintroduces it for all.
+- **Is it orientation to a tab or persistent nav element?** → Nothing. The bottom bar is
+  five labelled icons; a walkthrough of it was tried and removed.
 
 ## Anatomy of a Tier-3 interactive tour (the reusable parts)
 
@@ -176,14 +179,15 @@ Building a new one should reuse this shape, not reinvent it:
    screen uses — not bespoke illustration assets. Reuse real interactive controls live
    wherever the lesson benefits from active recall (principle 3).
 4. **A coach-mark card**: kicker ("STEP n"), title, body, `n of N` progress, Skip / Back /
-   Next-or-Done. Visually identical chrome to the existing `OnboardingOverlayView` /
-   `Onboarding.swift` card so a Tier-3 tour still feels like part of the same product,
-   not a separate mini-app.
+   Next-or-Done. All six tours share this chrome exactly, so any one of them feels like
+   part of the same product rather than a separate mini-app. (Until 2026-08-03 the
+   reference for this chrome was the deleted `OnboardingOverlayView`; `ShiftTourView` is
+   the reference now.)
 5. **Discoverability hints** on any non-standard control introduced (principle 4) — gated
    on the real interaction actually happening, not a timer.
 6. **Consequence animation** for any "and then this happens elsewhere" step (principle 5).
-7. **Own seen-key namespace**, separate from the welcome tour's and every other tour's
-   (`shift_tour_seen_keys` here) — persisting one tour must never clobber another's state.
+7. **Own seen-key namespace**, separate from every other tour's (`shift_tour_seen_keys`
+   here) — persisting one tour must never clobber another's state.
 8. **A re-entry pointer**, not a modal (principle 11) — reuse the
    `ShiftTourPointerCallout` shape (anchor-preference-positioned speech bubble + arrow,
    non-blocking, auto-fades) rather than inventing a new re-entry mechanic per tour.
@@ -210,14 +214,15 @@ Building a new one should reuse this shape, not reinvent it:
   ring-pulse version this replaced.
 - **A static, non-interactive mockup of a control that's interactive in real life.** If a
   step teaches "you can drag this", the tour must let the user actually drag it.
-- **Front-loading every feature into the Tier-1 welcome tour.** Keep Tier 1 to orientation
-  only; feature depth belongs in Tier 2 or 3.
+- **Any passive card that appears uninvited and clears with one tap.** This is the whole
+  reason Tiers 1 and 2 were deleted. If a surface is worth interrupting for, it earns an
+  interactive tour; if it isn't, it gets a written guide and nothing in the app.
 - **Marketing copy.** No exclamation points, no growth-funnel language, ever, in this app.
 - **Flattening a feature's real information architecture for tour simplicity.** If the
   real UI has two top-level intents and a nested sub-mode, the tour must show two
   top-level intents and a nested sub-mode (principle 6), even if three flat chips would
   have been an easier build.
-- **Re-showing an already-seen tour/tip unprompted.** One auto-fire, ever, per seen-flag.
+- **Re-showing an already-seen tour unprompted.** One auto-fire, ever, per seen-flag.
 
 ## Candidate screens (backlog for future sessions)
 
@@ -231,8 +236,10 @@ framework above:
   exactly the kind of control principle 4 exists for.
 - **Partial swap segmented timeline** ([[project_swap_segmented_timeline]]) — multi-verb
   (give/take across two legs) plus a custom control (the segmented timeline itself).
-- **House grid contact tap** — likely Tier 2 only (one verb: tap a name to call); confirm
-  against the framework rather than assuming Tier 3 is always the answer.
+- **House grid contact tap** — one verb (tap a name to call). Built anyway, as part of a
+  broader grid tour; on its own it would not have earned one.
 
-This list is a starting point, not a mandate — always re-run the decision framework
-per-screen rather than assuming every complex screen needs the full Tier-3 treatment.
+**Status: all six on this list shipped**, and the list is closed. Six tours is the
+deliberate ceiling — the point of removing the passive layers was to make in-app teaching
+rare enough that a worker still reads it. Always re-run the decision framework per-screen,
+and treat "this screen needs a tour too" as a claim to argue for, not a default.

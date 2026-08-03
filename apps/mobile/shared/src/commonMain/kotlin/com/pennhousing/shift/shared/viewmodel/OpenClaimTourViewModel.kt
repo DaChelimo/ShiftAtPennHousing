@@ -35,7 +35,7 @@ data class OpenClaimTourUiState(
  * platform renders the overlay, drives the step-2/step-3 controls, and persists
  * [OpenClaimTourUiState.seen].
  *
- * This tour is independent of the welcome tour / tips / the "Manage a shift" tour: it has
+ * This tour is independent of the "Manage a shift" tour: it has
  * its OWN seen-key store on each platform (so persisting one never clobbers another). The
  * host auto-starts it the first time the worker lands on Open Shifts, and re-opens it from
  * the Open-Shifts help button or the Settings row.

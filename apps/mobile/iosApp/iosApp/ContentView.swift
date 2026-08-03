@@ -492,7 +492,7 @@ final class FloatCarouselObservable: ObservableObject {
     deinit { task?.cancel() }
 }
 
-private enum Tab: Int { case mine, openShifts, house, updates, preferences, breakShifts, settings, swaps, assistant, coverage, hours }
+private enum Tab: Int { case mine, openShifts, house, updates, preferences, breakShifts, settings, swaps, coverage, hours }
 
 /// Observes the §11.4 house-schedule `StateFlow` (T3b), now week-paged (last week … +4).
 /// Demo by default; the live host calls `activateLive` to swap in the worker's real
@@ -651,7 +651,6 @@ struct ShiftsRootView: View {
     @StateObject private var ackModel = AckHostObservable()
     @StateObject private var updatesModel = UpdatesObservable(vm: DemoFactory.shared.updatesViewModel())
     @StateObject private var swapsModel = SwapsObservable(vm: DemoFactory.shared.swapsViewModel())
-    @StateObject private var assistantModel = AssistantObservable()
     // ----- Manager mode (docs/manager-app/SPEC.md §5). -----
     // Defaults to a plain worker so demo, tests, and a failed role read are all unaffected —
     // never let a missing capability read accidentally draw manager surfaces.
@@ -666,13 +665,12 @@ struct ShiftsRootView: View {
     @State private var cachedRoleShapeAtLaunch: CachedRoleShape?
     @StateObject private var coverageModel = CoverageObservable(vm: CoverageViewModel(requests: [], now: LiveDefaults.shared.now(), rungTimeoutMinutes: 60))
     @State private var hoursReport: HouseHoursResult?
-    // Onboarding — the first-run welcome tour + one-time contextual tips. The shared
-    // OnboardingViewModel sequences everything; this wrapper seeds it from the persisted
-    // seen-keys and persists on change. See Onboarding.swift.
-    @StateObject private var onboardingModel = OnboardingObservable()
+    // The notification ask. Live authorization state for the inline rows that replaced the
+    // first-run permission modal on 2026-08-03. See Onboarding.swift.
+    @StateObject private var notificationNudge = NotificationNudgeObservable()
     // The interactive "Manage a shift" tour (replaces the old My-Shifts contextual tip).
-    // Own seen-key store; auto-opens on the first My-Shifts landing after the welcome tour,
-    // re-openable from the header "?" and the Settings row. See ShiftTourView.swift.
+    // Own seen-key store; auto-opens on the first My-Shifts landing, re-openable from the
+    // header "?" and the Settings row. See ShiftTourView.swift.
     @StateObject private var shiftTourModel = ShiftTourObservable()
     // One-shot pointer callout on the header "?" after the tour first finishes (auto-fades).
     @State private var showTourPointer = false
@@ -719,11 +717,6 @@ struct ShiftsRootView: View {
     // §4 save-safety — a tab switch requested while Preferences has unsaved edits is
     // deferred here until the guard dialog resolves it.
     @State private var pendingTab: Tab?
-    // The Assistant has no bottom-bar item of its own (it opens from the My-Shifts FAB or
-    // the More sheet, from whichever tab the worker was on), so its back button needs
-    // somewhere to return to. Captured in `openAssistant()`, not derived from `tab` later,
-    // since `tab` is already `.assistant` by the time the Assistant's own header renders.
-    @State private var previousBeforeAssistant: Tab = .mine
     @State private var dropTarget: MyShift?
     @State private var claimTarget: OpenShift?
     @State private var showAck = false
@@ -759,11 +752,14 @@ struct ShiftsRootView: View {
     @State private var showMore = false
     // T2-13 — push/deep-link routed full-screen ack (AppDelegate / onOpenURL set it).
     @ObservedObject private var deepLink = DeepLinkRouter.shared
-    // Notification priming — the pre-permission primer shown after the welcome tour.
-    // `notifOsCanPrompt` is resolved asynchronously (UNUserNotificationCenter settings)
-    // once the tour is done; `notifPrimerResponded` is the once-per-install guard.
-    @State private var notifPrimerResponded = NotificationPrimingStore.hasResponded()
-    @State private var notifOsCanPrompt = false
+    // The two once-per-install contextual notification asks. Latched for the life of the
+    // toast they ride, because burning the flag would otherwise erase the row as it appeared.
+    @State private var askedAfterClaim =
+        NotificationPrimingStore.hasAsked(NotificationPriming.shared.ASKED_AFTER_CLAIM_KEY)
+    @State private var askedAfterSwap =
+        NotificationPrimingStore.hasAsked(NotificationPriming.shared.ASKED_AFTER_SWAP_KEY)
+    @State private var claimNudgeShowing = false
+    @State private var swapNudgeShowing = false
 
     /// Run a best-effort live write and surface failure instead of swallowing it. `op`
     /// returns whether the EF accepted the write (`EdgeResult.ok`); on failure the error
@@ -895,25 +891,33 @@ struct ShiftsRootView: View {
         )
     }
 
-    /// True once the first-run welcome tour has finished or been skipped (the shared
-    /// predicate flips to "no longer show the tour").
-    private var onboardingTourDone: Bool {
-        !Onboarding.shared.shouldShowWelcomeTour(seen: onboardingModel.state.seen)
+    /// Latch the after-claim contextual row and burn its once-per-install flag. Called when a
+    /// claim succeeds; a no-op once alerts are on or that moment has already asked.
+    private func raiseClaimNudge() {
+        guard !claimNudgeShowing,
+              NotificationPriming.shared.shouldShowContextualNudge(
+                  granted: notificationNudge.granted, alreadyAsked: askedAfterClaim
+              ) else { return }
+        claimNudgeShowing = true
+        NotificationPrimingStore.markAsked(NotificationPriming.shared.ASKED_AFTER_CLAIM_KEY)
+        askedAfterClaim = true
     }
 
-    /// If the tour is done and the worker has not responded to the primer yet, ask the OS
-    /// whether a prompt would still surface (never-asked), so the primer can appear.
-    private func refreshNotifPrimerEligibility() {
-        guard onboardingTourDone, !notifPrimerResponded else { return }
-        NotificationAuthorizer.osCanPrompt { notifOsCanPrompt = $0 }
+    /// The after-swap twin of `raiseClaimNudge`, fired when a swap or hand-off is sent.
+    private func raiseSwapNudge() {
+        guard !swapNudgeShowing,
+              NotificationPriming.shared.shouldShowContextualNudge(
+                  granted: notificationNudge.granted, alreadyAsked: askedAfterSwap
+              ) else { return }
+        swapNudgeShowing = true
+        NotificationPrimingStore.markAsked(NotificationPriming.shared.ASKED_AFTER_SWAP_KEY)
+        askedAfterSwap = true
     }
 
-    /// Auto-starts the interactive tour for whichever root tab is currently showing, once the
-    /// first-run welcome tour is done. Shared by the initial landing (`.onAppear`, since the
-    /// default tab is `.mine` and SwiftUI's `onChange` never fires for an unchanged initial
-    /// value), by tab changes, and by the welcome tour finishing while already parked on a tab.
+    /// Auto-starts the interactive tour for whichever root tab is currently showing. Shared by
+    /// the initial landing (`.onAppear`, since the default tab is `.mine` and SwiftUI's
+    /// `onChange` never fires for an unchanged initial value) and by tab changes.
     private func autoStartTourForCurrentTab() {
-        guard onboardingTourDone else { return }
         switch tab {
         case .mine: shiftTourModel.autoStart()
         case .openShifts: openClaimTourModel.autoStart()
@@ -996,7 +1000,6 @@ struct ShiftsRootView: View {
                                 ((try? await repo.setNotificationPreferences(prefs: prefs)) ?? false) as! Bool
                             }
                         },
-                        onReplayTour: { onboardingModel.replay() },
                         onReplayShiftTour: {
                             requestTab(.mine)
                             shiftTourModel.replay()
@@ -1028,6 +1031,17 @@ struct ShiftsRootView: View {
     }
     private var content: some View {
         VStack(spacing: 0) {
+            // BSpec §20.2 — the standing notification ask, pinned above the schedule on My
+            // Shifts while alerts are off. My Shifts only: this is the surface where "a
+            // reminder before your shift" means something, and one ask per app is the point.
+            // No dismiss control, so it stays until alerts are actually on.
+            if tab == .mine && NotificationPriming.shared.shouldShowStandingNudge(granted: notificationNudge.granted) {
+                NotificationNudgeRow(
+                    model: notificationNudge,
+                    body_: NotificationPriming.shared.BODY_MY_SHIFTS,
+                    tag: "notification_nudge"
+                )
+            }
             // §4.4 — while a break's claim window is open, promote the Break calendar with a
             // visible banner from every other tab (it otherwise lives in the More overflow).
             if breakModel.state.phase == .claimWindow && tab != .breakShifts {
@@ -1050,8 +1064,6 @@ struct ShiftsRootView: View {
                     breakTab
                 } else if tab == .house {
                     houseTab
-                } else if tab == .assistant {
-                    AssistantTabView(model: assistantModel, onBack: { requestTab(previousBeforeAssistant) })
                 } else if tab == .coverage {
                     // Manager only (docs/manager-app/SPEC.md §6.1). Renders its own internal
                     // ScrollView (empty state vs. the request list), so it lives outside the
@@ -1088,7 +1100,6 @@ struct ShiftsRootView: View {
                         case .swaps: swapsTab
                         case .preferences: EmptyView() // rendered above, outside the ScrollView
                         case .breakShifts: EmptyView() // rendered above, outside the ScrollView
-                        case .assistant: EmptyView() // rendered above, outside the ScrollView
                         case .coverage: EmptyView() // rendered above, outside the ScrollView
                         case .hours: EmptyView() // rendered above, outside the ScrollView
                         case .settings: settingsTab
@@ -1100,18 +1111,6 @@ struct ShiftsRootView: View {
             // Toasts now sit at the BOTTOM (above the tab bar) — the intuitive place
             // for transient confirmations, and clear of the notch / status bar.
             .overlay(alignment: .bottom) { toastStack }
-            // The "Ask" affordance lives on the My-Shifts home screen ONLY. It used to ride
-            // every tab, but a floating button that follows you everywhere is noise rather
-            // than discoverability: it covers content on feeds and grids where the Assistant
-            // isn't what you came to do. The Assistant stays reachable from "More" everywhere.
-            // The first-run tour rings this button (on My Shifts, where the tour runs).
-            .overlay(alignment: .bottomTrailing) {
-                if tab == .mine {
-                    AskAssistantButtonView { openAssistant() }
-                        .padding(.trailing, 16)
-                        .padding(.bottom, 14)
-                }
-            }
 
             // The week navigator lives at the BOTTOM (above the tab bar) on My Shifts.
             if tab == .mine {
@@ -1141,17 +1140,6 @@ struct ShiftsRootView: View {
         // have this problem.
         .overlay(alignment: .topLeading) {
             Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("shifts_screen")
-        }
-        // The spotlight + coach-mark overlay, above the whole screen (tab bar included).
-        // Anchors are collected from the tab items + Ask button via onboardingAnchor(_:).
-        .overlayPreferenceValue(OnboardingAnchorKey.self) { anchors in
-            GeometryReader { proxy in
-                OnboardingOverlayView(
-                    model: onboardingModel,
-                    ringRect: { id in anchors[id].map { proxy[$0] } },
-                    fullSize: proxy.size
-                )
-            }
         }
         // The interactive "Manage a shift" tour — replaces the plain My-Shifts tip. Above the
         // whole screen; auto-opens on the first My-Shifts landing (below) and on replay.
@@ -1209,72 +1197,27 @@ struct ShiftsRootView: View {
         .modifier(BreakTourOverlay(model: breakTourModel, showPointer: $showBreakTourPointer))
         .modifier(HouseGridTourOverlay(model: houseGridTourModel, showPointer: $showHouseGridTourPointer))
         .modifier(OpenClaimTourOverlay(model: openClaimTourModel, showPointer: $showOpenClaimTourPointer))
-        // Notification priming — once the welcome tour is done, explain WHY alerts matter
-        // and (only on Confirm) fire the real OS permission request. Replaces the cold
-        // launch-time request that used to fire in AppDelegate.
-        .overlay {
-            if NotificationPriming.shared.shouldShowPrimer(
-                tourDone: onboardingTourDone,
-                osCanPrompt: notifOsCanPrompt,
-                alreadyResponded: notifPrimerResponded
-            ) {
-                NotificationPrimingCardView(
-                    onConfirm: {
-                        NotificationAuthorizer.request()
-                        NotificationPrimingStore.markResponded()
-                        notifPrimerResponded = true
-                    },
-                    onDismiss: {
-                        NotificationPrimingStore.markResponded()
-                        notifPrimerResponded = true
-                    }
-                )
-            }
-        }
-        // Kick off the first-run tour, and raise one-time tips as the worker first reaches
-        // each root-level surface (mirrors the Android LaunchedEffects). Also auto-starts the
-        // current tab's interactive tour for the initial landing, since the default tab is
-        // `.mine` and `.onChange(of: tab)` never fires for an unchanged initial value.
+        // Auto-start the current tab's interactive tour for the initial landing, since the
+        // default tab is `.mine` and `.onChange(of: tab)` never fires for an unchanged initial
+        // value. Also resolve notification authorization for the inline ask.
         .onAppear {
-            onboardingModel.start()
-            refreshNotifPrimerEligibility()
+            notificationNudge.refresh()
             autoStartTourForCurrentTab()
         }
-        // When the tour finishes (or was already done for a returning worker), ask the OS
-        // whether a notification prompt would still surface, so the primer can appear, and
-        // auto-start the current tab's tour if the worker is still parked on it.
-        .onChange(of: onboardingTourDone) { done in
-            if done {
-                refreshNotifPrimerEligibility()
-                autoStartTourForCurrentTab()
-            }
-        }
         .onChange(of: tab) { newTab in
+            // Re-read authorization on every tab change so a grant made in Settings (after the
+            // row deep-links there) retires the standing row without a relaunch.
+            notificationNudge.refresh()
             switch newTab {
-            case .mine:
-                // The interactive shift tour supersedes the old My-Shifts tip. Gate on the
-                // welcome tour being done so orientation and this teaching don't overlap.
-                if onboardingTourDone { shiftTourModel.autoStart() }
-            case .openShifts:
-                // The claim tour supersedes the old Open-Shifts tip on iOS (its whole point
-                // is teaching one-time vs permanent pickup, which the flat tip never covered).
-                if onboardingTourDone { openClaimTourModel.autoStart() }
-            case .house:
-                // The House-grid tour supersedes the old flat "Call the desk" tip on iOS.
-                if onboardingTourDone { houseGridTourModel.autoStart() }
-            case .swaps: onboardingModel.vm.triggerTip(trigger: .incomingSwap)
-            case .preferences:
-                // No prior Tier-2 tip existed for Preferences; this is net-new teaching.
-                if onboardingTourDone { preferencesTourModel.autoStart() }
+            case .mine: shiftTourModel.autoStart()
+            case .openShifts: openClaimTourModel.autoStart()
+            case .house: houseGridTourModel.autoStart()
+            case .preferences: preferencesTourModel.autoStart()
             default: break
             }
         }
         .onChange(of: breakModel.state.phase) { phase in
-            // The Break tour supersedes the old flat break-window tip on iOS.
-            if phase == .claimWindow, onboardingTourDone { breakTourModel.autoStart() }
-        }
-        .onChange(of: floatCarouselModel.state.total) { total in
-            if total > 0 { onboardingModel.vm.triggerTip(trigger: .floatRequest) }
+            if phase == .claimWindow { breakTourModel.autoStart() }
         }
         .onChange(of: deepLink.requestedRoute) { route in
             // A widget tile asked to land on a specific tab.
@@ -1509,16 +1452,21 @@ struct ShiftsRootView: View {
             writeError = nil
         }
         .task(id: claimSuccessMessage) {
-            // Auto-dismiss the claim/pickup confirmation toast, mirroring writeError.
-            guard claimSuccessMessage != nil else { return }
+            // Auto-dismiss the claim/pickup confirmation toast, mirroring writeError. The
+            // contextual notification ask rides the same lifetime.
+            guard claimSuccessMessage != nil else { claimNudgeShowing = false; return }
+            raiseClaimNudge()
             try? await Task.sleep(nanoseconds: toastDurationNanos)
             claimSuccessMessage = nil
+            claimNudgeShowing = false
         }
         .task(id: swapProposed) {
             // Auto-dismiss the swap-proposed toast, mirroring writeError.
-            guard swapProposed else { return }
+            guard swapProposed else { swapNudgeShowing = false; return }
+            raiseSwapNudge()
             try? await Task.sleep(nanoseconds: toastDurationNanos)
             swapProposed = false
+            swapNudgeShowing = false
         }
         .task(id: floatCarouselModel.state.allHandled) {
             // §7.1 — when the LAST float resolves (accept OR decline), reuse the auto-dismissing
@@ -1690,6 +1638,23 @@ struct ShiftsRootView: View {
                 ShiftToast(message: "Swap proposed. Your housemate has been asked", tone: .success, systemIcon: ShiftIcons.check)
                     .accessibilityIdentifier("swap_proposed_toast")
             }
+            // BSpec §20.2 — the two contextual asks, riding the success toast of an action
+            // whose payoff IS a push: the reminder for the shift just claimed, and the reply
+            // to the swap just sent. Latched by `raiseClaimNudge` / `raiseSwapNudge`.
+            if claimNudgeShowing {
+                NotificationNudgeRow(
+                    model: notificationNudge,
+                    body_: NotificationPriming.shared.BODY_AFTER_CLAIM,
+                    tag: "notification_nudge_claim"
+                )
+            }
+            if swapNudgeShowing {
+                NotificationNudgeRow(
+                    model: notificationNudge,
+                    body_: NotificationPriming.shared.BODY_AFTER_SWAP,
+                    tag: "notification_nudge_swap"
+                )
+            }
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 10)
@@ -1699,7 +1664,7 @@ struct ShiftsRootView: View {
     private var isSecondary: Bool {
         // `Hours` lights "More" for a plain worker/manager (no bar slot for it there) but NOT
         // for an SM, whose bar carries it directly — see `moreSelects` in `bottomBarTabs`.
-        tab == .updates || tab == .preferences || tab == .breakShifts || tab == .settings || tab == .assistant
+        tab == .updates || tab == .preferences || tab == .breakShifts || tab == .settings
             || (tab == .hours && !capabilities.isStudentManager)
     }
 
@@ -1731,31 +1696,24 @@ struct ShiftsRootView: View {
                 barItemFor(t)
             }
             barItem("More", ShiftIcons.more, "tab_more", selected: isSecondary, badge: updatesModel.hasUnread) { showMore = true }
-                .onboardingAnchor(OnboardingAnchorId.more)
         }
         .padding(.top, 7)
         .padding(.bottom, 2)
         .background(c.surface)
     }
 
-    /// Title/icon/id/action/anchor for one bar tab. Onboarding anchors exist only for the four
-    /// destinations the welcome tour already teaches; Coverage and Hours have none yet (no
-    /// tour covers manager mode).
+    /// Title / icon / id / action for one bar tab.
     @ViewBuilder
     private func barItemFor(_ t: Tab) -> some View {
         switch t {
         case .mine:
             barItem("My Shifts", ShiftIcons.calendar, "tab_my_shifts", selected: tab == .mine) { requestTab(.mine) }
-                .onboardingAnchor(OnboardingAnchorId.myShifts)
         case .openShifts:
             barItem("Open", ShiftIcons.plus, "tab_open_shifts", selected: tab == .openShifts) { requestTab(.openShifts) }
-                .onboardingAnchor(OnboardingAnchorId.open)
         case .house:
             barItem("House", ShiftIcons.building, "tab_house", selected: tab == .house) { requestTab(.house) }
-                .onboardingAnchor(OnboardingAnchorId.house)
         case .swaps:
             barItem("Swaps", ShiftIcons.refresh, "tab_swaps", selected: tab == .swaps) { requestTab(.swaps) }
-                .onboardingAnchor(OnboardingAnchorId.swaps)
         case .coverage:
             barItem(
                 "Coverage", ShiftIcons.warning, "tab_coverage", selected: tab == .coverage,
@@ -1837,7 +1795,6 @@ struct ShiftsRootView: View {
             }
             moreRow("Break shifts", ShiftIcons.snowflake, "tab_break", .breakShifts)
             moreRow("Settings", ShiftIcons.tune, "tab_settings", .settings)
-            moreRow("Assistant", ShiftIcons.sparkles, "tab_assistant", .assistant)
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1846,7 +1803,7 @@ struct ShiftsRootView: View {
         .background(c.bg)
         // A non-wrapping marker, not the container itself — an identifier set directly on a
         // wrapping VStack leaks onto every descendant element in the XCUITest tree, shadowing
-        // tab_updates/tab_preferences/tab_break/tab_settings/tab_assistant.
+        // tab_updates/tab_preferences/tab_break/tab_settings.
         .overlay(alignment: .topLeading) {
             Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("more_sheet")
         }
@@ -1860,7 +1817,7 @@ struct ShiftsRootView: View {
         let c = ShiftColors.resolve(scheme)
         return Button(action: {
             showMore = false
-            if which == .assistant { openAssistant() } else { requestTab(which) }
+            requestTab(which)
         }) {
             HStack(spacing: 14) {
                 Image(systemName: icon).font(.system(size: 18)).foregroundColor(c.sec)
@@ -1882,7 +1839,7 @@ struct ShiftsRootView: View {
         switch which {
         case .mine: model.vm.selectTab(tab: .myShifts)
         case .openShifts: model.vm.selectTab(tab: openSub == 0 ? .openHome : .openOther)
-        case .house, .updates, .swaps, .preferences, .breakShifts, .settings, .assistant, .coverage, .hours: break
+        case .house, .updates, .swaps, .preferences, .breakShifts, .settings, .coverage, .hours: break
         }
     }
 
@@ -1893,13 +1850,6 @@ struct ShiftsRootView: View {
         } else {
             navigateTo(which)
         }
-    }
-
-    /// Opens the Assistant, capturing wherever the worker was so its back button can return
-    /// there — see `previousBeforeAssistant`.
-    private func openAssistant() {
-        previousBeforeAssistant = tab
-        requestTab(.assistant)
     }
 
     private func kitState(_ s: MyShiftCardState) -> ShiftState {

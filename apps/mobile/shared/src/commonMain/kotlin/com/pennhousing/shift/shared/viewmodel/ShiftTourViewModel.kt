@@ -33,9 +33,9 @@ data class ShiftTourUiState(
  * It sequences the three steps and owns the seen-flag; the platform renders the overlay,
  * drives the step-2 controls, and persists [ShiftTourUiState.seen].
  *
- * This tour is independent of the welcome tour / contextual tips: it has its OWN seen-key
+ * This tour is independent of every other tour: it has its OWN seen-key
  * store on each platform (so persisting one never clobbers the other). The host auto-starts
- * it the first time the worker lands on My Shifts after the welcome tour, and re-opens it
+ * it the first time the worker lands on My Shifts, and re-opens it
  * from the My-Shifts help button or the Settings row.
  */
 class ShiftTourViewModel(

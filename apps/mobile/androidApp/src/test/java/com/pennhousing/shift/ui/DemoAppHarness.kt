@@ -3,7 +3,6 @@ package com.pennhousing.shift.ui
 import androidx.compose.runtime.Composable
 import com.pennhousing.shift.shared.samples.DemoData
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
-import com.pennhousing.shift.shared.viewmodel.AssistantViewModel
 import com.pennhousing.shift.shared.viewmodel.BreakCalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.HouseScheduleViewModel
@@ -44,7 +43,6 @@ internal fun DemoShiftsApp() {
                         DemoData.DEMO_BROADCAST_SUBSCRIBED,
                         DemoData.DEMO_APP_VERSION,
                     ),
-                assistantVm = AssistantViewModel(),
             ),
         // No actions: the demo relies on every default no-op (optimistic local moves, no network).
         hostState = ShiftsHostState(now = now, currentWeeklyHours = DemoData.DEMO_WEEKLY_HOURS),

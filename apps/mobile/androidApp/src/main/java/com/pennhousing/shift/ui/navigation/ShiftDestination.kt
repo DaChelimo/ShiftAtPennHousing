@@ -40,9 +40,6 @@ sealed interface ShiftDestination : NavKey {
 
     @Serializable data object Settings : ShiftDestination
 
-    /** The Desk Assistant chat. */
-    @Serializable data object Assistant : ShiftDestination
-
     /**
      * MANAGER ONLY — the Allied coverage inbox (BSpec §5.4a). A manager's start destination,
      * because it is the one surface where a delay means a desk goes empty.
@@ -85,22 +82,21 @@ sealed interface ShiftDestination : NavKey {
         val STUDENT_MANAGER_BOTTOM_BAR: List<ShiftDestination> = listOf(MyShifts, OpenShifts, House, Hours)
 
         /**
-         * Destinations that light the "More" item up as selected: the episodic ones plus
-         * [Assistant], since the Assistant is only reachable from the My-Shifts FAB or the
-         * More sheet and has no bottom-bar item of its own.
+         * Destinations that light the "More" item up as selected: the episodic ones, which
+         * have no bottom-bar item of their own.
          *
          * [Hours] is here for a manager (whose bar omits it) and NOT for an SM (whose bar
          * includes it). Membership is computed per role by [moreSelects] rather than being a
          * single constant, because a destination that is both in the bar and in MORE_SELECTS
          * lights two items at once.
          */
-        val MORE_SELECTS: Set<ShiftDestination> = setOf(Updates, Preferences, BreakShifts, Settings, Assistant)
+        val MORE_SELECTS: Set<ShiftDestination> = setOf(Updates, Preferences, BreakShifts, Settings)
 
         /** Every destination, each of which owns its own back stack. */
         val ALL: Set<ShiftDestination> =
             setOf(
                 MyShifts, OpenShifts, House, Swaps, Updates, Preferences, BreakShifts, Settings,
-                Assistant, Coverage, Hours,
+                Coverage, Hours,
             )
 
         /**

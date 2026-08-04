@@ -61,8 +61,6 @@ object WorkerBackend {
 
     val breakRepository: BreakRepository by lazy { BreakRepository(client) }
 
-    val assistantRepository: AssistantRepository by lazy { AssistantRepository() }
-
     /** SM/HM/BM/RSM manager write surface (add-a-worker, force-trigger from the House grid). */
     val managerRepository: ManagerRepository by lazy { ManagerRepository(client) }
 

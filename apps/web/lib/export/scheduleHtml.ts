@@ -173,7 +173,7 @@ export function buildScheduleExportHtml(params: ScheduleExportParams): string {
     <tbody>${bodyRows}</tbody>
   </table>
   <div class="legend">${legend}</div>
-  <p class="footer">Exported from Shift@PennHousing. This is a snapshot, not a live view.</p>
+  <p class="footer">Exported from SHIFT. This is a snapshot, not a live view.</p>
 </body>
 </html>`;
 }

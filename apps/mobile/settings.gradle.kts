@@ -27,7 +27,7 @@ dependencyResolutionManagement {
 
 // No spaces: rootProject.name must match [a-zA-Z]([A-Za-z0-9-_])* for
 // TYPESAFE_PROJECT_ACCESSORS (projects.shared). The user-facing app name lives
-// in androidApp strings.xml (@string/app_name = "Shift PennHousing").
-rootProject.name = "ShiftPennHousing"
+// in androidApp strings.xml (@string/app_name = "SHIFT").
+rootProject.name = "Shift"
 include(":shared")
 include(":androidApp")

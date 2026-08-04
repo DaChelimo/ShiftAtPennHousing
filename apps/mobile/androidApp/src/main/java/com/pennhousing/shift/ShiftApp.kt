@@ -19,7 +19,7 @@ import com.pennhousing.shift.shared.platform.registerPushToken
  * has no default app, so the call throws and we simply skip registration. The app
  * otherwise runs fully on [com.pennhousing.shift.shared.samples.DemoData].
  */
-class ShiftPennHousingApp : Application() {
+class ShiftApp : Application() {
     override fun onCreate() {
         super.onCreate()
 

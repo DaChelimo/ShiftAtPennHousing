@@ -6,6 +6,6 @@ import kotlin.test.assertTrue
 class GreetingTest {
     @Test
     fun greetingMentionsTheApp() {
-        assertTrue(Greeting().greet().contains("Shift@PennHousing"))
+        assertTrue(Greeting().greet().contains("SHIFT"))
     }
 }

@@ -1,7 +1,7 @@
 // Copy to Config.xcconfig (gitignored, same directory) and fill in. Read by every
 // build path: Xcode Cmd+R, `xcodebuild`, UI tests. Rebuild after editing.
 
-APP_NAME = Shift PennHousing
+APP_NAME = SHIFT
 BUNDLE_ID = com.pennhousing.shift
 TEAM_ID =
 

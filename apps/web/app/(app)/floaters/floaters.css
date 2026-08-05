@@ -1,0 +1,39 @@
+.tbl {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.tbl th,
+.tbl td {
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 13.5px;
+}
+.tbl th {
+  color: var(--text-secondary);
+  font-weight: 600;
+  background: var(--surface-2);
+}
+.tbl tr:last-child td {
+  border-bottom: none;
+}
+.floater-state {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.floater-state-awaiting_confirmation {
+  color: var(--st-pending);
+  background: var(--st-pending-bg);
+}
+.floater-state-confirmed {
+  color: var(--st-float-fg);
+  background: var(--st-float-bg);
+}

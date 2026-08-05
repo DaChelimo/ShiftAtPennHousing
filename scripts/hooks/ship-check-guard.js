@@ -224,23 +224,11 @@ function main() {
 
   if (journeys.length > 0 && freshReportCovers(journeys, behavioral)) process.exit(0);
 
-  const journeyLine =
-    journeys.length > 0
-      ? journeys.map((j) => `  - ${j}`).join('\n')
-      : '  - (no journey matched by path; scope it yourself before running)';
-
-  const layerLine = layers.length > 0 ? layers.join(', ') : 'unclassified paths';
+  const journeyLine = journeys.length > 0 ? journeys.join(', ') : 'unscoped';
 
   ask(
-    `This commit changes behavior on ${behavioral.length} file(s) and no docs/qa report covers it.\n\n` +
-      `Layers touched: ${layerLine}\n` +
-      `Journeys implicated:\n${journeyLine}\n\n` +
-      `Run /ship-check against those journeys before committing. It spawns the ship-check ` +
-      `persona (.claude/agents/ship-check.md), which walks the journey end to end (mobile UI, ` +
-      `ViewModel, web, Edge Function, RPC, RLS, notification) and files grounded fix tickets ` +
-      `into docs/qa/.\n\n` +
-      `This is advisory, not a block. Proceed if the change does not warrant a pass. To skip ` +
-      `permanently for this commit, put "qa:skip" in the commit message.`,
+    `Run /ship-check first (journeys: ${journeyLine}). ` +
+      `Or add "qa:skip" to the commit message to proceed anyway.`,
   );
 }
 

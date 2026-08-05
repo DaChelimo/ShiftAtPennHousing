@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
 import { Button } from '../../../components/ui/Button';
 import { Field, TextInput } from '../../../components/ui/Field';
 import { LogoMark, Wordmark } from '../../../components/ui/Logo';
+import { PASSWORDLESS_AUTH_ENABLED } from '../../../lib/env';
 import { createClient } from '../../../lib/supabase/client';
 import '../../login/login.css';
 
@@ -12,10 +14,21 @@ import '../../login/login.css';
 // recovery link to /auth/update-password. For security we always show the same
 // confirmation whether or not the address exists (no account enumeration), and even
 // when SMTP is not configured (the admin can still hand out a link via "Resend invite").
+//
+// There is no password in production once passwordless auth is live (PASSWORDLESS_AUTH_ENABLED),
+// so this route is unreachable there — redirect straight back to /login rather than just
+// hiding the link that points here, since the route itself stays directly navigable otherwise.
 export default function ForgotPasswordPage() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
+
+  useEffect(() => {
+    if (PASSWORDLESS_AUTH_ENABLED) router.replace('/login');
+  }, [router]);
+
+  if (PASSWORDLESS_AUTH_ENABLED) return null;
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();

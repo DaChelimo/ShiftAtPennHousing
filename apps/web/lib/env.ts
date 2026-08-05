@@ -16,6 +16,17 @@ const LOCAL_SERVICE_ROLE_KEY =
 export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? LOCAL_SUPABASE_URL;
 export const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? LOCAL_ANON_KEY;
 
+// Decides whether login is passwordless (email OTP) or password-based. Defaults to
+// 'development' (password auth, matching the seeded abc123 local accounts) everywhere
+// except a deploy target that explicitly sets NEXT_PUBLIC_AUTH_MODE=production. This is
+// an env var, not a system_config row, on purpose: it decides whether a password field
+// exists in the UI at all, and changing it must require a redeploy, not a runtime UPDATE
+// an app admin could flip. See docs/... (2-factor / passwordless auth plan).
+export const AUTH_MODE = (process.env.NEXT_PUBLIC_AUTH_MODE ?? 'development') as
+  | 'production'
+  | 'development';
+export const PASSWORDLESS_AUTH_ENABLED = AUTH_MODE === 'production';
+
 // The public origin of THIS web app (not Supabase). Used to build the redirect target
 // for invite / password-setup / reset links so GoTrue sends the worker back to
 // /auth/update-password. Must be listed in supabase/config.toml site_url /

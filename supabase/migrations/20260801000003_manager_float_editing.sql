@@ -43,8 +43,8 @@ GRANT EXECUTE ON FUNCTION retire_manual_float_blocks(uuid[]) TO service_role;
 CREATE OR REPLACE FUNCTION manager_edit_float(
   p_initiator_user_id uuid,
   p_float_id           uuid,
-  p_new_range_start    timestamptz,
-  p_new_range_end      timestamptz,
+  p_new_range_start    timestamptz DEFAULT NULL,
+  p_new_range_end      timestamptz DEFAULT NULL,
   p_now                timestamptz DEFAULT now()
 )
 RETURNS jsonb

@@ -246,8 +246,8 @@ export async function editFloat(input: {
   const { data, error } = await service.rpc('manager_edit_float', {
     p_initiator_user_id: me!.userId,
     p_float_id: input.floatId,
-    p_new_range_start: input.rangeStart,
-    p_new_range_end: input.rangeEnd,
+    p_new_range_start: input.rangeStart ?? undefined,
+    p_new_range_end: input.rangeEnd ?? undefined,
     p_now: (await simNow()).toISOString(),
   });
   if (error !== null) return { ok: false, error: friendlyMessage(error.message) };

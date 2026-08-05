@@ -2,10 +2,10 @@
   "$schema": "https://openapi.vercel.sh/microfrontends.json",
   "version": "1",
   "applications": {
-    "shift-web": {
+    "shift-app": {
       "packageName": "@shift/web",
       "development": {
-        "fallback": "REPLACE-WITH-REAL-PRODUCTION-HOST.invalid",
+        "fallback": "shift-app-one-iota.vercel.app",
         "local": 3000
       }
     },

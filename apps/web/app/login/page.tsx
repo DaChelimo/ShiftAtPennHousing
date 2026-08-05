@@ -136,7 +136,7 @@ function OtpLoginForm() {
           data-testid="login-send-code"
           type="submit"
           disabled={submitting || email.trim() === ''}
-          iconRight="arrowRight"
+          className="login-cta"
           full
         >
           {submitting ? 'Sending…' : 'Send code'}
@@ -188,7 +188,7 @@ function OtpLoginForm() {
         data-testid="login-verify"
         type="submit"
         disabled={submitting || code.length !== OTP_LENGTH}
-        iconRight="arrowRight"
+        className="login-cta"
         full
       >
         {submitting ? 'Verifying…' : 'Verify and sign in'}
@@ -315,7 +315,7 @@ function PasswordLoginForm() {
         data-testid="login-submit"
         type="submit"
         disabled={submitting || email.trim() === '' || password === ''}
-        iconRight="arrowRight"
+        className="login-cta"
         full
       >
         {submitting ? 'Signing in…' : 'Sign in'}

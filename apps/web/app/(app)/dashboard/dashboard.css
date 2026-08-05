@@ -1,0 +1,392 @@
+/* ============================================================================
+   Dashboard — the console's landing page.
+
+   Route-scoped (imported by app/(app)/dashboard/page.tsx), like floaters.css.
+   Every colour here is a token from globals.css, so light/dark come for free and
+   the shift-state palette stays the single source of truth for what a vacant seat
+   or a float looks like.
+
+   Layout intent: one full-width "right now" strip across the top (the only thing
+   worth interrupting someone for), then a 1.7fr/1fr split — the action queue on
+   the left, standing context in the right rail. It collapses to one column at
+   1080px, in the same order.
+   ========================================================================== */
+
+.dash {
+  display: grid;
+  grid-template-columns: 1.7fr 1fr;
+  gap: var(--sp-6);
+  align-items: start;
+}
+.dash-main,
+.dash-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  min-width: 0;
+}
+.dash-full {
+  grid-column: 1 / -1;
+}
+@media (max-width: 1080px) {
+  .dash {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- Section heading (shared by every block below) ---------- */
+
+.dash-sec-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-4);
+}
+.dash-sec-head h2 {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin: 0;
+}
+.dash-sec-link {
+  font-size: 13px;
+  color: var(--brand);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.dash-sec-link:hover {
+  text-decoration: underline;
+}
+
+/* ---------- "Right now" strip ---------- */
+
+.dash-now {
+  padding: var(--sp-5) var(--sp-6);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--sp-5);
+  align-items: center;
+}
+@media (max-width: 760px) {
+  .dash-now {
+    grid-template-columns: 1fr;
+  }
+}
+.dash-now-label {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: var(--sp-4);
+}
+
+/* The live dot. Steady, not blinking — a manager reads this page for minutes at
+   a time and an animated element in the corner of the eye is fatiguing. */
+.dash-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  background: var(--success);
+  box-shadow: 0 0 0 3px var(--success-bg);
+  flex: 0 0 auto;
+}
+.dash-live-dot.is-gap {
+  background: var(--st-danger);
+  box-shadow: 0 0 0 3px var(--st-danger-bg);
+}
+.dash-live-dot.is-idle {
+  background: var(--border-strong);
+  box-shadow: none;
+}
+
+.dash-desk-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+.dash-desk {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--brand);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  min-width: 0;
+}
+.dash-desk.is-vacant {
+  border-left-color: var(--st-danger);
+  background: var(--st-danger-bg);
+  border-color: var(--st-danger-bd);
+}
+.dash-desk.is-float {
+  border-left-color: var(--st-float-fg);
+}
+.dash-desk-name {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dash-desk-time {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Coming-up rail on the right of the strip. */
+.dash-next {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding-left: var(--sp-6);
+  border-left: 1px solid var(--border-subtle);
+  min-width: 220px;
+}
+@media (max-width: 760px) {
+  .dash-next {
+    padding-left: 0;
+    padding-top: var(--sp-5);
+    border-left: none;
+    border-top: 1px solid var(--border-subtle);
+  }
+}
+.dash-next-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  font-size: 13px;
+}
+.dash-next-time {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  min-width: 46px;
+}
+.dash-next-who {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dash-next-who.is-vacant {
+  color: var(--st-danger);
+  font-weight: 600;
+}
+
+/* ---------- Action queue ---------- */
+
+.dash-actions {
+  display: flex;
+  flex-direction: column;
+}
+.dash-action {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--sp-4);
+  align-items: center;
+  padding: var(--sp-5);
+  border-bottom: 1px solid var(--border-subtle);
+  /* The severity stripe. Colour is never the ONLY signal — the icon and the
+     wording carry it too — but it is what makes the queue scannable at a glance. */
+  border-left: 3px solid var(--border-subtle);
+  text-decoration: none;
+  color: inherit;
+  transition: background var(--motion) var(--ease);
+}
+.dash-action:last-child {
+  border-bottom: none;
+}
+.dash-action:hover {
+  background: var(--surface-2);
+}
+.dash-action.sev-critical {
+  border-left-color: var(--st-danger);
+}
+.dash-action.sev-warning {
+  border-left-color: var(--warn);
+}
+.dash-action.sev-info {
+  border-left-color: var(--info);
+}
+
+.dash-action-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  flex: 0 0 auto;
+}
+.sev-critical .dash-action-icon {
+  background: var(--st-danger-bg);
+  color: var(--st-danger);
+}
+.sev-warning .dash-action-icon {
+  background: var(--warn-bg);
+  color: #8e6a00;
+}
+.sev-info .dash-action-icon {
+  background: var(--info-bg);
+  color: var(--info);
+}
+[data-theme='dark'] .sev-warning .dash-action-icon {
+  color: var(--warn);
+}
+
+.dash-action-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.dash-action-detail {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+.dash-action-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.dash-action-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--brand);
+  white-space: nowrap;
+}
+.dash-action:hover .dash-action-cta {
+  text-decoration: underline;
+}
+@media (max-width: 640px) {
+  .dash-action {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .dash-action-cta {
+    grid-column: 2;
+  }
+}
+
+/* ---------- Rail cards ---------- */
+
+.dash-rail-card {
+  padding: var(--sp-5);
+}
+.dash-rail-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+.dash-rail-head .t-label {
+  font-weight: 600;
+}
+.dash-rail-icon {
+  color: var(--text-secondary);
+  flex: 0 0 auto;
+}
+.dash-metric {
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.dash-metric-sub {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+/* Progress meter (preference submissions). */
+.dash-meter {
+  height: 6px;
+  border-radius: 99px;
+  background: var(--surface-3);
+  overflow: hidden;
+  margin: var(--sp-4) 0 var(--sp-3);
+}
+.dash-meter-fill {
+  height: 100%;
+  background: var(--brand);
+  border-radius: 99px;
+}
+.dash-meter-fill.is-done {
+  background: var(--success);
+}
+
+.dash-kv {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  font-size: 13px;
+  padding: 6px 0;
+}
+.dash-kv + .dash-kv {
+  border-top: 1px solid var(--border-subtle);
+}
+.dash-kv-key {
+  color: var(--text-secondary);
+}
+.dash-kv-val {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+/* ---------- Jump-to grid ---------- */
+
+.dash-jump {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--sp-4);
+}
+.dash-jump-card {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-5);
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  text-decoration: none;
+  color: inherit;
+  transition:
+    border-color var(--motion) var(--ease),
+    box-shadow var(--motion) var(--ease);
+}
+.dash-jump-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-1);
+}
+.dash-jump-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--brand-subtle-bg);
+  color: var(--brand);
+  flex: 0 0 auto;
+}
+.dash-jump-label {
+  font-size: 14px;
+  font-weight: 500;
+}
+.dash-jump-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+}

@@ -1,3 +1,4 @@
+import { withMicrofrontends } from '@vercel/microfrontends/next/config';
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
@@ -33,4 +34,9 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// This app is the DEFAULT application of the microfrontends group declared in
+// ./microfrontends.json: it serves every path that no child app claims. The only
+// child is the user guide (apps/docs), which claims /guide/*. withMicrofrontends
+// wires up the local dev proxy so `turbo dev` serves both under one origin, and
+// makes production routing read the config from this deployment.
+export default withMicrofrontends(nextConfig);

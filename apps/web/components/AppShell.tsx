@@ -49,7 +49,6 @@ function prettifyHouse(id: string): string {
 }
 
 function isActive(pathname: string, href: string): boolean {
-  if (href === '/') return pathname === '/';
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
@@ -276,7 +275,7 @@ export function AppShell({
         >
           <Icon name="menu" size={18} />
         </button>
-        <Link href="/" className="hdr-brand">
+        <Link href="/dashboard" className="hdr-brand">
           <LogoMark size={24} variant="reversed" />
           <Wordmark />
         </Link>

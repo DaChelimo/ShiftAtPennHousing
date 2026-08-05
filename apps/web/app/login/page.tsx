@@ -6,13 +6,14 @@ import { Suspense, useEffect, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Field, TextInput } from '../../components/ui/Field';
 import { LogoMark, Wordmark } from '../../components/ui/Logo';
+import { domainWarning } from '../../lib/authEmailHint';
 import { PASSWORDLESS_AUTH_ENABLED } from '../../lib/env';
 import { createClient } from '../../lib/supabase/client';
 import './login.css';
 
 // Cooldown between "Send code" presses, so a worker can't hammer the send-otp
 // endpoint. Keep at or above supabase/config.toml's auth.rate_limit.email_sent window
-// (per-account, not global) — this is UX pacing, GoTrue enforces the real limit.
+// (per-account, not global) - this is UX pacing, GoTrue enforces the real limit.
 const RESEND_COOLDOWN_SECONDS = 30;
 const OTP_LENGTH = 6;
 
@@ -26,8 +27,20 @@ function useCountdown(seconds: number) {
   return { remaining, start: () => setRemaining(seconds) };
 }
 
+// Inline, non-blocking domain hint shown under the email field (mirrors the mobile
+// app's domainWarning, see lib/authEmailHint.ts). Never prevents submission.
+function EmailWarning({ email }: { email: string }) {
+  const warning = domainWarning(email);
+  if (warning === null) return null;
+  return (
+    <p data-testid="login-email-warning" className="t-helper login-email-warning">
+      {warning}
+    </p>
+  );
+}
+
 // Passwordless flow: request a 6-digit code by email, then type it in here.
-// Deliberately code-entry, not a clickable link — a link opened on a worker's phone
+// Deliberately code-entry, not a clickable link - a link opened on a worker's phone
 // would authenticate the phone's browser, not the shared desk kiosk they're signing
 // into. See docs/passwordless-auth plan.
 function OtpLoginForm() {
@@ -78,7 +91,7 @@ function OtpLoginForm() {
       return;
     }
 
-    const redirectTo = searchParams.get('redirectTo') ?? '/';
+    const redirectTo = searchParams.get('redirectTo') ?? '/dashboard';
     router.replace(redirectTo);
     router.refresh();
   }
@@ -106,6 +119,7 @@ function OtpLoginForm() {
             onChange={(e) => setEmail(e.target.value)}
           />
         </Field>
+        <EmailWarning email={email} />
 
         {error !== null && (
           <p
@@ -121,7 +135,7 @@ function OtpLoginForm() {
         <Button
           data-testid="login-send-code"
           type="submit"
-          disabled={submitting}
+          disabled={submitting || email.trim() === ''}
           iconRight="arrowRight"
           full
         >
@@ -211,6 +225,7 @@ function PasswordLoginForm() {
   const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -228,7 +243,7 @@ function PasswordLoginForm() {
       return;
     }
 
-    const redirectTo = searchParams.get('redirectTo') ?? '/';
+    const redirectTo = searchParams.get('redirectTo') ?? '/dashboard';
     router.replace(redirectTo);
     // Refresh so server components re-read the freshly-set session cookie.
     router.refresh();
@@ -256,16 +271,29 @@ function PasswordLoginForm() {
           onChange={(e) => setEmail(e.target.value)}
         />
       </Field>
+      <EmailWarning email={email} />
 
       <Field label="Password">
-        <TextInput
-          data-testid="login-password"
-          type="password"
-          autoComplete="current-password"
-          required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+        <div className="login-password-wrap">
+          <TextInput
+            data-testid="login-password"
+            type={showPassword ? 'text' : 'password'}
+            autoComplete="current-password"
+            required
+            className="login-input-pr"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <button
+            type="button"
+            className="login-password-toggle"
+            onClick={() => setShowPassword((shown) => !shown)}
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+            data-testid="login-password-toggle"
+          >
+            {showPassword ? 'Hide' : 'Show'}
+          </button>
+        </div>
       </Field>
 
       <a href="/auth/forgot" data-testid="login-forgot" className="t-helper login-forgot">
@@ -286,7 +314,7 @@ function PasswordLoginForm() {
       <Button
         data-testid="login-submit"
         type="submit"
-        disabled={submitting}
+        disabled={submitting || email.trim() === '' || password === ''}
         iconRight="arrowRight"
         full
       >
@@ -308,7 +336,7 @@ function LoginShell({ children }: { children: React.ReactNode }) {
         <div className="login-pitch">
           <h1>Residential desk coverage, coordinated.</h1>
           <p>
-            Build schedules, manage floats and swaps, and keep every front desk staffed — all from
+            Build schedules, manage floats and swaps, and keep every front desk staffed, all from
             one console.
           </p>
         </div>

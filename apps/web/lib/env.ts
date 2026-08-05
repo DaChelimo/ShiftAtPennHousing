@@ -27,6 +27,12 @@ export const AUTH_MODE = (process.env.NEXT_PUBLIC_AUTH_MODE ?? 'development') as
   | 'development';
 export const PASSWORDLESS_AUTH_ENABLED = AUTH_MODE === 'production';
 
+// The user guide (apps/docs). It is a separate deployment, but Vercel microfrontends
+// path routing (./microfrontends.json) serves it from /guide on this same origin, so
+// the default is a relative path rather than a host. Override only to point the
+// landing page at a guide deployed somewhere else.
+export const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL ?? '/guide';
+
 // The public origin of THIS web app (not Supabase). Used to build the redirect target
 // for invite / password-setup / reset links so GoTrue sends the worker back to
 // /auth/update-password. Must be listed in supabase/config.toml site_url /

@@ -76,7 +76,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   );
 
   const nav: NavItem[] = [
-    { href: '/', label: 'Dashboard', testId: 'nav-home', icon: 'doc', group: 'Operate' },
+    { href: '/dashboard', label: 'Dashboard', testId: 'nav-home', icon: 'doc', group: 'Operate' },
   ];
   if (canBuildSchedule(user)) {
     nav.push({

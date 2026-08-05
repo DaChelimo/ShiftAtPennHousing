@@ -98,8 +98,14 @@ export function AiSchedulePanel({
   const [elapsed, setElapsed] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const stopModeRef = useRef<'keep' | 'clear' | null>(null);
+  // Latest-ref for the preview callback, so the long-lived streaming handlers below
+  // always call the current prop without re-subscribing mid-generation. Assigned in
+  // an effect rather than during render: `.current` is only ever read from handlers
+  // and async stream callbacks, never while rendering, so commit-time is soon enough.
   const onPreview = useRef(onPreviewChange ?? NO_PREVIEW);
-  onPreview.current = onPreviewChange ?? NO_PREVIEW;
+  useEffect(() => {
+    onPreview.current = onPreviewChange ?? NO_PREVIEW;
+  }, [onPreviewChange]);
 
   useEffect(() => {
     if (!running) return;

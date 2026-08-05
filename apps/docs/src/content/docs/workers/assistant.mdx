@@ -5,10 +5,106 @@ minutes: 4
 draft: true
 ---
 
+The desk assistant answers desk questions out of Housing's own documents, in one line you can
+say out loud.
+
+<Callout label="Not in the app right now">
+  The assistant was taken out of the app and the web portal on 1 August 2026, so there is
+  currently no way to open it. This page describes it for when a way back in returns.
+</Callout>
+
+{
+  /* IMAGE: workers/assistant/answer-with-sources.png
+   MUST SHOW: an answer to a real desk question, one or two lines long, with the collapsed
+   sources control beneath it unopened.
+   WHY: the whole page turns on the answer being short and the documents being one tap away
+   rather than written into the text. */
+}
+
 ## Do it
+
+<Steps>
+  <li>
+    Open <UI>More</UI>, then the desk assistant.
+  </li>
+  <li>
+    Type the question the way you would say it.
+    <span class="step-note">"Can a resident of another house sign out a cart?"</span>
+  </li>
+  <li>Read the first line. That is your answer.</li>
+  <li>Open the sources underneath if you need the document itself.</li>
+</Steps>
 
 ## What you'll see
 
+One or two short sentences, then nothing. It does not repeat your question or list what it
+looked at, because a resident is standing at your desk waiting.
+
+The documents it used sit under the answer, folded up until you tap them.
+
 ## Rules that apply
 
+- **It answers from Housing's documents, not from itself.** No document covers your question
+  and it says so, then points you at a person.
+- **It knows what time it is.** Who you call for the same problem changes between business
+  hours and after hours, so it answers for right now unless you name another time.
+- **It can see your schedule, and only yours.** Ask for your next shift or your hours this
+  week. It cannot look up anyone else. See [Your hours](/workers/hours).
+- **It never touches your shifts.** It cannot claim, drop, swap, float, or cancel anything,
+  so every one of those stays a thing you do yourself on the app's own screens.
+- **It writes a page, you send it.** When something needs a manager, it drafts the message
+  and works out who gets it. Nothing goes out until you read it and tap send. See
+  [Roles and the duty hierarchy](/system/roles).
+
 ## If it goes wrong
+
+**Fire, injury, or a door emergency.** It hands you the protocol and tells you to call. Call.
+It is never the emergency line.
+
+**Someone wants in and it is not sure.** It tells you not to let them in, and who to ask.
+Nobody is authorised by an app.
+
+**"I could not find that."** Nothing in the documents answers you. Ask your manager rather
+than guessing, because a made-up answer at the desk is worse than no answer.
+
+**You asked what happened to a specific resident.** It will not say. It gives guidance, never
+case detail.
+
+<Related
+  links={[
+    { href: '/workers/your-house', label: 'Your house schedule and contacts' },
+    { href: '/system/roles', label: 'Roles and the duty hierarchy' },
+    { href: '/workers/notifications', label: 'Notifications and widgets' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: What can I ask the desk assistant, and what will it refuse to do?
+   AFTER READING, THEY CAN:
+     1. Ask a knowledge question and a question about their own schedule, and read the sources.
+     2. Say what it cannot do: no staffing action, no other worker's schedule, no incident
+        detail, no access authorization, no substitute for the emergency line.
+     3. Send an assistant-drafted page without believing it sent itself.
+   FAILURE STATES COVERED: a life-safety situation; an access decision it is unsure about; no
+   supporting source in the knowledge base; a request for specific incident or personal detail.
+   VERIFIED AGAINST: BSpec §17 status note of 2026-08-01 (no entry point on either platform;
+   the backend is intact), §17 preamble (never touches staffing; its only write is a
+   human-reviewed page), §17.1 (Student Workers are users; answers scoped by role and house),
+   §17.2 (three question kinds: durable knowledge, duty contact, personal schedule; a worker's
+   own schedule only; a dated question resolves as of that date), §17.3 (grounded or it defers
+   and offers a contact; sources always attached), §17.3 revised 2026-07-22 (sources shown as a
+   collapsed control, never spoken in the answer), §17.3a (told the current New York time;
+   answers the branch that applies now), §17.3b (answer first, one or two short sentences, no
+   restating or summarising), §17.4 (the five hard safety rules), §17.5 (assisted paging:
+   drafts, resolves the recipient, a human reviews and sends), §17.6 (mobile, web and the
+   desk-facing view). BSpec §20.4 (More reaches the Desk Assistant).
+   UNRESOLVED: BSpec §17's status note and §20.4 disagree. §20.4 still lists the Desk
+   Assistant under the More overflow, which §17 says was removed on 2026-08-01 as a permanent
+   product removal; step 1 follows §20.4 and the callout follows §17. That is a spec defect to
+   reconcile, and until it is, this page should stay draft and probably out of the sidebar,
+   because it documents a surface a worker cannot currently reach. The on-screen name of the
+   assistant's entry point and of the sources control are not stated in either spec, so neither
+   is named exactly. Paging is described only as far as a worker acts on it; how a manager
+   receives it belongs on a manager page. */
+}

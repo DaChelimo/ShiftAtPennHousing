@@ -1,14 +1,111 @@
 ---
-title: "Operating seasons and the calendar"
-description: "Authoring when each house is open and how many people it needs, and previewing what applying that would change."
-minutes: 8
+title: 'Operating seasons and the calendar'
+description: 'Authoring which houses are open on which summer dates and how many people each desk needs, then previewing and publishing that to the live schedule.'
+minutes: 5
 draft: true
 ---
 
-## What this is for
+A season sets which houses are open on which summer dates, each desk's headcount, and
+floating windows. Only an Administrator authors one, across every house.
+
+<Callout label="Publishing cancels people">
+  Your edits sit in a draft until you publish.
+
+  Cut a desk's headcount and the extra workers are cancelled and notified. The order is
+  fixed: floaters first, then whoever holds the fewest blocks there.
+
+  Reopening a house later returns empty seats, not those workers' shifts.
+</Callout>
 
 ## Do it
 
+<Steps>
+  <li>
+    In <UI>Operations</UI>, open a season or <UI>Create a season</UI>.
+  </li>
+  <li>
+    Set the preference deadline.
+    <span class="step-note">
+      One value, on or before the season's start date.
+    </span>
+  </li>
+  <li>
+    Per house, add a window: dates, then weekday and weekend bands.
+    <span class="step-note">
+      A band is a time range plus a headcount. Empty bands close the house.
+    </span>
+  </li>
+  <li>Add the windows where floating is on.</li>
+  <li>Select <UI>Preview impact</UI> and read the counts.</li>
+  <li>
+    Select <UI>Publish to schedule</UI>.
+    <span class="step-note">Tick the confirmation if anyone is being cancelled.</span>
+  </li>
+</Steps>
+
+{
+  /* IMAGE: managers/seasons/preview-impact.png
+   MUST SHOW: the Preview impact panel after a dry run, with the impact tiles including
+   assignments cancelled and floats voided, and the who-is-affected list grouped by house.
+   WHY: this panel is the only warning before an irreversible publish, and the page's
+   central instruction is to read it. */
+}
+
 ## What you'll see
 
+The preview runs the publish and rolls it back, so the counts are exact.
+
+## Rules that apply
+
+- **A shift already running or past is never touched**: it is a payroll record.
+  See [The operating calendar](/system/calendar).
+- **A season sets its own weekly cap**, soft or hard, so do not assume the school year's
+  figure. See [Hours, caps, and attribution](/system/hours-rules).
+- **Season floating never enters Harnwell**, because only its own workers are trained
+  there. See [Floating](/system/floating).
+
 ## If it goes wrong
+
+**The range overlaps existing dates.** They belong to a semester, a break, or another
+season. Narrow yours.
+
+**Another apply or preview is running.** Nothing was attempted. Wait and run it again.
+
+<Related
+  links={[
+    { href: '/system/calendar', label: 'The operating calendar and seasons' },
+    { href: '/managers/preferences-admin', label: 'Preferences and deadlines' },
+    { href: '/managers/building-a-schedule', label: 'Building a schedule' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: How do I set a season's open houses and staffing, and get it onto the live
+   schedule?
+   AFTER READING, THEY CAN:
+     1. Say that only an Administrator authors a season, and that the reach is every house.
+     2. Author a house window as day-type bands, and know that empty bands close the house.
+     3. Preview before publishing, and read the impact as exact rather than approximate.
+     4. Predict that a headcount cut cancels and notifies the excess workers in a fixed
+        order, that only future shifts move, and that reopening returns empty seats.
+   FAILURE STATES COVERED: season range colliding with existing calendar dates; a
+   concurrent apply or preview refusing the run with nothing attempted.
+   VERIFIED AGAINST: BSpec §2.8 (Administrator authors the operating configuration,
+   campus-wide reach), §3.1 (season = date range plus per-house open windows and headcounts
+   plus floating windows; routing not authored and never into Harnwell; changes prospective;
+   excess workers cancelled not grandfathered, cut order floaters then shorter shift then a
+   stable tiebreak; cancelled workers notified; a date with no open house is dormant;
+   deadline is one value on or before the season start; seasons are SM-built from
+   preferences), §9.3 (a season's cap may be any positive number, soft or hard), §1.2
+   (Harnwell is never a float destination); ARCHITECTURE.md §2.1 (authoring tables with
+   admin-only RLS, pure compiler, apply reconciles future blocks only, dry run is the
+   identical logic inside a rolled-back subtransaction); migrations 20260702000003
+   (admin-only RLS on the authoring tables), 20260702000006 (admin-only caller check,
+   calendar-collision guard), 20260709000002 (weekday and weekend bands, empty list =
+   closed), 20260709000003 (cancel-on-downsize with that cut order; reopening un-voids the
+   block and adds vacant seats without restoring cancelled assignments), 20260726000007
+   (the run is refused with nothing attempted while a preview or apply is running).
+   UNRESOLVED: SKETCH §8 lists no existing screenshot for this page, so the placeholder
+   needs a new capture rather than a pitch-set reuse. */
+}

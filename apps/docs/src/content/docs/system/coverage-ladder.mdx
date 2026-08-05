@@ -1,12 +1,100 @@
 ---
 title: "How a shift gets covered"
 description: "The path an uncovered block takes from open, to broadcast, to a float, to a paid Allied request."
-minutes: 7
+minutes: 4
 draft: true
 ---
 
-## The short version
+The coverage ladder is how the system covers a block nobody is scheduled to work.
 
-## How it works
+## The ladder
 
-## Where you see this
+<Ladder
+  label="The coverage ladder"
+  heads={['When', 'Who hears', 'What happens']}
+  rungs={[
+    {
+      when: '3 hours before',
+      who: 'Workers at that house',
+      what: 'The seat is still uncovered. It stays claimable.',
+      state: 'open',
+    },
+    {
+      when: '2 hours before',
+      who: 'Workers who can float in',
+      what: 'The system assigns floaters itself. The empty seats lock now.',
+      state: 'float-in',
+    },
+    {
+      when: 'Same moment, if none fits',
+      who: 'One manager at a time',
+      what: 'An Allied coverage request opens. A human places the call.',
+      state: 'allied',
+    },
+  ]}
+/>
+
+No screen shows this ladder.
+
+It runs only when the desk would otherwise be empty. A block with one worker present is
+covered, so its empty seats are never broadcast, floated, or bought.
+
+One pass secures at most 4 hours. Later blocks climb the ladder on their own, so a long
+empty window is never bought at once.
+
+An Allied request pages the house's Residential Services Manager, then its Housing
+Manager, then the Housing Manager on duty, an hour per rung. Nobody else is ever paged.
+
+## Why it works this way
+
+The 2-hour lock is one way. Once an empty desk reaches it, its seats stay locked even
+after a floater or Allied arrives. Nobody should pile onto coverage the house already
+pays for.
+
+Emptiness is judged when the step fires, so a desk that gains a worker first is never
+locked at all.
+
+## What this means for you
+
+At a staffed desk, an open seat stays claimable until the block starts. At an empty one,
+your claim must finish before the 2-hour mark. The system decides which, not your clock.
+
+<Related
+  links={[
+    { href: '/system/floating', label: 'Floating: overview' },
+    { href: '/managers/coverage', label: 'The coverage inbox and Allied requests' },
+    { href: '/workers/picking-up', label: 'Picking up open shifts' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: What does the system do about a block nobody is scheduled to work?
+   AFTER READING, THEY CAN:
+     1. Name the three steps in order and the time each one fires.
+     2. Predict that a multi-staff desk with one worker present triggers none of them,
+        and say why its other empty seats stay open.
+     3. Say when an open seat stops being claimable, and that a staffed desk's seats
+        never stop.
+     4. Predict that a long empty window is secured in pieces, not all at once.
+     5. Say who an Allied request reaches, in order, and that it never fans out further.
+   FAILURE STATES COVERED: a seat that is visible but no longer claimable; a desk that
+   stays locked after a floater or Allied fills it.
+   VERIFIED AGAINST: BSpec §5.4 (coverage floor of one worker, T-3h broadcast, T-2h float
+   lookup, T-2h Allied on failure, 4-hour securing cap, winter break has no float step),
+   §5.4a (three-rung RSM/HM/HMOD ladder, no fan-out, a request never clears itself),
+   §5.5 (escalation is one way, emptiness judged when the step fires), §6.6
+   (force-triggered float), §10.1a (the T-3h open-shift reminder for your own house),
+   §14 (escalation offsets T-3h/T-2h, maximum Allied coverage 8 blocks, Allied ladder rung
+   timeout 60 minutes), §13 (assign and remove by hand); ARCH §5.2; migration
+   20260627000001 (coverage-conditional, one-way pickup lock).
+   UNRESOLVED: Two internal contradictions in BSpec, both flagged rather than papered over.
+   (1) §5.4 says broadcast subscription is opt-in and defaults to off; §10.1a (later, dated
+   2026-07-29) says the home-house open-shift reminder defaults to on. The page follows the
+   later statement and states no default. (2) §10.1a still routes Allied notifications to
+   the RSM only during Housing Manager working hours and to the HMOD otherwise, which
+   §5.4a (same date) explicitly supersedes with the always-RSM-first three-rung ladder.
+   The page follows §5.4a. Both belong in a spec reconciliation.
+   The reminder interval within a rung (15 minutes) and the four close-out outcomes are
+   left to /managers/coverage, which owns that runbook. */
+}

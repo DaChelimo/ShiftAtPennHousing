@@ -1,12 +1,101 @@
 ---
 title: "What triggers a notification"
-description: "Every event that produces a notification, who receives it, and which ones a worker can turn off."
-minutes: 6
+description: "Every event that produces a notification, who receives it, and which ones you can turn off."
+minutes: 3
 draft: true
 ---
 
-## The short version
+Every notification comes from an event below. Only three can be switched off.
 
-## How it works
+## What sends one
 
-## Where you see this
+<Table>
+
+| Event                                | Who hears it              | Off switch           |
+| ------------------------------------ | ------------------------- | -------------------- |
+| A float, and its reminders           | You                       | No                   |
+| A swap or handoff, and its outcome   | The other party           | No                   |
+| Your shift dropped or cancelled      | You                       | No                   |
+| A schedule published                 | Everyone assigned         | No                   |
+| Preference windows and break sign-up | Workers                   | No                   |
+| A seat opening at your house         | Everyone eligible but you | No                   |
+| A seat opening at another house      | Workers eligible there    | Opt in               |
+| A seat still uncovered 3 hours out   | Same workers              | On for your house    |
+| Your own shift starting soon         | You                       | 2h, 1h, or 30m       |
+| Nobody left to float                 | One manager, by ladder    | No                   |
+
+</Table>
+
+Eligible means active student workers, student managers, and housing managers, never a
+building manager. Only Harnwell workers hear about a Harnwell seat, because nobody else may
+staff that desk. A locked seat is never announced, because nobody can claim it.
+
+{
+  /* IMAGE: system/notifications-rules/notification-settings.png
+   MUST SHOW: the worker notification settings screen, with the three configurable channels
+   at their defaults and the mandatory channels listed switched on and disabled.
+   WHY: the page claims mandatory channels are shown rather than hidden, and that claim is
+   only credible if the reader can see the disabled rows. */
+}
+
+## Why it works this way
+
+A notification is optional only when ignoring it costs nothing. A float, a swap, and a
+published schedule each need an answer from one person, so none carries a switch. A shift
+reminder asks nothing back, so you pick lead times or none. Settings still list the
+mandatory channels, on and disabled, so you can see that a swap request always reaches you.
+
+## What this means for you
+
+Never open settings and you get the defaults: an hour's warning before each shift, and your
+own house only. Other houses stay silent.
+
+Managers get no push. An Allied request reaches them as a console alert, so silence there
+means every desk is accounted for.
+
+<Related
+  links={[
+    { href: '/system/coverage-ladder', label: 'How a shift gets covered' },
+    { href: '/workers/notifications', label: 'Notifications and widgets' },
+    { href: '/workers/floating', label: 'When you get floated' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: What events send a notification, who receives each one, and which ones can you
+   switch off?
+   AFTER READING, THEY CAN:
+     1. Name the three configurable channels and their defaults, and predict what a worker
+        who never opened settings hears.
+     2. Say why a float, a swap request, and a published schedule have no off switch, and
+        why the mandatory channels still appear in settings.
+     3. Predict who is told when a seat opens, including that the dropper is not told, that
+        a non-Harnwell worker is never told about a Harnwell seat, and that a
+        coverage-locked seat is never announced.
+   FAILURE STATES COVERED: a seat that opens but is never announced because it is already
+   coverage-locked; a manager who sees no coverage alert (silence means accounted for, and
+   managers receive no push at all).
+   VERIFIED AGAINST: BSpec §4.3 (publish notifies every assigned worker), §5.4a (Allied
+   request ladder, console alert, no manager push), §10.1, §10.1a, §14 (shift reminder lead
+   times 2h/1h/30m default 1h; open-shift channel defaults on for the home house and off
+   for other houses)
+   UNRESOLVED: (1) Push delivery mechanics (BSpec §10.4: at-least-once delivery, the retry
+   backoff, the 12-attempt give-up, the operator report) are deliberately NOT on this page.
+   They are a second mechanism with its own diagram, and this page's question is what
+   triggers a notification, not how one reaches a device. If the site needs them, they are
+   their own explainer, and the earlier claim about duplicates and seven hours of retries
+   moves there with them.
+   (2) The recipient set for preference-window and break sign-up notifications is stated
+   only as "workers". §10.1a makes both mandatory but names no recipient set, and §4.4
+   names recipients for the T-3d break alert alone, so a narrower claim (workers at that
+   house) is not grounded and is not made.
+   (3) Two stale statements in BSpec, both superseded in place elsewhere in the same
+   document, so the page follows the later text. §5.4 step 1 still describes the T-3h
+   broadcast as going to "all subscribed Student Workers" under an opt-in toggle defaulting
+   to off; §10.1 and §10.1a, amended 2026-07-28 and 2026-07-29, moved it onto the
+   per-worker open-shift channels, which default to on for the home house. §10.1 still
+   routes coverage notifications to the RSM or the HMOD by Housing Manager working hours;
+   §5.4a, amended 2026-07-29, states the ladder always starts at the RSM and explicitly
+   supersedes that. Both are worth a spec fix in place. */
+}

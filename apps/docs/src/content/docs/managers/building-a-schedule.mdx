@@ -1,14 +1,115 @@
 ---
-title: "Building a schedule"
-description: "Turning a period of preferences into a staffed week, seat by seat, before you publish it."
-minutes: 9
+title: 'Building a schedule'
+description: 'Drafting one template week for a house from the preferences your workers submitted, before any of it reaches a phone.'
+minutes: 4
 draft: true
 ---
 
-## What this is for
+The schedule builder turns submitted preferences into one drafted template week.
+
+As an SM you build your own house only. HM, BA, RSM, and Administrator build any house.
+
+<Callout label="You are drafting one week, not a period">
+  The grid holds one template week, so the Tuesday you draft becomes every Tuesday in the
+  period.
+</Callout>
 
 ## Do it
 
+<Steps>
+  <li>
+    Open <UI>Schedule builder</UI> after the submission deadline.
+    <span class="step-note">Preferences freeze then, so nothing moves under you.</span>
+  </li>
+  <li>
+    Drag a span down a day column, one to six hours.
+  </li>
+  <li>
+    Pick a name from the <UI>Preferences</UI> card.
+    <span class="step-note">Each name shows its span status and hours remaining against target.</span>
+  </li>
+  <li>
+    Switch to <UI>Manual</UI> for anyone the card will not let you pick.
+  </li>
+</Steps>
+
+{
+  /* IMAGE: managers/building-a-schedule/builder-span-card.png
+   MUST SHOW: the schedule builder grid mid-build with a dragged span on one day column and
+   the assignment card open beside it, showing the preferred, available, and blocked groups
+   with hours-remaining figures, plus the Preferences and Manual switch in the toolbar.
+   WHY: the drag and the card are one gesture on one screen, and the steps cannot show that
+   a blocked name is visible but unclickable. */
+}
+
 ## What you'll see
 
+The tag reads **Draft** until you publish, so nothing here reaches a worker or coverage.
+
+Seats you leave empty open for claiming at publish, which is how later hires get hours.
+
+## Rules that apply
+
+- **Blocked is a hard stop in <UI>Preferences</UI>, advisory in <UI>Manual</UI>,** which
+  makes you confirm the override.
+- **A worker who submitted nothing is blocked too,** because the system will not hand you
+  time they never affirmed.
+- **The school year's 20 hour cap is soft,** so going over target only warns you. Forty
+  hours is a hard ceiling and refuses.
+  See [Hours, caps, and attribution](/system/hours-rules).
+
 ## If it goes wrong
+
+**A name is missing from the card.** They submitted nothing. Use the <UI>Manual</UI>
+roster.
+
+**A name is there but will not click.** They marked cannot, or left a block unmarked, in
+your span.
+
+**The save was refused.** You are an SM on another house. Ask its SM.
+
+<Related
+  links={[
+    { href: '/managers/ai-assist', label: 'AI-assisted building' },
+    { href: '/managers/publishing', label: 'Publishing a schedule' },
+    { href: '/managers/preferences-admin', label: 'Preferences and deadlines' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: How do I draft a house's week from the preferences my workers submitted?
+   AFTER READING, THEY CAN:
+     1. Say whether they may build the house currently in the switcher.
+     2. Drag a legal span and assign a worker from the preference card.
+     3. Predict that they are drafting one template week that publishing will repeat, and
+        that nothing they draft is visible to a worker or to coverage.
+     4. Get an unassignable worker onto the desk by switching to Manual, instead of
+        concluding the builder is broken.
+     5. Tell the soft over-target warning apart from the hard 40 hour refusal.
+   FAILURE STATES COVERED: a worker absent from the preference card (no preferences on
+   record, Manual roster only); a worker visible but unselectable (cannot or unmarked block
+   inside the span); the write refused because an SM is viewing another house.
+   VERIFIED AGAINST: BSpec §4.1 (preferred / available / cannot, target hours up to the
+   period cap), §4.2 (building begins only after the deadline; preferences cannot change
+   after it; no-preference workers appear in the Phase 2 roster only), §4.3 Phase 1 (drag
+   span of 2 to 12 consecutive 30 minute blocks = 1 to 6 hours; preferred / available /
+   blocked grouping; the card identifies the blocking block; blocked is non-selectable;
+   unmarked blocks group as blocked; hours-remaining figure; over-target warning is
+   dismissible; the 20 hour school-year cap is soft; the RSM is ungrouped, always
+   selectable, and never warns), §4.3 Phase 2 (full roster sorted by name, search bar,
+   cannot and opted-out downgraded to advisory with explicit confirmation), §4.3 Phase 3
+   (the 40 hour hard weekly cap is absolute and never bypassable; SM own-house, elevated
+   tier any house), §2.3a (RSM builder-assignable at their own house only, exempt from
+   every hours check), §13 (BMs cannot be assigned via the schedule builder; SM builds
+   own house only); ARCHITECTURE.md §3.9 (the builder edits a single template week; drafts
+   are invisible to the worker calendar and to the orchestrator; publish stamps the
+   pattern across the period and leaves unfilled seats vacant and claimable), migration
+   20260614000002 (publish and draft access gated on the build-schedule permission),
+   migration 20260627000002 (that gate made cross-house for hm/bm/rsm, SM unchanged).
+   UNRESOLVED: The on-screen labels named here (Schedule builder, Preferences, Manual,
+   the Draft tag) are confirmed in the shipped builder toolbar, not in either spec.
+   Neither spec states what the builder does when a drag lands outside the 2-to-12 block
+   range, so the page no longer claims anything about it. Autosave behavior is not
+   spec-stated and is not described. */
+}

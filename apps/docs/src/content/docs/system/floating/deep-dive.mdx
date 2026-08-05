@@ -1,12 +1,190 @@
 ---
 title: "Floating: the selection rule"
-description: "The full selection rule, from when a lookup runs to which worker it picks and why, with a worked example."
-minutes: 14
+description: "How the system picks which worker covers an empty desk, traced from the gap to the assignment."
+minutes: 6
 draft: true
 ---
 
-## The short version
+Float selection is fixed: source order, then the longest unbroken run, then three tiebreak
+checks.
 
-## How it works
+## How the pick is made
 
-## Where you see this
+A lookup runs two hours before an unclaimed block that would leave the desk empty. The
+floor is one worker, not the staffing target. So an Upper Quad evening with one worker on
+is covered, and its empty seats are never floated. Present counts scheduled, claimed,
+floated in, pending float in, and secured Allied cover. Emptiness is judged when the step
+fires, so a desk claimed before then never reaches it.
+
+One pass handles at most four hours of a contiguous window. The rest stays claimable and
+re-escalates, because buying hours outright is worse than letting a worker take them.
+
+<FlowStrip
+  label="One securing pass"
+  steps={[
+    { label: 'Gap', text: 'The empty window, up to four hours of it.' },
+    { label: 'Source', text: 'Take the next source house in order.' },
+    { label: 'Longest run', text: 'Whoever covers the longest unbroken stretch takes it.' },
+    { label: 'Repeat', text: 'Run again on what is still uncovered there.' },
+    { label: 'Allied', text: 'Anything no worker can reach is bought.', terminal: true },
+  ]}
+  caption="No screen shows a candidate set, so this stands in for one."
+/>
+
+Each source is exhausted before the next. The school year tries Upper Quad, then Harnwell.
+Summer tries the most heavily staffed source first, since it has the most slack to lend.
+
+Within a source, whoever covers the longest unbroken run of the gap wins it, and the rule
+repeats on what is left. Several floaters on one gap is normal, not a failure. A run of one
+block still counts, because buying half an hour of Allied is worse than moving a worker for
+it. Each selection is charged against that source's slack at once, so a desk of three lends
+two and stops.
+
+If no worker at a source covers the longest run, the system takes the longest leading
+stretch from the gap's start instead. Whatever no source can reach becomes an Allied
+request, which pages the Residential Services Manager, then the Housing Manager, then the
+Housing Manager on duty.
+
+### Who can be floated
+
+Every rule holds at once, and each exists for a different reason.
+
+<Table>
+
+| The worker                                 | Why                                     |
+| ------------------------------------------ | --------------------------------------- |
+| is at a house that may float here today    | direction depends on the season         |
+| leaves someone behind at their own desk    | a desk is never emptied to fill another |
+| is on shift there during the gap           | a float moves hours that already exist  |
+| is not already floating in that window     | one person, one desk                    |
+| is not there on a cross-house pickup       | they hold that desk's headcount         |
+| is not a manager                           | managers run a desk, not another's      |
+| has not declined an overlapping float here | a refusal is not re-asked               |
+| is still active                            | leavers are out of every pool           |
+
+</Table>
+
+During the school year Upper Quad may float to the 11 single-staff houses, and Harnwell to
+any house. In summer any open, multi-staffed house may float to any other open house.
+Harnwell is never a destination, because that desk needs training only Harnwell workers
+hold. Weekly hour caps are never consulted, because a float relocates hours you were
+already scheduled to work.
+
+### Breaking a tie
+
+When several workers cover the same winning run, three checks decide, in order.
+
+<Ladder
+  label="Tiebreak checks"
+  heads={['Check', 'Wins it', 'If several qualify']}
+  rungs={[
+    { when: 'Start', who: 'Shift starts at the run start', what: 'Narrow, next check' },
+    { when: 'End', who: 'Shift ends at the run end', what: 'Narrow, next check' },
+    { when: 'Arbitrary', who: 'Anyone still tied', what: 'One is taken arbitrarily' },
+  ]}
+/>
+
+One qualifier at a check wins outright. The third check is genuinely arbitrary. Seniority,
+hours worked, and how often you have floated before play no part at any check.
+
+### A worked example
+
+Lauder is empty from 19:00 to 22:00, six blocks. Upper Quad has three workers on.
+
+<Table>
+
+| Worker | House      | On shift       | Covers of the gap |
+| ------ | ---------- | -------------- | ----------------- |
+| D      | Upper Quad | 17:00 to 21:00 | 19:00 to 21:00    |
+| E      | Upper Quad | 19:00 to 21:00 | 19:00 to 21:00    |
+| F      | Upper Quad | 19:00 to 21:00 | 19:00 to 21:00    |
+| G      | Harnwell   | 19:00 to 24:00 | all of it         |
+
+</Table>
+
+Upper Quad goes first, so G waits. The longest run any Quad worker reaches is 19:00 to
+21:00, and all three reach it. E and F start at 19:00, so D is out. Both end at 21:00, so
+the third check takes one arbitrarily. Say E.
+
+Quad now has two left, which meets the floor, and nobody there works past 21:00. Harnwell
+is next: G covers 21:00 to 22:00 and Harnwell keeps a worker. Two floaters, no Allied.
+
+## Why it works this way
+
+- **A source desk never drops below one worker.** The guard sits in the rule itself, so
+  configuration cannot empty one desk to fill another.
+- **Harnwell can send but never receive.** A Harnwell gap skips the lookup and goes
+  straight to an Allied request.
+
+## What this means for you
+
+You cannot influence the choice. No queue, no fairness counter, and no preference reaches
+this rule.
+
+A manager may override any outcome by hand, at either house, and may also run this rule
+early for a gap they know nobody will claim. Automation may not. So a float you have been
+given stands until a person changes it.
+
+<Related
+  links={[
+    { href: '/system/floating', label: 'Floating: overview' },
+    { href: '/workers/floating', label: 'When you get floated' },
+    { href: '/managers/coverage', label: 'Coverage and Allied requests' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: How does the system decide which worker to float into an empty desk?
+   AFTER READING, THEY CAN:
+     1. Say when a lookup runs at all, and why a multi-staff desk with one worker on it is
+        never floated for its empty seats.
+     2. List the eligibility rules and give the reason for each, including the two guards
+        no configuration can override.
+     3. Trace a gap to an assignment: source order, longest unbroken run, repeat, next
+        source, Allied for the remainder.
+     4. State the three tiebreak checks in order and say that the third is arbitrary.
+     5. Predict the outcome of a case this page does not name, including a gap no single
+        worker can cover and a gap longer than four hours.
+   FAILURE STATES COVERED: no eligible worker anywhere (Allied request and its three-rung
+   ladder); no worker covering the full run (longest leading stretch, Allied takes the
+   tail); a Harnwell gap, which has no candidates at all.
+   VERIFIED AGAINST: BSpec §1.2 (direction rules, source floor, Harnwell never a
+   destination), §3.5 (floor is one worker, pending floats count as absent), §5.4 (T-2h
+   lookup, coverage floor, present-set, 4-hour securing cap), §5.4a (Allied ladder: RSM,
+   HM, HMOD), §6.1 (eligibility list, no cap check, Harnwell destination short-circuit),
+   §6.2 (source priority, largest consecutive run, 1-block minimum, partial-coverage
+   fallback, Allied for the remainder), §6.3 (three tiebreak checks, third arbitrary),
+   §6.4 (no takeback, manual override at either house), §14 (minimum float chunk 1 block,
+   maximum Allied coverage 8 blocks); ARCH §2.1 (summer routing auto-generated, precedence
+   by descending source headcount), §2.4 (school-year precedence: Quad 1, Harnwell 2),
+   §5.2 and §5.3 (procedure and tiebreak chain).
+   UNRESOLVED:
+     1. SCOPE, resolved by removal. The force-trigger section is gone, and with it the
+        former claim 6 ("say what a manager can force"). Force-triggering is a second
+        procedure with its own actor (SM, HM, BM of the house, plus the on-duty HMOD per
+        ARCH §6.2), its own initiation window (from when the gap exists until T-2h, BSpec
+        §6.6), and its own refusal states (a late request, a non-floating season). It
+        belongs on a manager task page alongside the three pending calendars and the
+        source-side gap it opens, not on the page that answers "how does the system pick a
+        worker". This page keeps one sentence saying a manager can run the rule early and
+        links to /managers/coverage. That material is unwritten until the manager page
+        exists. SKETCH.md §6.2 item 8 lists it here; the map needs the same correction.
+     2. SPEC DEFECT, flagged rather than papered over. BSpec §1.2 (amended 2026-07-02) says
+        summer floating is universal among open, multi-staffed houses. BSpec §6.1 and ARCH
+        §5.2 still state the school-year allowlist absolutely, that workers at the 11
+        single-staff houses "cannot float to any destination" and are excluded from the
+        source pool "unconditionally". Those sentences are stale against the same files'
+        own later text (ARCH §2.1 describes the summer all-pairs routing). This page
+        follows §1.2 and states direction as season-dependent. One side must be corrected.
+     3. ARCH §5.2 excludes the RSM role from the source pool; BSpec §6.1 names only HM and
+        BM. The page says "is not a manager", which is true under both readings, but the
+        specs should name the same set in both places.
+     4. Summer source precedence is stated in ARCH §2.1 only (descending source headcount)
+        and has no BSpec statement. It is worth one line in BSpec §6.2.
+     5. What happens when zero candidates satisfy a tiebreak check is not stated in either
+        spec; both describe only the one-satisfier and several-satisfier cases. The worked
+        example avoids that case rather than guessing at it.
+     6. No image placeholder. Candidate selection has no screen, so the contract's diagram
+        route applies and the FlowStrip and Ladder carry it. */
+}

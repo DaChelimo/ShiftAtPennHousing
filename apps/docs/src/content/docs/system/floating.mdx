@@ -1,110 +1,107 @@
 ---
 title: 'Floating: overview'
-description: 'A float moves part of a shift you were already going to work to a desk that would otherwise be empty, and then you come back.'
-minutes: 6
+description: 'What a float does to a shift: your hours move to a desk that would be empty, and then you come back.'
+minutes: 4
+draft: true
 ---
 
-Floating is the system's answer to a desk with nobody on it. Rather than paying a
-contracted guard, it looks for a worker who is already on shift somewhere with staff to
-spare, sends them over for the uncovered stretch, and sends them back.
-
-This page is the whole idea, without the algorithm. If you want to know **why the system
-picked you**, that is the [deep dive](/system/floating/deep-dive).
-
-## The three facts
-
-Almost every question about floating is answered by one of these.
-
-1. **Floating never adds hours.** It relocates hours you were already scheduled to work. A
-   Quad worker on 19:00 to 24:00 who floats to Lauder from 21:00 to 22:00 still works five
-   hours: two at Quad, one at Lauder, two at Quad.
-2. **Your own desk is never left empty to cover someone else's.** A worker is only
-   floatable if their home desk still has at least one person on it after they leave. This
-   is a hard guard, not a preference.
-3. **Only Quad and Harnwell workers can be floated out, and nobody can be floated in to
-   Harnwell.** Quad and Harnwell are the multi-staffed desks, so they are the only ones
-   with anyone to spare. Harnwell can send but never receive, because working the Harnwell
-   desk requires training that only Harnwell workers have.
-
-## The lifecycle
+A float moves part of your shift to a desk that would be empty, then returns you.
 
 <FlowStrip
-  label="How a float happens"
+  label="The shape of a float"
   steps={[
-    { label: 'Gap', text: 'A block at some desk has nobody on it.' },
-    { label: 'Open', text: 'The seat sits in the open-shifts feed for anyone to claim.' },
-    { label: 'Lookup', text: 'Two hours out, still empty, the system looks for a floater.' },
-    { label: 'You', text: 'You are notified and asked to acknowledge.' },
-    { label: 'Work it', text: 'You go over for that stretch only.' },
-    { label: 'Back', text: 'You return to your own desk. The float ends where it always would have.', terminal: true },
+    { label: 'Gap', text: 'Nobody on a desk.' },
+    {
+      label: 'Pick',
+      text: 'The system or a manager names a worker whose desk can spare one.',
+    },
+    { label: 'Pending', text: 'Unacknowledged on your calendar.' },
+    { label: 'Cover', text: 'You work that range at the other desk.' },
+    { label: 'Return', text: 'You go back. Your shift ends when it always would have.', terminal: true },
   ]}
-  caption="The float is assigned automatically. No manager approves it, and nothing waits on one."
+  caption="No screen shows the pick."
 />
 
-The lookup only runs if the desk would be **completely empty**. A desk that still has one
-worker on it is covered, even if its schedule calls for two or three. See
-[How a shift gets covered](/system/coverage-ladder).
+## How it works
 
-## What it looks like on your calendar
+The automated lookup runs two hours before a block that would leave a desk empty. A
+manager can also float a worker out by hand, naming the range and destination.
 
-<StateList>
-  <StateCard state="pending" label="Pending your acknowledgment">
-    Assigned to you, waiting on your answer. Everyone who can see the schedule sees this
-    state too, including the destination house.
-  </StateCard>
-  <StateCard state="float-in" label="Floating in">
-    Acknowledged. You are covering the destination desk for this stretch.
-  </StateCard>
-  <StateCard state="float-out" label="Floating out">
-    The same float seen from your home desk: your seat, with you elsewhere for part of it.
-  </StateCard>
-  <StateCard state="allied" label="Allied">
-    No worker could be found and a contracted guard was secured instead.
-  </StateCard>
-</StateList>
+<Table>
 
-## What you have to do
+|                     | Automated float                      | Manager float               |
+| ------------------- | ------------------------------------ | --------------------------- |
+| Can you decline it? | Yes, until the deadline              | No. It is a directive       |
+| If you never answer | Voided; the desk buys cover          | It stands. You are expected |
 
-**Acknowledge it.** The deadline is 10 minutes before the float starts, and reminders
-escalate as it approaches: 6 hours, 2 hours, 1 hour, 30 minutes, and 5 minutes before the
-deadline. A float assigned at the usual two-hours-out lookup gets the last three of those.
+</Table>
 
-You can also **decline**, and declining is a real, distinct action rather than a polite way
-of ignoring it. Declining voids the float immediately, puts the seat back in the open feed,
-and takes you out of consideration for that particular gap. It is better than silence for
-everyone, because it lets the system start looking again straight away.
+Acknowledge by 10 minutes before the float starts; the destination is waiting on an
+answer.
 
-<Callout label="Ignoring it is not the same as declining">
-  A float you never answer stays assigned to you until the deadline, and the desk is
-  counting on it the whole time. If you cannot work it, decline it.
-</Callout>
+{
+  /* IMAGE: system/floating/live-calendar-float.png
+   MUST SHOW: a published week calendar carrying a floated block, with the floating-out
+   seat at the source house and the same worker floating in at the destination.
+   WHY: the one float shows twice, in two houses, and prose alone reads as two shifts. */
+}
 
-## Rules that constrain the outcome
+## Why it works this way
 
-- **No takeback.** Once a float is assigned, automation will not recall you, even if your
-  home house later runs short. The destination is owed that coverage. Only a manager can
-  undo a float by hand.
-- **Hours caps are not consulted.** Floats are hours-neutral, so a worker already at 19
-  hours is still floatable. Claims, swaps, and pickups do add hours and are capped. See
-  [Hours, caps, and attribution](/system/hours-rules).
-- **A manager can force one early.** If a house's manager already knows nobody local will
-  claim a shift, they can run the lookup ahead of time rather than waiting for the two-hour
-  step.
-- **A float can be shared.** One gap covered by two floaters is a normal outcome, not a
-  failure. Each floater gets their own assignment for their own stretch.
+An empty desk means paying for outside cover, and borrowing from a covered desk is
+cheaper. Three guards:
 
-## Where you see this
+- **A source desk never drops below one worker.** A single staffed house lends nobody.
+- **Harnwell is never a destination.** It needs training only Harnwell workers hold.
+  Harnwell can still send people out.
+- **Nothing automated takes a float back.** The destination is owed the cover once
+  promised. Only a manager can undo one.
 
-- [When you get floated](/workers/floating), the worker-facing half of this page.
-- [Your week: My Shifts](/workers/your-week), where the float appears on your calendar.
-- [Coverage inbox and Allied requests](/managers/coverage), which is what happens when the
-  lookup finds nobody.
-- [Floating: the selection rule](/system/floating/deep-dive), for why it chose you.
+## What this means for you
+
+Your hours do not change. A float relocates hours you were already going to work, so no
+weekly cap is consulted.
 
 <Related
   links={[
     { href: '/system/floating/deep-dive', label: 'Floating: the selection rule' },
-    { href: '/system/coverage-ladder', label: 'How a shift gets covered' },
     { href: '/workers/floating', label: 'When you get floated' },
+    { href: '/system/coverage-ladder', label: 'How a shift gets covered' },
   ]}
 />
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: What does a float do to my shift?
+   AFTER READING, THEY CAN:
+     1. Describe a float as a relocation of hours already scheduled, ending with a return
+        to their own desk, with no change to their weekly total or cap.
+     2. Tell an automated float from a manager float, and say which one they may decline
+        and what silence costs in each case.
+     3. Predict that a single staffed desk can never lend a worker, and that Harnwell can
+        send but never receive.
+     4. Say that no automated step will pull them back off a float once it is assigned.
+   FAILURE STATES COVERED: not answering an automated float (voided, desk buys cover); not
+   answering a manager float (it stands). The page is an explainer, so these are stated as
+   outcomes rather than as a troubleshooting section.
+   VERIFIED AGAINST: BSpec §1.2 (source floor of one worker, Harnwell never a destination,
+   training invariant), §3.2 (the escalation offsets are profile-set: broadcast at T-3h,
+   automated float lookup at T-2h, for both the school-year and short-break profiles),
+   §5.4 (float lookup at T-2h, only when the block would be empty),
+   §6.1 (hours cap not checked, floats are hours neutral), §6.4 (no takeback; manual
+   override only), §6.5 (the return is the planned end of the float, not a recall), §7.1
+   (acknowledgment deadline is 10 minutes before float start), §7.2 (declining an
+   automated float), §7.3 (no acknowledgment voids it and the gap goes to Allied), §25.2
+   (manager float is a directive with no decline and no Allied fallback), migrations
+   20260801000002 and 20260801000003.
+   UNRESOLVED: BSpec §1.2 and §6.1 disagree in shape on which houses may source. §1.2 says
+   routing depends on the period and is universal among open, multi staffed houses in
+   summer; §6.1 still lists the school-year allowlist (Quad and Harnwell only) as if it
+   were absolute. This page states only the guards both agree on and leaves source
+   eligibility entirely to the deep dive, which has to resolve it. Flagged rather than
+   papered over. The reminder cadence and the exact no-acknowledgment offset are left to
+   /workers/floating, which owns the worker action. "A manager can also float a worker out
+   by hand" is left unqualified on purpose: BSpec §25.2 scopes it to managers who can build
+   that house's schedule, and stating that scope here costs more budget than it buys on an
+   explainer written for the floated worker, who cannot act on it either way. */
+}

@@ -1,14 +1,113 @@
 ---
-title: "The knowledge base"
-description: "Adding the documents the desk assistant answers from, and reviewing what it proposes before anything goes live."
-minutes: 6
+title: 'The knowledge base'
+description: 'Uploading a document, reviewing what the system proposes for it, and approving it into the corpus the desk assistant answers from.'
+minutes: 4
 draft: true
 ---
 
-## What this is for
+The knowledge base is the only source the desk assistant answers from. Nothing enters it
+until you approve it.
+
+<Callout label="Who may approve">
+  HM, BA, RSM, and Administrator may approve; an SM cannot. The authority covers all 13
+  houses, not only yours, because the corpus is one shared rule set with a small per-house
+  overlay.
+</Callout>
 
 ## Do it
 
+<Steps>
+  <li>
+    Open <UI>Knowledge base</UI> under <UI>Manage</UI>.
+  </li>
+  <li>
+    Upload the file into <UI>Upload documents</UI>.
+    <span class="step-note">Markdown, plain text, or PDF.</span>
+  </li>
+  <li>
+    Open the row in <UI>Intake queue</UI> and read the proposal against the document.
+  </li>
+  <li>
+    Correct the house scope, sensitivity, and validity dates.
+  </li>
+  <li>
+    Select <UI>Approve and index</UI>, or <UI>Reject</UI>.
+  </li>
+</Steps>
+
+{
+  /* IMAGE: managers/knowledge-base/intake-review.png
+   MUST SHOW: the intake review panel on a proposed document, with the title, source
+   reference, house scope picker, sensitivity selector and validity dates all visible above
+   the Reject and Approve and index buttons.
+   WHY: the page's argument is that the proposed fields are yours to correct before the one
+   click that indexes them, and step text cannot show them side by side. */
+}
+
 ## What you'll see
 
+An approved document is answerable at once and cited as a source.
+
+## Rules that apply
+
+- **Sensitivity and house scope decide who gets the answer.** Someone outside the scope
+  gets no hint the item exists, so an over-broad scope is a disclosure.
+  [Roles and the duty hierarchy](/system/roles)
+- **Date-bound rules need their dates.** Retrieval is as of the date asked about, so an
+  undated rule never expires.
+  [Asking the desk assistant](/workers/assistant)
+- **Incidents enter only as a de-identified lesson.** Disciplinary and private ones produce
+  none, because raw text never enters the index.
+
 ## If it goes wrong
+
+**A "Managers only" notice.** You hold SM or SW only; ask an HM, BA, or RSM.
+
+**The row reads failed.** The row carries the reason. Fix the file and upload again.
+
+**A live document is wrong.** Use <UI>Delete document</UI>; retrieval stops at once. Reject
+only ends a proposal that never went live.
+
+<Related
+  links={[
+    { href: '/managers/roles', label: 'Which manager are you?' },
+    { href: '/workers/assistant', label: 'Asking the desk assistant' },
+    { href: '/system/roles', label: 'Roles and the duty hierarchy' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: How do I get a document into the knowledge base the desk assistant answers
+   from?
+   AFTER READING, THEY CAN:
+     1. Say whether their role may review and approve, and that the authority covers every
+        house rather than their own.
+     2. Run the upload, review and approve pass, knowing the system only proposes and the
+        approval is the human control.
+     3. Set house scope, sensitivity and validity dates deliberately, knowing those decide
+        who can be told the content and until when.
+     4. Remove a wrong document that already went live, and tell that apart from rejecting
+        a proposal.
+   FAILURE STATES COVERED: the "Managers only" notice for a role without the gate; a
+   document that failed processing; a wrong document already live and citable.
+   VERIFIED AGAINST: BSpec §18.1 (curated sources), §18.2 (shared corpus plus per-house
+   overlay; contacts resolved live, never stored as prose), §18.3 (retrieval filtered by
+   role and house; an unreadable item is not summarized or hinted at), §18.4 (system
+   proposes metadata, a human approves, edits or rejects; indexed only on approval;
+   withdrawable later), §18.5 (durable / until superseded / expiring; retrieval is as of a
+   date; an expired rule is not cited as current), §18.6 (raw incident records never
+   indexed; disciplinary and private incidents produce no lesson), §17 (answers grounded in
+   indexed documentation with sources shown); migration 20260711000006 (intake is
+   gated on Administrator, RSM, HM or BM with no house argument; uploads restricted to
+   markdown, text or pdf; a failed row carries its reason), migration 20260710000001
+   (sensitivity tiers general, internal, restricted), migration 20260724000002 (house scope
+   is a subset of houses, or shared across all 13), migration 20260722000002 (deleting a
+   live document cascades its chunks so the assistant can no longer retrieve it, distinct
+   from rejecting a proposal).
+   UNRESOLVED: BSpec §13 lists only HMs, BMs and the Administrator as able to approve
+   knowledge-base entries, but migration 20260711000006 also admits RSM, and the web screen
+   matches the migration. The page follows the migration; §13 looks like the stale one and
+   should be reconciled. Per-passage approval inside a proposal is a real control on the
+   review panel but is not spec-stated, so the page does not describe it. */
+}

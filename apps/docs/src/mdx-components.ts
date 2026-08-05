@@ -9,6 +9,7 @@ import Figure from './components/Figure.astro';
 import FlowStrip from './components/FlowStrip.astro';
 import Ladder from './components/Ladder.astro';
 import Related from './components/Related.astro';
+import RoleCard from './components/RoleCard.astro';
 import StateCard from './components/StateCard.astro';
 import StateList from './components/StateList.astro';
 import Steps from './components/Steps.astro';
@@ -25,6 +26,7 @@ export const mdxComponents = {
   FlowStrip,
   Ladder,
   Related,
+  RoleCard,
   StateCard,
   StateList,
   Steps,

@@ -1,12 +1,126 @@
 ---
-title: "Hours, caps, and attribution"
-description: "Which operations add hours, which only move them, and what the soft and hard caps actually stop."
-minutes: 6
+title: 'Hours, caps, and attribution'
+description: 'Which operations add hours, which only move them, and what the soft and hard caps actually stop.'
+minutes: 4
 draft: true
 ---
 
-## The short version
+Some operations add hours to a worker's week. Others only move hours that already exist, so
+they never meet a cap.
+
+{
+  /* IMAGE: system/hours-rules/hours-report.png
+   MUST SHOW: a weekly hours report with the resolved cap for that week and the three-way
+   split: worked at home, worked while floated out, worked on a cross-house pickup.
+   WHY: the split is what readers arrive confused about after a week at a second house. */
+}
 
 ## How it works
 
-## Where you see this
+A week runs Monday 00:00 to Sunday 23:59, never a rolling seven days, so each week settles
+alone.
+
+Every hour counts at the worker's home house, whatever desk they stood at. The choice of
+home over host is arbitrary, so the report keeps the detail: home, floated out, picked up
+across houses.
+
+<Table>
+
+| Operation             | Cap                             |
+| --------------------- | ------------------------------- |
+| Claim an open shift   | Warned at soft, refused at hard |
+| Take a recurring slot | Over-cap weeks skipped whole    |
+| Accept a swap         | Refused at hard                 |
+| Hand off a shift      | Never consulted                 |
+| Get floated           | Never consulted                 |
+
+</Table>
+
+One cap covers the week campus-wide, because per-house caps would mean redundant
+configuration and uneven enforcement.
+
+<Ladder
+  heads={['Week', 'Cap', 'Enforcement']}
+  label="Cap by week type"
+  rungs={[
+    {
+      when: 'In an operating season',
+      who: "The administrator's number",
+      what: 'Soft or hard',
+    },
+    {
+      when: 'Winter, Thanksgiving, fall or spring break',
+      who: '40 hours',
+      what: 'Hard, no override',
+    },
+    {
+      when: 'Spring fling, no other break',
+      who: '20 hours',
+      what: 'Soft',
+    },
+    {
+      when: 'Ordinary school year',
+      who: '20 hours',
+      what: 'Soft, a dismissible warning',
+    },
+  ]}
+/>
+
+A week straddling two types takes the strictest, on the safe side.
+
+## Why it works this way
+
+A float relocates hours already scheduled, so the weekly total does not move.
+
+A handoff is exempt by a recorded decision: mutual consent between two named workers
+outranks the cap check.
+
+A recurring pickup skips an over-cap week whole instead of warning, because one tap commits
+many weeks. That week stays claimable on its own.
+
+## What this means for you
+
+Read the cap off the week on screen, because a season may set any number.
+
+Hours count assigned blocks, not minutes worked, so a drop partway through a block forfeits
+the minutes worked in it.
+
+<Related
+  links={[
+    { href: '/workers/hours', label: 'Your hours' },
+    { href: '/managers/hours', label: 'Hours reporting and caps' },
+    { href: '/system/calendar', label: 'The operating calendar' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: Which operations change a worker's weekly hours, and what does the cap stop?
+   AFTER READING, THEY CAN:
+     1. Say which of claim, permanent pickup, swap, handoff and float meets a cap.
+     2. Work out a week's cap, tell soft from hard, and predict the straddling rule.
+     3. Explain where hours land after working at a second house.
+     4. Predict that a permanent pickup skips an over-cap week whole, and that the week is
+        afterwards claimable only on its own.
+   FAILURE STATES COVERED: refusal at a hard cap; the dismissible warning at a soft cap; a
+   whole week skipped from a permanent pickup; credit forfeited on a mid-block drop.
+   VERIFIED AGAINST: BSpec §9.1 (home-house attribution, three-way decomposition, assigned
+   not worked time), §9.2 (strict Monday to Sunday week), §9.3 (one cap per week for all
+   houses and its stated reason, defaults per week type, season caps of any positive value,
+   strictest-on-straddle, soft warning, hard refusal binding even on an HM), §5.2 (a 17:51
+   drop rounds to 17:30 and 21 minutes are forfeited), §5.3 (claim cap check; cross-house
+   pickup counts at the home house), §6.1 and §9.3 (float consults neither cap), §8.5
+   (handoff always cap-exempt, mutual-consent decision recorded 2026-06-17), §8.4.3
+   (permanent pickup skips the whole week over either cap; skipped weeks return only to the
+   weekly feed).
+   UNRESOLVED: §9.1 gives no rationale for counting at the home house, so the page calls the
+   choice arbitrary rather than inventing one. BSpec §9.3 contradicts itself once: under
+   "effect of a cap reduction" it says new float assignments are blocked past the new cap,
+   while the same section and §6.1 say float consults neither cap. The page states only the
+   claim and swap half and omits floats; the spec should be reconciled. Three verified rules
+   are left to /managers/hours because no claim here depends on them: HM/BM manual cap
+   modification (§9.3, any week to 20 soft or 40 hard, global, instant, no approval, SMs
+   excluded), the RSM builder-assignment exemption (§2.3a), and manager override being bound
+   by the hard cap but not the soft (§4.3). The report's on-screen labels are not named
+   because neither spec fixes them. */
+}

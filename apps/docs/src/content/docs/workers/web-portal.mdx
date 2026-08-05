@@ -1,14 +1,97 @@
 ---
-title: "Doing all of this on the web"
-description: "The same worker tasks in a browser, and the short list of things that only the app can do."
-minutes: 4
+title: 'Doing all of this on the web'
+description: 'The same worker tasks in a browser, and the short list of things that only the app can do.'
+minutes: 3
 draft: true
 ---
 
+The worker portal is your schedule in a browser. It signs you in with an emailed code, not
+a password.
+
+{
+  /* IMAGE: workers/web-portal/enter-your-code.png
+   MUST SHOW: the sign-in page on its Enter your code step, with the Code field, the Verify
+   and sign in button, and the Resend code and Use a different email links below it.
+   WHY: this screen replaces the email screen rather than sitting beside it, and a worker
+   hunting for the password field needs to see that there is none. */
+}
+
 ## Do it
+
+<Steps>
+  <li>
+    Open the portal in any browser and type your Penn email under <UI>Email</UI>.
+    <span class="step-note">Your manager creates your account. There is no sign up.</span>
+  </li>
+  <li>Choose <UI>Send code</UI>.</li>
+  <li>Open the email and read the 6 digit code.</li>
+  <li>
+    Type it under <UI>Code</UI>, then choose <UI>Verify and sign in</UI>.
+  </li>
+</Steps>
 
 ## What you'll see
 
+Your schedule, the same one the app shows. Both surfaces read one calendar, so a drop,
+claim or swap on either side lands on both.
+
 ## Rules that apply
 
+- **Type the code on the machine you want to use.** A link would sign in your phone, not
+  the desk computer, so the email sends digits. See [Signing in](/workers/signing-in).
+- **Your role decides what you see, not the browser.** A code session carries the access
+  your account already has. See [Roles and the duty hierarchy](/system/roles).
+- **Your phone still does the alerting.** Web has less notification support and no widgets,
+  so keep the app for floats and openings. See
+  [What triggers a notification](/system/notifications-rules).
+
 ## If it goes wrong
+
+**No code arrives.** An address with no account gets none, because nobody can sign
+themselves up here. Ask your manager.
+
+**The code is refused.** Choose <UI>Resend code</UI> and type the newest one. Choose
+<UI>Use a different email</UI> if you mistyped the address.
+
+**A password reset sends you back to sign in.** The web has no password to reset. The app
+still does.
+
+<Related
+  links={[
+    { href: '/workers/signing-in', label: 'Signing in and setting up' },
+    { href: '/workers/your-week', label: 'Your week: My Shifts' },
+    { href: '/workers/notifications', label: 'Notifications and widgets' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: How do I get into Shift in a browser and what does it not do?
+   AFTER READING, THEY CAN:
+     1. Sign in to the portal with an emailed 6 digit code, on the machine they are using.
+     2. Say why the email holds digits rather than a tappable link.
+     3. Name what the browser cannot do for them: widgets, and the app's notification reach.
+   FAILURE STATES COVERED: no code arrives because the address has no account; the code is
+   refused (resend, or the address was mistyped); a password reset page that returns them to
+   sign in because production web has no password.
+   VERIFIED AGAINST: BSpec §24 (web sign-in is passwordless in production, a 6 digit
+   one-time code emailed and typed into the same page; the code is deliberately not a
+   clickable link because web sign-in happens at a shared desk kiosk and a link would
+   authenticate the phone; a code request for an email with no account fails, nobody
+   self-registers; the password reset routes are unreachable in production and redirect to
+   sign-in; role and scope resolution is identical whichever sign-in mode produced the
+   session), §23 (the mobile app still signs in with email and password), §20.3 (widgets are
+   mobile only, the web surfaces have no widget equivalent), §17.6 (off-mobile surfaces have
+   reduced notification and widget support), §12 (the calendar is the source of truth and
+   updates immediately for every surface reading it). ARCH §23 confirms the same mechanism.
+   On-screen labels (Email, Send code, Code, Verify and sign in, Resend code, Use a
+   different email) are read off the shipped sign-in page, not from either spec.
+   UNRESOLVED: Neither spec enumerates which worker tasks the portal actually carries, so
+   the page claims only that both surfaces read the same calendar and never lists portal
+   pages. ARCH mentions a worker-portal open-shifts read, but a full task list would be
+   unsourced. The portal's address is in neither spec, so step 1 says "open the portal"
+   rather than naming a URL. The code's lifetime and the resend cooldown are product
+   behavior with no spec entry, so no timing is stated. Passwordless sign-in is a
+   production deploy setting; a worker on a development build sees a password form instead,
+   which this page does not mention because no worker meets it. */
+}

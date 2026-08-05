@@ -82,6 +82,7 @@ sidebar, and jump straight to the one page they want.
   /workers/your-week                Your week: My Shifts
   /workers/picking-up               Picking up open shifts
   /workers/dropping                 Dropping a shift
+  /workers/dropping-permanently     Dropping every week      ◄ split 2026-08-02
   /workers/swapping                 Swapping and handing off
   /workers/floating                 When you get floated
   /workers/preferences              Submitting availability
@@ -96,7 +97,8 @@ sidebar, and jump straight to the one page they want.
   /managers/roles                   Which manager are you?
   /managers/building-a-schedule     Building a schedule
   /managers/ai-assist               AI-assisted building
-  /managers/publishing              Publishing and editing a published week
+  /managers/publishing              Publishing a schedule
+  /managers/editing-published       Editing a published week ◄ split 2026-08-02
   /managers/coverage                The coverage inbox and Allied requests
   /managers/people                  People: hiring, roles, transfers
   /managers/hours                   Hours reporting and caps
@@ -119,9 +121,17 @@ sidebar, and jump straight to the one page they want.
   /system/glossary                  Glossary
 ```
 
-**40 pages** (this was written as 39; the map above has always listed 40, and 40 is what
-was built). That is more than a deck but each one is short: the point of the split is that
-no page carries two ideas.
+**42 pages** (written as 39; the map listed 40, and 40 was built; two pages were split in
+two on 2026-08-02, see below). That is more than a deck but each one is short: the point of
+the split is that no page carries two ideas.
+
+**Two pages were split on 2026-08-02**, when the first drafts written against the editorial
+contract failed its single-task gate. `/workers/dropping` carried four paths (this week,
+partial, mid-shift, and permanent) and `/managers/publishing` carried two tasks, which its
+own title admitted with the word "and". In both cases one task got the steps and the
+screenshot while the other got an orphan sentence filed under the wrong heading. The tell is
+in the title and in the page's question: **if either needs the word "and", it is two pages.**
+That check now runs before a writer is spawned, not after a draft exists.
 
 The map lives in code at `apps/docs/src/nav.ts`, which drives the sidebar, the overview
 card grids, and the previous/next links. Adding a page means adding the MDX file **and**
@@ -397,6 +407,16 @@ fine as text.
 ## 9. Content principles
 
 These are the editorial rules the build session should hold to.
+
+> **Enforcement, added 2026-08-02.** The nine principles below were in place for the first
+> seven pages and those pages still came out verbose and indirect, because a prose rule
+> does not bind: a writer reads "lead with the answer," believes it complied, and ships 999
+> words. The principles are now backed by measurable gates in
+> `.claude/skills/docs-write/references/editorial-contract.md` (word budgets, a 25-word
+> sentence ceiling, a banned-phrase list, per-audience reading grade) and scored pass/fail
+> by the `docs-editor` persona in separate context from whoever wrote the page. Write pages
+> through the `docs-write` skill rather than by hand. The three voices (worker, manager,
+> system) are three personas, routed by the page's path.
 
 1. **One idea per page.** If a page needs two H1-level ideas, it is two pages.
 2. **Overview pages are real pages.** Framing paragraph, then linked cards. Never a

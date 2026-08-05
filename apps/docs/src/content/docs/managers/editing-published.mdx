@@ -1,0 +1,90 @@
+---
+title: 'Editing a published week'
+description: 'Changing a week that is already live: where the override editor is, and which scope to give the change.'
+minutes: 3
+---
+
+A published week changes forward, on the live calendar, one block at a time.
+
+## Do it
+
+<Steps>
+  <li>Open the calendar at the week to change.</li>
+  <li>Select the block to open the override editor.</li>
+  <li>Add a worker, or remove the one on it.</li>
+  <li>
+    Choose the scope, then confirm.
+    <span class="step-note">The worker is notified either way.</span>
+  </li>
+</Steps>
+
+<Table>
+
+| Scope | What it changes | Pick it when |
+| --- | --- | --- |
+| This week only | Only the week you are viewing. | A one-off: illness, an event, a trade. |
+| This week onward | This week, and that weekday and time in every later week. | The pattern itself is wrong. |
+
+</Table>
+
+{
+  /* IMAGE: managers/editing-published/override-scope.png
+   MUST SHOW: the inline override editor open on a live calendar block, with the roster
+   list and the scope selector visible and This week only selected.
+   WHY: the two scopes sit in one control, and picking the wrong one silently rewrites the
+   rest of the period. */
+}
+
+## What you'll see
+
+Removing a worker leaves a vacant seat, claimable in <UI>Open Shifts</UI> and escalated if
+the desk would be empty.
+
+## Rules that apply
+
+- **Either scope works on a shift of any age**, past or underway, because an override is a
+  correction and not a claim. See [How a shift gets covered](/system/coverage-ladder).
+- **An override cannot touch a float-committed seat**, because the floater was promised it.
+  Decline or void the float first. See [Floating: overview](/system/floating).
+- **The 40-hour hard cap is never bypassable**: it refuses the assignment. The 20-hour
+  school-year cap only warns. See [Hours, caps, and attribution](/system/hours-rules).
+- **An SM edits their own house only.** HM, BA, RSM, and Administrator override any house,
+  on the authority that lets them publish. See [Roles and the duty hierarchy](/system/roles).
+
+## If it goes wrong
+
+**The editor refuses the worker.** The seat is float-committed, or the worker would cross
+40 hours.
+
+**An onward change hit weeks you did not mean to.** Run a second onward override where the
+old pattern resumes.
+
+<Related
+  links={[
+    { href: '/managers/publishing', label: 'Publishing a schedule' },
+    { href: '/managers/coverage', label: 'The coverage inbox' },
+    { href: '/managers/roles', label: 'Which manager are you?' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: How do I change a week that is already live?
+   AFTER READING, THEY CAN:
+     1. Open the right block on the live calendar and reach the override editor.
+     2. Choose correctly between "This week only" and "This week onward".
+     3. Fix a past or in-progress shift, knowing no time limit applies to an override.
+     4. Recognise the two changes the editor will refuse: a float-committed seat and the
+        40-hour hard cap.
+   FAILURE STATES COVERED: an override refused by a float-committed seat or the hard cap;
+   an onward override applied one week too early.
+   VERIFIED AGAINST: BSpec §4.3 Phase 3 (post-publish override, Phase-2 roster and search
+   card, shift of any age amended 2026-07-29, float-committed seat, 40-hour hard cap never
+   bypassable, 20-hour school-year cap soft), §2.3a (elevated tier may override any house;
+   SM own-house), §10.1a (a shift removed by an operator is a mandatory notification), §13
+   (override including permanent removal; both options presented explicitly);
+   ARCHITECTURE.md §3.9 (override scoped to this week only or to the same house, weekday
+   and time-of-day in every later week).
+   UNRESOLVED: The scope control's on-screen label is not spec-stated, so the page names
+   the two scope values from ARCHITECTURE.md §3.9 without naming the control itself. */
+}

@@ -163,8 +163,15 @@ code {
   margin-top: 6px;
 }
 
-.prose > :where(.figure, .callout, .card-grid, .steps, .flow-strip, .state-list, .ladder, .tabs, .table-frame) {
+.prose > :where(.figure, .callout, .card-grid, .steps, .flow-strip, .state-list, .ladder, .tabs, .table-frame, .role-card-stack) {
   margin-top: 18px;
+}
+
+/* Getting-started's role picker: a vertical stack of big disclosure cards. */
+.role-card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .prose hr {

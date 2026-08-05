@@ -1,14 +1,96 @@
 ---
-title: "Break shifts"
-description: "Why break coverage is claimed rather than scheduled, how the calendar picker works, and what happens to hours nobody claims."
-minutes: 6
+title: 'Break shifts'
+description: 'Claiming your hours for a break by dragging on the break calendar.'
+minutes: 3
 draft: true
 ---
 
+You claim your own break hours on the break calendar. Nobody builds you a break schedule.
+
+{
+  /* IMAGE: workers/breaks/break-calendar-picker.png
+   MUST SHOW: the break calendar open on a day inside the break, with a drag selection over
+   empty space, the claim bar at the bottom, the This break hours meter, and one read-only
+   card already filled by another worker.
+   WHY: the claim is a drag on a grid, not a tap on a card, and step text cannot show that
+   the meter and the claim bar move with the drag. */
+}
+
 ## Do it
+
+<Steps>
+  <li>
+    Open <UI>More</UI>, then <UI>Break shifts</UI>.
+  </li>
+  <li>Pick a day inside the break.</li>
+  <li>
+    Drag down the empty space to pick your hours.
+    <span class="step-note">You pick a time, not a desk. The app fills any open seat.</span>
+  </li>
+  <li>
+    Tap <UI>Claim</UI>.
+  </li>
+</Steps>
 
 ## What you'll see
 
+Your hours fill in with your name, and the <UI>This break</UI> meter climbs.
+
 ## Rules that apply
 
+- **The calendar opens 14 days before the break's first day and closes one day before it
+  starts.** Every day of the break closes together, whatever day the shift falls on.
+- **First come, first served.** A fully staffed block is read only, because a desk can never
+  be over-staffed.
+- **Thanksgiving, fall break, and spring break cap you at 40 hours.** The cap is hard, so a
+  drag past it is refused, not warned. See
+  [Hours, caps, and attribution](/system/hours-rules).
+- **A shift you give back before the calendar closes returns to the calendar** for anyone
+  to take.
+- **Tick <UI>I have no hours this break</UI> to stop the reminder three days out.** It does
+  not stop you claiming later.
+
 ## If it goes wrong
+
+**You only got part of what you dragged.** Somebody claimed the rest first. Drag what is
+left.
+
+**The banner reads Claiming closed.** What is unclaimed, and anything given back now, is in
+[Open Shifts](/workers/picking-up).
+
+**The drag will not go further.** You are at the break cap, or the next block is full.
+
+<Related
+  links={[
+    { href: '/workers/picking-up', label: 'Picking up open shifts' },
+    { href: '/workers/hours', label: 'Your hours' },
+    { href: '/workers/your-week', label: 'Your week: My Shifts' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: How do I get shifts for a break period?
+   AFTER READING, THEY CAN:
+     1. Claim break hours by dragging on the break calendar inside the claim window.
+     2. Say when the calendar opens and closes, and where unclaimed hours go after it closes.
+     3. Predict a refusal: the hard break cap, a full block, and a partly trimmed drag.
+   FAILURE STATES COVERED: partial claim after someone else got there first; the picker
+   closed and the calendar is read only; the drag stops at the cap or a full block.
+   VERIFIED AGAINST: BSpec §4.4 (T-14d open, T-3d alert, T-1d close, all measured from the
+   first day of the break; first come first served; drag over open space; time never a desk;
+   a block at required headcount is read only; the cap bounds the drag; trim-and-tell on a
+   contested drag; drops before T-1d return to the calendar pool, after it to the open-shifts
+   feed; the per-break "no break hours" opt-out is advisory and suppresses the T-3d alert;
+   break shifts are hidden from the open-shifts feed during the claim phase; 40 hours hard
+   for Thanksgiving, fall break, and spring break), §5.3 (T-2h lock on an otherwise empty
+   desk; claiming over the 40 hour break cap is prohibited), §9.3 (an HM or BM may modify
+   the cap).
+   UNRESOLVED: On-screen labels (More, Break shifts, Claim, This break, I have no hours this
+   break) are confirmed in the shipped app, not in either spec. BSpec §4.4 sets a 20 hour
+   soft cap for spring fling and §14 warns a season may set any cap, while this page states
+   only the 40 hour figure and calls the cap hard. A spring fling worker sees a number that
+   does not match their meter. Worth a sentence once the site carries a page listing every
+   cap. Winter break (Harnwell only, every other house closed) uses this same flow and is not
+   named here, because naming it needs the closed-house rule this page has no room for. */
+}

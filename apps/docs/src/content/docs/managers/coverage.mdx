@@ -1,158 +1,89 @@
 ---
 title: 'The coverage inbox and Allied requests'
 description: 'A coverage request means the system ran out of internal options for a desk, and a person now has to decide what happens to it.'
-minutes: 8
+minutes: 4
+draft: true
 ---
 
 import actionInbox from '../../../assets/screenshots/extra-web-action-inbox.png'
 
-This page is a runbook. Read the boxed rule, then the three rungs, then the close-out
-outcomes. Everything else is detail you can come back for.
+A coverage request means a desk will be empty unless a person procures Allied.
+
+Act on a request for any house you can build for. An SM builds their own house; an RSM,
+HM, BA (Building Administrator) or Administrator builds any house. Anyone with that
+permission may act, not only the manager paged.
 
 <Callout label="The one rule" critical>
-  **An open coverage request never clears itself.** When its window passes without a
-  close-out, it goes overdue and stays visible until a human records what happened. It does
-  not archive, expire, or quietly resolve. If you acknowledge it and walk away, it is still
-  yours.
+  **An open request never clears itself.** When its window passes unclosed it goes
+  overdue and stays visible until a human records what happened.
+
+  Acknowledging is not closing. Acknowledge and walk away and it still goes overdue, into
+  the coverage report as a missed-coverage incident.
 </Callout>
 
-## What the alert means
+## Do it
 
-A coverage request is opened at the moment the automated chain runs out of internal
-options: the block was broadcast, nobody claimed it, and the float lookup found no eligible
-worker. Unless somebody procures Allied, that desk will be empty.
+<Steps>
+  <li>Open the alert from the banner.</li>
+  <li>
+    Select <UI>I am handling this</UI>, so the ladder stops paging your colleagues.
+  </li>
+  <li>Call Allied, or find internal coverage.</li>
+  <li>
+    Come back and <UI>Close out</UI> with one of four outcomes.
+    <span class="step-note">The step people skip, and the only one that ends it.</span>
+  </li>
+</Steps>
 
-One request covers one contiguous uncovered stretch at one house. The chain fires once
-every 30 minutes, so adjacent blocks are merged into a single request rather than paging
-you eight times for one empty evening. Merging never re-pages.
+<Table>
+
+| Outcome | Choose it when |
+| --- | --- |
+| Allied secured | Allied is booked for the window. |
+| Covered internally | A worker picked it up, or you assigned one. |
+| Desk went unstaffed | Nobody covered it. Needs a written note, and counts as an incident. |
+| No longer needed | The block was voided, or the desk regained a worker. |
+
+</Table>
 
 <Figure
   src={actionInbox}
   alt="The manager action inbox in the web console, showing a coverage alert card with the house, the coverage window, and acknowledge and close out controls."
   figure="Figure 1"
-  caption="The coverage inbox. The alert persists on every page of the console while any request needs attention."
+  caption="Shown on every console page while a request needs attention."
   maxWidth={520}
 />
 
-## The three rungs
+## What you'll see
 
-The request escalates on its own until somebody acknowledges it.
+A closed request leaves the active view. Only **No longer needed** ever closes itself.
 
-<Ladder
-  label="The Allied coverage ladder"
-  heads={['Rung', 'Who is paged', 'What happens']}
-  rungs={[
-    {
-      when: 'Immediately',
-      who: 'RSM for the house',
-      what: 'Held for 60 minutes, re-paging every 15 until acknowledged.',
-    },
-    {
-      when: 'After the timeout',
-      who: 'HM for the house',
-      what: 'Follows the leave-delegation chain if the HM is out.',
-      state: 'pending',
-    },
-    {
-      when: 'After the timeout',
-      who: 'Housing Manager on duty',
-      what: 'Terminal. Nobody is above this rung, so it stays here and keeps reminding.',
-      state: 'urgent',
-    },
-  ]}
-/>
-
-A rung with nobody reachable is **skipped immediately** rather than holding the request for
-its full hour. If all three are unreachable the request falls to the project administrator.
-It is never fanned out to any other manager, and never to another house's RSM.
-
-The hold and reminder intervals are configurable, and default to 60 and 15 minutes.
-
-## Acknowledge and close out are different
-
-They are separate on purpose, and the difference is the whole point of the surface.
-
-<Table>
-
-| Action | What it means | What it does |
-| --- | --- | --- |
-| Acknowledge | I have seen this and I am handling it. | Stops the ladder and the reminders. The request stays open. |
-| Close out | Here is what actually happened. | Removes the request from the active view. Requires an outcome. |
-
-</Table>
-
-**Any manager who can build for that house may acknowledge**, not only the rung currently
-holding it. An RSM picking up a request that has already passed to their HM is a good
-outcome, not an error.
-
-### The four close-out outcomes
-
-<Steps>
-  <li>
-    <strong>Allied secured.</strong> You called Allied and the window is covered.
-  </li>
-  <li>
-    <strong>Covered internally.</strong> A worker picked it up, or you assigned somebody by
-    hand.
-  </li>
-  <li>
-    <strong>Desk went unstaffed.</strong> Nobody covered it.
-    <span class="step-note">
-      Requires a written note, and is recorded as a missed-coverage incident.
-    </span>
-  </li>
-  <li>
-    <strong>No longer needed.</strong> The window stopped existing, or the desk regained a
-    worker.
-  </li>
-</Steps>
-
-The system records one of these on its own in exactly one case: the block was voided by a
-configuration change, or the desk got a worker back. Everything else is your call.
-
-## Do it
-
-<Steps>
-  <li>Open the alert from the banner. It is on every page of the console while anything is open.</li>
-  <li>
-    Acknowledge it, so the ladder stops paging and your colleagues can see it is being
-    handled.
-  </li>
-  <li>Call Allied, or find internal coverage.</li>
-  <li>
-    Come back and close it out with what actually happened.
-    <span class="step-note">This is the step that gets skipped. It is the one that matters.</span>
-  </li>
-</Steps>
+One request covers one uncovered stretch at one house. The chain fires per 30-minute
+block, so adjacent blocks merge rather than page you eight times for one empty evening.
+Merging never re-pages.
 
 ## Rules that apply
 
-- **Coverage is secured at most four hours at a time.** A longer empty window is never sent
-  to Allied all at once. The later hours stay claimable and re-escalate on their own, so
-  students are not locked out of hours that were still fillable.
-- **Securing Allied does not re-open the seats.** Once an empty desk reaches the two-hour
-  step, its vacant seats stay locked, whether a floater or Allied fills it. Nobody piles
-  onto a window that has already been paid for.
-- **A desk with one worker on it is not a coverage failure.** The chain only fires for a
-  block that would have nobody present. Empty seats on a still-staffed desk stay quietly
-  claimable. See [How a shift gets covered](/system/coverage-ladder).
-- **Every unstaffed close-out and every overdue request** appears in the coverage report
-  for review.
+- **An unanswered request climbs three rungs, an hour apart**, so it always reaches
+  somebody. The rungs are the house's RSM, then its HM, then the Housing Manager on duty.
+  The holder is re-paged every 15 minutes, never fanned out wider. See
+  [Roles and the duty hierarchy](/system/roles).
+- **Securing Allied does not re-open the seats.** An otherwise empty desk locks two hours
+  before its block starts and stays locked, so nobody piles onto a window already paid for.
+  See [How a shift gets covered](/system/coverage-ladder).
+- **One worker on the desk is not a coverage failure.** The chain fires only for a block
+  with nobody present, so empty seats on a staffed desk stay claimable. See
+  [Floating: overview](/system/floating).
 
 ## If it goes wrong
 
-<Callout label="The alert will not load">
-  You are told that explicitly, at the same prominence as a real alert. It never resolves
-  to an all-clear. Silence on this surface means every desk is accounted for, so a failed
-  read is never allowed to look like quiet. Treat it as unknown coverage and check the
-  house schedule directly.
+<Callout label="The coverage status will not load">
+  Silence on this alert means every desk is accounted for, so a failed read is never shown
+  as an all-clear. Treat it as unknown coverage and check the house schedule.
 </Callout>
 
-**You acknowledged something that was not yours.** That is fine and it is by design.
-Acknowledge stops the ladder; it does not transfer ownership away from anyone who can act.
-
-**A request you closed came back.** It did not. A new stretch at the same house opens its
-own request. Check the coverage window on the card.
+**A request you closed came back.** It did not. A new uncovered stretch at the same house
+opens its own request. Read the coverage window on the card.
 
 <Related
   links={[
@@ -161,3 +92,41 @@ own request. Check the coverage window on the card.
     { href: '/managers/roles', label: 'Which manager are you?' },
   ]}
 />
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: A coverage request is paging me. What do I do with it?
+   AFTER READING, THEY CAN:
+     1. Say whether they may act on this house's request at all.
+     2. Acknowledge to stop the ladder, then close out with the right one of four
+        outcomes, knowing acknowledging alone leaves the request open and overdue.
+     3. Say who is paged next and when, and that a request is never fanned out.
+     4. Explain why the seats stay locked after Allied is secured, and why a still
+        staffed desk never produced a request in the first place.
+   FAILURE STATES COVERED: the coverage status cannot be loaded and must be treated as
+   unknown rather than all-clear; a closed request appearing to return as a new stretch.
+   VERIFIED AGAINST: BSpec §5.4a (one request per contiguous stretch per house, merging
+   does not re-page, the three rungs in order, unreachable rung skipped, project
+   administrator last resort, never fanned out, acknowledge vs close, the four outcomes,
+   the note required on Desk went unstaffed, overdue and missed-coverage incidents, the
+   failed read never presented as quiet), §5.4 (coverage floor of one worker, Allied
+   request opened on float lookup failure), §5.5 (the pickup lock is one-way and Allied
+   does not re-open seats), §2.3a and corrected spec state 2026-08-02 (SM own-house,
+   elevated tier any house), §13 (BA is the Building Administrator, the per-house BM
+   role); migration 20260729000010 (rung timeout default 60 minutes and reminder default
+   15 minutes, both configurable without a deploy; acknowledging permitted to anyone who
+   can build for the house rather than only the paged rung; closing gated on the same
+   permission; the four outcome values; the system closing a request only as No longer
+   needed).
+   UNRESOLVED: RECLASSIFICATION REQUEST, for a decision above this page. SKETCH §5 calls
+   this page a runbook and asks it to carry the three rungs, the four close-out outcomes
+   and the never-clears-itself rule. Written to the task-page budget, only the outcomes
+   survive in full; the ladder is now one bullet pointing at /system/coverage-ladder,
+   which draws all three rungs. If the runbook framing requires the rung diagram and the
+   4-hour securing cap back on this page, reclassify it as a deep dive rather than
+   restoring them here. Flagged, not assumed.
+   The control labels "I am handling this" and "Close out" are confirmed in the shipped
+   console, not in either spec. BSpec §10.1b's off-hours pilot ladder pre-empts this
+   ladder when switched on, and is off by default, so the page describes only the default
+   ladder. The coverage report is spec-stated but has no page of its own to link to. */
+}

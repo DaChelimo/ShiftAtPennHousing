@@ -1,14 +1,104 @@
 ---
-title: "Your hours"
-description: "Where your weekly total comes from, what the soft cap does, and how hours worked at another house are counted."
-minutes: 4
-draft: true
+title: 'Your hours'
+description: 'Where your weekly total comes from, what the cap does, and how hours worked at another house are counted.'
+minutes: 3
 ---
+
+Your hours are the shifts you hold in one week, counted against that week's cap.
+
+{
+  /* IMAGE: workers/hours/week-total-chip.png
+   MUST SHOW: the My Shifts week header with the clock chip below it, reading a week
+   label, the held total, and the resolved cap with its soft or hard wording.
+   WHY: the total and the cap live in one small chip, and a reader who has not seen it
+   will hunt for an hours screen that does not exist. */
+}
 
 ## Do it
 
+<Steps>
+  <li>Open <UI>My Shifts</UI>.</li>
+  <li>
+    Read the clock chip under the week header.
+    <span class="step-note">
+      It reads like <em>This week, 14h of 20h soft cap</em>.
+    </span>
+  </li>
+  <li>
+    Tap the header arrows to check another week.
+    <span class="step-note">The cap follows the week shown.</span>
+  </li>
+</Steps>
+
 ## What you'll see
+
+The total counts every shift you hold that starts in that week.
+[Drop one](/workers/dropping) and it falls.
 
 ## Rules that apply
 
+- **A week runs Monday 00:00 to Sunday 23:59.** Each week settles on its own, so nothing
+  rolls over. See [Hours, caps, and attribution](/system/hours-rules).
+- **Your hours count at your home house wherever you work.** That is definitional, not a
+  rule with a reason. A [float](/workers/floating) or a
+  [cross-house pickup](/workers/picking-up) changes the desk, not the total.
+- **Only scheduled time counts.** Stay late for a floater and those extra minutes are
+  lost, because only assigned blocks count.
+- **The cap is not always 20 hours.** Winter break, and any week touching Thanksgiving,
+  fall, or spring break, runs at 40 hard. A summer season sets its own.
+
 ## If it goes wrong
+
+**A warning when you claim.** The week is on a soft cap. Tap through and the shift is
+yours.
+
+**The claim is refused.** The week is on a hard cap. No manager can waive it. Drop a shift
+that week, or claim in another.
+
+**A permanent pickup skipped weeks.** Any over-cap week is skipped, soft or hard, because
+one tap commits you to many weeks.
+
+<Related
+  links={[
+    { href: '/system/hours-rules', label: 'Hours, caps, and attribution' },
+    { href: '/workers/picking-up', label: 'Picking up open shifts' },
+    { href: '/workers/your-week', label: 'Your week: My Shifts' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: How many hours do I hold this week, and how close am I to the cap?
+   AFTER READING, THEY CAN:
+     1. Find the week total and the resolved cap, and check any other week.
+     2. Say which time counts and which does not, including work done at another house.
+     3. Predict a soft-cap warning, a hard-cap refusal, and a skipped permanent-pickup week.
+   FAILURE STATES COVERED: soft-cap warning on claim; hard-cap refusal that no manager can
+   waive; a permanent pickup that silently skipped over-cap weeks.
+   VERIFIED AGAINST: BSpec §1.5 (30 minute blocks, hours = blocks x 0.5), §9.1 (hours count
+   at the home house for floats and for cross-house pickups; assigned time is counted, not
+   actually-worked time, with the late-floater example), §9.2 (strict Monday 00:00 to Sunday
+   23:59 calendar week, not a rolling window, each week resolves independently), §9.3
+   (per-week resolved cap; 20 soft for the school year, 40 hard for winter break and for
+   any week containing one or more days of Thanksgiving / fall / spring break, and 40 hard
+   for a week straddling the school year and one of those breaks; a season may set any cap
+   so no surface may assume one of two numbers; soft
+   warns and is overridable, hard is refused and cannot be overridden even by an HM; every
+   surface shows the resolved cap for the week shown and updates as the reader navigates),
+   §6.1 (floats are hours-neutral and consult neither cap), §5.3 (soft-cap warning vs.
+   hard-cap refusal on claim, and cross-house pickup attribution), §8.4 (permanent pickup
+   skips an entire week whose projected total exceeds the cap, whether soft or hard).
+   UNRESOLVED: Home-house attribution is stated as definitional on the page. BSpec §9.1
+   asserts it and gives no rationale, and none exists in ARCH or a migration, so the page
+   labels it definitional rather than manufacturing a reason. Spring fling stays off the
+   page: §9.3 sets it to the school-year 20 soft, so it is not an exception a reader acts
+   on. draft: true is intentional and is cleared on PASS, not by the writer.
+   The chip's exact on-screen wording is confirmed in the shipped app, not in
+   either spec, so the page paraphrases it rather than quoting a label. BSpec §9.1 says an
+   hours report decomposes the week into hours at home, hours floated out, and hours from
+   cross-house pickup; no worker-facing surface for that decomposition exists on mobile or
+   in the worker web portal, so the page does not promise one. Swap acceptance is stated as
+   cap-checked in §9.3, cap-exempt for a retroactive swap in §8.2, and always cap-exempt for
+   a handoff in §8.5; the page names none of the three, and that conflict belongs in
+   /system/hours-rules. */
+}

@@ -1,0 +1,105 @@
+---
+// Getting-started role picker: a big disclosure card per reader type. Closed, it
+// is a headline and a one-line promise; opened, its body is the reading catalog
+// for that reader (a <Steps> list). Deliberately NOT the §6 inverted --ink block
+// (DESIGN.md §6 reserves that treatment for /managers/coverage only) — this uses
+// the ordinary bordered-card language at a larger scale instead.
+type Props = { title: string; tagline: string; open?: boolean }
+const { title, tagline, open = false } = Astro.props
+---
+
+<details class="role-card" open={open}>
+  <summary class="role-card__summary">
+    <span class="role-card__text">
+      <span class="role-card__title">{title}</span>
+      <span class="role-card__tagline">{tagline}</span>
+    </span>
+    <svg class="role-card__chevron" viewBox="0 0 10 10" width="11" height="11" aria-hidden="true">
+      <path d="M3 1.5 6.5 5 3 8.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+    </svg>
+  </summary>
+  <div class="role-card__body"><slot /></div>
+</details>
+
+<style>
+  .role-card {
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+    background: var(--bg-2);
+    transition:
+      border-color 120ms ease,
+      background-color 120ms ease;
+  }
+
+  .role-card:hover {
+    border-color: var(--mark-line);
+  }
+
+  .role-card[open] {
+    background: var(--bg);
+    border-color: var(--mark-line);
+  }
+
+  .role-card__summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 20px;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .role-card__summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .role-card__summary:focus-visible {
+    outline: 2px solid var(--mark);
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
+
+  .role-card__text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .role-card__title {
+    font-size: 19px;
+    font-weight: 680;
+    letter-spacing: -0.018em;
+    color: var(--ink);
+  }
+
+  .role-card__tagline {
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--muted);
+  }
+
+  .role-card__chevron {
+    flex: none;
+    color: var(--muted);
+    transition: transform 160ms ease;
+  }
+
+  .role-card[open] .role-card__chevron {
+    transform: rotate(90deg);
+    color: var(--mark);
+  }
+
+  .role-card__body {
+    padding: 4px 20px 22px;
+    border-top: 1px solid var(--rule-2);
+    margin-top: 2px;
+    padding-top: 18px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .role-card__chevron {
+      transition: none;
+    }
+  }
+</style>

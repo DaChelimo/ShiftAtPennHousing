@@ -1,14 +1,112 @@
 ---
-title: "AI-assisted building"
-description: "Letting the builder propose a full week from preferences and coverage targets, and reviewing what it proposed before it counts."
-minutes: 6
+title: 'AI-assisted building'
+description: 'Generating a proposed draft week from submitted preferences, and reading what the proposal left open before you accept it.'
+minutes: 4
 draft: true
 ---
 
-## What this is for
+The schedule generator drafts a full week from submitted preferences that you edit and publish.
+
+<Callout label="A proposal is a draft, never a publish">
+  It writes only to your draft grid. Nothing reaches a worker until you publish.
+</Callout>
 
 ## Do it
 
+<Steps>
+  <li>Open the builder on the house and week.</li>
+  <li>
+    Select <UI>Generate with AI</UI> and leave the tab open.
+    <span class="step-note">Days fill into the grid as they are built.</span>
+  </li>
+  <li>Read the open-seat list first.</li>
+  <li>Select <UI>Accept as draft</UI> to keep it, or <UI>Discard</UI> to drop it.</li>
+</Steps>
+
+{
+  /* IMAGE: managers/ai-assist/ai-panel.png
+   MUST SHOW: the schedule builder with the AI panel open on a finished proposal: the score
+   and objective breakdown, the remaining-open-seats notice, and the accept and discard
+   controls.
+   WHY: the page's central instruction is to read the open seats before accepting, and the
+   step text cannot show where that notice sits relative to the accept button. */
+}
+
 ## What you'll see
 
+A scored draft and its unfilled seats. Each says whether anyone available could have worked it.
+
+Shifts run at least two hours, on the hour except at desk open and close.
+
+## Rules that apply
+
+- **Hard rules are enforced, not scored.** Harnwell training, headcount, block boundaries,
+  hours caps, and availability constrain the generator, so a proposal breaking one never
+  reaches you. See [Core concepts](/system/concepts).
+- **Coverage beats preference, deliberately.** An empty seat leaves the desk unstaffed, so
+  no preference gain can buy one. See
+  [How a shift gets covered](/system/coverage-ladder).
+- **Generating is gated like building.** An SM generates for their own house; HM, BA, RSM,
+  and Administrator for any house. It grants no authority you lack. See
+  [Roles and the duty hierarchy](/system/roles).
+
 ## If it goes wrong
+
+**Generate is disabled.** No scheduling period covers this week, or the preference deadline is still open, since building starts only when it closes.
+
+**Seats are still open.** Fill them by hand, or publish them as claimable.
+
+**You stopped the run.** <UI>Stop</UI> keeps the days already built. <UI>Stop and clear</UI>
+keeps nothing.
+
+<Related
+  links={[
+    { href: '/managers/building-a-schedule', label: 'Building a schedule' },
+    { href: '/managers/publishing', label: 'Publishing a schedule' },
+    { href: '/managers/preferences-admin', label: 'Preferences and deadlines' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: How do I get a proposed draft week out of the generator and decide whether to
+   keep it?
+   AFTER READING, THEY CAN:
+     1. Say whether they may generate for the house in the switcher, and why the control is
+        disabled before the preference deadline closes.
+     2. Generate a proposal knowing it is a draft that reaches no worker until they publish.
+     3. Read the open-seat list, tell a gap nobody could have filled from one left open, and
+        decide to fill it by hand or publish it as claimable.
+     4. Predict the shape of what they get: shifts of at least two hours, on the hour except
+        at desk open and close, with hard rules already enforced.
+     5. Stop a run part way and say what each stop control leaves behind.
+   FAILURE STATES COVERED: the generate control disabled (no period, or deadline still
+   open); unfilled seats remaining in an accepted proposal; a run stopped part way with only
+   some days built.
+   VERIFIED AGAINST: BSpec §19 (proposal is a draft never a publish; hard rules of §1.2 and
+   §1.5 constrain the generator; coverage dominance is not tunable into a tie; unfilled seats
+   surfaced and classified), §4.2 (building begins only after the preference deadline
+   passes), §4.3 Phase 3 (seats left empty stay claimable; who may build and publish),
+   §2.3a and §13 (SM own-house, elevated tier cross-house); ARCHITECTURE.md §15 (validator is
+   the hard gate, invalid candidates repaired or dropped; finalize guarantees every run is at
+   least 4 blocks and boundary-legal, with desk open and close the only exception);
+   migration 20260627000002 (schedule building made cross-house for hm/bm/rsm), which is the
+   gate the generate action checks.
+   UNRESOLVED, in order of consequence:
+   1. Accepting a proposal replaces the assignments already in the draft grid, and the
+      confirmation dialog states the count. This is the one action on the page a manager
+      cannot walk back: someone who hand-built half a week before generating loses that
+      work on accept. Neither spec states it, so the page cannot carry it, which is why
+      the most consequential action here currently gets zero words. Blocking fix: add
+      the replacement semantics to BSpec §19, then give them a callout on this page.
+   2. Stop semantics are UI-sourced only. That <UI>Stop</UI> retains the days already
+      built while <UI>Stop and clear</UI> retains none is stated by the builder controls,
+      not by BSpec §19 or ARCH §15. The page states it because a manager who used the
+      wrong control would otherwise be told, wrongly, that their days survived. Add
+      cancellation behavior to BSpec §19 to ground it.
+   3. Re-running the generator after a discard is not stated in either spec or any
+      migration, so the page does not offer it as an option after a discard.
+   4. Spec defect, not a page defect: ARCH §15 cites "BSpec §19.1", which does not exist
+      in BEHAVIORAL_SPECIFICATION.md. The shift-shape rule on this page is sourced to
+      ARCH §15 itself, which states it directly. */
+}

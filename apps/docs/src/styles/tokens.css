@@ -57,13 +57,15 @@
   color-scheme: dark;
 
   /* §2 Dark. Not an inversion: the ground lifts off pure black so the tinted
-     state cards have somewhere to sit, and the accent lightens to hold contrast. */
+     state cards have somewhere to sit, and the accent lightens to hold contrast.
+     ink/ink-2/muted brightened 2026-08-02: the original set read as dim/grey
+     against the ground at normal screen brightness. */
   --bg: #0f1319;
   --bg-2: #161b23;
   --bg-3: #1e242e;
-  --ink: #e7ebf2;
-  --ink-2: #b4bdcb;
-  --muted: #8b94a4;
+  --ink: #f3f6fa;
+  --ink-2: #ccd4e0;
+  --muted: #99a2b2;
   --rule: #2a323e;
   --rule-2: #1e242e;
   --mark: #5c9bff;
@@ -98,9 +100,9 @@
     --bg: #0f1319;
     --bg-2: #161b23;
     --bg-3: #1e242e;
-    --ink: #e7ebf2;
-    --ink-2: #b4bdcb;
-    --muted: #8b94a4;
+    --ink: #f3f6fa;
+    --ink-2: #ccd4e0;
+    --muted: #99a2b2;
     --rule: #2a323e;
     --rule-2: #1e242e;
     --mark: #5c9bff;

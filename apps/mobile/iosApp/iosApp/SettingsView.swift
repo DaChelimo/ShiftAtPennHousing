@@ -54,9 +54,6 @@ struct SettingsScreen: View {
     // shift-reminder lead times). Called with the WHOLE preference set, because the
     // RPC upserts every column at once. Nil on the demo path (local-only).
     var onToggleNotification: ((NotificationPreferences) -> Void)? = nil
-    /// Restart the first-run welcome tour on demand — the way back in for a worker who
-    /// skipped it or just wants a refresher.
-    var onReplayTour: () -> Void = {}
     /// Replay the interactive "Manage a shift" tour (the My-Shifts drop/swap/hand-off demo).
     var onReplayShiftTour: () -> Void = {}
     /// Replay the interactive Preferences (availability paint) tour.
@@ -119,14 +116,6 @@ struct SettingsScreen: View {
                 settingsRow(icon: ShiftIcons.info, tint: c.ter, title: "Help & policy", c: c) {
                     AnyView(Image(systemName: ShiftIcons.chevronRight).font(.system(size: 15, weight: .semibold)).foregroundColor(c.outline))
                 }
-                divider(c)
-                Button(action: onReplayTour) {
-                    settingsRow(icon: ShiftIcons.refresh, tint: c.blue, title: "Replay app tour", c: c) {
-                        AnyView(Image(systemName: ShiftIcons.chevronRight).font(.system(size: 15, weight: .semibold)).foregroundColor(c.outline))
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("settings_replay_tour")
                 divider(c)
                 Button(action: onReplayShiftTour) {
                     settingsRow(icon: ShiftIcons.list, tint: c.blue, title: "Replay shift tour", c: c) {

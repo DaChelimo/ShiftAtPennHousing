@@ -2585,6 +2585,7 @@ export type Database = {
           block_start_at: string;
           coverage_locked_at: string | null;
           house_id: string;
+          origin: string;
           required_headcount: number;
           voided_at: string | null;
         };
@@ -2593,6 +2594,7 @@ export type Database = {
           block_start_at: string;
           coverage_locked_at?: string | null;
           house_id: string;
+          origin?: string;
           required_headcount: number;
           voided_at?: string | null;
         };
@@ -2601,6 +2603,7 @@ export type Database = {
           block_start_at?: string;
           coverage_locked_at?: string | null;
           house_id?: string;
+          origin?: string;
           required_headcount?: number;
           voided_at?: string | null;
         };
@@ -3836,6 +3839,7 @@ export type Database = {
         };
         Returns: Json;
       };
+      count_live_houses: { Args: never; Returns: number };
       craft_hm_leave_mailto: { Args: { p_leave_id: string }; Returns: string };
       craft_hm_return_mailto: { Args: { p_leave_id: string }; Returns: string };
       da_can_read_item: {
@@ -3851,6 +3855,10 @@ export type Database = {
       decline_float: {
         Args: { p_float_id: string; p_now?: string; p_user_id: string };
         Returns: Json;
+      };
+      delete_manual_float_blocks: {
+        Args: { p_block_ids: string[] };
+        Returns: number;
       };
       deliver_notification: {
         Args: { p_notification_id: string; p_now: string };
@@ -4018,6 +4026,28 @@ export type Database = {
         Args: { p_as_of: string; p_block_id: string };
         Returns: boolean;
       };
+      manager_edit_float: {
+        Args: {
+          p_float_id: string;
+          p_initiator_user_id: string;
+          p_new_range_end?: string;
+          p_new_range_start?: string;
+          p_now?: string;
+        };
+        Returns: Json;
+      };
+      manager_float_worker: {
+        Args: {
+          p_destination_house_id: string;
+          p_initiator_user_id: string;
+          p_now?: string;
+          p_range_end: string;
+          p_range_start: string;
+          p_retention_days?: number;
+          p_worker_id: string;
+        };
+        Returns: Json;
+      };
       mark_notification_read: {
         Args: { p_notification_id: string; p_now: string; p_user_id: string };
         Returns: boolean;
@@ -4049,6 +4079,10 @@ export type Database = {
         Args: { p_date: string; p_user_id: string };
         Returns: string;
       };
+      mint_manual_float_blocks: {
+        Args: { p_block_starts: string[]; p_house_id: string };
+        Returns: string[];
+      };
       notification_is_pushable: {
         Args: { p_type: Database['public']['Enums']['notification_type'] };
         Returns: boolean;
@@ -4073,6 +4107,18 @@ export type Database = {
       notification_retry_backoff: {
         Args: { p_attempts: number };
         Returns: string;
+      };
+      notify_shift_opened: {
+        Args: {
+          p_actor_user_id: string;
+          p_block_id: string;
+          p_end_at: string;
+          p_house_id: string;
+          p_now: string;
+          p_recurring?: boolean;
+          p_start_at: string;
+        };
+        Returns: number;
       };
       offhours_ladder_timeout_minutes: { Args: never; Returns: number };
       open_allied_coverage_request: {
@@ -4296,6 +4342,10 @@ export type Database = {
         Returns: string;
       };
       resolve_sm_for_house: { Args: { p_house_id: string }; Returns: string[] };
+      retire_manual_float_blocks: {
+        Args: { p_block_ids: string[] };
+        Returns: number;
+      };
       season_target_headcount: {
         Args: { p_block_start_at: string; p_house_id: string };
         Returns: number;
@@ -4606,7 +4656,8 @@ export type Database = {
         | 'sm_permanent_drop_alert'
         | 'sw_permanent_removal_alert'
         | 'allied_page'
-        | 'shift_reminder';
+        | 'shift_reminder'
+        | 'shift_opened';
       preference_status_enum: 'preferred' | 'available' | 'cannot' | 'none';
       scheduling_mode_enum: 'sm_built' | 'claim_based';
       shift_status_enum:
@@ -4814,6 +4865,7 @@ export const Constants = {
         'sw_permanent_removal_alert',
         'allied_page',
         'shift_reminder',
+        'shift_opened',
       ],
       preference_status_enum: ['preferred', 'available', 'cannot', 'none'],
       scheduling_mode_enum: ['sm_built', 'claim_based'],

@@ -13,6 +13,8 @@ data class LoginUiState(
     val password: String = "",
     val phase: LoginPhase = LoginPhase.EDITING,
     val errors: FormErrors = FormErrors(null, null),
+    /** Non-blocking domain hint (TEST_PLAN §3.1 note) — see [LoginFormValidator.domainWarning]. */
+    val emailWarning: String? = null,
     val formError: AuthError? = null,
     /** DEBUG-only raw diagnostic behind [formError] (never shown to end users). */
     val formErrorDetail: String? = null,
@@ -52,7 +54,11 @@ object LoginReducer {
         when (event) {
             is LoginEvent.EmailChanged ->
                 editField(state) {
-                    it.copy(email = event.value, errors = it.errors.copy(email = null))
+                    it.copy(
+                        email = event.value,
+                        errors = it.errors.copy(email = null),
+                        emailWarning = LoginFormValidator.domainWarning(event.value),
+                    )
                 }
             is LoginEvent.PasswordChanged ->
                 editField(state) {

@@ -1,0 +1,63 @@
+---
+/*
+ * §5 Related footer: bordered link chips, hover to --mark-bg.
+ * SKETCH.md §4: every task page ends with three related links.
+ */
+import { withBase } from '../href'
+
+type Link = { href: string; label: string }
+type Props = { links: Link[] }
+const { links } = Astro.props
+---
+
+<nav class="related" aria-label="Related pages">
+  <p class="eyebrow">Related</p>
+  <ul class="related__list">
+    {
+      links.map((link) => (
+        <li>
+          <a class="related__chip" href={withBase(link.href)}>
+            {link.label}
+          </a>
+        </li>
+      ))
+    }
+  </ul>
+</nav>
+
+<style>
+  .related {
+    margin-top: 30px;
+    padding-top: 18px;
+    border-top: 1px solid var(--rule-2);
+  }
+
+  .related__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 9px;
+    padding: 0;
+    list-style: none;
+  }
+
+  .related__chip {
+    display: inline-block;
+    padding: 5px 11px;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    font-size: 12.5px;
+    color: var(--ink-2);
+    text-decoration: none;
+    transition:
+      background-color 120ms ease,
+      border-color 120ms ease,
+      color 120ms ease;
+  }
+
+  .related__chip:hover {
+    background: var(--mark-bg);
+    border-color: var(--mark-line);
+    color: var(--mark);
+  }
+</style>

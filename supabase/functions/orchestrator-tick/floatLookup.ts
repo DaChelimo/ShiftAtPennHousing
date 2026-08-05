@@ -476,6 +476,24 @@ export async function floatLookupStep(
     return 'covered';
   }
 
+  // Harnwell pilot (docs/harnwell-pilot/PLAN.md, workstream A1): float lookup is
+  // meaningful exactly when two or more live houses can source floats. Below that,
+  // every route in float_routing points at a house nobody staffs, so the algorithm can
+  // only ever return empty — this short-circuits straight to 'no_float' instead of
+  // paying the snapshot round trips. The coverage lock above and block_step_status
+  // bookkeeping in the caller still run unconditionally (the T-2h lock is independent
+  // of whether a floater exists), and 'no_float' still routes on to broadcast and
+  // hmod_notify_allied exactly as it does when the algorithm genuinely finds nobody.
+  // Launching a second live house restores float lookup with no config change.
+  const { data: liveHouseCount, error: liveHouseCountError } =
+    await supabase.rpc('count_live_houses');
+  if (liveHouseCountError !== null) {
+    throw liveHouseCountError;
+  }
+  if ((liveHouseCount as number) < 2) {
+    return 'no_float';
+  }
+
   // §7.3 — never assign a float that is ALREADY inside its no-ack window at
   // creation. Such a float is dead on arrival: its acknowledgment deadline
   // (T-10m) and no-ack point (T-15m) are already past, so the worker can never

@@ -176,7 +176,7 @@ export function WorkerShell({
               </div>
               {hasAdminSurface && (
                 <Link
-                  href="/"
+                  href="/dashboard"
                   data-testid="switch-to-admin"
                   className="user-item"
                   onClick={() => setUserOpen(false)}

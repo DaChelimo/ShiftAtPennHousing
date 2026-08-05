@@ -1,0 +1,106 @@
+---
+title: 'Submitting availability'
+description: 'Marking next term as preferred, available, or cannot before the deadline, and what your manager does with it.'
+minutes: 4
+draft: true
+---
+
+Preferences tell your manager which hours you want next term, before the schedule is built.
+
+{
+  /* IMAGE: workers/preferences/preferences-week.png
+   MUST SHOW: the Preferences week grid part-painted, with the Preferred / Available /
+   Cannot mode chips visible above it and the Target weekly hours card below.
+   WHY: the three modes, the grid, and the target sit on one screen and the steps read as
+   three separate tasks without the shot. */
+}
+
+## Do it
+
+<Steps>
+  <li>
+    Open <UI>Preferences</UI>.
+    <span class="step-note">It lives under <UI>More</UI>.</span>
+  </li>
+  <li>
+    Pick a mode: <UI>Preferred</UI>, <UI>Available</UI>, or <UI>Cannot</UI>.
+    <span class="step-note">
+      Preferred means you want the hour. Available means you'll take it if needed.
+    </span>
+  </li>
+  <li>Press and drag across blocks to mark them.</li>
+  <li>
+    Set <UI>Target weekly hours</UI>.
+    <span class="step-note">
+      Want none? Tick <UI>I have no hours this week</UI> instead.
+    </span>
+  </li>
+  <li>Tap <UI>Save</UI>.</li>
+</Steps>
+
+## What you'll see
+
+Your marks stay put. Change them any time until the deadline.
+
+Until you submit, reminders arrive 5, 3, and 1 day before it.
+
+## Rules that apply
+
+- **Opting out is not final.** Your manager assigns you nothing, but you can still claim
+  open shifts all period.
+- **A blank block counts as "cannot."** The first build pass offers only hours you marked,
+  so mark everything you can work. See [Core concepts](/system/concepts).
+- **Marks lock at the deadline.** Building starts then, so a later change is your manager's.
+  See [The operating calendar](/system/calendar).
+- **Your marks are input, not a promise.** Your manager can override a "cannot" after
+  confirming it, so flag anything impossible.
+- **The target only guides the build.** Pick any number up to 20 in the school year;
+  summer sets its own cap. See [Hours, caps, and attribution](/system/hours-rules).
+
+## If it goes wrong
+
+**No deadline set for this period.** Nothing is open yet.
+
+**Save refused after the deadline.** The window closed, but your manager can enter
+preferences for you.
+
+**A prompt when you leave.** You have unsaved edits. Nothing is stored until you tap
+<UI>Save</UI>.
+
+<Related
+  links={[
+    { href: '/workers/your-week', label: 'Your week: My Shifts' },
+    { href: '/workers/breaks', label: 'Break shifts' },
+    { href: '/workers/hours', label: 'Your hours' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: How do I tell my manager which hours I want next term?
+   AFTER READING, THEY CAN:
+     1. Mark a week as preferred, available, or cannot, set a target, and save it.
+     2. Say what an unmarked block means to the build, and what the deadline locks.
+     3. Opt out of the period entirely, and know they can still claim open shifts later.
+   FAILURE STATES COVERED: no deadline set for the period; a save refused after the
+   deadline (manager can enter preferences on your behalf); leaving with unsaved edits.
+   VERIFIED AGAINST: BSpec §4.1 (three statuses preferred/available/cannot, the "no hours"
+   opt-out and that an opted-out worker may still claim open shifts, target is any integer
+   from 0 to the period cap and is a guideline), §4.2 (SM-set deadline on or before the
+   period start, reminders at 5/3/1 days to workers who have not submitted, preferences
+   cannot be changed after the deadline, building begins after it), §4.3 (unmarked blocks
+   group as blocked in Phase 1; "cannot" and the opt-out are advisory in Phase 2 and the SM
+   must confirm to override), §3.2 and §9.3 (20 hour soft cap for the regular school year;
+   an operating season carries its own cap), §20.4 (Preferences sits under the More overflow;
+   leaving with unsaved edits raises a save-or-discard prompt); ARCHITECTURE.md §2.10 (a
+   period's preference deadline is unset until the manager opens submission, which is the
+   "no deadline set" state); migration 20260711000003 (a schedule builder may author a
+   worker's preferences after the deadline has closed).
+   UNRESOLVED: The on-screen labels are confirmed in the shipped app, not in either spec.
+   The opt-out control reads "I have no hours this week" while BSpec §4.1 scopes the
+   opt-out to the whole period; the step keeps the on-screen label and the rules bullet
+   states the spec scope ("all period"). Summer seasons collect preferences the same way (BSpec §4.1) and breaks do not,
+   but that split is the calendar page's job and is not stated here. ARCHITECTURE.md §3.6
+   still says preferences exist only for regular_school_year, which BSpec §4.1 supersedes;
+   flagged for spec-sync, not written around. */
+}

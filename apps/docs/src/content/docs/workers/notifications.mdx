@@ -1,0 +1,119 @@
+---
+title: "Notifications and widgets"
+description: "Every notification the app can send you, what each one wants from you, and the home-screen widgets that show the same thing without opening the app."
+minutes: 5
+draft: true
+---
+
+The app pings you when a shift needs you, and a widget shows the same thing without opening
+it.
+
+{
+  /* IMAGE: workers/notifications/settings-notifications.png
+   MUST SHOW: the Settings notification list, with the mandatory rows (Float assignments,
+   Swap requests, Break sign-up opening) switched on and greyed, and the Shift reminders row
+   expanded to its three lead-time checkboxes.
+   WHY: the page's main claim is that some rows cannot be turned off, and only the screen
+   shows a worker which rows those are. */
+}
+
+## Do it
+
+<Steps>
+  <li>
+    On <UI>My Shifts</UI>, tap <UI>Turn on</UI> in the alerts row above your schedule.
+    <span class="step-note">
+      The row stays there until alerts are on. Ignoring it costs you nothing.
+    </span>
+  </li>
+  <li>
+    Open <UI>More</UI>, then <UI>Settings</UI>.
+  </li>
+  <li>
+    Under <UI>Shift reminders</UI>, tick the lead times you want.
+    <span class="step-note">2 hours, 1 hour, 30 minutes, in any mix. You start on 1 hour.</span>
+  </li>
+  <li>
+    Turn on <UI>Open shifts at other houses</UI> to hear about extra work elsewhere.
+    <span class="step-note">It starts off, because another house is not your coverage.</span>
+  </li>
+  <li>
+    Add a widget from your phone's home screen: <UI>Upcoming shifts</UI> or{' '}
+    <UI>Open shifts</UI>.
+  </li>
+</Steps>
+
+## What you'll see
+
+Settings lists the channels you cannot turn off too, switched on and greyed, so you can see
+that a swap request will always reach you.
+
+Ticking nothing under <UI>Shift reminders</UI> reads **Off**, not blank. That is a real
+choice, not a broken screen.
+
+## Rules that apply
+
+- **Anything that needs your answer cannot be silenced.** A float, a swap request, break
+  sign-up opening, a preference deadline, a published schedule: someone is waiting on you.
+  See [What triggers a notification](/system/notifications-rules).
+- **A float chases you five times.** Reminders land 6 hours, 2 hours, 1 hour, 30 minutes and
+  5 minutes before your deadline, because only you can answer it. See
+  [When you get floated](/workers/floating).
+- **A drop at your own house always pings you.** Your desk's coverage is not optional
+  reading, so that one has no off switch. See [Picking up open shifts](/workers/picking-up).
+- **A reminder is checked before it fires.** Give the shift away and its reminder is dropped,
+  so you are never nudged toward a shift that is not yours.
+- **Widgets only look.** Tapping one opens the app, because nothing is claimed or
+  acknowledged from a home screen. What it shows is a snapshot and can lag a little.
+
+## If it goes wrong
+
+**You tapped <UI>Not now</UI> and want alerts back.** Your phone never asked you, so turn
+notifications on for Shift in your phone's own settings.
+
+**Nothing has pinged you in days.** Check that Shift may send you notifications. A push that
+keeps failing is retried for about seven hours and then given up on, and your manager is
+shown the ones that failed.
+
+**The widget is behind.** Open the app and it catches up. Trust the app, not the widget.
+
+<Related
+  links={[
+    { href: '/system/notifications-rules', label: 'What triggers a notification' },
+    { href: '/workers/floating', label: 'When you get floated' },
+    { href: '/workers/signing-in', label: 'Signing in and setting up' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: Which notifications will the app send me, and which of them can I change?
+   AFTER READING, THEY CAN:
+     1. Turn alerts on, and recover if they declined the in-app primer.
+     2. Say which channels are mandatory and why, and set the three they control.
+     3. Predict the float reminder cadence, and know a widget never acts on their behalf.
+   FAILURE STATES COVERED: declined the primer and wants alerts back (system permission
+   unspent, re-enable from OS settings); no notifications arriving (push retry backs off and
+   gives up after ~12 attempts, surfaced to the operator); a stale widget snapshot.
+   VERIFIED AGAINST: BSpec §7.1 (acknowledgment deadline T-10m; reminders at 6h, 2h, 1h, 30m
+   and 5m before it; 6h and 2h configurable per house by an HM/BM or the administrator, the
+   last three fixed), §10.1 (personal notifications mandatory; instant "a shift just opened"
+   at the home house), §10.1a (the mandatory list; the three configurable channels and their
+   defaults: shift reminders 1 hour, open shifts at my house on, open shifts at other houses
+   off; lead times 2h/1h/30m in any combination; one reminder per shift not per block;
+   re-checked at send time; mandatory rows shown on and disabled), §10.4 (retry backs off and
+   stops after a configurable number of attempts, 12 by default, roughly seven hours;
+   given-up notifications are surfaced to the operator), §20.2 (the in-app primer precedes the
+   OS dialog; declining it does not touch the system permission), §20.3 (both platforms; an
+   upcoming-shifts widget and a house-configurable open-shifts widget; read-only; tapping
+   opens the app; content is a snapshot that may lag), §20.4 (More reaches Settings).
+   ARCH §18 (iOS WidgetKit / Android Glance; the primer is presentation only).
+   UNRESOLVED: The widget names Upcoming shifts and Open shifts are the shipped iOS
+   configuration titles; neither spec names them, and the Android widget's on-screen title was
+   not confirmed, so the page does not split by platform. The primer shows once per device, so
+   the page routes a worker who tapped Not now to the OS settings rather than promising the
+   card returns. Widgets share this page with notifications rather than owning one, because
+   adding a widget is a single OS action and not a second procedure; if a widgets page is ever
+   wanted, step 5 and the widget rule move there. House-wide General updates is off the page:
+   it is a broadcast channel, not a shift notification. */
+}

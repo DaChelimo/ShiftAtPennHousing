@@ -1,0 +1,22 @@
+---
+// §5 UI label: any on-screen control named in prose. Mono, --bg-3 fill,
+// 4px radius, bordered. This is the site's only "code-like" styling, because
+// SKETCH.md §9.8 says there is no code on this site.
+---
+
+<span class="ui-label"><slot /></span>
+
+<style>
+  .ui-label {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.85em;
+    line-height: 1.4;
+    padding: 1px 5px;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    background: var(--bg-3);
+    color: var(--ink);
+    white-space: nowrap;
+  }
+</style>

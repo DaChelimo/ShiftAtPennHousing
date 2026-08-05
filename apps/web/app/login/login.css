@@ -1,10 +1,9 @@
 /* ============================================================
-   login.css — split-screen auth layout
-   Left: dark brand panel (reuses the app's #161616 chrome so the
-   sign-in feels like the product, not a detached form). Right:
-   clean edge-to-edge form surface. Collapses to one column under
-   880px, where the brand panel is replaced by a compact lockup
-   above the form.
+   login.css - split-screen auth layout (direction "A1": the app's own
+   #161616 shell chrome on the left, a single brand-blue corner glow, no
+   grid pattern). Right: clean edge-to-edge form surface. Collapses to
+   one column under 880px, where the brand panel is replaced by a compact
+   lockup above the form.
    ============================================================ */
 
 .login {
@@ -25,19 +24,12 @@
   background: var(--header-bg);
   color: #fff;
 }
-/* Brand-blue glow + faint grid give the dark panel depth without noise. */
+/* A single brand-blue glow anchored in the top-right corner. */
 .login-brand::before {
   content: '';
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(120% 90% at 85% 8%, rgba(0, 97, 252, 0.32), transparent 55%),
-    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
-  background-size:
-    100% 100%,
-    44px 44px,
-    44px 44px;
+  background: radial-gradient(130% 100% at 84% 0%, rgba(0, 97, 252, 0.4), transparent 58%);
   pointer-events: none;
 }
 .login-brand > * {
@@ -123,6 +115,11 @@
   color: var(--text-secondary);
 }
 
+.login-email-warning {
+  margin-top: -8px;
+  color: var(--st-pending);
+}
+
 /* Password-help + back links (login / forgot / update-password). */
 .login-forgot {
   align-self: flex-start;
@@ -132,6 +129,52 @@
 }
 .login-forgot:hover {
   text-decoration: underline;
+}
+
+/* Trailing "Show"/"Hide" toggle inset INSIDE the password field (not a
+   separate control beside it), matching the mobile app's password field
+   pattern. The wrap's only other child (Field's own .input-wrap) has to be
+   told to fill the row, or it shrinks to its content width and leaves the
+   toggle floating past the field's right edge. */
+.login-password-wrap {
+  position: relative;
+  display: flex;
+}
+.login-password-wrap .input-wrap {
+  flex: 1;
+  min-width: 0;
+}
+.login-input-pr {
+  padding-right: 68px;
+}
+.login-password-toggle {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--brand);
+  cursor: pointer;
+  transition: background var(--motion) var(--ease);
+}
+.login-password-toggle:hover {
+  background: var(--border-subtle);
+}
+
+/* Primary submit CTA (Sign in / Send code / Verify): centered label, no
+   trailing icon, a touch larger and taller than the base .btn-full. */
+.login-cta.btn-full {
+  justify-content: center;
+  height: 52px;
+  font-size: 15px;
 }
 
 /* ---------- Responsive ---------- */

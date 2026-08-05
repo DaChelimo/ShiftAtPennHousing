@@ -1,0 +1,18 @@
+---
+/*
+ * Mapped to `a` in mdx-components.ts, so a root-absolute anchor written by hand in
+ * a page ("<a href='/workers/swapping'>") lands under the site's base path the same
+ * way a <Card> or <Related> link does. Authors should not have to know the guide is
+ * served from /guide.
+ *
+ * Every other attribute passes through untouched. That matters for the heading
+ * anchors rehype-autolink-headings injects (class, aria-hidden, tabindex), which
+ * also arrive here; their "#slug" hrefs are left alone by withBase.
+ */
+import { withBase } from '../href'
+
+type Props = { href?: string }
+const { href, ...rest } = Astro.props
+---
+
+<a href={href === undefined ? undefined : withBase(href)} {...rest}><slot /></a>

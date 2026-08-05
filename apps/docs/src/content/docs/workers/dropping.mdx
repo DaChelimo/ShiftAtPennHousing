@@ -1,0 +1,105 @@
+---
+title: 'Dropping a shift'
+description: 'Giving up a shift you are scheduled for this week: all of it, part of it, or the rest of one already running.'
+minutes: 3
+---
+
+Dropping hands a shift back to your house for this week, whole or part.
+
+{
+  /* IMAGE: workers/dropping/manage-shift-sheet.png
+   MUST SHOW: the manage-shift sheet open on a scheduled shift, with the Drop the shift and
+   Swap it intent cards, the This week only / Permanent scope control, and the How much
+   range slider with its From now button.
+   WHY: one sheet carries three decisions at once, and step text cannot show that they sit
+   on the same screen. */
+}
+
+## Do it
+
+<Steps>
+  <li>Open <UI>My Shifts</UI> and tap the shift.</li>
+  <li>
+    Choose <UI>Drop the shift</UI>.
+    <span class="step-note">
+      <Link href="/workers/swapping">
+        <UI>Swap it</UI>
+      </Link>{' '}
+      trades it instead.
+    </span>
+  </li>
+  <li>
+    Leave the scope on <UI>This week only</UI>.
+    <span class="step-note">
+      <UI>Permanent</UI> covers every remaining week:{' '}
+      <Link href="/workers/dropping-permanently">Dropping every week</Link>.
+    </span>
+  </li>
+  <li>
+    Set <UI>How much</UI> to keep part of it.
+    <span class="step-note">
+      <UI>From now</UI> drops the rest of a running shift.
+    </span>
+  </li>
+  <li>Tap the red button.</li>
+</Steps>
+
+## What you'll see
+
+The card reads **Dropping this shift** until the server answers; it is yours until then.
+
+It then moves to <UI>Open Shifts</UI>, and everyone who could claim it hears.
+
+## Rules that apply
+
+- **Drops move in 30 minute steps.** The block is the smallest unit, so there is no half
+  block to hand back. See [Core concepts](/system/concepts).
+- **<UI>From now</UI> rounds back.** Leave at 17:51 and the gap opens at 17:30, so those 21
+  minutes are not credited. See [Hours, caps, and attribution](/system/hours-rules).
+- **Any shift can go, even one starting in 20 minutes.** You get a warning, because a gap
+  that close means paid cover. See [How a shift gets covered](/system/coverage-ladder).
+- **Cover is chased only when the desk would be empty.** One worker still on counts as
+  covered, so your seat waits in the feed. See
+  [How a shift gets covered](/system/coverage-ladder).
+- **There is no reclaim button.** A seat has one owner, so you
+  [claim it back](/workers/picking-up) like anyone else. See
+  [Core concepts](/system/concepts).
+
+## If it goes wrong
+
+**You cannot claim it back.** Somebody else took it, or the desk locked. An otherwise empty
+desk locks two hours before its block starts, and stays locked once cover arrives.
+
+**Refused as not yours.** A swap or a manager moved it first.
+
+<Related
+  links={[
+    { href: '/workers/your-week', label: 'Your week: My Shifts' },
+    { href: '/workers/picking-up', label: 'Picking up open shifts' },
+    { href: '/workers/dropping-permanently', label: 'Dropping every week' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: How do I give up a shift I am scheduled for this week?
+   AFTER READING, THEY CAN:
+     1. Drop a whole shift, or a chosen part of one, for this week only.
+     2. Walk out of a shift in progress and say what the round-back costs them in credit.
+     3. Predict where the shift goes, who hears about it, and how to take it back.
+   FAILURE STATES COVERED: cannot claim it back (someone else claimed it, or the desk is
+   locked at T-2h); drop refused as not theirs after a swap or a manager moved it.
+   VERIFIED AGAINST: BSpec §1.5 (30 minute atomic block, hours = blocks x 0.5), §1.6 (one
+   owner per seat, the loser is told), §5.2 (drops always permitted, 20 minute short notice
+   warning, round down on drop-from-now with the 17:51 example and the forfeited 21 minutes,
+   partial drop, empty-desk check, immediate notification to everyone who could claim),
+   §5.3 (coverage-conditional claim, T-2h lock only on an empty desk), §5.3a (confirmed
+   never assumed, "Dropping this shift" in-progress state), §5.4 (coverage floor of one
+   worker), §5.5 (the lock is one-way), §5.6 (corrected 2026-08-02: no dedicated reclaim
+   action; the dropper claims from the open feed like anyone else).
+   UNRESOLVED: The on-screen labels used here are confirmed in the shipped app, not in
+   either spec. BSpec §5.2 does not say whether the short notice warning anchors to the
+   shift's start or to the selected gap's start when you drop a later chunk. The page states
+   neither. Permanent drops moved to /workers/dropping-permanently under the single-task
+   gate; this page links to it from step 3 rather than describing the scope switch. */
+}

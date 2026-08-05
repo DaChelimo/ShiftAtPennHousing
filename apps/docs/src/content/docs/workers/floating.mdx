@@ -1,0 +1,96 @@
+---
+title: "When you get floated"
+description: "What a float asks of you, how long you have to acknowledge it, and what happens if you decline or ignore it."
+minutes: 3
+---
+
+A float sends you to another house's desk for part of your shift, then back to your own.
+
+{
+  /* IMAGE: workers/floating/float-request-card.png
+   MUST SHOW: the float request card at the top of My Shifts, with the destination house,
+   the day and hours, the respond-by pill, and the Accept and Decline buttons.
+   WHY: the card carries the deadline and both answers in one place, and the steps below
+   only make sense once a reader has seen them together. */
+}
+
+## Do it
+
+<Steps>
+  <li>
+    Open <UI>My Shifts</UI>.
+    <span class="step-note">The card sits at the top, and in <UI>Updates</UI>.</span>
+  </li>
+  <li>Read the house, day, and hours.</li>
+  <li>
+    Tap <UI>Accept</UI> if you can work it, or <UI>Decline</UI> if you cannot.
+  </li>
+</Steps>
+
+## What you'll see
+
+Until you answer, your week shows that stretch marked <UI>(Pending)</UI>. Accepting clears
+the label. Declining reopens the shift at the other house.
+
+## Rules that apply
+
+- **Answer by 10 minutes before the float starts.** The desk needs to know who is walking
+  in. See [Floating: overview](/system/floating).
+- **Reminders land 6 hours, 2 hours, 1 hour, 30 minutes and 5 minutes before that
+  deadline.** You cannot silence them, because only you can answer this one. See
+  [Notifications and widgets](/workers/notifications).
+- **A float never adds hours.** It moves hours you already had, so no cap is checked. See
+  [Hours, caps, and attribution](/system/hours-rules).
+- **Declining is remembered.** Your no is your answer for those hours. You are skipped for
+  that gap, and for later floats at that house over the same hours. See
+  [Floating: the selection rule](/system/floating/deep-dive).
+
+## If it goes wrong
+
+**You said nothing.** Fifteen minutes before the float starts, the app cancels it and tells
+your manager. Nobody can commute in that fast, so they pay an Allied guard instead. Decline
+early.
+
+**You accepted and now you cannot go.** Call your manager. Nothing automatic pulls you off
+once the float is yours, because the other desk is counting on you.
+
+<Related
+  links={[
+    { href: '/system/floating', label: 'Floating: overview' },
+    { href: '/system/floating/deep-dive', label: 'Floating: the selection rule' },
+    { href: '/workers/your-week', label: 'Your week: My Shifts' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: The app says I am needed at another house. What do I do?
+   AFTER READING, THEY CAN:
+     1. Accept or decline a float from the card, and say when the answer is due.
+     2. Predict what a float does to their week and to their hours.
+     3. Say what ignoring the card costs, and why declining early is better.
+   FAILURE STATES COVERED: no answer by the no-ack trigger (float voided, worker excluded,
+   manager pushed to Allied procurement); wanting out after accepting (no automated
+   recall, manual override only).
+   VERIFIED AGAINST: BSpec §6.1 (float relocates already-scheduled hours, neither cap
+   consulted; decline and no-ack exclusion applies to overlapping windows at the same
+   destination house), §6.4 (no takeback by automation; manual SM/HM/BM override only),
+   §6.6 #6 ("(Pending)" label removed on acknowledgment), §7.1 (acknowledgment deadline is
+   10 minutes before float start; reminders at 6h, 2h, 1h, 30m, 5m before the deadline),
+   §10.1a (a float and its acknowledgment reminders are mandatory and offer no off switch,
+   because they need an answer from that specific person), §7.2 (decline permitted any time
+   before the deadline, float voided, block returns to vacant and to the open-shifts feed),
+   §7.3 (no-ack trigger 15 minutes before
+   float start, gap goes to a manager for Allied), §10.1 (personal float notifications are
+   mandatory and cannot be silenced), §11.2 (pending float-out carries a "(Pending)"
+   label), §14 (deadline, no-ack offset, cadence).
+   UNRESOLVED: The control labels Accept, Decline, My Shifts and Updates are confirmed in
+   the shipped app, not in either spec; the spec calls the action acknowledge. The page
+   does not say where the float card lives on the web portal, which neither spec states.
+   BSpec §7.1 makes the 6h and 2h reminders configurable per house by an HM/BM or the
+   project administrator but gives no reason for that split, so the permission is off the
+   page rather than stated without one; what a worker can rely on (the reminders exist and
+   cannot be silenced) is grounded in §10.1a and stays. BSpec §6.1 states the decline
+   exclusion and its scope (same destination house, overlapping window) but gives no
+   rationale, so the page offers only the scope as the reason and invents none. */
+}

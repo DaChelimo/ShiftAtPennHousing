@@ -1,0 +1,96 @@
+---
+/*
+ * §5 State list: tinted cards per §2. A state card is the fill, plus a border at
+ * 24% of the ink colour. The open state uses a dashed border, matching how the app
+ * draws a vacant seat.
+ *
+ * §2 rule: always pair the colour with its text label, never colour alone,
+ * and never use --mark blue to mean a state.
+ */
+import type { StateName } from '../states'
+
+type Props = { state: StateName; label: string }
+const { state, label } = Astro.props
+---
+
+<div class:list={['state-card', `state-card--${state}`]}>
+  <span class="state-card__label">
+    <span class="state-card__dot" aria-hidden="true"></span>
+    {label}
+  </span>
+  <span class="state-card__body"><slot /></span>
+</div>
+
+<style>
+  .state-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 11px 13px 12px;
+    border-radius: var(--radius);
+    background: var(--state-bg);
+    /* The border is the ink colour at 24%. */
+    border: 1px solid color-mix(in srgb, var(--state-ink) 24%, transparent);
+  }
+
+  .state-card__label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12.5px;
+    font-weight: 620;
+    color: var(--state-ink);
+  }
+
+  .state-card__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--state-ink);
+    flex: none;
+  }
+
+  .state-card__body {
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--ink-2);
+  }
+
+  .state-card--float-out {
+    --state-ink: var(--state-float-out);
+    --state-bg: var(--state-float-out-bg);
+  }
+  .state-card--float-in {
+    --state-ink: var(--state-float-in);
+    --state-bg: var(--state-float-in-bg);
+  }
+  .state-card--pending {
+    --state-ink: var(--state-pending);
+    --state-bg: var(--state-pending-bg);
+  }
+  .state-card--allied {
+    --state-ink: var(--state-allied);
+    --state-bg: var(--state-allied-bg);
+  }
+  .state-card--permanent {
+    --state-ink: var(--state-permanent);
+    --state-bg: var(--state-permanent-bg);
+  }
+  .state-card--urgent {
+    --state-ink: var(--state-urgent);
+    --state-bg: var(--state-urgent-bg);
+  }
+
+  /* Open, one-time: dashed, the way the app draws a vacant seat. */
+  .state-card--open {
+    --state-ink: var(--state-open);
+    --state-bg: var(--state-open-bg);
+    border-style: dashed;
+    border-color: color-mix(in srgb, var(--state-open) 44%, transparent);
+  }
+
+  .state-card--open .state-card__dot {
+    background: transparent;
+    border: 1px dashed var(--state-open);
+  }
+</style>

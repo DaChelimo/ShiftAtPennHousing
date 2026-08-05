@@ -1,0 +1,130 @@
+/*
+ * Design tokens. The authority is docs/user-guide-site/DESIGN.md §2 and §3.
+ * Do not invent values here; if a value is wrong, DESIGN.md is wrong first.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* §2 Light. Neutrals are biased slightly cool, toward the accent. */
+  --bg: #ffffff;
+  --bg-2: #f8f9fb;
+  --bg-3: #f1f3f7;
+  --ink: #10131a;
+  --ink-2: #3f4653;
+  --muted: #737b8a;
+  --rule: #e5e8ee;
+  --rule-2: #eef0f5;
+  --mark: #0061fc;
+  --mark-bg: #eff4ff;
+  --mark-line: #cfdfff;
+
+  /* §2 Shift-state colours. Load bearing, not decorative.
+     Must not drift from docs/design-brief.md. */
+  --state-float-out: #8a3ffc;
+  --state-float-out-bg: #f6f2ff;
+  --state-float-in: #24a148;
+  --state-float-in-bg: #defbe6;
+  --state-pending: #b28600;
+  --state-pending-bg: #fff8e1;
+  --state-allied: #007d79;
+  --state-allied-bg: #d9fbfb;
+  --state-permanent: #ee5396;
+  --state-permanent-bg: #fff0f7;
+  --state-urgent: #da1e28;
+  --state-urgent-bg: #fff1f1;
+  --state-open: #8d8d8d;
+  --state-open-bg: #fafafa;
+
+  /* §3 Type */
+  --sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* §4 Layout */
+  --sidebar-w: 218px;
+  --contents-w: 178px;
+  --radius: 6px;
+  --radius-nav: 5px;
+  --measure: 68ch;
+
+  /* §4 Shadow appears in exactly two places: the screenshot card and the
+     raised segment of a segmented control. */
+  --lift: 0 1px 2px rgba(16, 19, 26, 0.06), 0 8px 20px -8px rgba(16, 19, 26, 0.14);
+  --lift-segment: 0 1px 2px rgba(16, 19, 26, 0.1);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* §2 Dark. Not an inversion: the ground lifts off pure black so the tinted
+     state cards have somewhere to sit, and the accent lightens to hold contrast.
+     ink/ink-2/muted brightened 2026-08-02: the original set read as dim/grey
+     against the ground at normal screen brightness. */
+  --bg: #0f1319;
+  --bg-2: #161b23;
+  --bg-3: #1e242e;
+  --ink: #f3f6fa;
+  --ink-2: #ccd4e0;
+  --muted: #99a2b2;
+  --rule: #2a323e;
+  --rule-2: #1e242e;
+  --mark: #5c9bff;
+  --mark-bg: #12203a;
+  --mark-line: #24365c;
+
+  --state-float-out: #b58aff;
+  --state-float-out-bg: rgba(138, 63, 252, 0.14);
+  --state-float-in: #56c271;
+  --state-float-in-bg: rgba(36, 161, 72, 0.14);
+  --state-pending: #d9a800;
+  --state-pending-bg: rgba(178, 134, 0, 0.16);
+  --state-allied: #3bb3af;
+  --state-allied-bg: rgba(0, 125, 121, 0.16);
+  --state-permanent: #ff7fb2;
+  --state-permanent-bg: rgba(238, 83, 150, 0.14);
+  --state-urgent: #ff6168;
+  --state-urgent-bg: rgba(218, 30, 40, 0.14);
+  --state-open: #9aa3b0;
+  --state-open-bg: transparent;
+
+  --lift: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 20px -8px rgba(0, 0, 0, 0.7);
+  --lift-segment: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+/* The toggle stamps data-theme on the root and must win in both directions,
+   so the OS default is expressed only where data-theme is absent. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+
+    --bg: #0f1319;
+    --bg-2: #161b23;
+    --bg-3: #1e242e;
+    --ink: #f3f6fa;
+    --ink-2: #ccd4e0;
+    --muted: #99a2b2;
+    --rule: #2a323e;
+    --rule-2: #1e242e;
+    --mark: #5c9bff;
+    --mark-bg: #12203a;
+    --mark-line: #24365c;
+
+    --state-float-out: #b58aff;
+    --state-float-out-bg: rgba(138, 63, 252, 0.14);
+    --state-float-in: #56c271;
+    --state-float-in-bg: rgba(36, 161, 72, 0.14);
+    --state-pending: #d9a800;
+    --state-pending-bg: rgba(178, 134, 0, 0.16);
+    --state-allied: #3bb3af;
+    --state-allied-bg: rgba(0, 125, 121, 0.16);
+    --state-permanent: #ff7fb2;
+    --state-permanent-bg: rgba(238, 83, 150, 0.14);
+    --state-urgent: #ff6168;
+    --state-urgent-bg: rgba(218, 30, 40, 0.14);
+    --state-open: #9aa3b0;
+    --state-open-bg: transparent;
+
+    --lift: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 20px -8px rgba(0, 0, 0, 0.7);
+    --lift-segment: 0 1px 2px rgba(0, 0, 0, 0.45);
+  }
+}

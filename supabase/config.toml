@@ -131,7 +131,10 @@ password_requirements = ""
 
 [auth.rate_limit]
 # Number of emails that can be sent per hour. Requires auth.email.smtp to be enabled.
-email_sent = 2
+# Raised from the default of 2: with passwordless login (production, PASSWORDLESS_AUTH_ENABLED)
+# every sign-in sends an OTP email, not just occasional password resets. 2/hour would lock
+# a desk out after two login attempts.
+email_sent = 30
 # Number of SMS messages that can be sent per hour. Requires auth.sms to be enabled.
 sms_sent = 30
 # Number of anonymous sign-ins that can be made per hour per IP address. Requires enable_anonymous_sign_ins = true.
@@ -180,6 +183,15 @@ otp_expiry = 3600
 # [auth.email.template.invite]
 # subject = "You have been invited"
 # content_path = "./supabase/templates/invite.html"
+
+# Passwordless login (production): signInWithOtp sends through the magic_link template
+# slot regardless of whether the app calls verifyOtp with the code or the link. This
+# override shows the {{ .Token }} code prominently and does not surface a clickable
+# link — a link opened on a worker's phone would authenticate the phone's browser, not
+# the shared desk kiosk they're signing into.
+[auth.email.template.magic_link]
+subject = "Your SHIFT sign-in code"
+content_path = "./supabase/templates/otp-login.html"
 
 [auth.sms]
 # Allow/disallow new user signups via SMS to your project.

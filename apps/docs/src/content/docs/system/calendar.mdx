@@ -1,0 +1,107 @@
+---
+title: "The operating calendar and seasons"
+description: "How the system knows which houses are open, at what hours, with how many people, on any given date."
+minutes: 5
+draft: true
+---
+
+Every operating date carries exactly one rules profile, which decides how that day behaves.
+
+## What a date carries
+
+All three profiles run the desk 08:00 to 24:00.
+
+<Table>
+
+| Profile             | Weekly cap                          | Schedule             | Floating                      |
+| ------------------- | ----------------------------------- | -------------------- | ----------------------------- |
+| Regular school year | 20, soft, overridable               | SM, from preferences | Allowed                       |
+| Short break         | 40 hard, or 20 soft at spring fling | Claimed, first come  | Allowed                       |
+| Winter break        | 40, hard                            | Claimed, first come  | Off. Only Harnwell stays open |
+
+</Table>
+
+A break date inside a semester takes the break profile, settled in advance. An unassigned
+date, or a summer date with no open house, is dormant: no blocks and no notifications.
+
+## Summer is authored, not seeded
+
+Summer moves too much to seed. The Administrator authors it as a season, and each date one
+of its settings changes becomes an ordinary profile.
+
+## When a desk shrinks
+
+Changes reach future shifts only, because past blocks are history. If a future desk holds
+more workers than its new headcount, the excess are cancelled, not grandfathered.
+
+<Ladder
+  label="Cut order when a headcount drops"
+  heads={['Order', 'Who goes', 'Why']}
+  rungs={[
+    {
+      when: 'First',
+      who: 'Floaters in',
+      what: 'Their own house can take them back.',
+    },
+    {
+      when: 'Second',
+      who: 'The shorter shift',
+      what: 'Fewest blocks that date, so fewer hours are lost.',
+    },
+    {
+      when: 'Third',
+      who: 'Any one of them',
+      what: 'Arbitrary, but the same one every run.',
+    },
+  ]}
+/>
+
+Everyone cancelled is told. An inbound float on a cut seat is voided too, because a person
+made the change.
+
+{
+  /* IMAGE: system/calendar/season-impact-preview.png
+   MUST SHOW: the operations season editor after Preview impact, with the counted effect of
+   the pending change on future blocks visible.
+   WHY: cancellation on a headcount drop is the one irreversible effect on this page, and
+   the preview is the only place its size is visible before it happens. */
+}
+
+## Why it works this way
+
+One profile per date means no date has two answers, summer included.
+
+## What this means for you
+
+Read a date's profile and you can predict its cap and floating.
+
+<Related
+  links={[
+    { href: '/system/concepts', label: 'Core concepts' },
+    { href: '/system/coverage-ladder', label: 'How a shift gets covered' },
+    { href: '/system/hours-rules', label: 'Hours, caps, and attribution' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: How does the system decide what the rules are on a given date?
+   AFTER READING, THEY CAN:
+     1. Name the three academic-year profiles and state each one's cap and scheduling mode.
+     2. Predict that an unassigned date, and a summer date with no open house, are dormant.
+     3. Explain that summer is authored as a season and compiled into ordinary profiles at
+        every change date.
+     4. State the cut order when a headcount drops, and say which rung is arbitrary.
+   FAILURE STATES COVERED: a date with no profile; a headcount drop that cancels workers
+   already scheduled; an inbound float voided on a cut seat.
+   VERIFIED AGAINST: BSpec §2.8, §3.1, §3.2, §3.3, §3.4, §6.4; ARCH §2.1, §2.2;
+   migration 20260709000003 (cut order)
+   UNRESOLVED: The third rung is a stable tiebreak with no meaning a reader could predict
+   from, so it is stated as arbitrary rather than as an order of assignment. Nothing
+   guarantees a preview runs before every apply, so no such claim is on the page; the
+   preview screen itself is documented, so the image placeholder stays. The season
+   preference deadline (one value per season, on or before the season start date, BSpec
+   §3.1) is left to /managers/seasons rather than crowded in here. Break caps vary by named
+   break; only the spring fling exception is spelled out, since BSpec §3.2 lists the other
+   named breaks at 40 hard. */
+}

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 
 import { createClient } from '../../lib/supabase/client';
 import { Icon } from '../ui';
@@ -27,6 +27,41 @@ import './coverage.css';
 // It is NOT dismissable while a request is open. That is deliberate.
 
 const MUTE_KEY = 'shift.coverageChimeMuted';
+
+// The mute flag lives in localStorage, which does not exist during SSR. useSyncExternalStore
+// is the shape React provides for exactly that: the server snapshot is `false`, the client
+// reads the real value on hydration, and no state is set from an effect. Subscribing to
+// `storage` also keeps two open manager tabs in agreement, which the old effect did not.
+// `storage` never fires in the tab that wrote the value, so toggleMute notifies locally.
+const muteListeners = new Set<() => void>();
+
+function emitMuteChange(): void {
+  for (const listener of muteListeners) listener();
+}
+
+function subscribeMute(onStoreChange: () => void): () => void {
+  muteListeners.add(onStoreChange);
+  window.addEventListener('storage', onStoreChange);
+  return () => {
+    muteListeners.delete(onStoreChange);
+    window.removeEventListener('storage', onStoreChange);
+  };
+}
+
+// Reading storage can throw (Safari private mode, blocked cookies). This now runs during
+// render, so a throw would take the banner down with it. Same rule as the chime: a browser
+// that blocks it must never break the banner.
+function getMuteSnapshot(): boolean {
+  try {
+    return window.localStorage.getItem(MUTE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function getMuteServerSnapshot(): boolean {
+  return false;
+}
 
 // A short two-tone chime built with WebAudio. No asset to ship, no external request
 // (the CSP on this app forbids one anyway), and it works offline.
@@ -68,19 +103,16 @@ export function CoverageAlert({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [muted, setMuted] = useState(false);
+  const muted = useSyncExternalStore(subscribeMute, getMuteSnapshot, getMuteServerSnapshot);
   const previousCount = useRef(actionRequiredCount);
 
-  useEffect(() => {
-    setMuted(window.localStorage.getItem(MUTE_KEY) === 'true');
-  }, []);
-
   const toggleMute = useCallback(() => {
-    setMuted((prev) => {
-      const next = !prev;
-      window.localStorage.setItem(MUTE_KEY, String(next));
-      return next;
-    });
+    try {
+      window.localStorage.setItem(MUTE_KEY, String(!getMuteSnapshot()));
+    } catch {
+      // Storage is unavailable; the toggle is a no-op rather than a crash.
+    }
+    emitMuteChange();
   }, []);
 
   // Realtime at the SHELL level, so every page reacts. Any change to either table

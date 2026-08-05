@@ -1,0 +1,117 @@
+---
+title: 'Your week: My Shifts'
+description: 'Reading your own week: what you are scheduled for, what you picked up, and what you dropped.'
+minutes: 3
+draft: true
+---
+
+My Shifts is your week in three groups: picked up, dropped, and scheduled, top to bottom.
+
+{
+  /* IMAGE: workers/your-week/my-shifts.png
+   MUST SHOW: the My Shifts tab with all three groups visible, a picked-up card carrying
+   its indicator, the week navigator, and the hours total for the shown week.
+   WHY: three stacked groups with a week that can change under them is a layout, and step
+   text cannot show a layout. */
+}
+
+## Do it
+
+<Steps>
+  <li>
+    Open <UI>My Shifts</UI>, the first tab.
+  </li>
+  <li>
+    Check the week navigator. It sets which week every group below shows.
+    <span class="step-note">
+      A shift you picked up for next week files there, not here.
+    </span>
+  </li>
+  <li>
+    Tap a shift to hand it off.
+    <span class="step-note">
+      One sheet holds both <Link href="/workers/dropping">dropping</Link> and{' '}
+      <Link href="/workers/swapping">swapping</Link>.
+    </span>
+  </li>
+</Steps>
+
+## What you'll see
+
+The hours total covers the week shown, against that week's cap. Caps are set per week, so
+the number moves as you navigate.
+
+### Marks on a card
+
+<Table>
+
+| Mark          | What it means                               |
+| ------------- | ------------------------------------------- |
+| Small circle  | You claimed this seat yourself.             |
+| A house name  | That house's desk, not your own.            |
+| Golden border | A break shift, outside your normal pattern. |
+
+</Table>
+
+<StateList>
+  <StateCard state="float-out" label="Light purple">
+    Another desk for this stretch. Same hours, different house.
+  </StateCard>
+  <StateCard state="pending" label="(Pending)">
+    A float you have not answered. Answer by 10 minutes before it starts.
+  </StateCard>
+</StateList>
+
+## Rules that apply
+
+- **Hours at another desk still count at your home house**, so this one total is your whole
+  week. See [Hours, caps, and attribution](/system/hours-rules).
+- **The screen updates itself.** The calendar is the source of truth, so a swap or float
+  lands without a refresh.
+
+## If it goes wrong
+
+**A shift is missing.** Check the week navigator first.
+
+**A shift you dropped is gone.** Somebody claimed it, or Allied covered it, and a seat has
+one owner. Claim one back only while it is still open.
+See [Core concepts](/system/concepts).
+
+**A card names a house that is not yours.** You picked that shift up there, or you were
+[floated](/workers/floating).
+
+<Related
+  links={[
+    { href: '/workers/picking-up', label: 'Picking up open shifts' },
+    { href: '/workers/dropping', label: 'Dropping a shift' },
+    { href: '/workers/hours', label: 'Your hours' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: What am I working this week?
+   AFTER READING, THEY CAN:
+     1. Read their week in the three groups and know which week they are looking at.
+     2. Say what each mark on a card means, and what a pending float is asking of them.
+     3. Explain a missing shift: wrong week, or dropped and claimed by someone else.
+   FAILURE STATES COVERED: shift missing because the navigator is on another week; a
+   dropped shift gone from the middle group after a claim or Allied cover; a card naming a
+   house that is not theirs.
+   VERIFIED AGAINST: BSpec §5.6 (three subsections picked up / dropped / scheduled; a
+   dropped shift leaves that group once claimed, covered by Allied, or voided; no dedicated
+   reclaim action, corrected 2026-08-02), §1.6 (one owner per seat), §8.6 (both waiting
+   states banner at the top of My Shifts, answer-owed first, not week scoped, appears
+   without a refresh), §7.1 (acknowledgment deadline is 10 minutes before float start),
+   §9.1 (hours count at the home house wherever worked), §9.3 (one cap per calendar week),
+   §11.2 (picked-up circle indicator, light purple float-out, "(Pending)" label,
+   destination house on the card, golden border on break shifts), §12 (the calendar is the
+   source of truth and updates immediately), ARCH "Clients consume the cap" (per-week caps
+   keyed by NY Monday, so the hours chip follows week navigation).
+   UNRESOLVED: Three things the shipped app does are in neither spec nor a migration, so
+   they are off this page: the day-by-day headings with per-day hours, past days folding
+   into an "Earlier this week" card, and the per-worker colour tinting (specified only in
+   docs/design/worker-colors.md, which is not an upstream source under this contract). If
+   any of the three is a guarantee, it belongs in BSpec §5.6 or §11.2 first. The on-screen
+   control names used here are confirmed in the shipped app only. */
+}

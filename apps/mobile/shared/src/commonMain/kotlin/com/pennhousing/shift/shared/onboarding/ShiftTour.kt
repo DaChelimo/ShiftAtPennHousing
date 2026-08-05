@@ -13,7 +13,7 @@ package com.pennhousing.shift.shared.onboarding
  * and the step-2 controls (range, one-time vs permanent) are rendered natively per
  * platform, which just call the pure formatting helpers below for the live summary line.
  * The seen-flag is persisted by the platform (its own UserDefaults / SharedPreferences
- * key), mirroring how the welcome tour and tips store their seen-keys.
+ * key), mirroring how every other tour stores its seen-keys.
  *
  * The `viewmodel/ShiftTourViewModel` is the thin StateFlow wrapper that sequences the
  * three steps; this object owns the copy + the sample shift + the summary math.

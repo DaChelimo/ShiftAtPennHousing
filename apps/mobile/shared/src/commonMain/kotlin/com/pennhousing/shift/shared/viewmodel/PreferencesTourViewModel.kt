@@ -35,7 +35,7 @@ data class PreferencesTourUiState(
  * no clock). It sequences the three steps and owns the seen-flag; the platform renders the
  * overlay, drives the step controls, and persists [PreferencesTourUiState.seen].
  *
- * This tour is independent of the welcome tour / tips / `ShiftTour`: it has its OWN seen-key
+ * This tour is independent of `ShiftTour`: it has its OWN seen-key
  * store on each platform (so persisting one never clobbers the others). The host auto-starts it
  * the first time the worker lands on Preferences, and re-opens it from the Preferences help
  * button or the Settings row.

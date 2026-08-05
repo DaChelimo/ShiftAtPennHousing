@@ -1,0 +1,98 @@
+---
+title: "Roles and the duty hierarchy"
+description: "Who holds which authority, and at which of the 13 houses it applies."
+minutes: 2
+draft: true
+---
+
+Seven roles run this system. Each fixes what you may change, and at which houses.
+
+## How it works
+
+<Table>
+
+| Role                         | Works a desk | Authority                             |
+| ---------------------------- | ------------ | ------------------------------------- |
+| Student Worker               | Yes          | Their own shifts.                     |
+| Student Manager (SM)         | Yes          | Builds and overrides, own house only. |
+| Residential Services Manager | Yes          | An HM's powers, minus duty rotation.  |
+| Housing Manager (HM)         | Yes          | Full administration of their house.   |
+| Building Manager             | No           | The same administration.              |
+| Housing Manager on Duty      | Varies       | An HM's authority, at all 13 houses.  |
+| Administrator                | No           | Every power above, at all 13 houses.  |
+
+</Table>
+
+Schedule authority travels; people authority does not. HM, Building Manager, RSM and
+Administrator build and override any house's week, because an empty desk is a campus
+problem. Hiring, role grants and leave stay own-house: staffing a house is that house's
+call.
+
+Four roles are never floated and never broadcast to: HM, Building Manager, RSM and
+Administrator. Both mechanisms target students, so an SM floats like any worker.
+
+Manager hours are Monday to Friday, 08:00 to 17:00. Outside them one Housing Manager on
+Duty holds HM authority everywhere, handing over each Friday at 08:00. Only HMs and
+Building Managers take that rotor.
+
+## Why it works this way
+
+One named person holds all 13 houses off hours, because a duty split across many managers
+is a duty nobody answers.
+
+Handover lands Friday 08:00, not Monday, so the weekend opens a duty week rather than
+splitting one.
+
+## What this means for you
+
+An SM acting on another house is refused. An off-hours problem reaches the duty manager,
+not your own house's.
+
+<Related
+  links={[
+    { href: '/managers/roles', label: 'Which manager are you?' },
+    { href: '/system/coverage-ladder', label: 'How a shift gets covered' },
+    { href: '/system/glossary', label: 'Glossary' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: Which role holds which authority here, and over which houses?
+   AFTER READING, THEY CAN:
+     1. Name the seven roles and say which two never staff a desk.
+     2. Predict that schedule work crosses houses for HM, Building Manager, RSM and
+        Administrator while hiring, role grants and leave do not, and that an SM crosses
+        nothing.
+     3. Say who covers a house outside Monday to Friday 08:00 to 17:00, how often that duty
+        changes hands, and which roles are never on the rotor.
+     4. Say which four roles the system never floats and never broadcasts to, and that an
+        SM is not among them.
+   FAILURE STATES COVERED: none. This page explains authority and has no user action to
+   fail; the refusal an SM meets at another house is stated as a consequence, and its
+   recovery lives on /managers/roles.
+   VERIFIED AGAINST: BSpec §2 (seven roles, named), §2.1, §2.2 (SM own-house for every
+   elevated power, SM can be floated), §2.3 (HM and BM hold identical admin powers, BM
+   holds no shifts, HM hours Monday to Friday 08:00 inclusive to 17:00 exclusive, HM never
+   automatically floated and never broadcast, HMOD covers all 13 houses outside those
+   hours), §2.3a (RSM is HM-minus-HMOD, cross-house schedule write, people and leave
+   own-house, never floated, never broadcast), §2.5 (weekly HMOD rotation among HMs and
+   BMs only, Friday 08:00 to Friday 08:00 so the weekend opens the duty week, 13 houses),
+   §2.8 (Administrator campus-wide, never staffs a desk, never floated, never broadcast,
+   never on the rotor), §13 (permissions summary); migration 20260627000002 (schedule
+   build, publish and override made cross-house for hm/bm/rsm while the sm branch stays
+   scope-matched).
+   UNRESOLVED: Scope fix applied 2026-08-02. The "Who gets paged" section and its Ladder
+   were removed rather than shortened: the three-rung Allied order (§5.4a), with its
+   60-minute rung timeout and 15-minute reminders (§14), is already stated on
+   /system/coverage-ladder, which this page links, and carrying it here put two explainers
+   in one skeleton. The §16.3 contact-routing ladder is omitted for the same reason.
+   Two spec conflicts remain avoided rather than stated. §2.3a lists weekly-cap
+   modification as own-house for the RSM while §9.3 makes the cap one campus-wide value any
+   HM or BM may set, so the cap is not mentioned. §2.3a keeps preference administration
+   own-house while migration 20260627000002 widened it for that tier, so preferences are
+   not mentioned. The "Varies" cell for HMOD reflects that the duty is held by an HM (who
+   works a desk) or a BM (who does not); the spec fixes no single answer.
+   No image placeholder: no screen in either app displays the role set, so the table is the
+   primary content. */
+}

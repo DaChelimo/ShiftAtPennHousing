@@ -36,7 +36,7 @@ schemes:
 
 settings:
   base:
-    PRODUCT_NAME: Shift PennHousing
+    PRODUCT_NAME: SHIFT
     # Ad-hoc sign on the simulator. This is REQUIRED for the configurable (AppIntent)
     # Open Shifts widget: an unsigned build fails AppIntents intent resolution
     # ("Couldn't communicate with a helper application" / "No AppIntent in
@@ -114,7 +114,7 @@ targets:
       - target: iosApp
     settings:
       base:
-        # Distinct from the app's "Shift PennHousing" so the two Swift modules / product
+        # Distinct from the app's "SHIFT" so the two Swift modules / product
         # dirs don't collide ("multiple commands produce …swiftmodule"), same reasoning as
         # ShiftWidgets above.
         PRODUCT_NAME: iosAppUITests
@@ -134,7 +134,7 @@ targets:
       - path: WidgetShared
     settings:
       base:
-        # Distinct from the app's "Shift PennHousing" so the two Swift modules /
+        # Distinct from the app's "SHIFT" so the two Swift modules /
         # product dirs don't collide ("multiple commands produce …swiftmodule").
         PRODUCT_NAME: ShiftWidgets
         PRODUCT_BUNDLE_IDENTIFIER: com.pennhousing.shift.ShiftWidgets

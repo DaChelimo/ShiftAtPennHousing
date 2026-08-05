@@ -1,0 +1,104 @@
+---
+title: 'Swapping and handing off'
+description: 'Trading a shift with a housemate, or giving one away outright, from the first tap to both calendars changing.'
+minutes: 4
+draft: true
+---
+
+A swap trades hours with one housemate. Nothing moves until they say yes.
+
+{
+  /* IMAGE: workers/swapping/swap-composer.png
+MUST SHOW: the swap page inside the manage-shift sheet, with the Swap / Hand off mode
+pills at the top, a chosen housemate, and both range sliders (Your hours to give and
+Hours you want from [name]) visible at once.
+WHY: give and take are set on one screen, and a hand-off is the same screen with one
+side left empty. Step text cannot show that. */
+}
+
+## Do it
+
+<Steps>
+  <li>
+    Open <UI>My Shifts</UI> and tap the shift.
+  </li>
+  <li>
+    Choose <UI>Swap it</UI>, then <UI>Choose who to swap with</UI>.
+  </li>
+  <li>
+    Pick <UI>Swap</UI> or <UI>Hand off</UI>.
+    <span class="step-note">A hand off is one way: they get the hours, you get nothing back.</span>
+  </li>
+  <li>Pick the housemate.</li>
+  <li>
+    Drag the sliders to set your hours and theirs.
+    <span class="step-note">Part of a shift is fine.</span>
+  </li>
+  <li>
+    Tap <UI>Propose swap</UI>.
+  </li>
+</Steps>
+
+## What you'll see
+
+Your card reads **Swap pending**. Theirs shows the request at once, no refresh needed.
+When they accept, both calendars change together.
+
+## Rules that apply
+
+- **A pending swap freezes the shift.** One block can sit in only one request, so you
+  cannot drop or re-swap it. See [How a swap resolves](/system/swaps-explained).
+- **A swap dies 3 hours before the earlier shift starts.** Nobody is left arranging cover
+  at the last minute.
+- **A hand off can be recorded late.** These are agreed at the desk, so you get 24 hours
+  after the shift ends to log who worked it.
+- **Both of you must be allowed at the other desk.** Harnwell needs its own training, and
+  the check runs again on acceptance. See [How floating works](/system/floating).
+- **Hours you take count against your week**, so your cap can block a swap. A hand off
+  skips that check. See [Hours, caps, and attribution](/system/hours-rules).
+
+## If it goes wrong
+
+**It disappeared.** Your shift was dropped or floated before they answered, so the request
+was voided. You are both told.
+
+**Nobody answered.** It expired, nothing changed.
+
+**They declined.** The shift is yours again, and unfrozen.
+
+<Related
+  links={[
+    { href: '/system/swaps-explained', label: 'How a swap resolves' },
+    { href: '/workers/dropping', label: 'Dropping a shift' },
+    { href: '/workers/your-week', label: 'Your week: My Shifts' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+QUESTION: How do I move a shift to one specific housemate?
+AFTER READING, THEY CAN: 1. Send a swap or a one-sided hand off from the manage-shift sheet, for a whole shift
+or part of one. 2. Say what is true while it is pending: the shift is still theirs, the counterparty
+sees it immediately, and it cannot be dropped or re-swapped meanwhile. 3. Name the deadline that applies to them and predict every way the request can end.
+FAILURE STATES COVERED: voided because the span was dropped or floated first; expired
+unanswered; declined and returned to them.
+VERIFIED AGAINST: BSpec §8.1 (either party initiates, spans stay assigned until
+acceptance, partial and contiguous, symmetric eligibility checked at creation and again
+at acceptance, Harnwell training in both directions, atomic transfer, T-3h expiry on the
+earlier span, silent void on drop or automated float, one pending request per block),
+§8.5 (hand off is one-way and
+directed, receiver eligibility checked twice, cap-exempt, acceptable until 24h after the
+span ends, seat-vacated guard voids it), §8.6 (both parties see the request and every
+later change without a refresh), §10.1 swap notifications (creation, acceptance,
+decline, cancellation and expiry all notify the party who did not cause it), §6.1
+(claim, swap and pickup do add hours and are cap-checked, unlike floats).
+UNRESOLVED: The title keeps the word "and" because the site navigation already labels it
+that way and the navigation is out of scope. Step 0 was run: the hand off is not a
+second procedure, it is a
+mode pill inside the same picker, so one Steps list covers both. The on-screen labels
+are confirmed in the shipped app, not in either spec. Float swaps (BSpec §8.2, expiry 24
+hours after the latest span end) are left off: a worker reaches that flow from a float,
+not from this sheet, and it belongs with /workers/floating. Multi-leg swaps (proposing
+to several people at once) are shipped but described in neither spec, so they are not on
+the page. */
+}

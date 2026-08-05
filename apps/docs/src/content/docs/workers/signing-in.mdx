@@ -1,0 +1,105 @@
+---
+title: 'Signing in and setting up'
+description: 'Getting into the app with your email and password, and turning on the notifications the rest of the system depends on.'
+minutes: 4
+draft: true
+---
+
+Signing in takes an email and a password, then one choice about notifications.
+
+{
+  /* IMAGE: workers/signing-in/notification-primer.png
+   MUST SHOW: the app's own notification explainer card, before any system dialog, with its
+   yes and not-now controls.
+   WHY: this card is not your phone's permission dialog, and a worker who taps yes here
+   still has a second dialog coming. Nothing in step text makes that obvious. */
+}
+
+## Do it
+
+<Steps>
+  <li>
+    Open the app and type your email and password.
+    <span class="step-note">Your manager creates your account. You cannot sign yourself up.</span>
+  </li>
+  <li>
+    Tap <UI>Sign in</UI>.
+    <span class="step-note">No PennKey redirect. Cancel a slow attempt and your typing stays.</span>
+  </li>
+  <li>
+    Read the card about notifications and say yes.
+    <span class="step-note">This card is the app asking, not your phone.</span>
+  </li>
+  <li>Allow notifications in the dialog your phone then shows.</li>
+</Steps>
+
+## What you'll see
+
+A short tour of the bottom tabs and the Assistant, once.
+
+Then <UI>My Shifts</UI>, your home screen. Settings replays any tour.
+
+## Rules that apply
+
+- **Some notifications have no off switch.** Floats, swap requests, and a published
+  schedule need your answer, so they reach you either way. See
+  [What triggers a notification](/system/notifications-rules).
+- **Saying no on the app's card costs nothing.** It never touches your phone's
+  permission, so you can say yes later. See
+  [Notifications and widgets](/workers/notifications).
+- **The browser has no password field.** A 6 digit code arrives by email. It is a code, not a
+  link, because a link tapped on your phone would sign in the phone, not the desk. See [On the web](/workers/web-portal).
+
+## If it goes wrong
+
+**Incorrect email or password.** An unknown address returns the same message, so it never says
+which is wrong. Ask your manager.
+
+**Network error, or signing in took too long.** The app gives up after 15 seconds, so your
+password was fine. Check your connection.
+
+**Your house is not on the system yet.** Houses go live one at a time, so nothing is
+broken. Your manager knows the date.
+
+<Related
+  links={[
+    { href: '/workers/your-week', label: 'Your week: My Shifts' },
+    { href: '/workers/notifications', label: 'Notifications and widgets' },
+    { href: '/workers/web-portal', label: 'Doing all of this on the web' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: How do I get into the app for the first time and set it up so it can reach me?
+   AFTER READING, THEY CAN:
+     1. Sign in with an email and password, and know an account only comes from a manager.
+     2. Tell the app's own notification card apart from the phone's permission dialog, and
+        know that declining the card is recoverable.
+     3. Read the three sign-in failure messages correctly, including the one that means
+        their house has not launched.
+   FAILURE STATES COVERED: incorrect email or password (which is also what an unknown
+   address returns); network error and the 15 second timeout; house not yet live.
+   VERIFIED AGAINST: BSpec §23 (email and password, no PennKey, the button reads "Sign in"),
+   §23.1 (the four failure messages; unknown address returns the same message as a wrong
+   password), §23.2 (15 second bound; cancel restores the form with the typed values and no
+   error), §22 (per-house launch gate, workers told their house is not on the system yet),
+   §24 (nobody self-registers; web production sign-in is a 6 digit emailed code with no
+   password field, deliberately not a clickable link because web sign-in commonly happens
+   on a shared desk kiosk and a link opened on the worker's own phone would authenticate
+   the phone's browser instead), migration 20260611000004 (hire_worker is gated on
+   user_has_house_admin_role, so the account comes from a house manager, which is the
+   attribution step 1 makes; §24 says only "an administrator"), §20.1 (no first-run
+   walkthrough; the six per-surface interactive tours auto-start on their own screens and
+   are replayable from Settings), §20.2 (the notification ask is an inline row on My
+   Shifts, not a modal, and never touches the system permission on its own), §10.1a (floats, swap requests and schedule
+   published are mandatory), §20.4 (My Shifts is the home surface).
+   UNRESOLVED: How a worker first obtains their password is in neither spec. §24 says
+   accounts are provisioned by an administrator and that first-time password set is
+   unreachable in web production, but no section describes what the worker receives, so the
+   page says only that a manager creates the account. Where to download the app is likewise
+   unspecified; step 1 says "open the app" rather than naming a store. The 8 second bound on
+   the post-sign-in house check (§23.2) is omitted as invisible to a worker. The §20.1 fact
+   that per-surface tours fire as a worker reaches each screen was cut to make room for the
+   web-code reason; Settings replaying a tour survives, which is the actionable half. */
+}

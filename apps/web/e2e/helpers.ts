@@ -126,6 +126,46 @@ export const SEED = {
 // Auth
 // ---------------------------------------------------------------------------
 
+// Local Supabase's dev SMTP catcher (supabase/config.toml [inbucket] port = 54324).
+// Used only by the passwordless (NEXT_PUBLIC_AUTH_MODE=production) e2e run — the
+// default password-auth run never sends email and never needs this.
+const INBUCKET_URL = process.env.INBUCKET_URL ?? 'http://127.0.0.1:54324';
+
+// Polls Inbucket for the most recent OTP email to `email` and extracts the 6-digit
+// code from the body. Inbucket mailboxes are keyed by the local part of the address.
+export async function getOtpCodeFromInbucket(email: string): Promise<string> {
+  const mailbox = email.split('@')[0];
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const listRes = await fetch(`${INBUCKET_URL}/api/v1/mailbox/${mailbox}`);
+    const messages = (await listRes.json()) as Array<{ id: string; subject: string }>;
+    const latest = messages
+      .filter((m) => m.subject.includes('sign-in code'))
+      .sort((a, b) => b.id.localeCompare(a.id))[0];
+    if (latest) {
+      const msgRes = await fetch(`${INBUCKET_URL}/api/v1/mailbox/${mailbox}/${latest.id}`);
+      const msg = (await msgRes.json()) as { body: { text: string; html: string } };
+      const match = (msg.body.text || msg.body.html).match(/\b(\d{6})\b/);
+      if (match) return match[1];
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  throw new Error(`No OTP email arrived for ${email} within 10s`);
+}
+
+// Passwordless login (NEXT_PUBLIC_AUTH_MODE=production only) — email, wait for the
+// code via Inbucket, type it in. Mirrors login()'s password flow but for the OTP UI.
+export async function otpLogin(page: Page, user: SeedUser): Promise<void> {
+  await page.goto('/login');
+  await page.getByTestId('login-email').fill(user.email);
+  await page.getByTestId('login-send-code').click();
+  await expect(page.getByTestId('login-otp-code')).toBeVisible();
+  const code = await getOtpCodeFromInbucket(user.email);
+  await page.getByTestId('login-otp-code').fill(code);
+  await page.getByTestId('login-verify').click();
+  await expect(page.getByTestId('app-shell')).toBeVisible();
+}
+
 export async function login(page: Page, user: SeedUser): Promise<void> {
   await page.goto('/login');
   await page.getByTestId('login-email').fill(user.email);

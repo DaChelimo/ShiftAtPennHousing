@@ -1,10 +1,12 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { Button } from '../../../components/ui/Button';
 import { Field, TextInput } from '../../../components/ui/Field';
 import { LogoMark, Wordmark } from '../../../components/ui/Logo';
+import { PASSWORDLESS_AUTH_ENABLED } from '../../../lib/env';
 import { createClient } from '../../../lib/supabase/client';
 import '../../login/login.css';
 
@@ -18,7 +20,10 @@ const MIN_PASSWORD_LENGTH = 6;
 
 type Phase = 'checking' | 'ready' | 'no-session' | 'done';
 
+// No password in production once passwordless auth is live — see /auth/forgot for the
+// same redirect-away reasoning.
 export default function UpdatePasswordPage() {
+  const router = useRouter();
   const [phase, setPhase] = useState<Phase>('checking');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -26,6 +31,11 @@ export default function UpdatePasswordPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    if (PASSWORDLESS_AUTH_ENABLED) router.replace('/login');
+  }, [router]);
+
+  useEffect(() => {
+    if (PASSWORDLESS_AUTH_ENABLED) return;
     const supabase = createClient();
     // Only a genuine RECOVERY arrival may set a password here. The recovery link carries
     // `type=recovery` in the URL hash; the client consumes it and fires PASSWORD_RECOVERY.
@@ -57,6 +67,8 @@ export default function UpdatePasswordPage() {
       clearTimeout(timeout);
     };
   }, []);
+
+  if (PASSWORDLESS_AUTH_ENABLED) return null;
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();

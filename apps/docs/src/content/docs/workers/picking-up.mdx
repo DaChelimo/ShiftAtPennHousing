@@ -1,0 +1,110 @@
+---
+title: 'Picking up open shifts'
+description: 'Taking an open shift for one week or for every week left in the period, at your house or another one.'
+minutes: 4
+draft: true
+---
+
+Open Shifts holds every shift you can take.
+
+{
+  /* IMAGE: workers/picking-up/open-shifts-feed.png
+   MUST SHOW: the Open Shifts tab on My House, with the Weekly open shifts list above the
+   Permanent openings list, one card showing a seat count and one showing Locked.
+   WHY: the two feeds sit on one screen and the page's whole decision is which list a card
+   came from. */
+}
+
+## Do it
+
+<Steps>
+  <li>
+    Open <UI>Open Shifts</UI>.
+    <span class="step-note">
+      <UI>Others</UI> lists every house you may work.
+    </span>
+  </li>
+  <li>
+    Tap a card under <UI>Weekly open shifts</UI> for one week.
+    <span class="step-note">
+      <UI>Permanent openings</UI> takes the slot every week left in the period.
+    </span>
+  </li>
+  <li>
+    Set <UI>How much can you cover?</UI> to take part of it.
+  </li>
+  <li>
+    Tap <UI>Claim shift</UI>, or <UI>Pick up permanently</UI>.
+  </li>
+</Steps>
+
+## What you'll see
+
+The card reads **Claiming this shift** until confirmed. Only then is it yours.
+
+A permanent pickup names how many weeks you get and which it skips.
+
+## Rules that apply
+
+- **A permanent pickup takes only what fits.** A week you already work keeps the hours that
+  do not clash. A week over your cap is dropped whole, because one tap commits you to
+  months. See [Hours, caps, and attribution](/system/hours-rules).
+- **A skipped week is not held for you.** A part pickup is final, so each returns in the
+  weekly feed.
+- **One week over a soft cap is your call.** <UI>Claim anyway</UI> takes it. A hard cap
+  refuses, because that limit takes no override.
+- **Only Harnwell workers may take Harnwell shifts.** That desk needs training; every other
+  house is open to you. See [Core concepts](/system/concepts).
+- **<UI>Locked</UI> means gone for good.** A desk that would otherwise sit empty locks two
+  hours before its shift. See [How a shift gets covered](/system/coverage-ladder).
+
+## If it goes wrong
+
+**No longer available.** A card marked "2 open" holds two seats; the first two taps take
+them.
+
+**Refused for a clash.** You already hold something at that time, at any house.
+
+<Related
+  links={[
+    { href: '/workers/your-week', label: 'Your week: My Shifts' },
+    { href: '/workers/dropping', label: 'Dropping a shift' },
+    { href: '/system/hours-rules', label: 'Hours, caps, and attribution' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: How do I pick up a shift that is open?
+   AFTER READING, THEY CAN:
+     1. Claim an open shift, whole or part, at their house or an eligible other house.
+     2. Say what a permanent pickup commits them to, and tell a week it trims in part from
+        a week it drops whole.
+     3. Tell a shift they cannot claim from one they were merely too slow for.
+   FAILURE STATES COVERED: seat taken by a faster claimer on a multi-seat block; claim
+   refused for a time conflict; card locked because the desk would be empty at T-2h; hard
+   cap refusal.
+   VERIFIED AGAINST: BSpec §5.1 (two feeds, weekly and permanent openings), §5.3 (cross
+   house eligibility matrix and the Harnwell training constraint, coverage-conditional
+   T-2h lock, time-conflict check, seat-count contention and first-N-claimers), §5.3a (claim confirmed not assumed, "Claiming this shift"), §5.6
+   (Tab 2 My House, Tab 3 other houses), §8.4.3 (two different granularities, corrected
+   2026-08-02: a time conflict skips only the CONFLICTING BLOCKS of that week and skips the
+   whole week only when every block conflicts, while an over-cap week is skipped ENTIRELY
+   whether the cap is soft or hard; partial pickups are final; skipped weeks return only
+   through the weekly feed), §8.4 with §5.1 (permanent openings exist on
+   school-year terms and summer seasons, never on breaks), §9.3 (soft cap warns and is
+   overridable, hard cap refuses; the cap is the
+   resolved cap for that week, so no number is stated here), ARCHITECTURE.md block model
+   (partial claims).
+   UNRESOLVED: The conflict rule is now stated at block granularity, which cost words, so
+   the page was cut back elsewhere (the My Shifts landing spot on confirmation) to stay
+   clear of the ceiling rather than at it.
+   On-screen labels (Open Shifts, My House, Others, Weekly open shifts,
+   Permanent openings, How much can you cover?, Claim shift, Pick up permanently, Claim
+   anyway, Locked) are confirmed in the shipped app, not in either spec. The 30-day weekly
+   feed horizon and the 26-week permanent horizon are in BSpec §5.1 but left off the page:
+   a worker cannot act on either, and a rule with no action attached does not earn its
+   words. Cross-house pickup also blocks a float and moves you out of your home house's
+   count for those hours (§5.3); that belongs on /workers/floating, and this page does not
+   state it. */
+}

@@ -1,0 +1,138 @@
+---
+/*
+ * §5 Ladder: three-column rows (when, who, what), for escalation and tiebreak
+ * sequences. A row may carry a state colour so the ladder and the state list on
+ * the same page agree with each other (§7).
+ */
+import type { StateName } from '../states'
+
+type Rung = { when: string; who: string; what: string; state?: StateName }
+type Props = { rungs: Rung[]; heads?: [string, string, string]; label?: string }
+const { rungs, heads = ['When', 'Who', 'What happens'], label = 'Escalation ladder' } = Astro.props
+---
+
+<div class="ladder" role="group" aria-label={label}>
+  <div class="ladder__head">
+    <span class="eyebrow">{heads[0]}</span>
+    <span class="eyebrow">{heads[1]}</span>
+    <span class="eyebrow">{heads[2]}</span>
+  </div>
+  {
+    rungs.map((rung, i) => (
+      <div class:list={['ladder__row', rung.state && `ladder__row--${rung.state}`]}>
+        <span class="ladder__when num">
+          <span class="ladder__step">{String(i + 1).padStart(2, '0')}</span>
+          {rung.when}
+        </span>
+        <span class="ladder__who">{rung.who}</span>
+        <span class="ladder__what">{rung.what}</span>
+      </div>
+    ))
+  }
+</div>
+
+<style>
+  .ladder {
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .ladder__head,
+  .ladder__row {
+    display: grid;
+    grid-template-columns: 152px 138px minmax(0, 1fr);
+    gap: 12px;
+    padding: 9px 13px;
+    align-items: baseline;
+  }
+
+  .ladder__head {
+    background: var(--bg-2);
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .ladder__row {
+    border-top: 1px solid var(--rule-2);
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+
+  .ladder__row:first-of-type {
+    border-top: 0;
+  }
+
+  .ladder__when {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    font-size: 12.5px;
+    color: var(--ink);
+    font-weight: 560;
+  }
+
+  .ladder__step {
+    color: var(--muted);
+    font-size: 10.5px;
+    letter-spacing: 0.11em;
+  }
+
+  .ladder__who {
+    color: var(--ink-2);
+    font-weight: 560;
+  }
+
+  .ladder__what {
+    color: var(--ink-2);
+  }
+
+  /* A rung tinted with a state colour carries a left marker, never colour alone. */
+  .ladder__row[class*='ladder__row--'] {
+    box-shadow: inset 3px 0 0 var(--rung-ink);
+    background: var(--rung-bg);
+  }
+
+  .ladder__row[class*='ladder__row--'] .ladder__who {
+    color: var(--rung-ink);
+  }
+
+  .ladder__row--float-out {
+    --rung-ink: var(--state-float-out);
+    --rung-bg: var(--state-float-out-bg);
+  }
+  .ladder__row--float-in {
+    --rung-ink: var(--state-float-in);
+    --rung-bg: var(--state-float-in-bg);
+  }
+  .ladder__row--pending {
+    --rung-ink: var(--state-pending);
+    --rung-bg: var(--state-pending-bg);
+  }
+  .ladder__row--allied {
+    --rung-ink: var(--state-allied);
+    --rung-bg: var(--state-allied-bg);
+  }
+  .ladder__row--permanent {
+    --rung-ink: var(--state-permanent);
+    --rung-bg: var(--state-permanent-bg);
+  }
+  .ladder__row--urgent {
+    --rung-ink: var(--state-urgent);
+    --rung-bg: var(--state-urgent-bg);
+  }
+  .ladder__row--open {
+    --rung-ink: var(--state-open);
+    --rung-bg: var(--state-open-bg);
+  }
+
+  @media (max-width: 640px) {
+    .ladder__head {
+      display: none;
+    }
+
+    .ladder__row {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 3px;
+    }
+  }
+</style>

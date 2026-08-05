@@ -58,9 +58,39 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # `supabase start` bundles the Edge Functions, and five of them import the
+      # compiled `packages/core/dist/**` (see supabase/functions/create-swap). That
+      # dist/ is build output and gitignored, so it exists locally but never on a
+      # fresh CI checkout — without this step `supabase start` dies on
+      # "failed to read file: packages/core/dist/swaps/eligibility.js".
+      - name: Build packages/core (Edge Functions import its dist/)
+        run: pnpm --filter @shift/core build
+
+      # Pinned, not `latest`, so this job pulls the same Postgres and pgtap images
+      # developers run locally rather than drifting on its own schedule. Bump it
+      # deliberately, in step with the version the team runs.
+      #
+      # Note: pinning did NOT change the current pgTAP failures (33/74 files fail
+      # identically on `latest` and on 2.108.0). Those are test-vs-code drift, not
+      # an environment problem: e.g. author-break-period.sql compares the now-jsonb
+      # return of remove_break_period() to an integer, and desk-assistant-scope.sql
+      # passes a scalar where da_can_read_item() takes an array. The suite rotted
+      # unnoticed because `supabase start` failed before any test ran.
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.108.0
 
       - name: Start Supabase
         run: supabase start

@@ -1,0 +1,114 @@
+---
+title: "How a swap actually resolves"
+description: "What the system does between one worker sending a swap and both calendars changing."
+minutes: 4
+---
+
+A swap is an offer between two named workers, and nothing moves until the second one
+answers.
+
+<FlowStrip
+  label="From sent to settled"
+  steps={[
+    { label: 'Sent', text: 'One worker names the hours and counterparty.' },
+    { label: 'Pending', text: 'Calendars still show the original owners.' },
+    { label: 'Answered', text: 'Accepted or declined.' },
+    { label: 'Settled', text: 'Both spans change hands at once.', terminal: true },
+  ]}
+/>
+
+## How it resolves
+
+Eligibility is checked at creation and again at acceptance, because it can lapse in
+between. A failed check refuses the request. It binds whoever receives a span, so Harnwell
+training and float rules follow the hours.
+
+A block held in one pending request cannot enter another, so the same hours are never
+promised twice. Acceptance onto a seat that already changed hands fails, protecting its
+new holder.
+
+<Table>
+
+| Kind              | Answer by                              |
+| ----------------- | -------------------------------------- |
+| Shift swap        | 3 hours before the earlier span starts |
+| Float swap        | 24 hours after the later span ends     |
+| One-sided handoff | 24 hours after the span ends           |
+| Permanent swap    | 7 days after it was sent               |
+
+</Table>
+
+Cancellation, a vacated seat, and expiry each end a request without moving hours. The
+other party is told as it happens.
+
+## Why it works this way
+
+Float swaps and handoffs are usually recorded after the shift is worked. Their windows run
+past it, so acceptance rewrites the calendar retroactively.
+
+A handoff skips the weekly cap, because it re-attributes hours somebody was already
+scheduled to work.
+
+A permanent swap trades recurring slots for the rest of the period. It skips weeks the
+initiator no longer owns; the confirmation lists them.
+
+{
+  /* IMAGE: system/swaps-explained/waiting-banners.png
+   MUST SHOW: the top of My Shifts with both pending-swap banners visible, one asking for
+   this worker's answer and one waiting on the other person, each with its deadline.
+   WHY: the page's central claim is that a pending swap changes nothing yet, and this
+   banner pair is the only place a worker sees both sides of that state. */
+}
+
+## What this means for you
+
+You can cancel your own request. You cannot un-accept one.
+
+<Related
+  links={[
+    { href: '/workers/swapping', label: 'Swapping and handing off' },
+    { href: '/system/hours-rules', label: 'Hours, caps, and attribution' },
+    { href: '/system/notifications-rules', label: 'What triggers a notification' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: What does the system do between a swap being sent and both calendars changing?
+   AFTER READING, THEY CAN:
+     1. Say that a pending swap moves nothing, and that the desk is staffed as shown until
+        acceptance.
+     2. Name the answer deadline for each of the four kinds of exchange.
+     3. Predict that a swap is refused when the receiver cannot legally work the span,
+        at creation or at acceptance, and that eligibility binds whoever receives hours.
+     4. Explain why a float swap or handoff can still be accepted after the shift is over,
+        and that a handoff ignores the weekly cap.
+     5. Say what a permanent swap does about weeks the initiator no longer owns.
+   FAILURE STATES COVERED: acceptance refused because the receiver is ineligible;
+   acceptance refused because the seat changed hands; a block already committed to another
+   pending request; a request withdrawn because its seat was vacated; a request that
+   expires unanswered.
+   VERIFIED AGAINST: BSpec §8.1 (pre-creation guard prevents creation and acceptance guard
+   rejects acceptance when either side is ineligible, symmetric Harnwell training, atomic
+   transfer, T-3h expiry, invalidation on drop or float, one-pending-request-per-block
+   conflict rule), §8.2 (float swap 24h-after-end window, retroactive acceptance, no cap
+   re-check), §8.3 (permanent swap 7-day expiry, only weeks the initiator still owns,
+   skipped weeks listed in the confirmation), §8.5 (handoff is one-way, symmetric
+   eligibility checked at creation and re-checked at acceptance, cap-exempt, acceptable
+   until 24h after the span ends, seat-vacated guard voids it), §8.6 (both parties see the
+   pending state and every later change without a refresh); ARCH §3.5 (expiry policies per
+   swap type), §3.2 (a seat write is a compare-and-swap, so an acceptance onto a seat that
+   changed hands fails rather than overwriting).
+   UNRESOLVED: Two dated statements in BSpec sit uneasily together. §8.1 and §8.3 say an
+   unaccepted request is "silently voided" at expiry or invalidation; §8.6, added later on
+   2026-07-28, guarantees that an expiry or a cancellation reaches the other party as it
+   happens. The page follows §8.6 as the later and more specific rule, and §8.1/§8.3
+   should be corrected in place rather than left contradicting it. Separately, §8.3 still
+   scopes permanent swaps to the regular school year, while §8.4 was widened on 2026-07-29
+   to cover summer seasons for permanent drop and pickup; the page states the period scope
+   without naming a season, because whether that widening reaches permanent swaps is not
+   stated anywhere. The app's own name for a one-sided handoff is not spec-stated, so the
+   page describes it rather than naming a control. Frontmatter keeps draft: true, which is
+   cleared on a PASS; the page is already linked live from the nav, which is outside this
+   page's edit scope. */
+}

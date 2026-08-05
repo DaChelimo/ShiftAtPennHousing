@@ -1,0 +1,95 @@
+---
+title: 'Dropping every week'
+description: 'Giving up a recurring slot for the rest of the term or season, which weeks it skips, and who can take it on.'
+minutes: 3
+---
+
+A permanent drop gives up a recurring slot for the rest of the current term or season,
+not forever.
+
+{
+  /* IMAGE: workers/dropping-permanently/permanent-confirm.png
+   MUST SHOW: the manage-shift sheet with the scope set to Permanent, and the confirmation
+   summary naming the end of the current period and the number of future weeks affected.
+   WHY: the week count is the whole decision, and a reader needs to know it is on screen
+   before they confirm. */
+}
+
+## Do it
+
+<Steps>
+  <li>Open <UI>My Shifts</UI> and tap any copy of the slot.</li>
+  <li>
+    Choose <UI>Drop the shift</UI>, then switch the scope to <UI>Permanent</UI>.
+  </li>
+  <li>Set <UI>How much</UI> to keep part of the slot.</li>
+  <li>
+    Read the confirmation summary.
+    <span class="step-note">
+      It names when your period ends and how many future weeks you give up.
+    </span>
+  </li>
+  <li>Confirm.</li>
+</Steps>
+
+## What you'll see
+
+Every future week you still own goes at once. The slot moves to **Permanent openings**,
+where another worker can take the whole run. Your updates tab records what you dropped.
+
+## Rules that apply
+
+- **Permanent means the rest of the current term or summer season.** Each period is built
+  fresh, so an autumn drop leaves spring untouched. Breaks carry no recurring slot,
+  so they are never in scope. See [The operating calendar](/system/calendar).
+- **Three kinds of week are skipped**: the shift you are working now, occurrences already
+  past this week, and weeks somebody else owns. A seat has one owner, so only weeks still
+  yours are dropped. See [Core concepts](/system/concepts).
+- **Part of a slot must be one unbroken run.** Drop 22:00 to 24:00 of a 19:00 to 24:00 slot,
+  but never a hole in the middle. A slot is one run of 30 minute blocks. See
+  [Core concepts](/system/concepts).
+
+## If it goes wrong
+
+**The summary counts fewer weeks than you expected.** Weeks another worker holds are not
+yours to give.
+
+**You want the slot back.** Take it from **Permanent openings**, or ask whoever picked it up
+for a swap.
+
+<Related
+  links={[
+    { href: '/workers/dropping', label: 'Dropping a shift' },
+    { href: '/workers/picking-up', label: 'Picking up open shifts' },
+    { href: '/system/coverage-ladder', label: 'How a shift gets covered' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: How do I give up a recurring slot for the rest of the term?
+   AFTER READING, THEY CAN:
+     1. Run a permanent drop and read the confirmation summary's week count before
+        confirming.
+     2. Name the three kinds of occurrence a permanent drop skips.
+     3. Say how far "permanent" reaches, and that the next period is unaffected.
+     4. Drop part of a recurring slot and keep the rest each week.
+   FAILURE STATES COVERED: the confirmation summary affects fewer weeks than expected
+   (weeks owned by somebody else are skipped); wanting the slot back after dropping it.
+   VERIFIED AGAINST: BSpec §5.2 (the drop popup asks this week only or permanent; permanent
+   drops do not apply during break profiles), §8.4 (SM-built scheduling only: regular school
+   year terms and summer seasons, widened 2026-07-29), §8.4.1 (the confirmation summary
+   states the end of the current profile and the number of future weeks affected; whole
+   period scope, not the run between breaks; the three skips; partial permanent drop on a
+   contiguous subset; the slot appears in the permanent openings feed; the dropper's own
+   updates tab record), §8.4.3 (permanent pickup takes the whole remaining run; a dropper
+   may pick their own slot back up while it is still in the feed, §8.4.4), §5.1 (the
+   permanent openings feed is visible to all SWs at the house), Appendix B items 1, 2, 4,
+   5, 6.
+   UNRESOLVED: Neither spec states the exact on-screen wording of the confirmation summary
+   beyond §8.4.1's template, so this page describes what it tells you rather than quoting
+   it. The 26 week horizon of the permanent openings feed (BSpec §5.1) is left out: it
+   bounds what a picker sees, not what a dropper gives up, and the advertised weeks
+   remaining already counts the whole recurrence. §8.4.2 manager-initiated permanent removal
+   is out of scope for a worker page and belongs on a /managers page. */
+}

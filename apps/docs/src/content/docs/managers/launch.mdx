@@ -1,0 +1,105 @@
+---
+title: 'Launching a house'
+description: 'Taking a house live: what its workers see before that happens, and what starts running the moment it does.'
+minutes: 3
+draft: true
+---
+
+Launching a house makes it visible to its workers and starts the coverage chain on its
+desk.
+
+<Callout label="A live house pages real people">
+  The escalation chain skips a pre-launch desk, because a desk nobody has opened has
+  nobody to page. Go live and every vacant block starts broadcasting, floating, and paging
+  Allied.
+</Callout>
+
+## Do it
+
+<Steps>
+  <li>Sign in as the Administrator.</li>
+  <li>Open <UI>Launch</UI> and turn on <UI>Staggered launch</UI>.</li>
+  <li>Confirm the house has a published schedule.</li>
+  <li>Set that house's toggle to <UI>Live</UI>.</li>
+</Steps>
+
+{
+  /* IMAGE: managers/launch/launch-console.png
+   MUST SHOW: the Launch console with the Staggered launch master switch on, and the house
+   list below it showing at least one Live house and one Pre launch house.
+   WHY: the master switch and the per-house toggles look alike, and the page's core rule is
+   that the per-house toggles do nothing until the master switch is on. */
+}
+
+## What you'll see
+
+The house's tag flips to <UI>Live</UI>, and its workers get their week instead of the
+not-yet-on-the-system screen. Launching creates and changes no shift.
+
+## Rules that apply
+
+- **Only the Administrator can change launch state**, or the master switch behind it. No
+  reason for that limit is recorded anywhere, so treat it as fixed. See
+  [Which manager are you?](/managers/roles).
+- **A new house starts pre-launch**, so a house you are setting up stays dark.
+- **Managers are never gated.** Build and publish a pre-launch house before any worker
+  sees it. See [Publishing a schedule](/managers/publishing).
+- **Automated floating needs a second live house.** With one, the float step finds nobody
+  and is skipped, while broadcast and the Allied page still run. See
+  [Floating](/system/floating).
+
+## If it goes wrong
+
+**Every house reads live and the toggles do nothing.** The master switch is off by default,
+and it overrides every house toggle.
+
+**The console refuses you.** You are not the Administrator. Ask them.
+
+**A house went live too early.** Set it back to pre launch: workers go dark, escalation
+stops, and the first launch date is kept.
+
+<Related
+  links={[
+    { href: '/managers/publishing', label: 'Publishing a schedule' },
+    { href: '/managers/people', label: 'People: hiring, roles, transfers' },
+    { href: '/system/roles', label: 'Roles and the duty hierarchy' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: How do I take a house live, and what changes when I do?
+   AFTER READING, THEY CAN:
+     1. Say that only the Administrator may flip the master switch or a house's launch
+        state.
+     2. Order the work correctly: master switch on, schedule published, then house live,
+        because a live house immediately escalates its vacant seats to real people.
+     3. Predict that launching changes visibility only and creates or alters no shift.
+     4. Explain why the per-house toggles appear inert while the master switch is off.
+     5. Reverse a premature launch by setting the house back to pre launch.
+   FAILURE STATES COVERED: master switch off so every house reads live and the toggles do
+   nothing; the console refusing a non-Administrator; a house launched before its schedule
+   was ready.
+   VERIFIED AGAINST: BSpec §22 (per-house pre-launch/live gate, master switch off by
+   default, admin explicitly launches, workers see a not-yet-on-the-system screen, admins
+   not gated, visibility only, escalation chain skipped for a pre-launch house and resuming
+   on launch), §13 (the Administrator additionally sets each house's launch state and the
+   §22 master switch), §14 (staggered launch switch default off; new houses default to
+   pre-launch), §25.1 (float lookup short-circuits below two live houses; broadcast and the
+   Allied chain unaffected; Open Shifts shows seats at live houses only); ARCHITECTURE.md
+   §16.2 (single liveness predicate, application-layer enforcement, orchestrator scan joins
+   it); migration 20260712000001 (new houses default to pre-launch; only the project
+   administrator may change a house's launch state or the master switch; the gate is off
+   while the switch is unset; setting a house back to pre-launch keeps its first launch
+   time). Control labels confirmed against the Launch console.
+   UNRESOLVED: No source states WHY launch authority is the Administrator's alone. BSpec
+   §13 and §22 assert it and the migration only notes that it mirrors people-admin gating,
+   which is a mechanism, not a reason. The page says the limit is unexplained rather than
+   inventing a rationale. The console also offers an Invite roster action that mints
+   per-worker password links. Neither spec describes it, and BSpec §24 makes production
+   sign-in passwordless with those routes unreachable there, so the page omits it. SKETCH's
+   screenshot table lists /managers/launch as text-steps-only, so the one image placeholder
+   above may not be fillable from the existing capture set. Frontmatter still carries
+   draft: true because the brief says it is cleared only on a PASS; the editor flagged its
+   presence, so it is left for the editor to clear. */
+}

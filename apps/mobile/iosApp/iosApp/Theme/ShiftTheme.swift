@@ -214,7 +214,9 @@ struct ShiftColors {
 @MainActor
 final class ThemeController: ObservableObject {
     static let shared = ThemeController()
-    private static let storageKey = "appearance_theme_choice"
+    /// Internal (not private) so `AppDelegate` can read the same persisted value before any
+    /// `ThemeController` instance exists — see `applyPersistedInterfaceStyleBeforeFirstFrame()`.
+    static let storageKey = "appearance_theme_choice"
 
     @Published var choice: ThemeChoice {
         didSet { UserDefaults.standard.set(choice.persistedValue, forKey: Self.storageKey) }
@@ -235,6 +237,27 @@ final class ThemeController: ObservableObject {
 }
 
 extension ThemeChoice {
+    /// The `UIKit` counterpart of `ThemeController.preferredColorScheme`, for the one call
+    /// site (`AppDelegate`) that must apply the persisted choice before any SwiftUI view —
+    /// and so before `@Environment(\.colorScheme)` — exists to read it.
+    ///
+    /// `nil` for `.system`, deliberately — NOT `.unspecified`. Mixing UIKit's
+    /// `overrideUserInterfaceStyle` with SwiftUI's `.preferredColorScheme` is a documented
+    /// source of the window losing live system Dark Mode tracking: an early UIKit-level
+    /// write (even to `.unspecified`) can desync from SwiftUI's own internal bookkeeping of
+    /// "what I last applied" to that window, so a later system appearance change silently
+    /// stops reaching the SwiftUI content (status bar/system chrome still updates, since
+    /// that is driven separately by the OS). An explicit Light/Dark choice is safe to pin
+    /// this way because it is SUPPOSED to ignore system changes; System must never touch
+    /// this property at all, so the caller skips the assignment entirely when this is nil.
+    var uiUserInterfaceStyle: UIUserInterfaceStyle? {
+        switch self {
+        case .light: return .light
+        case .dark: return .dark
+        default: return nil
+        }
+    }
+
     var persistedValue: String {
         switch self {
         case .light: return "light"

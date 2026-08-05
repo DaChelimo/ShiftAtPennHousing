@@ -1,0 +1,118 @@
+---
+title: 'Glossary'
+description: 'The terms this site uses in a specific way that context will not give you.'
+minutes: 2
+draft: true
+---
+
+These sixteen terms carry a precise meaning you cannot guess from the sentence around
+them. Every other term on this site is defined where it is used.
+
+## Where work happens
+
+<Table>
+
+| Term               | What it means                                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------------------------- |
+| **House**          | One of Penn's 13 college houses. You are hired into one. See [Core concepts](/system/concepts).          |
+| **Desk**           | The post a house staffs. Yours differs from your house while you are floated.                            |
+| **Block**          | 30 minutes, on the hour or the half hour. Nothing moves in less.                                         |
+| **Recurring slot** | A house, weekday, and time band you own every week of the period.                                        |
+
+</Table>
+
+## Giving up and trading shifts
+
+<Table>
+
+| Term               | What it means                                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------------------------- |
+| **Drop**           | Giving up one occurrence. It goes to the open feed, and you claim it back like anyone else. See [Dropping a shift](/workers/dropping). |
+| **Permanent drop** | Giving up every remaining occurrence of a recurring slot. Never breaks, which have no recurrence. See [Dropping every week](/workers/dropping-permanently). |
+| **Swap**           | Two workers exchanging spans. Nothing moves until the other accepts. See [How a swap resolves](/system/swaps-explained). |
+| **Handoff**        | A one-way give or take-over. Hours move one way, and no cap is checked.                                  |
+
+</Table>
+
+## When a desk is short
+
+<Table>
+
+| Term                  | What it means                                                                                        |
+| --------------------- | ---------------------------------------------------------------------------------------------------- |
+| **Coverage floor**    | One worker present. Coverage is chased only for a desk that would otherwise be empty. See [How a shift gets covered](/system/coverage-ladder). |
+| **Coverage lock**     | Two hours out, an empty desk's seats stop being claimable. The lock never lifts.                      |
+| **Allied**            | Paid outside cover. A manager places the call, because the system cannot buy it.                      |
+| **Float**             | Part of your shift moves to another desk, then you return. It relocates hours, never adds them. See [Floating](/system/floating). |
+| **Source house**      | The house lending the floater. Lending never leaves it below one worker.                              |
+| **Destination house** | The house receiving them. Harnwell lends but never receives, because its desk needs its own training. |
+
+</Table>
+
+## Hours
+
+<Table>
+
+| Term         | What it means                                                                                |
+| ------------ | -------------------------------------------------------------------------------------------- |
+| **Soft cap** | A weekly hours ceiling that warns you and lets you proceed. See [Hours and caps](/system/hours-rules). |
+| **Hard cap** | A weekly hours ceiling that refuses. Nobody overrides it.                                    |
+
+</Table>
+
+<Related
+  links={[
+    { href: '/system/concepts', label: 'Core concepts' },
+    { href: '/system/roles', label: 'Roles and the duty hierarchy' },
+    { href: '/system/coverage-ladder', label: 'How a shift gets covered' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: What does this site mean by a term I cannot resolve from the sentence I met it in?
+   AFTER READING, THEY CAN:
+     1. Tell apart the five pairs the rest of the site relies on: desk from house, drop from
+        permanent drop, swap from handoff, source house from destination house, and soft cap
+        from hard cap.
+     2. Follow any of these definitions to the page that owns the concept in full.
+     3. Predict where a term NOT listed here is defined, because it is defined on the page
+        that owns it, at the point of use.
+   FAILURE STATES COVERED: none. A glossary carries no procedure and has no action to fail.
+   VERIFIED AGAINST: BSpec §1.1 (13 houses, hired into one, Harnwell training), §1.2 (float
+   direction, source floor of one worker, Harnwell never a destination), §1.5 (30 minute
+   blocks on the hour or half hour), §5.1 (a recurring slot is house plus day-of-week plus
+   time band; permanent openings cover schedule-built days, school year and summer, and
+   exclude breaks), §5.2 (temporary drop is one occurrence, no dedicated reclaim), §5.3
+   (the T-2h lock is conditional on the desk being empty), §5.4 (coverage floor of one
+   worker; escalation ends at an Allied request a human must place), §5.4a (only a human
+   procures Allied), §5.5 (the lock is one-way and never lifts), §6.1 (a float relocates
+   already-scheduled hours), §8.1 (a swap holds until the counterparty accepts), §8.4
+   (permanent drop of a recurring slot), §8.5 (a handoff is one-way and cap-exempt), §9.3
+   (a soft cap warns and may be proceeded through, a hard cap refuses and cannot be
+   overridden, and cap values are configurable rather than fixed); migration 20260627000001
+   (coverage-conditional one-way lock).
+   UNRESOLVED:
+   1. SKELETON. This page fits none of the three skeletons in the editorial contract §3. It
+   is a lookup table, not a task page, an overview, or an explainer: it has no procedure, no
+   single mechanism to explain, and no ordered rule to diagram. Declaring the mismatch here
+   is what §3 asks for in place of inventing a fourth shape. The page was cut from 45 terms
+   to 16 to make the mismatch as small as it can be, but the shape itself is not fixable by
+   a writer.
+   2. TERMS MOVED OFF. The 29 terms removed are defined in place on the page that owns them,
+   where the reader already is when they need them: the ten role names and duty tiers on
+   /system/roles, the calendar and season vocabulary on /system/calendar, the feed and claim
+   vocabulary on /workers/picking-up, the escalation step names on /system/coverage-ladder,
+   and the float lookup vocabulary on /system/floating and its deep dive. A term a reader
+   can resolve from the sentence it appears in does not need a second home.
+   3. SPEC CONTRADICTION, force trigger. The term is off this page now, but the defect stands
+   and needs reconciling before any page states it: BSpec §6.6 gives force trigger to an SM,
+   HM, or BM, while §2.3a gives the RSM every permission an HM holds except the duty rotor
+   and §2.8 gives the Administrator every power above. Per AGENTS.md a disagreement between
+   spec sections is a P0 reconciliation, not something a writer resolves silently.
+   4. NO IMAGE AND NO DIAGRAM. A glossary has no screen behind it and no ordered rule to
+   draw, so a screenshot would illustrate nothing. The linked pages carry the diagrams.
+   5. BROADCAST DEFAULT. Left off the page. BSpec §5.4 makes broadcast subscription opt-in
+   and off by default, while §10.1a makes the home-house open-shift reminder on by default.
+   That contradiction belongs in a spec reconciliation, not in a definition. */
+}

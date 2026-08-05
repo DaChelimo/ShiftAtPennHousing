@@ -1,0 +1,113 @@
+---
+title: 'Hours reporting and caps'
+description: "Reading the hours report, and raising or lowering a worker's weekly cap when the standard one does not fit."
+minutes: 5
+draft: true
+---
+
+The hours report shows where a worker's week went. The weekly cap is what stops it growing.
+
+<Callout label="A cap change lands on all 13 houses">
+  One cap covers a calendar week campus-wide. Setting it for your house sets it for every
+  house, because per-house values would enforce unevenly across a campus workers move around.
+
+  It applies the moment you save, with no approval step and no per-house exception.
+
+  Only an HM (Housing Manager) or BA (Building Administrator) may set it. An SM (Student
+  Manager) cannot.
+</Callout>
+
+## Do it
+
+<Steps>
+  <li>
+    Open <UI>Hours report</UI> and read the week against the cap on the header.
+    <span class="step-note">Each worker splits three ways: worked at home, worked while floated out, worked on a cross-house pickup.</span>
+  </li>
+  <li>If that week's cap is wrong, open <UI>Weekly hours cap</UI>.</li>
+  <li>Enter the Monday of the week under <UI>Week beginning Monday</UI>.</li>
+  <li>
+    Choose <UI>20 hours</UI> soft or <UI>40 hours</UI> hard.
+    <span class="step-note">Soft warns the worker and lets them carry on. Hard refuses the claim, and no manager can override it.</span>
+  </li>
+  <li>
+    Write an audit note, then save.
+    <span class="step-note">Stored with your name and the time you saved it.</span>
+  </li>
+</Steps>
+
+{
+  /* IMAGE: managers/hours/weekly-cap.png
+   MUST SHOW: the weekly hours cap screen with the week list, one row tagged Manual override
+   and the rest tagged Profile default, and the 20 soft / 40 hard selector.
+   WHY: the override tag is the only way to tell a week you changed from a week the calendar
+   set, and the page's main claim is that your change replaces a default. */
+}
+
+## What you'll see
+
+That week's row changes from <UI>Profile default</UI> to <UI>Manual override</UI>, showing
+the new number and its soft or hard tag. Every hours meter on both apps reads the new value.
+
+## Rules that apply
+
+- **A week runs Monday to Sunday**, never a rolling seven days, so each week settles alone.
+  See [Hours, caps, and attribution](/system/hours-rules).
+- **Hours count at the worker's home house**, whatever desk they stood at, so somebody you
+  floated out still appears on your report.
+- **The report counts assigned time, not worked time.** A worker who stays late waiting on a
+  late floater is not credited for those minutes.
+- **A float never consults a cap**, because it relocates hours the worker was already
+  scheduled to work. See [Floating: overview](/system/floating).
+- **A season sets its own cap.** Summer weeks carry whatever the Administrator configured, so
+  never assume the number is 20 or 40. See [Operating seasons and calendar](/managers/seasons).
+
+## If it goes wrong
+
+**You lowered the cap and nobody lost hours.** That is correct. Shifts already assigned stand
+and pending floats are honored. Only new claims, swaps and floats are refused.
+
+**The house switcher does not move the report.** It follows the switcher for an Administrator
+and the HMOD on duty. Everyone else reads their own house.
+
+**The cap screen says managers only.** You are an SM. Ask your HM or BA to make the change.
+
+<Related
+  links={[
+    { href: '/system/hours-rules', label: 'Hours, caps, and attribution' },
+    { href: '/managers/roles', label: 'Which manager are you?' },
+    { href: '/workers/hours', label: 'Your hours' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: How do I read a house's hours and change the cap for a week?
+   AFTER READING, THEY CAN:
+     1. Read the three-way split on the hours report and know hours count at the home house.
+     2. Say whether they may change the cap at all, and that changing it applies to all 13
+        houses at once, instantly, with no approval.
+     3. Choose soft or hard knowing soft warns and hard refuses.
+     4. Predict that lowering a cap unassigns nobody and only blocks new claims, swaps and
+        floats.
+   FAILURE STATES COVERED: a lowered cap appearing to do nothing; the house switcher not
+   moving the report; the cap screen refused to an SM.
+   VERIFIED AGAINST: BSpec §9.1 (attribution at the home house, three-way decomposition,
+   assigned time not worked time), §9.2 (Monday 00:00 to Sunday 23:59, not rolling), §9.3
+   (one cap per calendar week for all houses; an HM or BM of any house may modify it; global,
+   instant, no approval; SMs cannot; 20 soft overridable and 40 hard not overridable; a season
+   may set any cap so no surface may assume two known values; on a reduction existing
+   assignments stand, pending and acknowledged floats are honored, and new claims, swap
+   acceptances and float assignments are blocked), §9.3 "Caps and floats" and §6.1 (floats
+   consult neither cap), Appendix A item 4 (HM/BM only, instant, no approval workflow), §13
+   (modify the global weekly hours cap listed under HM and BM); ARCHITECTURE.md §3.10 (the
+   cap override is recorded with its actor and audit note).
+   UNRESOLVED: The shipped web gate for the cap screen admits RSM and Administrator as well
+   as HM and BA, and packages/core canModifyCap also returns true for rsm, while BSpec §9.3
+   and Appendix A item 4 both say HM/BM only. This page follows the precedent set on
+   /managers/roles and attributes the cap only to HM and BA, where spec and code agree. The
+   brief for this page described raising or lowering "a worker's" cap; no per-worker cap
+   exists in either spec or the code, so the page documents the per-week campus-wide cap that
+   does. Control labels (Week beginning Monday, Profile default, Manual override, audit notes)
+   are confirmed in the shipped screen, not in either spec. */
+}

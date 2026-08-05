@@ -137,7 +137,8 @@ Every house has a Residential Services Manager. The RSM is a university employee
 - **The RSM holds every power an HM holds, with one exception: an RSM can never serve as HMOD.** They build and override the schedule, force-trigger float lookups, administer their house's people, modify the weekly hours cap, and go on leave — all the HM administrative powers — but they are never placed on the HMOD rotor and are never a valid HMOD-transfer target (see §2.5/§2.6).
 - **The RSM holds shift assignments like an HM.** An RSM may work scheduled shifts at their home desk and pick up open shifts (per the standard eligibility matrix). Like an HM, an RSM is never automatically floated by the system and never receives broadcast notifications.
 - **The RSM can be assigned to their own desk from the schedule builder (added 2026-07-29).** In both builder phases (Section 4.3) and in post-publish manual override, the house's RSM appears in the roster as an assignable worker alongside student workers, so the schedule-building SM/HM/BM/RSM can put them on the desk directly when the house needs it (Gregory and Harnwell were the driving cases, but this applies to any house). The RSM is exempt from every hours check when assigned this way: no hard cap, no soft-cap advisory, and no over-target warning, since they are salaried admin rather than a capped student worker. This assignment is scoped to the RSM's own house only; an RSM cannot be builder-assigned to a desk at another house.
-- **The RSM has read-only visibility into every house.** An RSM may view the live schedule and coverage of any of the 13 houses (e.g., the DuBois RSM may view the Rodin schedule), but may **not** make changes to a house other than their own. Every write the RSM performs — overrides, builder edits, people admin, leave, cap — remains scoped to their own house; cross-house access is view-only.
+- **The RSM sees every house, and may modify any house's SCHEDULE (amended 2026-06-27).** An RSM may view the live schedule and coverage of any of the 13 houses (e.g., the DuBois RSM may view the Rodin schedule). Since the 2026-06-27 cross-house schedule decision, the elevated tier (HM, BM, RSM) may also **build, publish, and override the schedule of any house**, not only their own (Section 4.3, Section 13). This reverses the original RSM rule that cross-house access was view-only; the reversal is scoped to the schedule alone.
+- **Every other RSM write stays scoped to their own house.** People administration (hiring, firing, role grants), leave, weekly-cap modification, and preference or period-target administration remain own-house for an RSM, exactly as for an HM or BM. The widening above covers the schedule and nothing else. The Student Manager is unaffected by it and remains own-house for every action, including building.
 
 In administrative contexts where this document says "HM," the RSM holds the same power **except HMOD duty**. Where the routing of a notification differs (the RSM, not the HM, is the in-working-hours contact), it is called out explicitly in §10.1.
 
@@ -223,9 +224,9 @@ and when floating is allowed (Section 3.1). Lower roles (BM, HM, RSM, SM, SW) co
 applied configuration through the ordinary runtime paths.
 
 - The Administrator holds every administrative power below it in **every** house:
-  cross-house schedule building and override, people administration (hiring, firing, role
-  grants), weekly-cap modification, and force-trigger. Unlike the RSM (whose people
-  administration is own-house only), the Administrator's reach is campus-wide.
+  cross-house schedule building, publishing, and override, people administration (hiring,
+  firing, role grants), weekly-cap modification, and force-trigger. Unlike the RSM (whose
+  people administration is own-house only), the Administrator's reach is campus-wide.
 - The Administrator is admin-only. It never staffs a desk, is never automatically floated,
   never receives broadcast, is never in the claim pool, and is never a swap counterparty.
   It is never placed on the HMOD rotor and is never an HMOD-transfer target.
@@ -404,6 +405,10 @@ The Phase-1 hard constraints (a worker's "cannot" markings, and a worker's "no h
 
 When the SM publishes the schedule, it becomes live. Workers can see their assignments. The schedule is the source of truth from this moment forward.
 
+**Publishing is irreversible for the period.** There is no unpublish. Once published, a week can only be changed forward, through the override controls described below; the published state itself cannot be withdrawn. Publishing also notifies every assigned worker, and the "Schedule published" notification is mandatory and cannot be silenced (Section 10.1a). The confirmation dialog is therefore the last reversible moment in the flow.
+
+**Who may publish.** An SM may publish their own house only. The elevated tier — HM, BM, RSM, and Administrator — may publish **any** house, on the same gate that grants them cross-house override (amended 2026-06-27, Section 2.3a, Section 13). Publishing and overriding share one authority; there is no house for which an elevated admin may override but not publish.
+
 The SM retains override capability after publishing. The SM can add workers to shifts, remove workers from shifts, and reassign blocks at any point during the period. The same card UI from Phase 2 (full house roster, search bar) is used for these post-publish edits. HMs, BMs, RSMs, and admins share these same override capabilities (SM is own-house only; HM/BM/RSM/admin may override any house, Section 13).
 
 **A shift of any age — already underway, or entirely in the past, with no time limit — may be edited (amended 2026-07-29).** This is an admin correction power, not a worker claim: it carries no T-2h cutoff in either direction, and it is distinct from the "worker cannot claim a shift within 2 hours of its start" rule (Section 5.3), which governs claim eligibility, not manager override. Every other override rule is unchanged by this: an override still cannot touch a float-committed seat (use the float decline/void controls instead, Section 6), cannot place a worker across houses (cross-house placement uses pickup/float, not override), and the 40-hour hard weekly cap is still absolute and never bypassable.
@@ -525,7 +530,7 @@ Temporary drop rules:
   - **Empty-desk check.** Escalation only fires when the drop would leave the desk **empty** (zero staff present) for the affected blocks — the coverage floor of Section 5.4. If at least one worker remains, no escalation fires; the chunk enters the weekly feed as a normal open shift available for claiming.
 - A worker may drop only a portion of a shift (e.g., drop a 19:00 to 20:00 segment from a 19:00 to 24:00 shift), leaving the surrounding blocks intact. The remaining blocks may be non-contiguous; they display as separate cards.
 - A worker who is currently assigned to a float (or is actively floating) may drop their shift. The float assignment becomes invalid; the destination desk now has a coverage gap that triggers a new float lookup (Section 5.5).
-- A worker who has dropped a shift may reclaim it themselves, provided no other worker has claimed it in the interim.
+- A worker who has dropped a shift may take it back themselves, provided no other worker has claimed it in the interim. **This is an ordinary claim from the open-shifts feed, not a dedicated reclaim affordance (clarified 2026-08-02).** The dropper has no privileged path and no reservation window: they claim it exactly as any other eligible worker would, subject to the same eligibility matrix and the same coverage-conditional T-2h lock (Section 5.3, Section 5.6).
 
 A drop horizon of 30 days governs only whether the dropped shift appears in the weekly feed; drops of regular-schedule shifts more than 30 days in advance are accepted and held until the 30-day horizon is reached. Break shifts may only be dropped during the claim phase or after the shift enters the open-shifts feed (T-1d onward); they cannot be dropped before T-14d because they do not exist as claimable shifts until then. Permanent drops do not apply during break profiles.
 
@@ -680,7 +685,7 @@ The Shifts screen is the SW's primary workspace for managing their week. It is a
 **Tab 1 — My Shifts.** A consolidated view of the SW's current week, divided into three subsections from top to bottom:
 
 1. **Picked-up shifts** (top): Shifts the SW has voluntarily claimed this week from any open-shifts feed — both home-house and cross-house pickups. Each card is marked with the picked-up indicator (Section 11.2) and, for cross-house pickups, identifies the destination house.
-2. **Dropped shifts** (middle): Shifts the SW has personally dropped this week that are still open — i.e., have not yet been claimed by another worker or covered by Allied. This view helps the SW track what they've offloaded and offers a one-tap path to reclaim if they change their mind. A shift disappears from this section once it is claimed by another worker, covered by Allied, or otherwise resolved (e.g., voided).
+2. **Dropped shifts** (middle): Shifts the SW has personally dropped this week that are still open — i.e., have not yet been claimed by another worker or covered by Allied. This view helps the SW track what they've offloaded. **There is no dedicated reclaim action (corrected 2026-08-02).** A dropped shift is released to the open-shifts feed, and the worker who dropped it takes it back the same way anyone else would: by claiming it from that feed, subject to the same eligibility and the same coverage-conditional T-2h lock as any other claimant (Section 5.2, Section 5.3). The earlier description of a "one-tap path to reclaim" described a surface that was never shipped and contradicted Section 5.2. A shift disappears from this section once it is claimed by anyone, covered by Allied, or otherwise resolved (e.g., voided).
 3. **Their shifts** (bottom): The SW's regularly scheduled shifts for the week — assignments from the SM-built schedule and permanently-picked-up recurring slots — that are neither pickups nor personal drops.
 
 **Tab 2 — Open Shifts in My House.** The weekly open-shifts feed and the permanent openings feed for the SW's home house. Shifts here can be claimed via the standard temporary or permanent pickup flows (Section 5.3, Section 8.4).
@@ -1280,6 +1285,7 @@ The system does not maintain a separate audit log of state changes. The calendar
 **Student Managers** can do everything an SW can do, plus, for their home house only:
 
 - Build the initial schedule (regular school year).
+- **Publish** the built schedule, making it live and notifying every assigned worker. Publishing is irreversible for the period; there is no unpublish (Section 4.3).
 - Override the live schedule, including temporary removal of a worker from a specific week's slot and permanent removal of a worker from a recurring slot for the rest of the operating profile. The manual override interface presents both options explicitly. This includes shifts that have already started or are entirely in the past, with no time limit (amended 2026-07-29, Section 4.3).
 - Initiate permanent shift swap requests.
 - Force-trigger a float lookup before T-2h.
@@ -1384,6 +1390,13 @@ The following govern delivery and data lifetime (Sections 10.4 and 5.1):
 
 **Fixed system parameters, changed by deployment rather than configuration.** The open-shift feed horizons — 6 weeks for the weekly feed, 26 weeks for permanent openings (Section 5.1) — are not runtime-configurable. They were deliberately not made config values: reading them from configuration requires an elevated-privilege lookup that either costs more than the bound saves or, if unprivileged, silently resolves differently for a worker than for an administrator. A horizon that depends on who is asking is worse than a fixed one.
 
+- **Web sign-in mode** (Section 24, added 2026-08-01): passwordless (production) or
+  password (development). This is a deploy-time environment setting, not a `system_config`
+  row: it decides whether a password field exists in the UI at all, and unlike the
+  administrator-editable values above, it must require a redeploy to change rather than a
+  runtime update — a compromised admin session should not be able to silently reopen a
+  weaker sign-in surface.
+
 Once finalized via project committee feedback, the administrator may update these. All updates apply system-wide and take effect at the start of the next orchestrator tick. Individual users do not have direct control over these values except for the per-worker tweakable acknowledgment reminders (6h and 2h).
 
 ---
@@ -1458,6 +1471,14 @@ This ladder is **off by default** and gated by a single switch. Inside HM workin
 ---
 
 ## 17. The Desk Assistant
+
+**Status (2026-08-01): the Desk Assistant has no entry point on either platform.** Web
+navigation, the worker-portal and kiosk desk routes, and the mobile Ask chip/screen were all
+removed as part of the Harnwell pilot (§25). This is a permanent product removal, not a
+pilot-scoped one — it is not expected to return when the pilot widens. The backend this
+section describes (the knowledge base, the classification/answer pipeline, the Edge
+Functions) is unaffected and stays fully intact so restoring an entry point is cheap; nobody
+can currently reach it through the app.
 
 The Desk Assistant is a grounded, cited assistant that helps desk staff answer their own questions, follow the correct procedure, reach the right contact, and, when escalation is genuinely warranted, send a complete and correctly routed page. It exists to reduce both the **volume** and the **incompleteness** of pages reaching the HMOD, and to shorten new-worker ramp by making procedural knowledge queryable in the moment it is needed.
 
@@ -1597,19 +1618,36 @@ Unfilled seats are always **surfaced**, distinguishing those that could not be f
 
 ## 20. Worker App Onboarding and Widgets
 
-### 20.1 Onboarding Is Three Layers
+### 20.1 Onboarding Is Interactive Tours and Written Guides
 
-1. **A short first-run tour.** On first launch, a brief walkthrough orients the worker to the bottom tabs and the Assistant. It fires once.
-2. **Just-in-time teaching.** The first time a worker reaches a surface that needs explaining, teaching happens there rather than all at once on day one. Most surfaces still use a single explanatory card, shown once per worker per surface. Six surfaces instead ship a full interactive tour in place of a card — **ShiftTour** (managing a shift), **PreferencesTour** (painting preferences), **BreakTour** (claiming a break), **SwapTour** (the swap composer), **HouseGridTour** (the house grid), and **OpenClaimTour** (claiming an open shift) — each a fixed three-step walkthrough that plays out on the real or a sample instance of the surface, so the worker sees the outcome, does the gesture, and watches where it lands, rather than reading about it.
-3. **Written how-to guides.** The guides are part of the knowledge base (Section 18), so a worker can also just ask the Assistant how to do something.
+Onboarding is two layers, and neither of them is a card the worker taps past:
+
+1. **Six interactive tours, one per high-value surface.** **ShiftTour** (managing a shift), **PreferencesTour** (painting preferences), **BreakTour** (claiming a break), **SwapTour** (the swap composer), **HouseGridTour** (the house grid), and **OpenClaimTour** (claiming an open shift). Each is a fixed three-step walkthrough that plays out on the real or a sample instance of the surface, so the worker sees the outcome, does the gesture, and watches where it lands, rather than reading about it.
+2. **Written how-to guides.** The guides are part of the knowledge base (Section 18), so a worker can also just ask the Assistant how to do something.
 
 Guided interactions that involve a gesture demonstrate the gesture rather than describing it. Onboarding progress is per-device and is a display preference, not scheduling state.
 
-Each of the six interactive tours auto-starts the first time a worker reaches its surface, once the first-run tour is done; the swap tour is the one exception, gating on first reaching the swap composer rather than on the first-run tour. A tour is shown once per worker per surface: finishing it or skipping it both mark it done, and it does not auto-start again after either. Tapping outside a tour's highlighted content dismisses the tour the same way the Skip control does, except during a step whose whole point is a drag gesture (choosing part of a shift or break by dragging a range, or dragging to claim or drop a break slot) — a stray tap while a worker is mid-drag must not lose their place, so those steps cannot be dismissed by tapping outside them. After a tour first finishes, whether by completion, Skip, or an outside tap, a one-time pointer briefly indicates the surface's help control, so the worker learns where to find it again. A tour can be replayed at any time from that help control or from its own row in Settings; replaying does not require the tour's done state to be cleared.
+**Passive explanatory cards are not an onboarding mechanism.** A first-run walkthrough of the bottom tabs, and a one-card explanation raised on first arrival at a surface, both existed until 2026-08-03 and were removed. They taught nothing a worker retained, and arriving before the worker had any reason to care, they trained a dismiss reflex that the interactive tours then inherited. Teaching in this app is either an interactive multi-step tour on a surface worth the interruption, or a written guide the worker seeks out. Anything that appears uninvited and can be cleared with one tap is neither.
 
-### 20.2 Permission Prompts Are Earned, Not Cold
+Two moments consequently have no in-app teaching surface: **responding to an incoming swap request** (the swap tour teaches composing one, not answering one) and **an incoming float request**. Both carry their own Accept and Decline controls and their own deadline, and both are covered by the written guides. If workers are observed to be confused at either moment, the fix is an interactive tour for it, not a card.
 
-The app never opens with a system notification permission dialog. A worker is first shown, in the app's own words, what notifications are for and what they will miss without them, and only a worker who says yes is shown the operating system's dialog. Declining the in-app prompt does **not** touch the system permission, so the worker can turn notifications on later without having spent their one system prompt.
+Each of the six tours auto-starts the first time a worker reaches its surface; the swap tour gates on first reaching the swap composer inside the manage-shift sheet. A tour is shown once per worker per surface: finishing it or skipping it both mark it done, and it does not auto-start again after either. Tapping outside a tour's highlighted content dismisses the tour the same way the Skip control does, except during a step whose whole point is a drag gesture (choosing part of a shift or break by dragging a range, or dragging to claim or drop a break slot) — a stray tap while a worker is mid-drag must not lose their place, so those steps cannot be dismissed by tapping outside them. After a tour first finishes, whether by completion, Skip, or an outside tap, a one-time pointer briefly indicates the surface's help control, so the worker learns where to find it again. A tour can be replayed at any time from that help control or from its own row in Settings; replaying does not require the tour's done state to be cleared.
+
+### 20.2 Asking for Notification Permission
+
+The app never opens with a system notification permission dialog, and never blocks the screen to ask for one. The ask is an **inline row**, never a modal: a bell, one line of copy stating what the worker gets, and one action.
+
+It appears at three moments, and nowhere else:
+
+- **Standing, on My Shifts**, pinned above the schedule for as long as alerts are off. This row has **no dismiss control**. It is one thin row that costs nothing to scroll past, and removing the dismiss is what lets a worker who ignores it in September still find it in October, the week they actually miss a shift. The only thing that retires it is the worker turning alerts on.
+- **Once, right after claiming an open shift**, where what is being offered is a reminder before the shift they just took.
+- **Once, right after sending a swap or hand-off request**, where what is being offered is knowing the moment the other worker responds.
+
+The two contextual asks fire at most once each per device and never once alerts are already on. Together with the standing row that is the entire budget: repeating the ask on every claim would be the nagging this design replaced.
+
+Tapping the action shows the operating system's own dialog while the OS will still raise one. Once it will not — the system prompt is one-shot on iOS, and Android stops surfacing it after repeated denials — the same action opens the app's notification settings instead, so it is never a control that does nothing.
+
+**Superseded 2026-08-03.** Until that date the ask was a single blocking card shown once, at the end of first-run onboarding, with a paragraph of body copy and a "Not now" that marked the ask spent for the life of the install. It converted badly, and structurally so: a worker who has just signed in has no shifts yet, so there is nothing to be reminded about, and a modal at the end of setup reads as one more thing to dismiss. The rule that the in-app ask never touches the system permission on its own is unchanged.
 
 This is a presentation rule only. Which notifications are mandatory is unchanged and is governed by Section 10.1.
 
@@ -1686,7 +1724,7 @@ The following decisions were confirmed during v2 drafting:
 
 The following decisions govern the permanent drop and permanent pickup workflows added in v3:
 
-1. **Scope:** Permanent drop and permanent pickup apply only under SM-built scheduling (regular school year). Break profiles are claim-based and each occurrence is owned individually; permanent drop and pickup do not apply.
+1. **Scope:** Permanent drop and permanent pickup apply only under SM-built scheduling — regular-school-year terms **and** summer seasons (widened 2026-07-29, see Section 8.4). Break profiles are claim-based and each occurrence is owned individually; permanent drop and pickup do not apply.
 2. **Persistence:** "Permanent" means "for the remainder of the current operating profile." Drops do not carry over into the next profile; the next profile's schedule is built fresh.
 3. **Drop initiation:** Triggered by a popup at temporary-drop time. The popup asks "drop this week only, or drop permanently for the rest of the period?"
 4. **Mid-shift exclusion:** A permanent drop initiated mid-shift does not include the currently-running occurrence; it affects only future occurrences.
@@ -1734,3 +1772,140 @@ Two guarantees, both added 2026-07-31 after a worker reported the screen sitting
 A result that arrives after a cancel is discarded. It neither signs the worker in nor raises an error banner: once they have backed out, the abandoned attempt cannot reach back and change what is on screen.
 
 Signing in successfully is not the end of the wait. The app then checks whether the worker's house has launched yet (§22) and loads their week. The house check is itself bounded to **8 seconds** and degrades to "assume launched" on expiry, added 2026-07-31 for the same reason as the sign-in bound above. Loading the week itself is **not** covered by any bound.
+
+§23 describes the mobile worker app, which still uses email-and-password sign-in. The web
+console (§24) does not: it has moved to passwordless sign-in in production.
+
+---
+
+## 24. Web Sign-In (Admin Console and Worker Portal)
+
+Added 2026-08-01. Every real account (worker, SM, HM/BM/RSM, admin) is provisioned by an
+administrator; nobody self-registers. Sharing one login across several people so they can
+all reach the same house's schedule was considered and rejected: it collapses per-user
+audit trail, notification routing, and row-level access control (all keyed on the signed-in
+user's id) into one anonymous "someone," and a shared password is itself a standing leak
+risk. The fix is per-person accounts (cheap — an email plus a role grant, no separate
+onboarding flow) combined with removing the password as the thing that can leak or be
+shared.
+
+**In production, sign-in is passwordless.** There is no password field anywhere in the web
+UI. A worker enters their email, receives a one-time 6-digit code by email, and types the
+code into the same page to complete sign-in. The code is deliberately not delivered as a
+clickable link: web sign-in commonly happens on a shared desk kiosk, and a link opened in
+the email on the worker's own phone would authenticate the phone's browser, not the kiosk
+they are trying to sign into. Requesting a code for an email with no existing account fails
+(no self-registration) rather than silently creating one.
+
+**In development, sign-in is unchanged**: email and password, against the seeded test
+accounts, exactly as before this section was added. Which mode is active is a deploy-time
+setting (§14), not something a signed-in user or an on-the-fly configuration change can
+flip — see §14 for why this is a deploy-time flag rather than a runtime one.
+
+Because there is no password in production, `/auth/forgot` and `/auth/update-password`
+(password reset / first-time password set) are unreachable there; visiting either redirects
+to the sign-in page. Both routes continue to work normally in development.
+
+Role resolution downstream of sign-in (which house(s) a user can view or edit, per §13) does
+not change based on which sign-in mode was used — it resolves from the signed-in user's id
+exactly as it always has, regardless of whether that session came from a password or an
+OTP code.
+
+## 25. Harnwell Pilot: Manager-Directed Floating
+
+Added 2026-08-01 (docs/harnwell-pilot/PLAN.md). During the Harnwell-only pilot, Harnwell is
+the only live, staffed house — the other 12 exist as rows and as float destinations but have
+no schedule and no workers on the platform. Automated float lookup can only ever find
+nothing (there is nobody to source from), while the real operational need runs the other
+way: a manager needs to send a Harnwell worker _out_ to cover another house. This section
+describes the manager-directed float that fills that gap, and how the pilot's scope widens
+without a dedicated feature flag.
+
+### 25.1 Pilot Scope Derives From the Live-House Set
+
+Widening the pilot to a second house is a single action — launching that house (§22) — not a
+separate configuration flag. Two behaviors derive automatically from the live-house count:
+
+- **Float lookup** (§6) is meaningful only when two or more houses are live to source from.
+  Below that, the automated float step is a guaranteed no-op, so it short-circuits straight
+  to "no floater found" without paying the lookup cost. Broadcast and the Allied/HMOD
+  escalation chain are unaffected and still fire normally for a Harnwell gap. Launching a
+  second house restores automated floating with no configuration change.
+- **Open Shifts** (§5.1) only ever shows seats at a live house. The existing
+  `open_shifts_other_houses` notification preference still applies on top of this.
+
+The manager-directed float described below is **not** gated on the live-house count — it is
+useful at any number of houses and stays on regardless of how the pilot widens.
+
+### 25.2 What a Manager Float Is
+
+Any manager who can build Harnwell's schedule (Student Manager scoped to Harnwell, or the
+cross-house-elevated Residential Services Manager / Housing Manager / Building Manager / the
+Administrator — the same set as §13's schedule-building authorization) can, from the live
+Harnwell calendar, select a worker's shift, a time range within it, and a destination house
+(any of the other 12 — never Harnwell itself, which can never be a float destination under
+any mechanism), and float that worker out for exactly that range.
+
+The destination house needs no existing schedule. Picking a house and a time range creates
+the destination shift(s) on demand, for exactly that range, staffed by exactly the floated
+worker.
+
+**A manager float is a directive, not a proposal.** The worker's acknowledgment is a read
+receipt, not consent — there is no decline. An unacknowledged manager float does not enter
+the no-acknowledgment void, does not exclude the worker from anything, and does not escalate
+to Allied at any point: procuring Allied coverage for another house would pull in that
+house's Residential Services Manager, which is exactly the cross-house coordination the
+pilot exists to avoid. The 6-hour and 2-hour acknowledgment reminders (§7.1) still fire,
+since their purpose — making sure the worker has actually seen the assignment — applies
+here as much as anywhere. The consequence accepted knowingly: a worker who never opens the
+app is still expected at the destination, and the floaters view's "awaiting confirmation"
+state (§25.4) is the manager's only signal that this might not have landed.
+
+An automated float keeps every one of these behaviors (decline, no-acknowledgment void,
+exclusion, Allied fallback) exactly as documented in §6 and §7 — none of this section
+changes automated floating.
+
+Floating a worker out immediately frees their Harnwell seat for pickup, and every eligible
+Harnwell worker is notified that a shift opened there, the same push already used when a
+shift is dropped (§10.1).
+
+### 25.3 Editing a Manager Float
+
+The manager who created a float (or any other manager who can build Harnwell's schedule) can
+shrink, extend, or cancel it at any point in its life, including mid-shift. Extending mints
+the additional destination seats and notifies eligible Harnwell workers of the newly-freed
+seats, exactly as the original float did. Shrinking (including canceling, which is shrinking
+to nothing) releases the trailing or leading portion:
+
+- If the Harnwell seat the float vacated is still open, the worker returns to it.
+- If a third worker has since claimed that seat, the claimer keeps it, and the floated
+  worker loses those hours. The worker is notified when this happens, since otherwise hours
+  would silently disappear from their calendar with no explanation.
+
+Editing a manager float mid-flight is a sanctioned manual action by an authorized manager,
+not automated revocation, so it does not conflict with the no-takeback rule (§1.5's third
+invariant), which governs only automated systems reversing a decision.
+
+### 25.4 The Floaters View
+
+Every manager who can build Harnwell's schedule can see a single list of every worker
+currently floated out: who, to which house, for what date and time range, and whether they
+have acknowledged. The list is sorted soonest-first; within the same start time, a float
+still awaiting confirmation is shown ahead of a confirmed one, since that state is the only
+warning a manager gets that an unacknowledged float has no automatic escalation behind it.
+The window matches the worker-facing Shifts view: last week through four weeks ahead.
+
+### 25.5 Swap Interaction
+
+A pending manager float is swappable, unlike a pending automated float, which stays
+protected from a racing swap while genuinely undecided (§9). This follows directly from
+§25.2: a manager float can sit unacknowledged indefinitely with no terminal event, so
+protecting it from a swap the same way an automated float is protected would make it
+permanently unswappable.
+
+When a swap transfers only part of a float's destination seats to a new owner, the float
+itself splits: the portion that transferred becomes its own float record, starting
+unacknowledged with a fresh reminder cadence, while the portion that stayed keeps whatever
+acknowledgment state it already had. Both are then visible as separate lines in the floaters
+view, which is the honest representation of two different people now covering two different
+parts of what was originally one float.

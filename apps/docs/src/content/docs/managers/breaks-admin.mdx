@@ -1,0 +1,95 @@
+---
+title: 'Setting up break periods'
+description: 'Declaring a break period and setting each house’s coverage for it.'
+minutes: 3
+draft: true
+---
+
+A break takes its dates out of the built schedule and opens them for workers to claim.
+
+<Callout label="Only an Administrator declares a break">
+  SM, HM, BA and RSM cannot, because one break rewrites every house's calendar at once.
+</Callout>
+
+## Do it
+
+<Steps>
+  <li>
+    Enter the name, the <UI>Type</UI>, and the start and end dates.
+    <span class="step-note">Type sets the hours cap: 40 hard for Thanksgiving, fall break and spring break, 20 soft for spring fling. Hard refuses a claim past the cap; soft only warns. See [Hours, caps, and attribution](/system/hours-rules).</span>
+  </li>
+  <li>Set each house: open or closed, <UI>Staff</UI>, and its weekday and weekend hours.</li>
+  <li>
+    Select <UI>Preview changes</UI>.
+    <span class="step-note">It lists shifts created, seats voided, and every worker who loses one.</span>
+  </li>
+  <li>Select <UI>Declare break</UI>, or <UI>Save break</UI> on one that exists.</li>
+</Steps>
+
+## What you'll see
+
+The break appears under <UI>Declared breaks</UI>. <UI>Remove</UI> returns its dates to the
+regular school year and rebuilds the shifts.
+
+## Rules that apply
+
+- **A break may only cover regular school year dates,** so nothing already authored is
+  overwritten. See [The operating calendar](/system/calendar).
+- **Floating is a switch on the break.** With it off, an uncovered desk goes from broadcast
+  straight to Allied. See [How a shift gets covered](/system/coverage-ladder).
+
+## If it goes wrong
+
+**The range overlaps a season or another break.** Shrink that one first.
+
+**Preview lists workers losing shifts.** Closing a desk, or cutting its staff, cancels their
+future shifts. The cancellation goes out when you save, so tell them first.
+
+**You declared it inside 14 days.** The window runs from the break's first day, so workers
+get what is left of it.
+
+<Related
+  links={[
+    { href: '/workers/breaks', label: 'Break shifts (worker view)' },
+    { href: '/managers/seasons', label: 'Operating seasons and the calendar' },
+    { href: '/managers/roles', label: 'Which manager are you?' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: How do I declare a break period and its coverage?
+   AFTER READING, THEY CAN:
+     1. Say whether they may declare a break at all, and that no SM, HM, BA or RSM may.
+     2. Declare one knowing that closing a house or cutting its staff cancels future shifts
+        and notifies those workers, and that Preview names them first.
+     3. Recover from a mistake with Remove, and know a break cannot overlay a season or
+        another break.
+   FAILURE STATES COVERED: the range overlaps a season or another break; preview shows
+   workers losing shifts; the break is declared later than 14 days before its first day.
+   VERIFIED AGAINST: migration 20260709000004 (declaring and removing a break are gated on
+   the administrator role; the collision guard refuses a range whose dates are neither
+   regular school year nor this break's own profile; the preview is the apply rolled back,
+   so the two cannot diverge; reconciliation touches only blocks starting after now, voids
+   closed-house blocks, cancels excess occupants on a headcount cut and notifies each, and
+   grandfathers the rest; removing restores the dates to regular school year and reconciles);
+   migration 20260709000001 (the earlier authoring path, same admin-only gate, same
+   restore-to-school-year reversal); BSpec §4.4 (the claim window is anchored to the break's
+   first day and shared by every date in it; break scheduling is claim-based and bypasses
+   preferences); §6.6 (force-trigger rejected when the profile has floating disabled, leaving
+   broadcast then HMOD-for-Allied as the only route); §8.4.1 and §13 (permanent drop and
+   pickup exclude claim-based break days); §9.3 and §4.4 (40 hours hard, not overridable, for
+   Thanksgiving, fall break and spring break; 20 hours soft, overridable with a warning, for
+   spring fling).
+   UNRESOLVED: The on-screen labels (Type, Staff, Preview changes, Declare break, Save break,
+   Declared breaks, Remove) are confirmed in the shipped admin screen, not in either spec.
+   Per-house break authoring itself is described only in migrations 20260709000001 and
+   20260709000004 and in the pure compiler; neither BEHAVIORAL_SPECIFICATION.md nor
+   ARCHITECTURE.md documents it, which is a spec gap worth filing. The compiler gives the
+   "other" break type a 20-hour soft cap, which no spec states, so this page names only the
+   four spec-stated types. The claim window (open, remind, close) is stated once, on
+   /workers/breaks, which is the first Related link; this page keeps only the 14-day anchor
+   an admin declaring late needs. No image placeholder and no diagram: SKETCH.md assigns the
+   admin screens text steps only, and the one sequence worth a diagram lives on the worker
+   page. */
+}

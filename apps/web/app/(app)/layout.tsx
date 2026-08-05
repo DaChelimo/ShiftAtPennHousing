@@ -76,7 +76,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   );
 
   const nav: NavItem[] = [
-    { href: '/', label: 'Dashboard', testId: 'nav-home', icon: 'doc', group: 'Operate' },
+    { href: '/dashboard', label: 'Dashboard', testId: 'nav-home', icon: 'doc', group: 'Operate' },
   ];
   if (canBuildSchedule(user)) {
     nav.push({
@@ -108,6 +108,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       group: 'Operate',
     });
     nav.push({
+      href: '/floaters',
+      label: 'Floaters',
+      testId: 'nav-floaters',
+      icon: 'swap',
+      group: 'Operate',
+    });
+    nav.push({
       href: '/admin/coverage',
       label: 'Coverage report',
       testId: 'nav-admin-coverage',
@@ -119,13 +126,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       label: 'Hours report',
       testId: 'nav-admin-hours',
       icon: 'hours',
-      group: 'Operate',
-    });
-    nav.push({
-      href: '/assistant',
-      label: 'Ask Snoopy',
-      testId: 'nav-assistant',
-      icon: 'chat',
       group: 'Operate',
     });
   }

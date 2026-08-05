@@ -154,6 +154,51 @@ export async function assignWorker(input: {
   };
 }
 
+// Float a Harnwell worker out to another house for the clicked block(s) (Harnwell
+// pilot workstream G/B2). blockIds are the Harnwell SOURCE blocks the worker
+// currently holds; the destination blocks are minted on demand by
+// manager_float_worker. Reuses authorizeForBlocks, which already scopes correctly
+// to Harnwell (an sm must be Harnwell's own sm; hm/bm/rsm/admin may act on any house
+// including Harnwell).
+export async function floatWorker(input: {
+  blockIds: string[];
+  userId: string;
+  destinationHouseId: string;
+}): Promise<ActionResult<{ floatId: string }>> {
+  const authz = await authorizeForBlocks(input.blockIds);
+  if (!authz.ok) return { ok: false, error: authz.error };
+
+  const service = createServiceClient();
+  const { data: blocks, error: blocksError } = await service
+    .from('shift_blocks')
+    .select('block_start_at')
+    .in('block_id', input.blockIds)
+    .order('block_start_at', { ascending: true });
+  if (blocksError !== null) return { ok: false, error: blocksError.message };
+  if ((blocks ?? []).length === 0) {
+    return { ok: false, error: 'No shift blocks were selected.' };
+  }
+
+  const starts = (blocks ?? []).map((b) => new Date(b.block_start_at));
+  const rangeStart = starts[0]!;
+  const rangeEnd = new Date(starts[starts.length - 1]!.getTime() + 30 * 60 * 1000);
+
+  const { data, error } = await service.rpc('manager_float_worker', {
+    p_initiator_user_id: authz.operatorUserId,
+    p_worker_id: input.userId,
+    p_destination_house_id: input.destinationHouseId,
+    p_range_start: rangeStart.toISOString(),
+    p_range_end: rangeEnd.toISOString(),
+    p_now: (await simNow()).toISOString(),
+  });
+  if (error !== null) return { ok: false, error: friendlyMessage(error.message) };
+
+  const result = (data ?? {}) as { float_id?: string };
+  revalidatePath('/calendar');
+  revalidatePath('/floaters');
+  return { ok: true, data: { floatId: result.float_id ?? '' } };
+}
+
 // Remove a worker from the clicked block(s) — vacates the seat (this_week →
 // temporary_drop, permanent → permanent_drop). No soft-confirm path.
 export async function removeWorker(input: {
@@ -176,4 +221,59 @@ export async function removeWorker(input: {
 
   revalidatePath('/calendar');
   return { ok: true, data: undefined };
+}
+
+// Shrink, extend, or cancel a manager-directed float (workstream C). Cancel is
+// signalled by omitting both range bounds. Authorization here is house-scoped to
+// Harnwell (the float's own source house) since only the source side's manager can
+// have floated the worker out in the first place.
+export async function editFloat(input: {
+  floatId: string;
+  rangeStart: string | null;
+  rangeEnd: string | null;
+}): Promise<
+  ActionResult<{ blocksAdded: number; blocksRemoved: number; blocksLostToClaim: number }>
+> {
+  const me = await getSessionUser();
+  if (!canBuildSchedule(me)) {
+    return { ok: false, error: 'You are not authorized to edit this float.' };
+  }
+  if (!isScheduleAdmin(me) && adminHouseId(me!) !== 'harnwell') {
+    return { ok: false, error: 'You can only edit floats sourced from your own house.' };
+  }
+
+  const service = createServiceClient();
+  const { data, error } = await service.rpc('manager_edit_float', {
+    p_initiator_user_id: me!.userId,
+    p_float_id: input.floatId,
+    p_new_range_start: input.rangeStart ?? undefined,
+    p_new_range_end: input.rangeEnd ?? undefined,
+    p_now: (await simNow()).toISOString(),
+  });
+  if (error !== null) return { ok: false, error: friendlyMessage(error.message) };
+
+  const result = (data ?? {}) as {
+    edited?: boolean;
+    reason?: string;
+    blocks_added?: number;
+    blocks_removed?: number;
+    blocks_lost_to_claim?: number;
+  };
+  if (result.edited !== true) {
+    return {
+      ok: false,
+      error: friendlyMessage(result.reason ?? 'This float could not be edited.'),
+    };
+  }
+
+  revalidatePath('/calendar');
+  revalidatePath('/floaters');
+  return {
+    ok: true,
+    data: {
+      blocksAdded: result.blocks_added ?? 0,
+      blocksRemoved: result.blocks_removed ?? 0,
+      blocksLostToClaim: result.blocks_lost_to_claim ?? 0,
+    },
+  };
 }

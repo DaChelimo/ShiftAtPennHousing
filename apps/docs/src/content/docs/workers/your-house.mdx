@@ -1,0 +1,122 @@
+---
+title: 'Your house schedule and contacts'
+description: 'Reading the week grid for any house, and reaching whoever is on the desk right now.'
+minutes: 3
+draft: true
+---
+
+<UI>House</UI> shows who is on each desk, block by block, and how to reach them.
+
+{
+  /* IMAGE: workers/your-house/house-week-grid.png
+   SOURCE: slide-10b-ios-house-week-grid.png
+   MUST SHOW: the House week grid with the house name and desk phone at the top, at least
+   one green float-in block, one block carrying nobody's name, and the week bar at the
+   bottom.
+   WHY: the page turns on reading colour and labels off this grid, and step text cannot
+   show the block treatments side by side. */
+}
+
+## Do it
+
+<Steps>
+  <li>
+    Open <UI>House</UI>.
+    <span class="step-note">It opens on your house, this week.</span>
+  </li>
+  <li>
+    Tap the house name to read another house.
+    <span class="step-note">The desk phone sits under the name.</span>
+  </li>
+  <li>Use the week bar to change weeks.</li>
+  <li>Tap a block to see who holds it.</li>
+  <li>
+    Call or email them, or tap <UI>Call the desk</UI>.
+  </li>
+</Steps>
+
+{
+  /* IMAGE: workers/your-house/contact-card.png
+   SOURCE: slide-10c-ios-contact-card-call.png
+   MUST SHOW: the shift details sheet with the worker's name, their home house, their phone
+   and email, and the call button.
+   WHY: the card names the person's HOME house beside a desk that may not be theirs, and
+   that distinction is the reason the card exists. */
+}
+
+## What you'll see
+
+The card gives their phone, email, and home house, which can differ from the desk they
+staff.
+
+## Rules that apply
+
+- **The list holds live houses only.** A house that has not launched has no schedule.
+  See [Core concepts](/system/concepts).
+- **Every house is readable, none editable**, because you hold no write power. See
+  [Core concepts](/system/concepts).
+- **Green means a non-home worker**, floated in or claimed, so the desk is not theirs. See
+  [When you get floated](/workers/floating).
+- **A block with nobody's name is an open seat**, still there to be claimed. See
+  [Picking up open shifts](/workers/picking-up).
+- **"(Pending)" means the float is unanswered**, so treat that desk as unsettled. See
+  [How a shift gets covered](/system/coverage-ladder).
+- **A swap mark means nothing has moved.** The desk stays as shown until the other person
+  accepts. See [How a swap actually resolves](/system/swaps-explained).
+- **The grid is the record**, updated the moment anything changes.
+
+## If it goes wrong
+
+**The house reads Closed.** It is shut on those dates: no shifts, no open seats.
+
+**Nobody is on the block.** Cover is chased only when a desk would be empty, so this
+seat waits in the open feed.
+
+**No phone on the card.** No number is saved, so email them or call the desk.
+
+<Related
+  links={[
+    { href: '/workers/your-week', label: 'Your week: My Shifts' },
+    { href: '/workers/floating', label: 'When you get floated' },
+    { href: '/system/coverage-ladder', label: 'How a shift gets covered' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: Who is on a desk at a given time, and how do I reach them?
+   AFTER READING, THEY CAN:
+     1. Open the week grid for their own house, or for any other house on the list of live
+   houses, on any week.
+     2. Read a block's look: an open seat, a non-home worker, an unanswered float, a
+   pending swap.
+     3. Open a block's contact card and call or email that person, or call the desk.
+   FAILURE STATES COVERED: the house is closed on those dates; the block is vacant and no
+   cover is being chased because the desk is not empty; the worker has no phone on file.
+   VERIFIED AGAINST: BSpec §11.1 (float-in and cross-house pickup shown light green,
+   "(Pending)" beside an unacknowledged float), §11.3 (a closed house reads Closed, with no
+   shifts and no open-shifts feed), §11.3a (both shifts in a pending exchange carry the
+   mark, and the desk is staffed exactly as shown until acceptance), §11.4 (tapping any
+   shift card reveals the assigned worker's contact information, for every shift type),
+   §12 (the calendar is the source of truth, updates immediately, and is readable
+   backwards), §5.4 (cover is chased only when the desk would otherwise be empty), §13 (a
+   worker holds no write power over any house schedule), §22 (a house is pre-launch or
+   live; a worker sees live houses only, and the gate is visibility, not a change to any
+   coverage or claim rule); migration 20260623000003 (the cross-house week grid plus desk
+   phone is readable, read-only, no write path opened) as NARROWED by migration
+   20260712000001 (the worker house enumeration lists only houses that are effectively
+   live, so a pre-launch house is hidden during a rollout); migration 20260722000001 (the
+   card carries name, phone, email, and the worker's HOME house, which is not the desk
+   being staffed).
+   UNRESOLVED: The count of houses a worker can open is deliberately not stated. It is the
+   live set, which changes as houses launch, so "all 13" would be false during a rollout
+   and the 13 in BSpec §22 is the total, not the readable set. The dashed-block treatment for
+   an open seat was dropped: BSpec §11.1 enumerates the house-calendar treatments and no
+   dashed vacant seat is among them, so the page names only the absence of a worker's name,
+   which is what the grid data carries. Per-worker shift colours are in SKETCH §4 for this
+   page but appear in no spec and no migration, only in a repository design doc, so the
+   page does not claim a scheduled block is tinted per person. The on-screen labels used
+   here are confirmed in the shipped app, not in either spec. The specs do not say what the
+   card shows when a worker has no number on file; the page describes the absence, not the
+   wording. */
+}

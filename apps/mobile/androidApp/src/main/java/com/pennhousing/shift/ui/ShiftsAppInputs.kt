@@ -14,7 +14,6 @@ import com.pennhousing.shift.shared.model.PendingFloat
 import com.pennhousing.shift.shared.model.RecentFloat
 import com.pennhousing.shift.shared.swaps.SwapProposal
 import com.pennhousing.shift.shared.viewmodel.AckDeclineViewModel
-import com.pennhousing.shift.shared.viewmodel.AssistantViewModel
 import com.pennhousing.shift.shared.viewmodel.BreakCalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.CalendarViewModel
 import com.pennhousing.shift.shared.viewmodel.HouseScheduleViewModel
@@ -50,7 +49,6 @@ internal data class ShiftsViewModels(
     val preferencesVm: PreferencesViewModel,
     val breakCalendarVm: BreakCalendarViewModel,
     val settingsVm: SettingsViewModel,
-    val assistantVm: AssistantViewModel,
     /**
      * MANAGER ONLY (docs/manager-app/SPEC.md §6.1). Null for a plain worker or an SM, which is
      * what keeps a worker's app byte-identical to before manager mode existed: no Coverage

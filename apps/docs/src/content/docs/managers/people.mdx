@@ -1,0 +1,125 @@
+---
+title: 'People: hiring, roles, transfers'
+description: 'Adding a worker, granting a role, moving somebody to another house, and removing somebody who has left.'
+minutes: 7
+draft: true
+---
+
+The roster is where you add somebody, move them to another house, or take them off the desk.
+
+<Callout label="Two of these empty a desk the moment you confirm">
+  Firing vacates every shift the person holds, voids their floats, and deactivates their
+  account. A mid-shift gap escalates straight away.
+
+  An immediate transfer releases their future shifts at the old house and voids any live
+  float, because from that date they belong somewhere else.
+
+  Tell the person, and the house losing them, before you confirm either one.
+</Callout>
+
+## Do it
+
+<Steps>
+  <li>
+    Open <UI>People</UI> and read the house name on the header.
+    <span class="step-note">An HM (Housing Manager), BA (Building Administrator) or RSM (Residential Services Manager) can view another house here. Hiring and firing still write to your own.</span>
+  </li>
+  <li>
+    To add somebody, select <UI>Hire worker</UI> and enter their name, email and phone.
+    <span class="step-note">Their home house is the house you administer. You cannot hire into another one.</span>
+  </li>
+  <li>
+    Set <UI>Initial role</UI>.
+    <span class="step-note">This is the role grant, and it decides everything they can do. See [Which manager are you?](/managers/roles).</span>
+  </li>
+  <li>
+    To move somebody, select <UI>Transfer</UI> on their row, choose <UI>Move to</UI> and
+    <UI>When</UI>.
+    <span class="step-note">Next season start is the default, or pick a date, or move them immediately.</span>
+  </li>
+  <li>To take somebody off the roster, select <UI>Fire</UI> on their row and confirm.</li>
+</Steps>
+
+{
+  /* IMAGE: managers/people/transfer-worker.png
+   MUST SHOW: the Transfer worker dialog open on a named worker, with the destination house
+   selected and the When menu showing next season start, a specific date, and immediately.
+   WHY: the choice in that one menu is the difference between a recorded plan and shifts
+   disappearing today, which is the page's central warning. */
+}
+
+## What you'll see
+
+The new hire appears active on the roster at once, with hours against this week's cap.
+
+A future transfer changes nothing today. The worker keeps their house, their shifts and
+their permissions until the date, and the system applies the move that morning.
+
+## Rules that apply
+
+- **Either side may transfer.** The losing house's HM or BA and the receiving house's HM or
+  BA can both do it, so a manager who has agreed to take somebody can finish the move.
+- **Hiring and firing stay at your own house**, because a roster is the thing you answer for.
+  An SM cannot open this screen at all.
+- **Building ahead already uses the new house.** Preference collection and building for an
+  upcoming period read the house the worker will belong to then, which is how you pre-build a
+  transfer before they arrive.
+- **An immediate transfer reopens the old seats.** Their released shifts go back into that
+  house's open feed so the vacancy is visible and claimable, not silent.
+- **Harnwell needs no special handling.** Somebody transferring out loses their Harnwell
+  shifts in the move, since only home-Harnwell workers may staff that desk.
+
+## If it goes wrong
+
+**"You can only fire workers home-housed at your own house."** You are viewing another house
+through the switcher. Switch back, or ask that house's HM or BA.
+
+**"No upcoming season was found."** There is no season boundary to default to. Choose a
+specific effective date instead.
+
+**"That worker already belongs to the destination house."** Somebody transferred them
+already, or the move applied overnight. Refresh the roster before trying again.
+
+<Related
+  links={[
+    { href: '/managers/roles', label: 'Which manager are you?' },
+    { href: '/system/roles', label: 'Roles and the duty hierarchy' },
+    { href: '/managers/preferences-admin', label: 'Preferences and deadlines' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: How do I add, move, or remove somebody on my house roster?
+   AFTER READING, THEY CAN:
+     1. Say whether they may open the roster at all, and that hiring and firing are own-house
+        while a transfer may be started by either the losing or the receiving house.
+     2. Hire somebody knowing the initial role is the role grant and sets everything they can
+        do.
+     3. Choose between an immediate transfer and a dated one, knowing the immediate one
+        releases old-house shifts and voids live floats today.
+     4. Predict that firing vacates every shift, voids floats and escalates a mid-shift gap.
+   FAILURE STATES COVERED: firing refused while viewing another house; no upcoming season to
+   default a transfer to; the worker already belongs to the destination house.
+   VERIFIED AGAINST: BSpec §21 (house membership is season-scoped and non-overlapping; either
+   the source or the destination house's HM or BM may transfer, as may the Administrator;
+   immediate, dated, or next season boundary as the default; an immediate transfer releases
+   future old-house shifts back to the open-shifts feed and voids live floats; a future
+   transfer is applied automatically on its date; forward-looking surfaces use the future
+   house while every current-period surface uses today's; the Harnwell training constraint
+   needs no special case; voiding floats on transfer is a sanctioned management action and
+   not a no-takeback violation), §13 (transfer listed under HM, BM and Administrator), §1.2
+   rule 1 (Harnwell training constraint), §1.3 (a worker cannot move themselves); migration
+   20260611000004 and 20260719000002 (hire_worker is gated on house-admin role scoped to the
+   hire's home house, takes name, email, initial role and optional phone, and seeds the
+   membership row at the real hire date), migration 20260719000001 (transfer_worker's
+   either-side gate, the effective-date rules, and the immediate-move seat reopen), migration
+   20260702000001 (the top-level administrator role is people-admin of every house).
+   UNRESOLVED: No control for changing a role after hire is confirmed in the shipped console,
+   so the page treats the initial role at hire as the role grant and does not describe editing
+   one later. Whether firing notifies the fired worker is not stated in either spec, so the
+   page says only what the confirmation dialog states. Control labels (Hire worker, Initial
+   role, Transfer, Move to, When, Fire) are confirmed in the shipped screen, not in either
+   spec. The description in the page frontmatter names four tasks; they share one screen and
+   one Steps list, so this stays one page. */
+}

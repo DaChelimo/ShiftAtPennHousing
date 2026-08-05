@@ -1,0 +1,84 @@
+---
+title: "Core concepts"
+description: "Blocks, seats, desks, and houses: the four words that make every other page on this site readable."
+minutes: 2
+---
+
+Four words carry every other page on this site: house, desk, block, and seat.
+
+<FlowStrip
+  label="How the four nest"
+  steps={[
+    { label: 'House', text: 'One of Penn’s 13 college houses.' },
+    { label: 'Desk', text: 'The front desk inside it. The desk gets staffed.' },
+    { label: 'Block', text: '30 minutes of a desk’s day, on the hour or the half hour.' },
+    { label: 'Seat', text: 'One place at that desk for one block, one worker.', terminal: true },
+  ]}
+  caption="No screen shows this. It underlies every screen."
+/>
+
+## How it works
+
+Assigning, dropping, claiming, floating, swapping, and counting hours all move in whole
+blocks, never part of one, so an hour is always two blocks.
+
+A block holds as many seats as the desk needs.
+
+<Table>
+
+| House               | Seats per block (school year) |
+| ------------------- | ----------------------------- |
+| Harnwell            | 2, 08:00 to 24:00             |
+| Upper Quad          | 3, 08:00 to 24:00             |
+| The other 11 houses | 1, 08:00 to 24:00             |
+
+</Table>
+
+Each seat has one owner, so two racing workers cannot both win and the loser is told so.
+Nobody holds two seats of one block.
+
+A house is where a worker is hired. A desk is the post being covered. They split on a
+float: an Upper Quad worker covering Lauder staffs Lauder's desk and keeps Upper Quad.
+
+All times are Penn local, America/New_York. A block is always 30 real minutes, even on
+clock-change nights, so a clock change moves no hours.
+
+## Why it works this way
+
+One fixed unit keeps every operation exact and comparable. Seat counts belong to the desk,
+not the house, because a summer season can change one partway through.
+
+## What this means for you
+
+Blocks bound what you can drag, seats start [the coverage ladder](/system/coverage-ladder),
+and desk against house drives [Floating](/system/floating).
+
+<Related
+  links={[
+    { href: '/system/glossary', label: 'Glossary' },
+    { href: '/system/coverage-ladder', label: 'How a shift gets covered' },
+    { href: '/system/floating', label: 'Floating: overview' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: What do "block", "seat", "desk", and "house" mean on the rest of this site?
+   AFTER READING, THEY CAN:
+     1. Say why no operation in the system is ever shorter than 30 minutes, and convert
+        blocks to hours.
+     2. Explain that one block can carry several seats, and give the school-year counts
+        for Harnwell, Upper Quad, and the other 11 houses.
+     3. Tell a desk from a house, and name the float case where the two come apart.
+     4. Predict that a clock-change night does not change what a block is worth.
+   FAILURE STATES COVERED: none. This page defines vocabulary and has no user action to
+   fail; the race-loser outcome is stated as a seat property, not as a failure state.
+   VERIFIED AGAINST: BSpec §1.1, §1.4, §1.5, §1.6, §3.1, §3.3, §3.4; ARCH §1.6, §1.7
+   UNRESOLVED: The brief said Harnwell is double-staffed "for part of the day". BSpec §3.3
+   has Harnwell at 2 seats for the whole 08:00 to 24:00 day in the regular school year and
+   short breaks, and 1 seat all day during winter break. Intraday-varying headcount is a
+   summer-season capability (BSpec §3.1), so the page states it that way. Winter break
+   (Harnwell only, every other house closed) is left to /system/calendar rather than
+   crowding the table here. "Desk" is not formally defined in either spec; the desk/house
+   distinction here is read off consistent usage in BSpec §1.1 and §1.3. */
+}

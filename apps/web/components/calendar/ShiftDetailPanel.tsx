@@ -29,6 +29,7 @@ function prettifyHouse(id: string): string {
 // a range-slider sub-range pick, revealed together with the worker cards and Apply.
 export function ShiftDetailPanel({
   shift,
+  houseId,
   houseName,
   dayLabel,
   assignableWorkers,
@@ -40,6 +41,7 @@ export function ShiftDetailPanel({
   panelRef,
 }: {
   shift: CalShift;
+  houseId: string;
   houseName: string;
   dayLabel: string;
   assignableWorkers: AssignableWorker[];
@@ -172,6 +174,7 @@ export function ShiftDetailPanel({
               is the admin_assign_worker / admin_remove_worker RPC. */}
           <EditSection
             shift={shift}
+            houseId={houseId}
             assignableWorkers={assignableWorkers}
             softCapHours={softCapHours}
             capEnforcement={capEnforcement}

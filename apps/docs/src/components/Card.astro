@@ -1,0 +1,63 @@
+---
+// §5 Card grid: hover lifts the border to --mark-line and the title to --mark.
+import { withBase } from '../href'
+
+type Props = { href: string; title: string; eyebrow?: string; draft?: boolean }
+const { href, title, eyebrow, draft = false } = Astro.props
+---
+
+<a class="card" href={withBase(href)}>
+  {eyebrow && <span class="card__eyebrow eyebrow">{eyebrow}</span>}
+  <span class="card__title">{title}</span>
+  <span class="card__body"><slot /></span>
+  {draft && <span class="card__draft eyebrow">Not written yet</span>}
+</a>
+
+<style>
+  .card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 13px 14px 14px;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    background: var(--bg);
+    color: inherit;
+    text-decoration: none;
+    transition:
+      border-color 120ms ease,
+      background-color 120ms ease;
+  }
+
+  .card:hover {
+    border-color: var(--mark-line);
+    background: var(--bg-2);
+  }
+
+  .card__eyebrow {
+    color: var(--muted);
+  }
+
+  .card__title {
+    font-size: 14.5px;
+    font-weight: 620;
+    letter-spacing: -0.012em;
+    color: var(--ink);
+    transition: color 120ms ease;
+  }
+
+  .card:hover .card__title {
+    color: var(--mark);
+  }
+
+  .card__body {
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--ink-2);
+  }
+
+  .card__draft {
+    margin-top: 4px;
+    color: var(--muted);
+  }
+</style>

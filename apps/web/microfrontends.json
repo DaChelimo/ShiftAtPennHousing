@@ -1,0 +1,26 @@
+{
+  "$schema": "https://openapi.vercel.sh/microfrontends.json",
+  "version": "1",
+  "applications": {
+    "shift-app": {
+      "packageName": "@shift/web",
+      "development": {
+        "fallback": "shift-app-one-iota.vercel.app",
+        "local": 3000
+      }
+    },
+    "shift-docs": {
+      "packageName": "@shift/docs",
+      "routing": [
+        {
+          "group": "user-guide",
+          "paths": ["/guide", "/guide/:path*"]
+        }
+      ],
+      "development": {
+        "local": 4321,
+        "task": "dev"
+      }
+    }
+  }
+}

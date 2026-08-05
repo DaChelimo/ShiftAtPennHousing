@@ -8,7 +8,7 @@ import { SUPABASE_ANON_KEY, SUPABASE_URL } from './lib/env';
 // admin route are redirected to /login. Fine-grained role checks (SM-vs-HM/BM for
 // leave/rotor) are enforced in-page so the §2.6 "leave-unauthorized" notice renders
 // rather than redirects.
-const PROTECTED_PREFIXES = ['/schedule-builder', '/admin', '/home', '/assistant'];
+const PROTECTED_PREFIXES = ['/schedule-builder', '/admin', '/home'];
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -56,7 +56,11 @@ export const config = {
   // Run on everything except static assets and generated icons. The icon/manifest
   // routes were previously matched, so every favicon or PWA-manifest request paid a
   // full session check before serving a static byte stream.
+  //
+  // `guide` is excluded for the same reason: the user guide is a separate static
+  // deployment reached through microfrontends path routing, it is deliberately
+  // ungated, and a request for it should never cost a Supabase session check here.
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|icon|apple-icon|manifest.webmanifest|brand/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)).*)',
+    '/((?!_next/static|_next/image|guide|favicon.ico|icon|apple-icon|manifest.webmanifest|brand/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)).*)',
   ],
 };

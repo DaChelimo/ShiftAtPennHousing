@@ -1,0 +1,125 @@
+---
+title: 'Preferences and deadlines'
+description: 'Setting the preference deadline for a period, and submitting on behalf of a worker who cannot.'
+minutes: 5
+draft: true
+---
+
+Preferences are the input you build from, so the deadline is what decides who you can build with.
+
+<Callout label="A worker with nothing on record drops out of Phase 1">
+  At the deadline, anyone who neither submitted nor pressed no hours is treated as no
+  preference on record. They vanish from the preference card and appear only in the full
+  Phase 2 roster, so they go unscheduled unless you place them by hand.
+
+  You can override the deadline for them. Entering preferences on somebody's behalf works
+  after the window has closed, because a closed window is a worker problem, not yours.
+</Callout>
+
+## Do it
+
+<Steps>
+  <li>
+    Open <UI>Preferences oversight</UI> and check the house and period on the header.
+    <span class="step-note">An SM (Student Manager) sees their own house. An HM, BA or RSM may inspect any house.</span>
+  </li>
+  <li>
+    Set <UI>New deadline</UI> and select <UI>Set deadline</UI>.
+    <span class="step-note">It must fall on or before the period's start date, and submission closes at end of day in New York.</span>
+  </li>
+  <li>Watch the roster for who is still marked <UI>Not yet</UI>.</li>
+  <li>
+    Open a worker's row to paint their week on their behalf.
+    <span class="step-note">Same grid the worker uses: preferred, available, cannot, plus their target hours.</span>
+  </li>
+  <li>Save. Repeat for the next worker.</li>
+</Steps>
+
+{
+  /* IMAGE: managers/preferences-admin/oversight-roster.png
+   MUST SHOW: the preferences oversight screen with the deadline card, the submitted, no
+   hours and not yet counts, and a roster row showing the 5, 3 and 1 day reminder tags.
+   WHY: the not-yet count against the deadline is the whole decision this page supports, and
+   the reminder tags tell you whether chasing is still automatic or now yours. */
+}
+
+## What you'll see
+
+The counts across the top move as workers respond: submitted, no hours, and not yet.
+Reminders go out 5, 3 and 1 days before the deadline to anyone who has not answered.
+
+An on-behalf save writes only that one worker. It never touches anybody else's week, and it
+does not reopen submission for the rest of the house.
+
+## Rules that apply
+
+- **Workers cannot change preferences after the deadline**, because you build against a
+  fixed input. Only a manager may write past it.
+- **You build after the deadline passes.** Moving the deadline later moves the day you can
+  start. See [Building a schedule](/managers/building-a-schedule).
+- **Blocks a worker left unmarked count as cannot** in Phase 1, so a half-filled grid hides
+  somebody from the card as effectively as a refusal.
+- **A summer season carries one deadline for all houses**, authored by the Administrator on
+  the season. You may still adjust your own. See [Operating seasons and calendar](/managers/seasons).
+- **A transferring worker paints their new house.** Preference collection uses the house they
+  will belong to at the period start. See [People: hiring, roles, transfers](/managers/people).
+
+## If it goes wrong
+
+**"The preference deadline must fall on or before the period start date."** Pick an earlier
+date. There is no collecting preferences for a period already underway.
+
+**The deadline card is locked.** The period is published, so its window cannot move.
+Change the live schedule instead. See [Editing a published week](/managers/editing-published).
+
+**"You can only edit preferences for workers in a house you manage."** You are an SM opening
+another house's worker. Ask that house's SM or its HM.
+
+<Related
+  links={[
+    { href: '/workers/preferences', label: 'Submitting availability' },
+    { href: '/managers/building-a-schedule', label: 'Building a schedule' },
+    { href: '/managers/roles', label: 'Which manager are you?' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: How do I set the preference deadline and get a week on record for a worker who
+   has not submitted one?
+   AFTER READING, THEY CAN:
+     1. Set a deadline, knowing it must fall on or before the period start and that it is
+        locked once the period is published.
+     2. Predict the 5, 3 and 1 day reminders and who stops receiving them.
+     3. Say what happens to a worker with nothing on record at the deadline, and that they
+        will go unscheduled unless placed in Phase 2 by hand.
+     4. Enter that worker's preferences on their behalf after the window has closed, knowing
+        the save touches only that worker.
+   FAILURE STATES COVERED: a deadline after the period start date; a locked deadline on a
+   published period; an SM opening a worker at another house.
+   VERIFIED AGAINST: BSpec §4.1 (preferred, available, cannot; the no hours button; target
+   weekly hours), §4.2 (the SM sets the deadline; it must fall on or before the period start
+   date; reminders at 5, 3 and 1 days to workers who have not submitted, with submitters and
+   no-hours workers receiving none; preferences cannot be changed after the deadline; building
+   begins only after it passes; non-submitters are no preference on record, appear only in the
+   Phase 2 full roster, and are never auto-assigned), §4.3 Phase 1 (unmarked blocks group as
+   blocked with the reason "no preference submitted", and a blocked worker is not selectable
+   until Phase 2), §3.1 and §14 (a summer season's preference deadline is authored by the
+   Administrator, one value covering all houses, on or before the season start, and SMs, HMs
+   and BMs may still adjust it), §21 (preference collection for an upcoming period uses the
+   house the worker will belong to then); migration 20260611000003 (set_preference_deadline
+   is restricted to sm, hm and bm, refuses a deadline after the period start date, and refuses
+   a published period), migration 20260703000001 (the Administrator may also set it),
+   migration 20260711000003 (admin_submit_preferences re-checks user_can_build_schedule for
+   the target worker's house, so an SM is own-house and hm/bm/rsm/admin are cross-house; the
+   manager override opens the window for that one write and restores the saved deadline; the
+   write upserts only the target worker's rows).
+   UNRESOLVED: BSpec §2.3a describes preference administration as own-house for HM, BA and
+   RSM, while migration 20260627000002 made preference and period-target writes cross-house
+   for that tier; the page follows the migration, which is what the console enforces. The RSM
+   may open and author a worker's preferences but is not in the role list permitted to set the
+   deadline, which no spec section states; the page attributes deadline setting to SM, HM and
+   BA only by naming them in the failure state rather than claiming an RSM cannot. Control
+   labels (New deadline, Set deadline, Not yet) are confirmed in the shipped screen, not in
+   either spec. */
+}

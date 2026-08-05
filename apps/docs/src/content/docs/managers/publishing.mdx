@@ -1,0 +1,89 @@
+---
+title: 'Publishing a schedule'
+description: 'What publishing does to a built week: it goes live, every assigned worker is notified, and the period cannot be unpublished.'
+minutes: 3
+---
+
+Publishing turns your drafted template week into live shifts for the whole period.
+
+<Callout label="There is no unpublish">
+  A published period cannot be withdrawn. From then on a week changes only forward, on the
+  live calendar.
+
+  Confirming also notifies every worker you assigned, and that notification cannot be
+  recalled. At a full house, dozens of phones buzz within the minute.
+
+  The confirmation dialog is the last reversible moment. Read the house name on it first.
+</Callout>
+
+## Do it
+
+<Steps>
+  <li>Check the house switcher and the template week in the builder.</li>
+  <li>Select <UI>Publish</UI>.</li>
+  <li>Read the dialog, then confirm.</li>
+</Steps>
+
+{
+  /* IMAGE: managers/publishing/publish-confirm.png
+   MUST SHOW: the Publish schedule confirmation dialog in the builder, naming the house and
+   period, with both the keep-editing and the confirm buttons visible.
+   WHY: this dialog is the last reversible moment, and the page's central claim is that the
+   next click is not. */
+}
+
+## What you'll see
+
+Your template week stamps across every week of the period.
+Seats you left empty stay open for claiming, which is how later hires get hours.
+
+## Rules that apply
+
+- **An SM publishes their own house only.** HM, BA, RSM, and Administrator publish any
+  house, on the same cross-house schedule authority that lets them override it. See
+  [Roles and the duty hierarchy](/system/roles).
+- **Nobody can silence the "Schedule published" notification**, because a worker who misses
+  it does not know they are on the desk. See
+  [What triggers a notification](/system/notifications-rules).
+- **The pattern repeats by weekday and time, not by date.** One drafted Tuesday fills every
+  Tuesday left in the period, so a clock change never moves a 9:00 start. See
+  [The operating calendar](/system/calendar).
+
+## If it goes wrong
+
+**Publish was refused.** You are an SM viewing another house. Switch back, or ask that
+house's SM or HM.
+
+**You published the wrong pattern.** Fix it forward with **This week onward**. See
+[Editing a published week](/managers/editing-published).
+
+<Related
+  links={[
+    { href: '/managers/building-a-schedule', label: 'Building a schedule' },
+    { href: '/managers/editing-published', label: 'Editing a published week' },
+    { href: '/managers/roles', label: 'Which manager are you?' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: What happens when I publish a built week?
+   AFTER READING, THEY CAN:
+     1. Say whether they are allowed to publish the house in the switcher.
+     2. Publish knowing it notifies every assigned worker on a notification nobody can
+        turn off, and that the period can never be unpublished.
+     3. Predict that one drafted week repeats across every week of the period, and that
+        seats left empty become claimable open shifts.
+     4. Go to the right page when they need to change a week that is already live.
+   FAILURE STATES COVERED: publish refused because an SM is viewing another house; the
+   wrong pattern published with no unpublish available.
+   VERIFIED AGAINST: BSpec §4.3 Phase 3 (irreversibility, who may publish, notification),
+   §2.3a (elevated tier may build, publish, and override any house; SM own-house for every
+   action), §10.1a ("Schedule published" is mandatory), §13 (Publish listed under Student
+   Managers, irreversible, no unpublish); ARCHITECTURE.md §3.9 publish operation (template
+   week keyed by NY weekday and time-of-day, DST-safe; remaining seats stay vacant);
+   migration 20260614000002 (publish gated on user_can_build_schedule), migration
+   20260627000002 (user_can_build_schedule made cross-house for hm/bm/rsm).
+   UNRESOLVED: The exact button labels in the confirmation dialog are not spec-stated, so
+   the page names only the Publish control and describes the dialog generically. */
+}

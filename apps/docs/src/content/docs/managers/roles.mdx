@@ -1,0 +1,122 @@
+---
+title: 'Which manager are you?'
+description: "What each manager role can see, change, and be paged for, because acting on another role's instructions ends in a permission error."
+minutes: 3
+draft: true
+---
+
+Five manager roles run this console with different powers.
+
+<Callout label="Cross-house means the schedule, nothing else">
+  Schedule work crosses houses for HM, BA, RSM and Administrator, because an empty desk
+  anywhere is a campus problem. Hiring, transfers and leave stay own-house for HM, BA and
+  RSM, because who works for whom is a house decision.
+</Callout>
+
+<Tabs
+  labels={[
+    'SM (Student Manager)',
+    'RSM (Residential Services Manager)',
+    'HM (Housing Manager)',
+    'BA (Building Administrator)',
+    'Administrator',
+  ]}
+  group="manager-roles"
+>
+<Fragment slot="panel-0">
+
+- **Change** your own house's schedule: build, publish, override, force a float lookup.
+- **Paged** never, but you can acknowledge and close its coverage requests.
+
+</Fragment>
+<Fragment slot="panel-1">
+
+- **Change** any house's schedule. Never on HMOD duty.
+- **Paged** first for your house's Allied requests, before the HM.
+
+</Fragment>
+<Fragment slot="panel-2">
+
+- **Override an SM** at any house. Set the weekly hours cap for all 13.
+- **Paged** second, after your house's RSM.
+
+</Fragment>
+<Fragment slot="panel-3">
+
+- **Same powers as an HM.**
+- **Never on the desk**: no shifts, never floated.
+- **Paged** only when covering an HM on leave.
+
+</Fragment>
+<Fragment slot="panel-4">
+
+- **Change** anything at every house, hiring and transfers included.
+- **Set** each house's launch state, which decides whether it is live.
+- **Paged** never, and never on a desk.
+
+</Fragment>
+</Tabs>
+
+{
+  /* IMAGE: managers/roles/house-switcher.png
+   MUST SHOW: the manager console header with the house switcher open, listing houses other
+   than the reader's own.
+   WHY: whether cross-house is unlocked is visible in exactly one place, and this page's
+   central claim is about that boundary. */
+}
+
+## The duty on top
+
+HMOD duty rotates weekly among HMs and BAs only. You then hold HM powers at all 13
+houses, because outside weekday working hours no other manager is on duty. Coverage pages
+end with you.
+
+## If the app refuses you
+
+**Publish or override refused.** You are an SM viewing another house. Switch back, or ask its manager.
+
+**Hire or transfer refused.** Ask that house's manager, or an Administrator.
+
+<Related
+  links={[
+    { href: '/system/roles', label: 'Roles and the duty hierarchy' },
+    { href: '/managers/coverage', label: 'The coverage inbox and Allied requests' },
+    { href: '/managers/people', label: 'People: hiring, roles, transfers' },
+  ]}
+/>
+
+{
+  /* ACCEPTANCE CRITERIA
+   QUESTION: Which manager role am I, and what does it let me do?
+   AFTER READING, THEY CAN:
+     1. Name their own role and say whether it reaches other houses.
+     2. Predict which actions are refused at a house that is not their own: schedule work
+        crosses houses for HM, BA, RSM and Administrator, people work does not.
+     3. Say whether the Allied ladder will ever page them, and in what order.
+     4. Say why they hold every house while on HMOD duty, and that only HMs and BAs do.
+   FAILURE STATES COVERED: publish or override refused because an SM is viewing another
+   house; a hire or transfer refused because people admin stays own-house.
+   VERIFIED AGAINST: BSpec §2.2 (SM own-house), §2.3 (HM/BM identical admin powers, BM
+   holds no shifts, HM hours 08:00 to 17:00), §2.3a (RSM is HM-minus-HMOD; cross-house
+   schedule write; people, leave own-house), §2.5 (weekly HMOD rotation among HMs and BMs,
+   evenings and Friday 17:00 to Monday 08:00, HM permissions across all 13 houses), §2.8
+   (Administrator campus-wide, never staffs a desk, never on the rotor, sets launch state),
+   §4.3 (who may publish and override), §5.4a (three-rung ladder RSM then HM then HMOD; any
+   manager who may build for a house may acknowledge and close its requests; SWs cannot),
+   §9.3 line "An HM or BM (of any house) may modify the cap" and Appendix A item 4
+   (campus-wide, HM/BM only, SMs cannot),
+   §13 (permissions summary), §21 (either side's HM or BM, or the Administrator, may
+   transfer), §22 and §13 (launch state is Administrator only); migration 20260627000002
+   (user_is_schedule_admin makes build/publish/override cross-house for hm/bm/rsm while the
+   sm branch stays scope-matched), migration 20260719000001 (transfer_worker gated on
+   user_has_house_admin_role for the source or destination house).
+   UNRESOLVED: Two spec conflicts, both avoided rather than stated on the page. (1) §2.3a
+   lists weekly-cap modification as own-house for RSM, while §9.3 says the cap is a single
+   campus-wide value any HM or BM may set; the page attributes the cap only to HM and BA,
+   where both sections agree. (2) §2.3a says preference administration stays own-house for
+   HM, BA and RSM, while migration 20260627000002 made preference and period-target admin
+   cross-house for that tier; preferences are therefore not mentioned here. §13 omits the
+   RSM from the transfer list that §2.3a and migration 20260719000001 grant them, so the
+   RSM tab claims transfer at their own house only. Tab labels carry the full role names
+   because there is no on-screen role badge confirmed to show them. */
+}

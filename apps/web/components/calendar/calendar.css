@@ -879,6 +879,15 @@ button.pchip:hover {
     0 0 0 1.5px var(--st-danger) inset,
     0 1px 2px rgba(0, 0, 0, 0.08);
 }
+/* Harnwell pilot workstream G: reuses the existing float-state tone (--st-float-fg)
+   so this action reads as "the same kind of thing" as a floated-in chip elsewhere. */
+.action-seg-float.is-on {
+  color: var(--st-float-fg);
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1.5px var(--st-float-fg) inset,
+    0 1px 2px rgba(0, 0, 0, 0.08);
+}
 /* Banner: names the picked action in full ("Now swapping <name>") so the pill can
    stay terse ("Swap" / "Remove") without losing clarity about what's about to
    happen. Tinted to match the active side. */

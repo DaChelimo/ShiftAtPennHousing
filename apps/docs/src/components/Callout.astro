@@ -1,0 +1,74 @@
+---
+/*
+ * §5 Callout, standard: --mark-bg fill, --mark-line border, uppercase blue label.
+ *
+ * §6 Callout, critical: inverts to a solid --ink block with ground-colour text.
+ * One per page maximum, and only where failing to read it has an operational cost.
+ * Currently that is exactly one page, /managers/coverage. Do not let it spread:
+ * the moment a second page uses it, the first one stops working.
+ */
+type Props = { label?: string; critical?: boolean }
+const { label = 'Note', critical = false } = Astro.props
+---
+
+<aside class:list={['callout', critical && 'callout--critical']}>
+  <p class="callout__label">{label}</p>
+  <div class="callout__body"><slot /></div>
+</aside>
+
+<style>
+  .callout {
+    padding: 12px 14px 14px;
+    border: 1px solid var(--mark-line);
+    border-radius: var(--radius);
+    background: var(--mark-bg);
+  }
+
+  .callout__label {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    font-weight: 500;
+    color: var(--mark);
+  }
+
+  .callout__body {
+    margin-top: 5px;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--ink-2);
+  }
+
+  .callout__body :global(p + p) {
+    margin-top: 8px;
+  }
+
+  .callout__body :global(strong) {
+    color: var(--ink);
+  }
+
+  .callout--critical {
+    border-color: var(--ink);
+    background: var(--ink);
+  }
+
+  .callout--critical .callout__label {
+    color: var(--bg);
+    opacity: 0.72;
+  }
+
+  /* The slot's paragraphs are coloured by the base stylesheet, so inheritance
+     alone is not enough to invert them. */
+  .callout--critical .callout__body,
+  .callout--critical .callout__body :global(p),
+  .callout--critical .callout__body :global(li),
+  .callout--critical .callout__body :global(strong) {
+    color: var(--bg);
+  }
+
+  .callout--critical .callout__body :global(a) {
+    color: var(--bg);
+    text-decoration-thickness: 1px;
+  }
+</style>

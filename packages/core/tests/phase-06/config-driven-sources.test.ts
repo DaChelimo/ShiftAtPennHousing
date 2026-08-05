@@ -11,6 +11,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { runFloatLookup } from '../../src/float-lookup/index.js';
+
 import {
   HARNWELL,
   HOUSE_05,
@@ -80,8 +81,18 @@ describe('config-driven float sources', () => {
     // Two candidates at a headcount-2 house: exactly one may float; the other must
     // stay to keep the desk covered.
     const gap = makeGap(HOUSE_07, ANCHOR_19_00_EDT, 4);
-    const c1 = makeCandidate({ userId: 'h05-a', homeHouseId: HOUSE_05, gap, coversBlockIndices: [0, 1, 2, 3] });
-    const c2 = makeCandidate({ userId: 'h05-b', homeHouseId: HOUSE_05, gap, coversBlockIndices: [0, 1, 2, 3] });
+    const c1 = makeCandidate({
+      userId: 'h05-a',
+      homeHouseId: HOUSE_05,
+      gap,
+      coversBlockIndices: [0, 1, 2, 3],
+    });
+    const c2 = makeCandidate({
+      userId: 'h05-b',
+      homeHouseId: HOUSE_05,
+      gap,
+      coversBlockIndices: [0, 1, 2, 3],
+    });
 
     const result = runFloatLookup(
       makeInput(gap, [

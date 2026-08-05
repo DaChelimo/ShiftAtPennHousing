@@ -231,13 +231,14 @@ fun LoginScreen(
 
                 LoginField(
                     label = "Your email",
-                    placeholder = "bob@engineering.upenn.edu",
+                    placeholder = "andrew@upenn.edu",
                     value = state.email,
                     onValueChange = { onEvent(LoginEvent.EmailChanged(it)) },
                     icon = ShiftIcons.Person,
                     keyboardType = KeyboardType.Email,
                     enabled = !submitting,
                     error = state.errors.email,
+                    warning = state.emailWarning,
                     modifier = Modifier.testTag("login_email"),
                     imeAction = ImeAction.Next,
                     onImeAction = { passwordFocusRequester.requestFocus() },
@@ -411,6 +412,8 @@ private fun LoginField(
     keyboardType: KeyboardType = KeyboardType.Text,
     enabled: Boolean = true,
     error: String? = null,
+    /** Non-blocking hint shown below the field when [error] is absent, e.g. an unusual email domain. */
+    warning: String? = null,
     trailing: (@Composable () -> Unit)? = null,
     imeAction: ImeAction = ImeAction.Default,
     onImeAction: (() -> Unit)? = null,
@@ -464,7 +467,11 @@ private fun LoginField(
             )
             trailing?.invoke()
         }
-        if (error != null) Text(error, color = c.danger.accent, fontSize = 12.5.sp)
+        if (error != null) {
+            Text(error, color = c.danger.accent, fontSize = 12.5.sp)
+        } else if (warning != null) {
+            Text(warning, color = c.pending, fontSize = 12.5.sp, modifier = Modifier.testTag("login_email_warning"))
+        }
     }
 }
 

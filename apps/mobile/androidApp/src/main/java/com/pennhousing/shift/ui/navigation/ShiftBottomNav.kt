@@ -26,9 +26,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.pennhousing.shift.shared.onboarding.OnboardingTarget
 import com.pennhousing.shift.ui.kit.ShiftIcons
-import com.pennhousing.shift.ui.onboarding.onboardingAnchor
 import com.pennhousing.shift.ui.theme.ShiftTheme
 
 /** A bottom-bar item: which destination it selects and how it is labelled and found. */
@@ -37,7 +35,6 @@ private data class BarItem(
     val icon: ImageVector,
     val label: String,
     val tag: String,
-    val anchor: OnboardingTarget,
 )
 
 /**
@@ -48,17 +45,17 @@ private data class BarItem(
 private val BAR_ITEMS =
     mapOf<ShiftDestination, BarItem>(
         ShiftDestination.MyShifts to
-            BarItem(ShiftDestination.MyShifts, ShiftIcons.Calendar, "My Shifts", "tab_my_shifts", OnboardingTarget.MY_SHIFTS_TAB),
+            BarItem(ShiftDestination.MyShifts, ShiftIcons.Calendar, "My Shifts", "tab_my_shifts"),
         ShiftDestination.OpenShifts to
-            BarItem(ShiftDestination.OpenShifts, ShiftIcons.Plus, "Open", "tab_open_shifts", OnboardingTarget.OPEN_TAB),
+            BarItem(ShiftDestination.OpenShifts, ShiftIcons.Plus, "Open", "tab_open_shifts"),
         ShiftDestination.House to
-            BarItem(ShiftDestination.House, ShiftIcons.Building, "House", "tab_house", OnboardingTarget.HOUSE_TAB),
+            BarItem(ShiftDestination.House, ShiftIcons.Building, "House", "tab_house"),
         ShiftDestination.Swaps to
-            BarItem(ShiftDestination.Swaps, ShiftIcons.Refresh, "Swaps", "tab_swaps", OnboardingTarget.SWAPS_TAB),
+            BarItem(ShiftDestination.Swaps, ShiftIcons.Refresh, "Swaps", "tab_swaps"),
         ShiftDestination.Coverage to
-            BarItem(ShiftDestination.Coverage, ShiftIcons.Warning, "Coverage", "tab_coverage", OnboardingTarget.HOUSE_TAB),
+            BarItem(ShiftDestination.Coverage, ShiftIcons.Warning, "Coverage", "tab_coverage"),
         ShiftDestination.Hours to
-            BarItem(ShiftDestination.Hours, ShiftIcons.Clock, "Hours", "tab_hours", OnboardingTarget.HOUSE_TAB),
+            BarItem(ShiftDestination.Hours, ShiftIcons.Clock, "Hours", "tab_hours"),
     )
 
 /**
@@ -113,13 +110,12 @@ internal fun ShiftBottomNav(
                 },
                 label = { Text(item.label, maxLines = 1) },
                 colors = colors,
-                modifier = Modifier.testTag(item.tag).onboardingAnchor(item.anchor),
+                modifier = Modifier.testTag(item.tag),
             )
         }
         NavigationBarItem(
             // Lit for the episodic destinations that live behind the sheet, minus anything
-            // this role's bar already carries (or two items would light at once). Assistant is
-            // reachable from the sheet but deliberately does not light this up.
+            // this role's bar already carries (or two items would light at once).
             selected = current in ShiftDestination.moreSelects(bar),
             onClick = onMore,
             icon = {
@@ -131,7 +127,7 @@ internal fun ShiftBottomNav(
             },
             label = { Text("More", maxLines = 1) },
             colors = colors,
-            modifier = Modifier.testTag("tab_more").onboardingAnchor(OnboardingTarget.MORE_TAB),
+            modifier = Modifier.testTag("tab_more"),
         )
     }
 }

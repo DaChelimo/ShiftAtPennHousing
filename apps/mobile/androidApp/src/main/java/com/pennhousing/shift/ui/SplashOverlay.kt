@@ -20,14 +20,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pennhousing.shift.R
 import com.pennhousing.shift.ui.theme.ShiftTheme
-import com.pennhousing.shift.ui.theme.rememberPersistedDarkTheme
 import kotlinx.coroutines.delay
 
 /**
@@ -49,11 +47,24 @@ import kotlinx.coroutines.delay
  * you in"); it is null on a cold launch, where there is nothing to say beyond the brand. The
  * caption and spinner fade in only after [PROGRESS_AFTER_MS], so a fast launch shows a
  * clean, still splash and never a flash of loading chrome.
+ *
+ * [darkTheme] is resolved by the CALLER via the non-Compose
+ * [com.pennhousing.shift.ui.theme.resolveDark] (a plain `Configuration.uiMode` read), NOT
+ * `rememberPersistedDarkTheme()` here. This is deliberate: this composable is the first
+ * thing painted on a cold launch, and again the instant it re-enters composition after
+ * sign-in — both are the FIRST composition pass for this call site, where
+ * `isSystemInDarkTheme()` can resolve against a not-yet-settled `LocalConfiguration` and
+ * render the wrong theme for the splash's one meaningfully visible frame (root-caused
+ * 2026-08-01; see the resolveDark(Configuration) doc). The caller's plain field read can
+ * never disagree with what the native OS splash already showed.
  */
 private const val PROGRESS_AFTER_MS = 600L
 
 @Composable
-fun SplashOverlay(caption: String? = null) {
+fun SplashOverlay(
+    caption: String? = null,
+    darkTheme: Boolean,
+) {
     var showProgress by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         delay(PROGRESS_AFTER_MS)
@@ -61,7 +72,7 @@ fun SplashOverlay(caption: String? = null) {
     }
 
     // Self-themed: the splash renders above (and before) the app's own theme scope.
-    ShiftTheme(darkTheme = rememberPersistedDarkTheme()) {
+    ShiftTheme(darkTheme = darkTheme) {
         SplashBody(caption = caption, showProgress = showProgress)
     }
 }
@@ -75,7 +86,13 @@ private fun SplashBody(
         modifier =
             Modifier
                 .fillMaxSize()
-                .background(colorResource(R.color.splash_background))
+                // ShiftTheme.colors.bg, not colorResource(R.color.splash_background): the two
+                // are pixel-identical by design (see the class doc), but colors.bg is derived
+                // from the darkTheme param this composable is now seeded with, while
+                // colorResource() would be an INDEPENDENT resource-qualifier lookup done at
+                // Compose-render time — the same class of first-frame risk this fix removes
+                // for the rest of the splash. One source for the whole body, no residual gap.
+                .background(ShiftTheme.colors.bg)
                 .testTag("splash_screen"),
         contentAlignment = Alignment.Center,
     ) {

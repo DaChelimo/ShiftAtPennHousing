@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.ShiftPennHousing" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Root cause of the "always white for a second" launch flash: this used to inherit
+         android:Theme.Material.LIGHT.NoActionBar even in the -night variant, so the brief
+         window between the OS splash dismissing and Compose's first frame always showed a
+         light Material background regardless of system or in-app theme. Dark base +
+         windowBackground pinned to splash_background (dark here) fixes both. -->
+    <style name="Theme.ShiftPennHousing" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/splash_background</item>
+    </style>
 
     <!-- Dark-mode cold-start splash. Same structure as values/themes.xml; only
          @color/splash_background resolves differently here (values-night/colors.xml). -->

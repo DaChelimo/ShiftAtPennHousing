@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.ShiftPennHousing" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- windowBackground pins this to splash_background (same value the native splash just
+         showed) so the brief window between the OS splash dismissing and Compose's first
+         frame painting never shows the Material default (white) instead. -->
+    <style name="Theme.ShiftPennHousing" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/splash_background</item>
+    </style>
 
     <!-- Cold-start splash (androidx.core.splashscreen, installSplashScreen() in
          MainActivity.kt). windowSplashScreenBackground matches the app's real light

@@ -15,11 +15,21 @@ mechanism, not a side effect.
 
 ## The roster
 
-| Persona            | Posture                                     | Spawned by                       |
-| ------------------ | ------------------------------------------- | -------------------------------- |
-| `security-auditor` | Attacker. Assumes the gate is missing.      | `.claude/skills/security-audit/` |
-| `ship-check`       | Burned PM. Assumes the feature is broken.   | `.claude/skills/ship-check/`     |
-| `perf-surgeon`     | Empiricist. Assumes the diagnosis is wrong. | invoked directly                 |
+| Persona               | Posture                                          | Spawned by                       |
+| --------------------- | ------------------------------------------------ | -------------------------------- |
+| `security-auditor`    | Attacker. Assumes the gate is missing.           | `.claude/skills/security-audit/` |
+| `ship-check`          | Burned PM. Assumes the feature is broken.        | `.claude/skills/ship-check/`     |
+| `perf-surgeon`        | Empiricist. Assumes the diagnosis is wrong.      | invoked directly                 |
+| `docs-writer-worker`  | Author. Reader is nineteen and in a hurry.       | `.claude/skills/docs-write/`     |
+| `docs-writer-manager` | Author. Reader is accountable, maybe at 2am.     | `.claude/skills/docs-write/`     |
+| `docs-writer-system`  | Author. Reader is technical, has no repo.        | `.claude/skills/docs-write/`     |
+| `docs-editor`         | Editor. Assumes the draft is a quarter too long. | `.claude/skills/docs-write/`     |
+
+The four `docs-*` personas are **authors, not inspectors**, which is why they hold `Edit`
+against the exception below. They are bounded by path instead: prose under
+`apps/docs/src/content/docs/` only, never components, styles, layouts, `nav.ts`, or config.
+The writer/editor split exists for the same reason the review personas exist: a writer
+cannot judge its own draft's length, so the standard is scored in separate context.
 
 ## Conventions
 

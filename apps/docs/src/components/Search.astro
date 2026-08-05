@@ -50,9 +50,11 @@
     const load = async () => {
       if (engine || loadFailed) return
       try {
-        // Built by `pagefind --site dist`, so it exists only in a production build.
-        // The path is held in a variable so neither dev nor build tries to resolve it.
-        const bundle = '/pagefind/pagefind.js'
+        // Built by pagefind after `astro build`, so it exists only in a production
+        // build. The path is held in a variable so neither dev nor build tries to
+        // resolve it. It sits under the site's base path because everything this
+        // deployment serves has to live under the one /guide routing rule.
+        const bundle = `${import.meta.env.BASE_URL.replace(/\/+$/, '')}/pagefind/pagefind.js`
         engine = (await import(/* @vite-ignore */ bundle)) as unknown as Pagefind
       } catch {
         loadFailed = true

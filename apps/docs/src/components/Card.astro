@@ -1,10 +1,12 @@
 ---
 // §5 Card grid: hover lifts the border to --mark-line and the title to --mark.
+import { withBase } from '../href'
+
 type Props = { href: string; title: string; eyebrow?: string; draft?: boolean }
 const { href, title, eyebrow, draft = false } = Astro.props
 ---
 
-<a class="card" href={href}>
+<a class="card" href={withBase(href)}>
   {eyebrow && <span class="card__eyebrow eyebrow">{eyebrow}</span>}
   <span class="card__title">{title}</span>
   <span class="card__body"><slot /></span>

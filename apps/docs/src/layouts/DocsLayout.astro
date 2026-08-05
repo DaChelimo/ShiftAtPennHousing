@@ -4,6 +4,7 @@
  * collapsing to a drawer plus content on tablet and mobile.
  */
 import type { MarkdownHeading } from 'astro'
+import { withBase } from '../href'
 import BaseLayout from './BaseLayout.astro'
 import Sidebar from '../components/Sidebar.astro'
 import PageContents from '../components/PageContents.astro'
@@ -64,7 +65,7 @@ const next = index >= 0 && index < readingOrder.length - 1 ? readingOrder[index 
         (previous || next) && (
           <nav class="pager" aria-label="Previous and next page">
             {previous ? (
-              <a class="pager__link" href={`/${previous.slug}`}>
+              <a class="pager__link" href={withBase(`/${previous.slug}`)}>
                 <span class="eyebrow">Previous</span>
                 <span class="pager__label">{previous.label}</span>
               </a>
@@ -72,7 +73,7 @@ const next = index >= 0 && index < readingOrder.length - 1 ? readingOrder[index 
               <span />
             )}
             {next && (
-              <a class="pager__link pager__link--next" href={`/${next.slug}`}>
+              <a class="pager__link pager__link--next" href={withBase(`/${next.slug}`)}>
                 <span class="eyebrow">Next</span>
                 <span class="pager__label">{next.label}</span>
               </a>

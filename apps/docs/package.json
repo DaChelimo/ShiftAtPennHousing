@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build && pagefind --site dist",
+    "build": "rm -rf dist && astro build && pagefind --site dist/guide",
     "preview": "astro preview",
     "type-check": "astro check"
   },

@@ -4,6 +4,7 @@
  * sections, current page marked. Each group header is the section overview page
  * and is itself clickable. No third-level nesting except under /system/floating.
  */
+import { withBase } from '../href'
 import { sections, topLevel } from '../nav'
 import Search from './Search.astro'
 import ThemeToggle from './ThemeToggle.astro'
@@ -15,7 +16,7 @@ const { current } = Astro.props
 <div class="sidebar" id="sidebar" data-drawer>
   <div class="sidebar__inner">
     <div class="sidebar__top">
-      <a class="sidebar__brand" href="/">
+      <a class="sidebar__brand" href={withBase('/')}>
         <span class="sidebar__brand-mark">Shift</span>
         <span class="sidebar__brand-sub">User guide</span>
       </a>
@@ -31,7 +32,7 @@ const { current } = Astro.props
             <li>
               <a
                 class:list={['sidebar__link', current === entry.slug && 'is-current']}
-                href={`/${entry.slug}`}
+                href={withBase(`/${entry.slug}`)}
                 aria-current={current === entry.slug ? 'page' : undefined}
               >
                 {entry.label}
@@ -56,7 +57,7 @@ const { current } = Astro.props
                 <li>
                   <a
                     class:list={['sidebar__link', 'sidebar__link--overview', current === section.slug && 'is-current']}
-                    href={`/${section.slug}`}
+                    href={withBase(`/${section.slug}`)}
                     aria-current={current === section.slug ? 'page' : undefined}
                   >
                     Overview
@@ -70,7 +71,7 @@ const { current } = Astro.props
                         entry.slug.split('/').length > 2 && 'sidebar__link--nested',
                         current === entry.slug && 'is-current',
                       ]}
-                      href={`/${entry.slug}`}
+                      href={withBase(`/${entry.slug}`)}
                       aria-current={current === entry.slug ? 'page' : undefined}
                     >
                       {entry.label}

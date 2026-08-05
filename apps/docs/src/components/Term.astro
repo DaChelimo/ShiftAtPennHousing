@@ -3,11 +3,13 @@
  * §5 Glossary link: dashed underline, native title.
  * SKETCH.md §3: linked on first use per page, not every use.
  */
+import { withBase } from '../href'
+
 type Props = { of: string; define: string }
 const { of: anchor, define } = Astro.props
 ---
 
-<a class="term" href={`/system/glossary#${anchor}`} title={define}><slot /></a>
+<a class="term" href={withBase(`/system/glossary#${anchor}`)} title={define}><slot /></a>
 
 <style>
   .term {

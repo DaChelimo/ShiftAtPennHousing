@@ -8,6 +8,7 @@ import CardGrid from './components/CardGrid.astro';
 import Figure from './components/Figure.astro';
 import FlowStrip from './components/FlowStrip.astro';
 import Ladder from './components/Ladder.astro';
+import Link from './components/Link.astro';
 import Related from './components/Related.astro';
 import RoleCard from './components/RoleCard.astro';
 import StateCard from './components/StateCard.astro';
@@ -19,6 +20,10 @@ import Term from './components/Term.astro';
 import UI from './components/UI.astro';
 
 export const mdxComponents = {
+  // Raw anchors in a page go through Link so root-absolute hrefs pick up the
+  // site's base path (/guide). See src/href.ts.
+  a: Link,
+  Link,
   Callout,
   Card,
   CardGrid,

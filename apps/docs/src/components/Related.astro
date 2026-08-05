@@ -3,6 +3,8 @@
  * §5 Related footer: bordered link chips, hover to --mark-bg.
  * SKETCH.md §4: every task page ends with three related links.
  */
+import { withBase } from '../href'
+
 type Link = { href: string; label: string }
 type Props = { links: Link[] }
 const { links } = Astro.props
@@ -14,7 +16,7 @@ const { links } = Astro.props
     {
       links.map((link) => (
         <li>
-          <a class="related__chip" href={link.href}>
+          <a class="related__chip" href={withBase(link.href)}>
             {link.label}
           </a>
         </li>

@@ -7,6 +7,7 @@
  */
 import BaseLayout from '../layouts/BaseLayout.astro'
 import ThemeToggle from '../components/ThemeToggle.astro'
+import { withBase } from '../href'
 import { sections } from '../nav'
 
 const routes = [
@@ -43,12 +44,12 @@ const capabilities = [
   description="The user guide for Shift, the staffing and coverage system for Penn Residential Housing front desks."
 >
   <header class="topline">
-    <a class="topline__brand" href="/">
+    <a class="topline__brand" href={withBase('/')}>
       <span class="topline__mark">Shift</span>
       <span class="topline__sub">User guide</span>
     </a>
     <nav class="topline__nav" aria-label="Sections">
-      {sections.map((section) => <a href={`/${section.slug}`}>{section.label}</a>)}
+      {sections.map((section) => <a href={withBase(`/${section.slug}`)}>{section.label}</a>)}
       <ThemeToggle />
     </nav>
   </header>
@@ -69,15 +70,15 @@ const capabilities = [
         nearby before anyone pays for a guard.
       </p>
       <div class="hero__actions">
-        <a class="button button--primary" href="/getting-started">Getting started</a>
-        <a class="button" href="/system/floating">How floating works</a>
+        <a class="button button--primary" href={withBase('/getting-started')}>Getting started</a>
+        <a class="button" href={withBase('/system/floating')}>How floating works</a>
       </div>
     </section>
 
     <section class="routes" aria-label="Choose your path">
       {
         routes.map((route) => (
-          <a class="route" href={route.href}>
+          <a class="route" href={withBase(route.href)}>
             <span class="eyebrow">{route.eyebrow}</span>
             <span class="route__title">{route.title}</span>
             <span class="route__body">{route.body}</span>

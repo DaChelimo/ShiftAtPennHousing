@@ -78,11 +78,16 @@ jobs:
       - name: Build packages/core (Edge Functions import its dist/)
         run: pnpm --filter @shift/core build
 
-      # Pinned, not `latest`. The CLI version determines the Postgres and pgtap
-      # images `supabase start` pulls, so an unpinned CLI silently drifts this job
-      # away from what developers run locally (it showed up as pgtap overloads not
-      # existing, e.g. "function is(jsonb, integer, unknown) does not exist"). Bump
-      # this deliberately, in step with the version the team runs.
+      # Pinned, not `latest`, so this job pulls the same Postgres and pgtap images
+      # developers run locally rather than drifting on its own schedule. Bump it
+      # deliberately, in step with the version the team runs.
+      #
+      # Note: pinning did NOT change the current pgTAP failures (33/74 files fail
+      # identically on `latest` and on 2.108.0). Those are test-vs-code drift, not
+      # an environment problem: e.g. author-break-period.sql compares the now-jsonb
+      # return of remove_break_period() to an integer, and desk-assistant-scope.sql
+      # passes a scalar where da_can_read_item() takes an array. The suite rotted
+      # unnoticed because `supabase start` failed before any test ran.
       - uses: supabase/setup-cli@v1
         with:
           version: 2.108.0

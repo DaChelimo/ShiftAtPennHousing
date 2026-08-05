@@ -34,4 +34,27 @@ object LoginFormValidator {
         val passwordError = if (password.isBlank()) "Enter your password." else null
         return FormErrors(email = emailError, password = passwordError)
     }
+
+    /**
+     * A non-blocking domain hint: most workers sign in with `@upenn.edu` or
+     * `@gmail.com`. Anything else is very likely a typo, but is never treated as
+     * a validation [FormErrors.email] error — the account may legitimately use a
+     * different domain, so the worker can still submit.
+     *
+     * Waits for a "." in the domain part before warning (so "andrew@u" does not
+     * flash a warning mid-keystroke), and is case-insensitive.
+     */
+    fun domainWarning(email: String): String? {
+        val trimmed = email.trim()
+        val at = trimmed.lastIndexOf('@')
+        if (at == -1) return null
+        val domain = trimmed.substring(at + 1)
+        if (!domain.contains('.')) return null
+        val lower = trimmed.lowercase()
+        return if (lower.endsWith("@upenn.edu") || lower.endsWith("@gmail.com")) {
+            null
+        } else {
+            "Your email should most likely end with @upenn.edu or @gmail.com, but mostly @upenn.edu."
+        }
+    }
 }

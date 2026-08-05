@@ -20,6 +20,8 @@ final class LoginObservable: ObservableObject {
     @Published var password = ""
     @Published var submitting = false
     @Published var emailError: String?
+    /// Non-blocking domain hint (e.g. neither `@upenn.edu` nor `@gmail.com`) — never blocks sign-in.
+    @Published var emailWarning: String?
     @Published var passwordError: String?
     @Published var formError: String?
     /// DEBUG-only raw diagnostic behind `formError` (network/config detail); never shown in release.
@@ -42,6 +44,7 @@ final class LoginObservable: ObservableObject {
     func setEmail(_ value: String) {
         email = value
         emailError = nil
+        emailWarning = LoginFormValidator.shared.domainWarning(email: value)
         formError = nil
         formErrorDetail = nil
     }
@@ -147,9 +150,9 @@ struct LoginScreen: View {
 
                 VStack(spacing: 16) {
                     field(
-                        label: "Your email", placeholder: "bob@engineering.upenn.edu",
+                        label: "Your email", placeholder: "andrew@upenn.edu",
                         icon: ShiftIcons.person, text: model.email,
-                        onChange: model.setEmail, error: model.emailError, isFocused: focused == .email
+                        onChange: model.setEmail, error: model.emailError, warning: model.emailWarning, isFocused: focused == .email
                     )
                     .focused($focused, equals: .email)
                     .keyboardType(.emailAddress).textInputAutocapitalization(.never)
@@ -297,7 +300,7 @@ struct LoginScreen: View {
 
     private func field(
         label: String, placeholder: String = "", icon: String, text: String, onChange: @escaping (String) -> Void,
-        error: String?, isFocused: Bool
+        error: String?, warning: String? = nil, isFocused: Bool
     ) -> some View {
         let c = ShiftColors.resolve(scheme)
         return VStack(alignment: .leading, spacing: 7) {
@@ -316,6 +319,9 @@ struct LoginScreen: View {
             )
             if let error {
                 Text(error).font(ShiftFont.sans(12.5)).foregroundColor(c.danger.accent)
+            } else if let warning {
+                Text(warning).font(ShiftFont.sans(12.5)).foregroundColor(c.pending)
+                    .accessibilityIdentifier("login_email_warning")
             }
         }
     }

@@ -36,4 +36,24 @@ class LoginFormValidatorTest {
         assertNull(e.email)
         assertNull(e.password)
     }
+
+    @Test
+    fun domainWarningIsNullForUpennAndGmail() {
+        assertNull(LoginFormValidator.domainWarning("andrew@upenn.edu"))
+        assertNull(LoginFormValidator.domainWarning("Andrew@UPenn.Edu"))
+        assertNull(LoginFormValidator.domainWarning("andrew@gmail.com"))
+    }
+
+    @Test
+    fun domainWarningFiresForOtherCompleteDomains() {
+        assertNotNull(LoginFormValidator.domainWarning("andrew@outlook.com"))
+        assertNotNull(LoginFormValidator.domainWarning("andrew@seas.upenn.edu"))
+    }
+
+    @Test
+    fun domainWarningIsNullWhileDomainIsIncompleteOrMissing() {
+        assertNull(LoginFormValidator.domainWarning(""))
+        assertNull(LoginFormValidator.domainWarning("andrew"))
+        assertNull(LoginFormValidator.domainWarning("andrew@u"))
+    }
 }

@@ -245,6 +245,7 @@ export function HouseCalendar({
           key={selected.id}
           panelRef={panelRef}
           shift={selected}
+          houseId={model.houseId}
           houseName={model.houseName}
           dayLabel={`${model.days[selected.dayIndex]!.label} ${model.days[selected.dayIndex]!.date}`}
           assignableWorkers={model.assignableWorkers}

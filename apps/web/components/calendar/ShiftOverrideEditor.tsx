@@ -2,7 +2,12 @@
 
 import { useState } from 'react';
 
-import { assignWorker, removeWorker, type OverrideScope } from '../../lib/actions/override';
+import {
+  assignWorker,
+  floatWorker,
+  removeWorker,
+  type OverrideScope,
+} from '../../lib/actions/override';
 import type { AssignableWorker, CalShift } from '../../lib/data/calendar';
 import { Avatar, Button, Icon, Notification } from '../ui';
 
@@ -11,6 +16,23 @@ import type { WriteStatusEvent } from './WriteStatusToasts';
 import { fmtH, shiftOriginMinutes, spanLabel } from './format';
 
 type CapTone = 'muted' | 'warn' | 'danger';
+
+// Harnwell pilot workstream G. Harnwell excluded (never a float destination, hard
+// invariant); the other 12 houses are the fixed, load-bearing id set from AGENTS.md.
+const FLOAT_DESTINATION_HOUSES: { id: string; name: string }[] = [
+  { id: 'quad', name: 'Upper Quad' },
+  { id: 'lower-quad', name: 'Lower Quad' },
+  { id: 'gregory', name: 'Van Pelt / Gregory' },
+  { id: 'harrison', name: 'Harrison' },
+  { id: 'hill', name: 'Hill' },
+  { id: 'kings-court', name: 'Kings Court English' },
+  { id: 'lauder', name: 'Lauder' },
+  { id: 'mayer', name: 'Mayer' },
+  { id: 'du-bois', name: 'Du Bois' },
+  { id: 'gutmann', name: 'Gutmann' },
+  { id: 'radian', name: 'Radian' },
+  { id: 'rodin', name: 'Rodin' },
+];
 
 // Per-candidate cap context for the swap/assign cards: their current weekly load
 // and headroom against the week's soft cap, flagged when adding the selected range
@@ -45,6 +67,7 @@ function capHint(
 // fixed top + scrolling worker list + fixed footer so the flow lives in one viewport.
 export function EditSection({
   shift,
+  houseId,
   assignableWorkers,
   softCapHours,
   capEnforcement,
@@ -52,6 +75,7 @@ export function EditSection({
   onWriteStatus,
 }: {
   shift: CalShift;
+  houseId: string;
   assignableWorkers: AssignableWorker[];
   softCapHours: number;
   capEnforcement: 'soft' | 'hard';
@@ -64,15 +88,25 @@ export function EditSection({
   // Derived from the shift's own timestamp, not the grid's shared origin, so the
   // edit-range picker's times stay correct regardless of the grid's start hour.
   const origin = shiftOriginMinutes(shift);
+  // Harnwell pilot (workstream G): Float only makes sense as an outbound action from
+  // Harnwell (the only house with workers on the app in the pilot), and only on an
+  // occupied seat -- there is nobody to float from an open one.
+  const canFloat = occupied && houseId === 'harnwell';
 
   // Sub-range [fromBlock, toBlock), defaulting to the whole shift. 30-min blocks.
   const [fromBlock, setFromBlock] = useState(startBlock);
   const [toBlock, setToBlock] = useState(endBlock);
-  // occupied: choose Swap vs Remove. Nothing past the action row shows until one is
-  // picked, an open seat has no action to choose, so it goes straight to assigning.
-  const [action, setAction] = useState<'remove' | 'replace' | null>(occupied ? null : 'replace');
+  // occupied: choose Swap, Float, or Remove. Nothing past the action row shows until
+  // one is picked, an open seat has no action to choose, so it goes straight to
+  // assigning.
+  const [action, setAction] = useState<'remove' | 'replace' | 'float' | null>(
+    occupied ? null : 'replace',
+  );
   const showBody = !occupied || action !== null;
   const [workerId, setWorkerId] = useState<string | null>(null);
+  const [destinationHouseId, setDestinationHouseId] = useState<string>(
+    FLOAT_DESTINATION_HOUSES[0]!.id,
+  );
   const [scope, setScope] = useState<OverrideScope>('this_week');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -175,6 +209,39 @@ export function EditSection({
     setTimeout(onApplied, 700);
   }
 
+  async function doFloat() {
+    if (shift.userId === null) return;
+    setBusy(true);
+    setError(null);
+    setSuccess(null);
+    setWarning(null);
+    const destName =
+      FLOAT_DESTINATION_HOUSES.find((h) => h.id === destinationHouseId)?.name ?? destinationHouseId;
+    onWriteStatus?.({
+      key: shift.id,
+      phase: 'pending',
+      message: `Floating ${shift.workerName ?? 'this worker'} to ${destName} for ${rangeLabel}…`,
+    });
+    const res = await floatWorker({
+      blockIds: selectedBlockIds,
+      userId: shift.userId,
+      destinationHouseId,
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error);
+      onWriteStatus?.({ key: shift.id, phase: 'error', message: `Couldn't float: ${res.error}` });
+      return;
+    }
+    setSuccess('Floated');
+    onWriteStatus?.({
+      key: shift.id,
+      phase: 'success',
+      message: `Floated: ${shift.workerName ?? 'the worker'} now covers ${destName} for ${rangeLabel}`,
+    });
+    setTimeout(onApplied, 700);
+  }
+
   async function doRemove() {
     if (shift.userId === null) return;
     setBusy(true);
@@ -233,6 +300,22 @@ export function EditSection({
                 <Icon name="swap" size={15} />
                 Swap
               </button>
+              {canFloat && (
+                <button
+                  type="button"
+                  role="radio"
+                  data-testid="override-action-float"
+                  className={`action-seg-btn action-seg-float ${action === 'float' ? 'is-on' : ''}`.trim()}
+                  aria-checked={action === 'float'}
+                  onClick={() => {
+                    setAction('float');
+                    setError(null);
+                  }}
+                >
+                  <Icon name="swap" size={15} />
+                  Float
+                </button>
+              )}
               <button
                 type="button"
                 role="radio"
@@ -256,7 +339,9 @@ export function EditSection({
                 <Icon name={action === 'remove' ? 'trash' : 'swap'} size={14} />
                 {action === 'remove'
                   ? `Now removing ${shift.workerName ?? 'this worker'}`
-                  : `Now swapping ${shift.workerName ?? 'this worker'}`}
+                  : action === 'float'
+                    ? `Now floating ${shift.workerName ?? 'this worker'} out`
+                    : `Now swapping ${shift.workerName ?? 'this worker'}`}
               </div>
             )}
           </div>
@@ -305,6 +390,26 @@ export function EditSection({
           </span>
         )}
       </div>
+
+      {/* Float destination picker — Harnwell excluded server-side too (hard
+          invariant), but never even offered here. */}
+      {action === 'float' && (
+        <div className="col gap-1" style={{ padding: '0 2px' }}>
+          <span className="t-label">Float to</span>
+          <select
+            data-testid="override-float-destination"
+            value={destinationHouseId}
+            onChange={(e) => setDestinationHouseId(e.target.value)}
+            className="select"
+          >
+            {FLOAT_DESTINATION_HOUSES.map((h) => (
+              <option key={h.id} value={h.id}>
+                {h.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* worker cards — the one scrolling region inside the viewport */}
       {assigning &&
@@ -364,36 +469,40 @@ export function EditSection({
             </Notification>
           )}
 
-          <div className="col gap-1">
-            <span className="t-label">Apply to</span>
-            <div className="seg seg-fill" role="radiogroup" aria-label="Override scope">
-              <button
-                type="button"
-                role="radio"
-                data-testid="override-scope-week"
-                className={`seg-btn ${scope === 'this_week' ? 'is-on' : ''}`.trim()}
-                aria-checked={scope === 'this_week'}
-                onClick={() => setScope('this_week')}
-              >
-                This week only
-              </button>
-              <button
-                type="button"
-                role="radio"
-                data-testid="override-scope-permanent"
-                className={`seg-btn ${scope === 'permanent' ? 'is-on' : ''}`.trim()}
-                aria-checked={scope === 'permanent'}
-                onClick={() => setScope('permanent')}
-              >
-                This week onward
-              </button>
+          {/* Float has no this-week-vs-permanent scope: it always acts on exactly the
+              selected range, once. */}
+          {action !== 'float' && (
+            <div className="col gap-1">
+              <span className="t-label">Apply to</span>
+              <div className="seg seg-fill" role="radiogroup" aria-label="Override scope">
+                <button
+                  type="button"
+                  role="radio"
+                  data-testid="override-scope-week"
+                  className={`seg-btn ${scope === 'this_week' ? 'is-on' : ''}`.trim()}
+                  aria-checked={scope === 'this_week'}
+                  onClick={() => setScope('this_week')}
+                >
+                  This week only
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  data-testid="override-scope-permanent"
+                  className={`seg-btn ${scope === 'permanent' ? 'is-on' : ''}`.trim()}
+                  aria-checked={scope === 'permanent'}
+                  onClick={() => setScope('permanent')}
+                >
+                  This week onward
+                </button>
+              </div>
+              <span className="t-helper" data-testid="override-scope-help">
+                {scope === 'this_week'
+                  ? 'Changes only the week you’re viewing. Every other week keeps the published pattern.'
+                  : 'Changes this week and the same slot (weekday + time) in every following week of the term.'}
+              </span>
             </div>
-            <span className="t-helper" data-testid="override-scope-help">
-              {scope === 'this_week'
-                ? 'Changes only the week you’re viewing. Every other week keeps the published pattern.'
-                : 'Changes this week and the same slot (weekday + time) in every following week of the term.'}
-            </span>
-          </div>
+          )}
 
           {occupied && action === 'remove' ? (
             <Button
@@ -405,6 +514,18 @@ export function EditSection({
               onClick={doRemove}
             >
               Remove {rangeLabel}
+            </Button>
+          ) : occupied && action === 'float' ? (
+            <Button
+              kind="primary"
+              icon="swap"
+              full
+              data-testid="override-float-submit"
+              disabled={busy}
+              onClick={() => doFloat()}
+            >
+              Float {rangeLabel} →{' '}
+              {FLOAT_DESTINATION_HOUSES.find((h) => h.id === destinationHouseId)?.name}
             </Button>
           ) : (
             <Button

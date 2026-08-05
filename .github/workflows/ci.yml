@@ -78,9 +78,14 @@ jobs:
       - name: Build packages/core (Edge Functions import its dist/)
         run: pnpm --filter @shift/core build
 
+      # Pinned, not `latest`. The CLI version determines the Postgres and pgtap
+      # images `supabase start` pulls, so an unpinned CLI silently drifts this job
+      # away from what developers run locally (it showed up as pgtap overloads not
+      # existing, e.g. "function is(jsonb, integer, unknown) does not exist"). Bump
+      # this deliberately, in step with the version the team runs.
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.108.0
 
       - name: Start Supabase
         run: supabase start

@@ -27,7 +27,14 @@ extension ShiftsRootView {
         let st = houseModel.state
         return houseTabLayout(st, c)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .accessibilityIdentifier("house_screen")
+        // A non-wrapping marker, not the container itself — an identifier set directly on a
+        // wrapping view leaks onto every descendant element in the XCUITest tree, shadowing
+        // `housegrid_tour_help` and every other identifier under this tab (confirmed
+        // empirically while fixing HouseGridTourUITests 2026-08-06; see SettingsView.swift's
+        // matching `settings_screen` fix for the full explanation).
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("house_screen")
+        }
         .task { await houseModel.loadHouses() }
         // Reload whenever the shown house OR week changes (switching re-centres on today).
         .task(id: "\(st.selectedHouseId ?? "")#\(st.weekOffset)") { await houseModel.loadWeek() }

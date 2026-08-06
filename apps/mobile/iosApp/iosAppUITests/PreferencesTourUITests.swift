@@ -6,18 +6,30 @@ final class PreferencesTourUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    /// Reaches Preferences via the real More-sheet path, then taps its always-present
+    /// header "?" to force a replay. Settings used to carry a dedicated "Replay preferences
+    /// tour" row for this (removed 2026-08-06, see AGENTS.md); the header "?" was always the
+    /// tour's real, permanent entry point and still is.
     private func openTour(_ app: XCUIApplication) {
         app.launch()
         let moreTab = app.buttons["tab_more"]
         XCTAssertTrue(moreTab.waitForExistence(timeout: 10))
         moreTab.tap()
-        let settingsRow = app.buttons["tab_settings"]
-        XCTAssertTrue(settingsRow.waitForExistence(timeout: 5))
-        settingsRow.tap()
+        let preferencesRow = app.buttons["tab_preferences"]
+        XCTAssertTrue(preferencesRow.waitForExistence(timeout: 5))
+        preferencesRow.tap()
 
-        let replayRow = app.buttons["settings_replay_preferences_tour"]
-        XCTAssertTrue(replayRow.waitForExistence(timeout: 5))
-        replayRow.tap()
+        // First-ever reach of this surface auto-starts the tour, in which case its
+        // overlay is already covering the help button and tapping "preferences_tour_help" would hit
+        // the overlay's own scrim instead (dismissing an already-showing tour on any
+        // dismissible step). A later run in the same test target has already marked the
+        // tour seen, so auto-start does not refire and the help button is reachable.
+        // Force it only when the tour is not already showing, so both orders are safe.
+        if !app.otherElements["preferences_tour"].waitForExistence(timeout: 2) {
+            let helpButton = app.buttons["preferences_tour_help"]
+            XCTAssertTrue(helpButton.waitForExistence(timeout: 5))
+            helpButton.tap()
+        }
     }
 
     func testReplayShowsFirstStepWithBrushSelector() {

@@ -46,6 +46,80 @@
 -- Idempotent: CREATE OR REPLACE throughout; no signature changes.
 
 -- ---------------------------------------------------------------------------
+-- 0. Provision the Allied account itself.
+--
+-- 20260725000001 created the `allied-house` pseudo-house in a MIGRATION but left
+-- its sole occupant to `seeds/prod/02-people.sql`. That split turned out to be a
+-- real gap: the hosted Shift project has the house and no account (its people came
+-- from the Staff@PennHousing data migration, not that seed), so every surface built
+-- on "assign Allied" would have silently rendered nothing there. The house and its
+-- one standing occupant are a single system singleton; both belong here.
+--
+-- Same fixed uuid as the seed, which is ALREADY a load-bearing constant in
+-- apps/web/lib/workerColor.ts (ALLIED_USER_ID) and its Kotlin mirror, where it
+-- selects the reserved solid-black card tint. Do not change it.
+--
+-- Fully idempotent and non-destructive: every insert is ON CONFLICT DO NOTHING, so
+-- re-application is a no-op and an environment that already seeded the account (the
+-- local stack) keeps exactly what it has. The password hash is the seed's; this
+-- account is a scheduling identity, not a login anyone uses.
+--
+-- broadcast_subscribed = false keeps Allied out of the §5.2 broadcast pool, and the
+-- role is plain 'sw' (no scope) exactly as the seed has it.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO auth.users (
+  instance_id, id, aud, role, email, encrypted_password,
+  email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data,
+  confirmation_token, recovery_token, email_change_token_new, email_change
+) VALUES (
+  '00000000-0000-0000-0000-000000000000',
+  'a111ed00-0000-4000-8000-000000000001',
+  'authenticated', 'authenticated', 'allied@upenn.edu',
+  '$2a$06$HXsanNVBXzmCsd/LjEoupumyJA5VLVQD7xKsg.G7UMWIpM1Qw0HrC',
+  now(), now(), now(),
+  '{"provider": "email", "providers": ["email"]}'::jsonb,
+  '{"name": "Allied"}'::jsonb,
+  '', '', '', ''
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO auth.identities (
+  provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at
+) VALUES (
+  'a111ed00-0000-4000-8000-000000000001',
+  'a111ed00-0000-4000-8000-000000000001',
+  '{"sub" : "a111ed00-0000-4000-8000-000000000001", "email" : "allied@upenn.edu"}'::jsonb,
+  'email', now(), now(), now()
+)
+ON CONFLICT (provider, provider_id) DO NOTHING;
+
+INSERT INTO users (user_id, name, email, home_house_id, is_active, broadcast_subscribed)
+VALUES (
+  'a111ed00-0000-4000-8000-000000000001',
+  'Allied', 'allied@upenn.edu', 'allied-house', true, false
+)
+ON CONFLICT (user_id) DO NOTHING;
+
+INSERT INTO user_roles (user_id, role, scope_house_id)
+VALUES ('a111ed00-0000-4000-8000-000000000001', 'sw'::user_role_enum, NULL)
+ON CONFLICT DO NOTHING;
+
+-- Season-scoped membership (20260719000001). Backdated to the same 2000-01-01
+-- sentinel the seed uses, so `membership_house_for_date` resolves for any date, and
+-- `applied_at` set so it reads as already synced to home_house_id.
+--
+-- Guarded with NOT EXISTS rather than ON CONFLICT: the table's PK is a generated
+-- uuid, so there is no arbiter to conflict on, and a second row would trip the
+-- `check_membership_no_overlap` trigger with a hard error instead of being skipped.
+INSERT INTO user_house_memberships (user_id, house_id, effective_from, effective_to, applied_at)
+SELECT 'a111ed00-0000-4000-8000-000000000001', 'allied-house', DATE '2000-01-01', NULL, now()
+WHERE NOT EXISTS (
+  SELECT 1 FROM user_house_memberships
+  WHERE user_id = 'a111ed00-0000-4000-8000-000000000001'
+);
+
+-- ---------------------------------------------------------------------------
 -- 1. The predicate. True for an account whose home house is a non-staffable
 --    pseudo-house -- i.e. the Allied contractor (20260725000001).
 -- ---------------------------------------------------------------------------

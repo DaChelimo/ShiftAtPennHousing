@@ -104,6 +104,14 @@ critical things is the failure mode to avoid.
 1. **Harnwell training constraint**: no worker whose home_house != Harnwell may staff the
    Harnwell desk under any mechanism (scheduled, claimed, floated, picked up, force-triggered).
    Enforce in code at every assignment write point — not only in config tables.
+   **AMENDED 2026-08-05 (migration `20260805000002`, BSpec §26.1 / ARCH §25.3):** the Allied
+   contractor is the ONE exemption. It is keyed on `houses.is_staffable = false`
+   (`user_is_allied_contractor`), never on a uuid or house id, so it covers exactly the
+   pseudo-house population and cannot be widened by adding a normal house. Allied could
+   already stand at the Harnwell desk via the escalation ladder's `status = 'allied'`,
+   `user_id IS NULL` seat, which the trigger never inspected; the amendment changes only
+   whether that coverage is recorded with Allied NAMED on the seat. Every other
+   non-Harnwell-home worker stays hard-blocked. Do not generalise this exemption.
 
 2. **Float direction rules (config-driven with hard guards; amended 2026-07-02)**: which
    houses may source floats and to which destinations is the period's `float_routing`.
@@ -684,7 +692,6 @@ user, dest, effective_date, note)` is the entry point: either the SOURCE or DEST
   non-prod build" surface for every other role. Mobile's `SimClock` needed no change — it
   already re-syncs at launch and on foreground return and simply reflects whatever offset the
   DB holds, which can now only ever be non-zero because the admin set it.
-
 - [Orchestrator was never running in prod] **Found 2026-08-05, fixed 2026-08-06: the hosted
   Shift project had never once executed `orchestrator-tick` via cron.** Two stacked, unrelated
   causes — see ARCH "Deploy-time secrets" for the full incident writeup:

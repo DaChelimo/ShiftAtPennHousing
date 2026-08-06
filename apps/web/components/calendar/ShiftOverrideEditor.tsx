@@ -9,13 +9,12 @@ import {
   type OverrideScope,
 } from '../../lib/actions/override';
 import type { AssignableWorker, CalShift } from '../../lib/data/calendar';
-import { Avatar, Button, Icon, Notification } from '../ui';
+import { Button, Icon, Notification } from '../ui';
 
 import { RangeSlider } from './RangeSlider';
+import { WorkerPicker } from './WorkerPicker';
 import type { WriteStatusEvent } from './WriteStatusToasts';
 import { fmtH, shiftOriginMinutes, spanLabel } from './format';
-
-type CapTone = 'muted' | 'warn' | 'danger';
 
 // Harnwell pilot workstream G. Harnwell excluded (never a float destination, hard
 // invariant); the other 12 houses are the fixed, load-bearing id set from AGENTS.md.
@@ -33,28 +32,6 @@ const FLOAT_DESTINATION_HOUSES: { id: string; name: string }[] = [
   { id: 'radian', name: 'Radian' },
   { id: 'rodin', name: 'Rodin' },
 ];
-
-// Per-candidate cap context for the swap/assign cards: their current weekly load
-// and headroom against the week's soft cap, flagged when adding the selected range
-// would push them over (danger when the week's cap is a hard break cap).
-function capHint(
-  weeklyHours: number,
-  addHours: number,
-  cap: number,
-  enforcement: 'soft' | 'hard',
-): { text: string; tone: CapTone } {
-  if (weeklyHours + addHours > cap) {
-    return {
-      text: `${fmtH(weeklyHours)}h this week · +${fmtH(addHours)}h over ${cap}h cap`,
-      tone: enforcement === 'hard' ? 'danger' : 'warn',
-    };
-  }
-  const headroom = cap - weeklyHours;
-  return {
-    text: `${fmtH(weeklyHours)}h this week · ${fmtH(headroom)}h to cap`,
-    tone: headroom <= 2 ? 'warn' : 'muted',
-  };
-}
 
 // Unified inline edit for the shift detail panel's edit section. Occupied seats lead
 // with an action choice (Swap / Remove, no label), nothing below it renders until
@@ -125,28 +102,10 @@ export function EditSection({
   // "05:30-08:00" while this label claimed "08:00-10:30" for the very same blocks.
   const rangeLabel = spanLabel(fromBlock, toBlock, origin);
 
-  // Assigning shows worker cards; swapping shows them minus the incumbent.
+  // Assigning shows the worker picker; swapping shows it minus the incumbent.
+  // WorkerPicker owns the pinned RSM/Allied chip, the name filter, and the roster.
   const assigning = !occupied || action === 'replace';
   const eligible = assignableWorkers.filter((w) => w.userId !== shift.userId);
-
-  // Two identities are PINNED above the roster in a split chip (2026-08-05): the
-  // house's RSM and the Allied contractor. Both are standing, always-relevant
-  // answers to "who covers this desk" that were previously buried in an
-  // alphabetical list of ~40 students, and Allied in particular is the one a
-  // manager reaches for when they have already secured cover by phone and just
-  // needs to record it (force-triggering would fire an alert they are already
-  // holding). They are removed from the list below, so each appears exactly once.
-  const pinnedRsm = eligible.find((w) => w.isRsm) ?? null;
-  const pinnedAllied = eligible.find((w) => w.isAllied) ?? null;
-  const roster = eligible.filter((w) => !w.isRsm && !w.isAllied);
-
-  // Free-text filter over the roster only. The pinned chip stays put regardless of
-  // the query: it is a fixed two-target shortcut, not a search result, and having
-  // it disappear mid-type would be the opposite of what pinning is for.
-  const [query, setQuery] = useState('');
-  const q = query.trim().toLowerCase();
-  const candidates = q === '' ? roster : roster.filter((w) => w.name.toLowerCase().includes(q));
-
   const selectedName = eligible.find((w) => w.userId === workerId)?.name ?? null;
 
   function setRange(from: number, to: number) {
@@ -430,105 +389,21 @@ export function EditSection({
         </div>
       )}
 
-      {/* Pinned split chip (RSM | Allied) + search, then the scrolling roster. */}
-      {assigning && (pinnedRsm !== null || pinnedAllied !== null) && (
-        <div className="wpin" role="group" aria-label="Standing cover options">
-          {pinnedRsm && (
-            <PinnedHalf
-              testId="override-pinned-rsm"
-              worker={pinnedRsm}
-              role="RSM"
-              sub="Manages this house · no hours cap"
-              selected={workerId === pinnedRsm.userId}
-              onSelect={() => {
-                setWorkerId(pinnedRsm.userId);
-                setError(null);
-              }}
-            />
-          )}
-          {pinnedAllied && (
-            <PinnedHalf
-              testId="override-pinned-allied"
-              worker={pinnedAllied}
-              role="Allied"
-              sub="External cover · any house"
-              selected={workerId === pinnedAllied.userId}
-              onSelect={() => {
-                setWorkerId(pinnedAllied.userId);
-                setError(null);
-              }}
-            />
-          )}
-        </div>
+      {/* Pinned split chip (RSM | Allied), search, then the scrolling roster —
+          the one scrolling region inside the viewport. See WorkerPicker.tsx. */}
+      {assigning && (
+        <WorkerPicker
+          workers={eligible}
+          selectedId={workerId}
+          rangeHours={rangeHours}
+          softCapHours={softCapHours}
+          capEnforcement={capEnforcement}
+          onSelect={(id) => {
+            setWorkerId(id);
+            setError(null);
+          }}
+        />
       )}
-
-      {assigning && roster.length > 0 && (
-        <div className="wsearch">
-          <Icon name="search" size={14} className="muted" />
-          <input
-            type="search"
-            className="wsearch-input"
-            data-testid="override-worker-search"
-            placeholder="Search by name"
-            aria-label="Search workers by name"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          {q !== '' && (
-            <button
-              type="button"
-              className="wsearch-clear"
-              aria-label="Clear search"
-              data-testid="override-worker-search-clear"
-              onClick={() => setQuery('')}
-            >
-              <Icon name="close" size={12} />
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* worker cards — the one scrolling region inside the viewport */}
-      {assigning &&
-        (candidates.length === 0 ? (
-          <div className="edit-empty t-helper" data-testid="override-worker-empty">
-            {roster.length === 0
-              ? 'No other workers are available for this house.'
-              : `No worker matches "${query.trim()}".`}
-          </div>
-        ) : (
-          <div className="wpick-list" data-testid="override-worker-list" role="listbox">
-            {candidates.map((w) => {
-              const hint = capHint(w.weeklyHours, rangeHours, softCapHours, capEnforcement);
-              const sel = workerId === w.userId;
-              return (
-                <button
-                  type="button"
-                  key={w.userId}
-                  role="option"
-                  aria-selected={sel}
-                  data-testid="override-worker-card"
-                  data-worker-id={w.userId}
-                  className={`wpick ${sel ? 'is-sel' : ''}`.trim()}
-                  onClick={() => {
-                    setWorkerId(w.userId);
-                    setError(null);
-                  }}
-                >
-                  <Avatar name={w.name} size={30} />
-                  <span className="wpick-main">
-                    <b className="wpick-name">{w.name}</b>
-                    <span className={`wpick-hint tone-${hint.tone}`}>
-                      {hint.tone !== 'muted' && <Icon name="warn" size={12} />}
-                      {hint.text}
-                    </span>
-                  </span>
-                  {sel && <Icon name="checkCircle" size={18} className="wpick-check" />}
-                </button>
-              );
-            })}
-          </div>
-        ))}
 
       {/* fixed footer — scope + apply. Shows together with the slider, once an
           action is chosen (or immediately for an open seat). */}

@@ -21,7 +21,7 @@ struct PressScaleStyle: ButtonStyle {
 
 // MARK: - Buttons
 
-enum ShiftButtonVariant { case filled, tonal, outlined, text, destructive, destructiveFilled }
+enum ShiftButtonVariant { case filled, tonal, outlined, text, destructive, destructiveFilled, success }
 enum ShiftButtonSize { case sm, md, lg }
 
 struct ShiftButton: View {
@@ -80,6 +80,7 @@ struct ShiftButton: View {
         case .outlined: return c.ink
         case .text: return c.blue
         case .destructive: return c.danger.accent
+        case .success: return c.success.accent
         }
     }
     @ViewBuilder private var bg: some View {
@@ -88,6 +89,7 @@ struct ShiftButton: View {
         case .tonal: c.blueContainer
         case .destructive: c.danger.tint
         case .destructiveFilled: c.danger.accent
+        case .success: c.success.tint
         case .outlined, .text: Color.clear
         }
     }

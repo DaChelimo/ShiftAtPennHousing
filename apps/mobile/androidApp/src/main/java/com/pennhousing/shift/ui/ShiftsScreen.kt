@@ -33,13 +33,13 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
 import com.pennhousing.shift.shared.breakclaim.BreakPhase
 import com.pennhousing.shift.shared.data.PermanentPickupScope
-import com.pennhousing.shift.shared.notifications.ToastNotification
 import com.pennhousing.shift.shared.house.HouseSeat
 import com.pennhousing.shift.shared.model.MyShift
 import com.pennhousing.shift.shared.model.OpenShift
 import com.pennhousing.shift.shared.model.PendingFloat
 import com.pennhousing.shift.shared.model.RecentFloat
 import com.pennhousing.shift.shared.network.TOAST_DURATION_MS
+import com.pennhousing.shift.shared.notifications.ToastNotification
 import com.pennhousing.shift.shared.onboarding.BreakTour
 import com.pennhousing.shift.shared.onboarding.HouseGridTour
 import com.pennhousing.shift.shared.onboarding.NotificationPriming
@@ -190,7 +190,6 @@ internal fun ShiftsApp(
     val onAcknowledgeCoverage = actions.onAcknowledgeCoverage
     val onCloseCoverage = actions.onCloseCoverage
     val onCallPhone = actions.onCallPhone
-    val onForceTriggerCoverage = actions.onForceTriggerCoverage
     // The coverage writes are suspend (they must report success so a failure can revert), and
     // they are fired from tap handlers rather than from composition.
     val coverageAckScope = rememberCoroutineScope()
@@ -529,33 +528,6 @@ internal fun ShiftsApp(
                             onSignOut,
                             onToggleBroadcast,
                             onToggleNotification = onToggleNotification,
-                            onReplayShiftTour = {
-                                nav.navigate(ShiftDestination.MyShifts)
-                                shiftTourVm.replay()
-                            },
-                            onReplayPreferencesTour = {
-                                nav.navigate(ShiftDestination.Preferences)
-                                preferencesTourVm.replay()
-                            },
-                            onReplayBreakTour = {
-                                nav.navigate(ShiftDestination.BreakShifts)
-                                breakTourVm.replay()
-                            },
-                            // The swap composer lives in a sheet, not a tab — priming it
-                            // here means it fires the next time the worker reaches the
-                            // swap page (see ManageShiftSheet's page == Swap gating).
-                            onReplaySwapTour = {
-                                nav.navigate(ShiftDestination.MyShifts)
-                                swapTourVm.replay()
-                            },
-                            onReplayHouseGridTour = {
-                                nav.navigate(ShiftDestination.House)
-                                houseGridTourVm.replay()
-                            },
-                            onReplayOpenClaimTour = {
-                                nav.navigate(ShiftDestination.OpenShifts)
-                                openClaimTourVm.replay()
-                            },
                         )
                     }
                 }
@@ -593,7 +565,6 @@ internal fun ShiftsApp(
                             },
                             onDismissSheet = coverageVm::dismissSheet,
                             onCallAllied = onCallPhone,
-                            onForceTrigger = onForceTriggerCoverage,
                             onClearAlreadyHandled = coverageVm::clearAlreadyHandled,
                         )
                     } else {

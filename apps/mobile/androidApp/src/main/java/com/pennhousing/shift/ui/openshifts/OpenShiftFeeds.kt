@@ -34,11 +34,11 @@ import com.pennhousing.shift.ui.common.toKitState
 import com.pennhousing.shift.ui.house.durationLabel
 import com.pennhousing.shift.ui.kit.ButtonSize
 import com.pennhousing.shift.ui.kit.ButtonVariant
+import com.pennhousing.shift.ui.kit.InFlightPill
 import com.pennhousing.shift.ui.kit.SectionHeader
 import com.pennhousing.shift.ui.kit.ShiftButton
 import com.pennhousing.shift.ui.kit.ShiftCard
 import com.pennhousing.shift.ui.kit.ShiftIcons
-import com.pennhousing.shift.ui.kit.InFlightPill
 import com.pennhousing.shift.ui.theme.ShiftTheme
 
 /**

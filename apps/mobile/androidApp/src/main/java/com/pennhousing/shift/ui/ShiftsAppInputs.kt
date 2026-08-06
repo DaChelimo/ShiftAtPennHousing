@@ -163,6 +163,4 @@ internal data class ShiftsActions(
     val onCloseCoverage: suspend (String, String, String?) -> Boolean = { _, _, _ -> false },
     /** Dial the desk / Allied. The host opens a `tel:` intent; null number → no-op. */
     val onCallPhone: (String?) -> Unit = {},
-    /** One more attempt at an internal float before committing to Allied, from the Respond sheet. */
-    val onForceTriggerCoverage: (String) -> Unit = {},
 )

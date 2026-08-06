@@ -905,7 +905,6 @@ private fun LiveShiftsRoot(
                                 coverageRepo.close(requestId, parsed, note) != CoverageWriteResult.Failed
                         },
                         onCallPhone = { number -> if (number != null) dialPhoneNumber(coverageContext, number) },
-                        onForceTriggerCoverage = { /* wired with the grid override pass */ },
                         onSubmitPreferences = {
                             // POST the current edits, then flip to the optimistic submitted state
                             // (mirrors the Shifts screen's claim/drop). On failure surface the toast;

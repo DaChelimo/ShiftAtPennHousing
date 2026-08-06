@@ -170,7 +170,13 @@ private fun WorkerRow(
 
         // The cap meter. Reads as "how much room is left", which is the manager's question.
         row.capFraction?.let { fraction ->
-            Box(Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(999.dp)).background(c.surfaceVar)) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(5.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(c.surfaceVar),
+            ) {
                 Box(
                     Modifier
                         .fillMaxWidth(fraction.toFloat())

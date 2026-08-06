@@ -1,9 +1,9 @@
 package com.pennhousing.shift.ui
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.scrollBy
@@ -41,12 +41,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
-import kotlinx.coroutines.isActive
-import kotlinx.datetime.LocalDate
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.atStartOfDayIn
-import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Instant
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -70,6 +64,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.pennhousing.shift.shared.preferences.PREF_BRUSH_ORDER
+import com.pennhousing.shift.shared.preferences.PrefBannerTone
 import com.pennhousing.shift.shared.preferences.PrefBlockCell
 import com.pennhousing.shift.shared.preferences.PrefBlockRun
 import com.pennhousing.shift.shared.preferences.PrefBrush
@@ -77,9 +73,7 @@ import com.pennhousing.shift.shared.preferences.PrefDayView
 import com.pennhousing.shift.shared.preferences.PrefHourMark
 import com.pennhousing.shift.shared.preferences.PrefWeekCell
 import com.pennhousing.shift.shared.preferences.PrefWeekStrip
-import com.pennhousing.shift.shared.preferences.PREF_BRUSH_ORDER
 import com.pennhousing.shift.shared.preferences.PreferenceBanner
-import com.pennhousing.shift.shared.preferences.PrefBannerTone
 import com.pennhousing.shift.shared.preferences.TargetMeter
 import com.pennhousing.shift.shared.viewmodel.PreferencesViewModel
 import com.pennhousing.shift.ui.kit.BannerTone
@@ -91,6 +85,12 @@ import com.pennhousing.shift.ui.kit.ShiftBottomSheet
 import com.pennhousing.shift.ui.kit.ShiftButton
 import com.pennhousing.shift.ui.kit.ShiftIcons
 import com.pennhousing.shift.ui.theme.ShiftTheme
+import kotlinx.coroutines.isActive
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Instant
 
 /**
  * Preference submission (the tri-state paint timeline + target weekly hours) — Compose UI
@@ -143,8 +143,7 @@ fun PreferencesTabContent(
                     val bounds = it.boundsInRoot()
                     viewportTop = bounds.top
                     viewportBottom = bounds.bottom
-                }
-                .verticalScroll(gridScroll)
+                }.verticalScroll(gridScroll)
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -279,8 +278,7 @@ private fun DeadlineSetterCard(
                 initialSelectedDateMillis = maxMillis,
                 selectableDates =
                     object : SelectableDates {
-                        override fun isSelectableDate(utcTimeMillis: Long): Boolean =
-                            maxMillis == null || utcTimeMillis <= maxMillis
+                        override fun isSelectableDate(utcTimeMillis: Long): Boolean = maxMillis == null || utcTimeMillis <= maxMillis
                     },
             )
         DatePickerDialog(
@@ -473,7 +471,13 @@ private fun TargetCard(
                 StepButton(ShiftIcons.Plus, enabled = enabled && !optedOut, tag = "pref_target_increment", onClick = onIncrement)
             }
         }
-        Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(50)).background(c.surfaceVar)) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(RoundedCornerShape(50))
+                .background(c.surfaceVar),
+        ) {
             Box(
                 Modifier
                     .fillMaxWidth(meter.fraction.toFloat())
@@ -603,6 +607,7 @@ private fun PaintHelpCard() {
 // emulator suggested; the emulator's finer pointer made 26.dp feel fine but it is too tight
 // to reliably land single 30-min blocks by touch.
 private val PREF_BLOCK_HEIGHT = 39.dp
+
 // The time gutter doubles as the page scroll handle: the shift grid is a pure paint canvas that
 // consumes its drags (so it never scrolls), so the page is scrolled by dragging the gutter (or any
 // other non-grid area) instead.
@@ -653,6 +658,7 @@ private fun PrefTimeline(
     val blockPx = with(density) { PREF_BLOCK_HEIGHT.toPx() }
     val autoScrollZonePx = with(density) { PREF_AUTO_SCROLL_ZONE.toPx() }
     val autoScrollMaxPx = with(density) { PREF_AUTO_SCROLL_MAX_STEP.toPx() }
+
     fun idxAt(y: Float): Int = (y / blockPx).toInt().coerceIn(0, cells.size - 1)
 
     val c = ShiftTheme.colors
@@ -838,8 +844,7 @@ private fun PrefSegment(cell: PrefBlockCell) {
                     1.dp.toPx(),
                 )
                 drawLine(divider, Offset(0f, 0f), Offset(0f, size.height), 1.dp.toPx())
-            }
-            .testTag("pref_block_cell"),
+            }.testTag("pref_block_cell"),
     )
 }
 

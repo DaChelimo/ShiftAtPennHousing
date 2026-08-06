@@ -158,7 +158,7 @@ private struct UpcomingEntryView: View {
 
     @ViewBuilder private var medium: some View {
         let hasFloat = !floats.isEmpty
-        // A float costs vertical room, so the list shows fewer rows alongside it.
+        // A float costs vertical room, so the list shows fewer cards alongside it.
         let rows = Array(shifts.prefix(hasFloat ? 2 : 3))
         if !hasFloat && rows.isEmpty {
             WidgetEmptyState(systemImage: "calendar",
@@ -167,8 +167,8 @@ private struct UpcomingEntryView: View {
                 .padding(WidgetSpace.pad)
                 .widgetURL(WidgetDeepLink.myShifts)
         } else {
-            shiftSection(rows: rows, hasFloat: hasFloat,
-                         trailing: nil, rowVPad: WidgetSpace.rowV,
+            shiftSection(rows: rows, hasFloat: hasFloat, trailing: nil,
+                         cardGap: WidgetSpace.cardGap, cardVPad: WidgetSpace.cardPadV,
                          pad: WidgetSpace.pad)
         }
     }
@@ -177,7 +177,9 @@ private struct UpcomingEntryView: View {
 
     @ViewBuilder private var large: some View {
         let hasFloat = !floats.isEmpty
-        let rows = Array(shifts.prefix(hasFloat ? 5 : 6))
+        // Capped at 4 (3 alongside a float) so every card keeps generous padding instead
+        // of the tile turning into a dense scroll of six thin rows.
+        let rows = Array(shifts.prefix(hasFloat ? 3 : 4))
         if !hasFloat && rows.isEmpty {
             WidgetEmptyState(systemImage: "calendar",
                              title: "No upcoming shifts",
@@ -185,17 +187,18 @@ private struct UpcomingEntryView: View {
                 .padding(WidgetSpace.padLarge)
                 .widgetURL(WidgetDeepLink.myShifts)
         } else {
-            shiftSection(rows: rows, hasFloat: hasFloat,
-                         trailing: "This week", rowVPad: WidgetSpace.rowVLarge,
+            shiftSection(rows: rows, hasFloat: hasFloat, trailing: "This week",
+                         cardGap: WidgetSpace.cardGapLarge, cardVPad: WidgetSpace.cardPadVLarge,
                          pad: WidgetSpace.padLarge)
         }
     }
 
     /// The shared shift section: optional float banner pinned on top, then the
-    /// "Upcoming shifts" header, then the rows (or a quiet empty line). The banner is a
-    /// compact strip ABOVE the labeled shift list, never the whole tile.
-    private func shiftSection(rows: [WidgetShift], hasFloat: Bool,
-                              trailing: String?, rowVPad: CGFloat, pad: CGFloat) -> some View {
+    /// "Upcoming shifts" header, then one card per shift (or a quiet empty line). The
+    /// banner is a compact strip ABOVE the card stack, never the whole tile. Cards
+    /// alternate fill instead of separating on hairline dividers.
+    private func shiftSection(rows: [WidgetShift], hasFloat: Bool, trailing: String?,
+                              cardGap: CGFloat, cardVPad: CGFloat, pad: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             if hasFloat {
                 floatBanner()
@@ -209,8 +212,15 @@ private struct UpcomingEntryView: View {
                     .foregroundColor(WidgetStyle.hint)
                     .padding(.top, 2)
             } else {
-                ForEach(Array(rows.enumerated()), id: \.element.id) { idx, s in
-                    row(s, showDivider: idx > 0, vpad: rowVPad)
+                VStack(alignment: .leading, spacing: cardGap) {
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { idx, s in
+                        ShiftCard(day: WidgetFormat.dayLabel(s.start, now: now),
+                                  isToday: WidgetFormat.isToday(s.start, now: now),
+                                  time: WidgetFormat.timeRange(s.start, s.end),
+                                  house: s.house,
+                                  fill: idx.isMultiple(of: 2) ? WidgetStyle.cardFillA : WidgetStyle.cardFillB,
+                                  vpad: cardVPad)
+                    }
                 }
             }
             Spacer(minLength: 0)
@@ -218,19 +228,6 @@ private struct UpcomingEntryView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(pad)
         .widgetURL(WidgetDeepLink.myShifts)
-    }
-
-    // MARK: Pieces
-
-    private func row(_ s: WidgetShift, showDivider: Bool, vpad: CGFloat) -> some View {
-        ShiftRow(day: WidgetFormat.dayLabel(s.start, now: now),
-                 isToday: WidgetFormat.isToday(s.start, now: now),
-                 time: WidgetFormat.timeRange(s.start, s.end),
-                 place: "\(s.house) Desk")
-            .padding(.vertical, vpad)
-            .overlay(alignment: .top) {
-                if showDivider { Rectangle().fill(WidgetStyle.divider).frame(height: 1) }
-            }
     }
 
     @ViewBuilder private func floatBanner() -> some View {

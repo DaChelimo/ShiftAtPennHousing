@@ -95,8 +95,16 @@ sealed interface ShiftDestination : NavKey {
         /** Every destination, each of which owns its own back stack. */
         val ALL: Set<ShiftDestination> =
             setOf(
-                MyShifts, OpenShifts, House, Swaps, Updates, Preferences, BreakShifts, Settings,
-                Coverage, Hours,
+                MyShifts,
+                OpenShifts,
+                House,
+                Swaps,
+                Updates,
+                Preferences,
+                BreakShifts,
+                Settings,
+                Coverage,
+                Hours,
             )
 
         /**
@@ -120,7 +128,6 @@ sealed interface ShiftDestination : NavKey {
          * Which destinations light the "More" item, given the bar this user has. Anything in
          * the bar is excluded, so no destination ever lights two items.
          */
-        fun moreSelects(bar: List<ShiftDestination>): Set<ShiftDestination> =
-            (MORE_SELECTS + Hours) - bar.toSet()
+        fun moreSelects(bar: List<ShiftDestination>): Set<ShiftDestination> = (MORE_SELECTS + Hours) - bar.toSet()
     }
 }

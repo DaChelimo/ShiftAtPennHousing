@@ -35,3 +35,12 @@ actual fun openMailto(url: String) {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     runCatching { ctx.startActivity(intent) }
 }
+
+/** Android: open an `https:` URL with `Intent.ACTION_VIEW` (the Settings legal links). */
+actual fun openUrl(url: String) {
+    val ctx = AndroidPlatform.appContext ?: return
+    val intent =
+        Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { ctx.startActivity(intent) }
+}

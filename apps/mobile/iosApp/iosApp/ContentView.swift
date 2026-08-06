@@ -617,6 +617,12 @@ struct ShiftsRootView: View {
         if let uid = liveUserId, let resolution = ManagerRoleCacheKt.resolveRoleShape(cached: cached, userId: uid) as? RoleShapeResolutionUseCached {
             _capabilities = State(initialValue: resolution.capabilities)
             _roleShapeSettled = State(initialValue: true)
+            // A manager with the Coverage tab (hm/bm/rsm) starts there, not on My Shifts —
+            // Coverage is the surface where a delay means a desk goes empty. Mirrors Android's
+            // `ShiftDestination.startFor(hasCoverage)`.
+            if resolution.capabilities.hasCoverage {
+                _tab = State(initialValue: .coverage)
+            }
         }
         guard liveUserId != nil else { return } // demo build keeps the DemoFactory seeds
         _model = StateObject(wrappedValue: ShiftsObservable(vm: LiveDefaults.shared.shiftsViewModel(), weeklyHours: 0))
@@ -638,7 +644,10 @@ struct ShiftsRootView: View {
     // clock; the teardown belongs here, where the observables live.
     @Environment(\.scenePhase) private var scenePhase
 
-    @StateObject private var model =
+    // `internal`, not `private`: OpenShiftsHomeView.swift is an extension on this type and
+    // Swift extensions in another file cannot reach private storage (same reason the
+    // House-grid split relaxed its state).
+    @StateObject var model =
         ShiftsObservable(vm: DemoFactory.shared.shiftsViewModel(), weeklyHours: DemoFactory.shared.demoWeeklyHours)
     // `internal`, not `private`: SwapBannerView.swift is an extension on this type and
     // Swift extensions in another file cannot reach private storage (same reason the
@@ -718,7 +727,8 @@ struct ShiftsRootView: View {
     // deferred here until the guard dialog resolves it.
     @State private var pendingTab: Tab?
     @State private var dropTarget: MyShift?
-    @State private var claimTarget: OpenShift?
+    // `internal`, not `private`: OpenShiftsHomeView.swift sets this from its extension.
+    @State var claimTarget: OpenShift?
     @State private var showAck = false
     // §7.1 — the float the worker tapped in the carousel to see in the full ack hero.
     // Identified so `.sheet(item:)` presents it; nil = no detail open.
@@ -999,33 +1009,6 @@ struct ShiftsRootView: View {
                             liveWriteBool(.preferences, revert: false, reconcile: false) {
                                 ((try? await repo.setNotificationPreferences(prefs: prefs)) ?? false) as! Bool
                             }
-                        },
-                        onReplayShiftTour: {
-                            requestTab(.mine)
-                            shiftTourModel.replay()
-                        },
-                        onReplayPreferencesTour: {
-                            requestTab(.preferences)
-                            preferencesTourModel.replay()
-                        },
-                        onReplayBreakTour: {
-                            requestTab(.breakShifts)
-                            breakTourModel.replay()
-                        },
-                        onReplaySwapTour: {
-                            // The swap composer lives in a sheet, not a tab — priming it
-                            // here means it fires the next time the worker reaches the
-                            // swap page (see ManageShiftSheet's page==.swap gating).
-                            requestTab(.mine)
-                            swapTourModel.replay()
-                        },
-                        onReplayHouseGridTour: {
-                            requestTab(.house)
-                            houseGridTourModel.replay()
-                        },
-                        onReplayOpenClaimTour: {
-                            requestTab(.openShifts)
-                            openClaimTourModel.replay()
                         }
                     )
     }
@@ -1071,7 +1054,6 @@ struct ShiftsRootView: View {
                     CoverageView(
                         model: coverageModel,
                         onCallAllied: { phone in if let phone { PhoneDialer.dial(phone) } },
-                        onForceTrigger: { _ in }, // wired with the grid override pass
                         repo: WorkerBackend.shared.coverageRepository
                     )
                 } else if tab == .hours {
@@ -1544,12 +1526,20 @@ struct ShiftsRootView: View {
             // or slow read falls back to whatever the launch cache already resolved
             // (`capabilities`'s current value), never to a plain worker: a manager must not
             // lose their Coverage tab because the network hiccupped.
+            // `wasFirstSettle` gates the Coverage start-tab jump (below) to launches with no
+            // usable cache: once the app has already settled once, the worker may be sitting
+            // on a tab they picked, and a later capability read (e.g. a role change) must not
+            // yank them onto Coverage out from under a tap in progress.
+            let wasFirstSettle = !roleShapeSettled
             if let snapshot = profileSnapshot {
                 capabilities = snapshot.capabilities
                 let fresh = CachedRoleShape(userId: uid, homeHouseId: snapshot.homeHouseId, roles: snapshot.roles)
                 if ManagerRoleCacheKt.shouldRewriteRoleShape(cached: cachedRoleShapeAtLaunch, fresh: fresh) {
                     ManagerModePrefs.write(fresh)
                 }
+            }
+            if wasFirstSettle && capabilities.hasCoverage {
+                tab = .coverage
             }
             // "Settled" includes a FAILED read (`profileSnapshot == nil`) — a manager on a
             // dead connection must not stare at the splash forever.
@@ -1900,80 +1890,8 @@ struct ShiftsRootView: View {
     }
 
     // MARK: Tab 2 — Open in My House
-
-    private var homeOpen: some View {
-        let c = ShiftColors.resolve(scheme)
-        // Split the shown-week feed: upcoming in the live section, already-started ones in
-        // the collapsed-by-default "Earlier this week" card.
-        let weeklySplit = model.vm.pastUpcoming(openShifts: model.state.homeOpen.weekly)
-        return VStack(alignment: .leading, spacing: 22) {
-            ShiftSection(
-                title: "Weekly open shifts",
-                isEmpty: weeklySplit.upcoming.isEmpty,
-                count: weeklySplit.upcoming.count,
-                emptyText: "No open shifts in your house this week.",
-                prominent: true,
-                icon: ShiftIcons.calendar,
-                accent: c.pickupDot
-            ) {
-                VStack(spacing: 10) {
-                    ForEach(weeklySplit.upcoming, id: \.feedKey) { openFeedCard($0) }
-                }
-            }
-            .accessibilityIdentifier("home_weekly_feed")
-
-            if !weeklySplit.past.isEmpty {
-                pastOpenShiftsSection(weeklySplit.past, c)
-            }
-
-            ShiftSection(
-                title: "Permanent openings",
-                isEmpty: model.state.homeOpen.permanentOpenings.isEmpty,
-                count: model.state.homeOpen.permanentOpenings.count,
-                emptyText: "No permanent openings right now.",
-                prominent: true,
-                icon: ShiftIcons.refresh,
-                accent: ShiftColors.resolve(scheme).permanent.accent
-            ) {
-                VStack(spacing: 10) {
-                    ForEach(model.state.homeOpen.permanentOpenings, id: \.feedKey) { openFeedCard($0) }
-                }
-            }
-            .accessibilityIdentifier("home_permanent_feed")
-        }
-        .padding(16)
-    }
-
-    /// One open-shift feed card, driven by the shared `OpenShift.toRow(claimable:)`:
-    /// OPEN → Claim, PERMANENT → Pick up, UNPICKABLE → no action + "Locked" meta
-    /// (§5.4 keeps the gap visible past T-2h, withholding only the action). Shared by
-    /// the My-House and Other-Houses feeds; cross-house cards claim too (design).
-    private func openFeedCard(_ shift: OpenShift) -> some View {
-        let claimable = model.vm.claimable(shift: shift)
-        let row = shift.toRow(claimable: claimable, zone: ShiftsKt.NEW_YORK)
-        return ShiftCard(
-            state: openKitState(row.state),
-            houseInitial: row.houseInitial,
-            timeLabel: row.timeLabel,
-            eyebrow: row.dayLabel,
-            houseName: row.houseName,
-            durationLabel: row.durationLabel,
-            meta: row.meta,
-            countLabel: row.countLabel,
-            trailing: row.actionLabel.map { label in
-                AnyView(
-                    ShiftButton(
-                        title: label,
-                        action: { claimTarget = shift },
-                        variant: isPermanentOpen(row.state) ? .tonal : .filled,
-                        size: .sm
-                    )
-                    .accessibilityIdentifier("claim_button")
-                )
-            }
-        )
-        .accessibilityIdentifier("open_shift_card")
-    }
+    // homeOpen / openFeedCard / dayGroupCard split into OpenShiftsHomeView.swift
+    // (AGENTS.md §5.2 — this file is quarantined; extract on touch).
 
     // MARK: Tab 3 — Open in Other Houses
 
@@ -2010,7 +1928,8 @@ struct ShiftsRootView: View {
     /// that have ALREADY started (greyed). Kept claimable for the worker who just worked
     /// an open shift and wants it on the books, but tucked away so it doesn't clutter the
     /// live feed. Defaults CLOSED; the body renders at reduced opacity. Shared by both feeds.
-    private func pastOpenShiftsSection(_ past: [OpenShift], _ c: ShiftColors) -> some View {
+    /// `internal`, not `private`: OpenShiftsHomeView.swift calls this from its extension.
+    func pastOpenShiftsSection(_ past: [OpenShift], _ c: ShiftColors) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
                 pastOpenExpanded.toggle()
@@ -3244,8 +3163,9 @@ struct ShiftsRootView: View {
 }
 
 // MARK: - Open-shift state mapping (shared by the feeds + the claim sheet)
+// Not `private`: OpenShiftsHomeView.swift calls these from its extension on ShiftsRootView.
 
-private func openKitState(_ s: OpenShiftCardState) -> ShiftState {
+func openKitState(_ s: OpenShiftCardState) -> ShiftState {
     switch s {
     case .open: return .open
     case .unpickable: return .unpickable
@@ -3254,7 +3174,7 @@ private func openKitState(_ s: OpenShiftCardState) -> ShiftState {
     }
 }
 
-private func isPermanentOpen(_ s: OpenShiftCardState) -> Bool {
+func isPermanentOpen(_ s: OpenShiftCardState) -> Bool {
     switch s {
     case .permanent: return true
     default: return false

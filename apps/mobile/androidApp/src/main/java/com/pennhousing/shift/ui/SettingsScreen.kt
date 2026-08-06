@@ -1,5 +1,6 @@
 package com.pennhousing.shift.ui
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,25 +23,36 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.pennhousing.shift.shared.platform.openUrl
 import com.pennhousing.shift.shared.settings.NotificationChannel
 import com.pennhousing.shift.shared.settings.NotificationPreferences
 import com.pennhousing.shift.shared.settings.NotificationRowModel
+import com.pennhousing.shift.shared.settings.OPEN_SHIFTS_GROUP_SUB
+import com.pennhousing.shift.shared.settings.OPEN_SHIFTS_GROUP_TITLE
+import com.pennhousing.shift.shared.settings.PRIVACY_POLICY_URL
 import com.pennhousing.shift.shared.settings.SHIFT_REMINDER_LEAD_TIMES
 import com.pennhousing.shift.shared.settings.SettingsProfile
+import com.pennhousing.shift.shared.settings.TERMS_OF_SERVICE_URL
 import com.pennhousing.shift.shared.settings.THEME_CHOICES
+import com.pennhousing.shift.shared.settings.alwaysOnNotificationsLabel
 import com.pennhousing.shift.shared.settings.label
 import com.pennhousing.shift.shared.settings.shiftReminderLabel
 import com.pennhousing.shift.shared.viewmodel.SettingsViewModel
@@ -52,9 +64,16 @@ import com.pennhousing.shift.ui.theme.ThemePrefs
 
 /**
  * Settings / Profile — Compose UI over the shared [SettingsViewModel]. Rebuilds
- * worker-app.html `SettingsScreen`: the profile card, the Notifications group (only
- * "General updates" / broadcast is user-toggleable), the Appearance theme segmented
- * control, the read-only Hours & limits, and the Account group (Sign out → [onSignOut]).
+ * worker-app.html `SettingsScreen`, redesigned 2026-08-06 (BSpec §10.1):
+ *  - Notifications splits into what a worker can actually change (shift reminders, the
+ *    merged open-shifts card, general updates) and a collapsed "Always-on notifications"
+ *    disclosure for the five mandatory channels, so the mandatory rows stop competing
+ *    for attention with the ones a worker can act on.
+ *  - The Account group is Sign out only; PennKey & security, Help & policy, and the six
+ *    tour-replay rows are gone (each tour already has its own "?" entry point on its
+ *    own tab header, so nothing is lost by dropping the Settings duplicate).
+ *  - Privacy policy / Terms of service are plain text links to the guide site, above
+ *    the version string.
  * Selector ids match `apps/mobile/maestro/README.md`.
  */
 @Composable
@@ -67,21 +86,12 @@ fun SettingsTabContent(
     // Persist the two configurable open-shift channels (BSpec §10.1). Called with the
     // WHOLE preference set, because the RPC upserts both columns at once.
     onToggleNotification: (NotificationPreferences) -> Unit = {},
-    // Restart the interactive "Manage a shift" tour on demand (navigates to My Shifts first).
-    onReplayShiftTour: () -> Unit = {},
-    // Restart the four other interactive Tier-3 tours on demand, each navigating to its own
-    // tab first. The swap-composer tour has no tab of its own — its replay navigates to My
-    // Shifts and PRIMES the tour, which then actually fires the next time the worker reaches
-    // the swap page inside the manage-shift sheet (mirrors iOS's onReplaySwapTour comment).
-    onReplayPreferencesTour: () -> Unit = {},
-    onReplayBreakTour: () -> Unit = {},
-    onReplaySwapTour: () -> Unit = {},
-    onReplayHouseGridTour: () -> Unit = {},
-    onReplayOpenClaimTour: () -> Unit = {},
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val c = ShiftTheme.colors
     val context = LocalContext.current
+    val configurable = state.notifications.filter { it.interactive }
+    val alwaysOn = state.notifications.filter { !it.interactive }
 
     LazyColumn(
         Modifier.fillMaxSize().background(c.bg).testTag("settings_screen"),
@@ -92,10 +102,23 @@ fun SettingsTabContent(
 
         item {
             SettingsGroup("Notifications") {
-                state.notifications.forEachIndexed { i, row ->
+                configurable.forEachIndexed { i, row ->
+                    // The two open-shift channels render as ONE merged card (a header plus
+                    // two switch rows); only emit it once, on the first of the pair, and
+                    // skip the second so it does not also render as a peer row.
+                    if (row.channel == NotificationChannel.OPEN_SHIFTS_OTHER_HOUSES) return@forEachIndexed
+                    if (row.channel == NotificationChannel.OPEN_SHIFTS_HOME_HOUSE) {
+                        val otherHouses = configurable.first { it.channel == NotificationChannel.OPEN_SHIFTS_OTHER_HOUSES }
+                        OpenShiftsSettingRow(
+                            homeHouse = row,
+                            otherHouses = otherHouses,
+                            onToggle = { channel -> vm.toggleNotification(channel)?.let(onToggleNotification) },
+                        )
+                        return@forEachIndexed
+                    }
                     NotificationSettingRow(
                         row,
-                        last = i == state.notifications.lastIndex,
+                        last = i == configurable.lastIndex,
                         // The shift-reminder row carries its three lead-time checkboxes
                         // underneath. They ARE the control: the row's switch is a shortcut
                         // for "all off" / "back to the default".
@@ -109,11 +132,10 @@ fun SettingsTabContent(
                             vm.toggleShiftReminder(minutes)?.let(onToggleNotification)
                         },
                         onToggle = {
-                            // Three interactive rows now (BSpec §10.1): the two open-shift
-                            // channels, which persist through `set_notification_preferences`,
-                            // and GENERAL_UPDATES, which still goes through its own Edge
-                            // Function. Everything else is mandatory and its switch is
-                            // disabled, so this branch is never reached for those.
+                            // GENERAL_UPDATES still goes through its own Edge Function; the
+                            // rest through `set_notification_preferences`. Everything not
+                            // in `configurable` is mandatory and disabled, so this branch is
+                            // never reached for those.
                             when (row.channel) {
                                 NotificationChannel.GENERAL_UPDATES -> {
                                     vm.toggleBroadcast()
@@ -128,6 +150,7 @@ fun SettingsTabContent(
                         },
                     )
                 }
+                AlwaysOnNotificationsDisclosure(alwaysOn)
             }
         }
 
@@ -160,71 +183,6 @@ fun SettingsTabContent(
         item {
             SettingsGroup("Account") {
                 SettingsRow(
-                    icon = ShiftIcons.Person,
-                    tint = MaterialTheme.colorScheme.primary,
-                    title = "PennKey & security",
-                    onClick = {},
-                ) {
-                    Icon(ShiftIcons.ChevronRight, contentDescription = null, tint = c.outline, modifier = Modifier.size(17.dp))
-                }
-                SettingsRow(icon = ShiftIcons.Info, tint = c.ter, title = "Help & policy", onClick = {}) {
-                    Icon(ShiftIcons.ChevronRight, contentDescription = null, tint = c.outline, modifier = Modifier.size(17.dp))
-                }
-                SettingsRow(
-                    icon = ShiftIcons.QuestionMark,
-                    tint = MaterialTheme.colorScheme.primary,
-                    title = "Replay shift tour",
-                    onClick = onReplayShiftTour,
-                    modifier = Modifier.testTag("settings_replay_shift_tour"),
-                ) {
-                    Icon(ShiftIcons.ChevronRight, contentDescription = null, tint = c.outline, modifier = Modifier.size(17.dp))
-                }
-                SettingsRow(
-                    icon = ShiftIcons.QuestionMark,
-                    tint = MaterialTheme.colorScheme.primary,
-                    title = "Replay preferences tour",
-                    onClick = onReplayPreferencesTour,
-                    modifier = Modifier.testTag("settings_replay_preferences_tour"),
-                ) {
-                    Icon(ShiftIcons.ChevronRight, contentDescription = null, tint = c.outline, modifier = Modifier.size(17.dp))
-                }
-                SettingsRow(
-                    icon = ShiftIcons.QuestionMark,
-                    tint = MaterialTheme.colorScheme.primary,
-                    title = "Replay break tour",
-                    onClick = onReplayBreakTour,
-                    modifier = Modifier.testTag("settings_replay_break_tour"),
-                ) {
-                    Icon(ShiftIcons.ChevronRight, contentDescription = null, tint = c.outline, modifier = Modifier.size(17.dp))
-                }
-                SettingsRow(
-                    icon = ShiftIcons.QuestionMark,
-                    tint = MaterialTheme.colorScheme.primary,
-                    title = "Replay swap tour",
-                    onClick = onReplaySwapTour,
-                    modifier = Modifier.testTag("settings_replay_swap_tour"),
-                ) {
-                    Icon(ShiftIcons.ChevronRight, contentDescription = null, tint = c.outline, modifier = Modifier.size(17.dp))
-                }
-                SettingsRow(
-                    icon = ShiftIcons.QuestionMark,
-                    tint = MaterialTheme.colorScheme.primary,
-                    title = "Replay house grid tour",
-                    onClick = onReplayHouseGridTour,
-                    modifier = Modifier.testTag("settings_replay_housegrid_tour"),
-                ) {
-                    Icon(ShiftIcons.ChevronRight, contentDescription = null, tint = c.outline, modifier = Modifier.size(17.dp))
-                }
-                SettingsRow(
-                    icon = ShiftIcons.QuestionMark,
-                    tint = MaterialTheme.colorScheme.primary,
-                    title = "Replay open shifts tour",
-                    onClick = onReplayOpenClaimTour,
-                    modifier = Modifier.testTag("settings_replay_openclaim_tour"),
-                ) {
-                    Icon(ShiftIcons.ChevronRight, contentDescription = null, tint = c.outline, modifier = Modifier.size(17.dp))
-                }
-                SettingsRow(
                     icon = ShiftIcons.Logout,
                     tint = c.danger.accent,
                     title = "Sign out",
@@ -237,13 +195,40 @@ fun SettingsTabContent(
         }
 
         item {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 4.dp),
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    "Privacy policy",
+                    color = c.sec,
+                    fontSize = 12.sp,
+                    modifier =
+                        Modifier
+                            .clickable { openUrl(PRIVACY_POLICY_URL) }
+                            .testTag("settings_privacy_policy_link"),
+                )
+                Text("  ·  ", color = c.outline, fontSize = 12.sp)
+                Text(
+                    "Terms of service",
+                    color = c.sec,
+                    fontSize = 12.sp,
+                    modifier =
+                        Modifier
+                            .clickable { openUrl(TERMS_OF_SERVICE_URL) }
+                            .testTag("settings_terms_of_service_link"),
+                )
+            }
+        }
+
+        item {
             Text(
                 "SHIFT · v${state.appVersion}",
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 color = c.ter,
                 style = ShiftTheme.type.monoId.copy(fontSize = 11.5.sp),
                 fontWeight = FontWeight.Normal,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                textAlign = TextAlign.Center,
             )
         }
     }
@@ -272,7 +257,109 @@ private fun ProfileCard(profile: SettingsProfile) {
             Text(profile.name, color = c.ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
             Text(profile.subtitle, color = c.sec, fontSize = 13.sp, modifier = Modifier.padding(top = 1.dp))
         }
-        Icon(ShiftIcons.ChevronRight, contentDescription = null, tint = c.outline, modifier = Modifier.size(18.dp))
+        // No trailing chevron: this card has never opened anything on tap, and the arrow
+        // read as a dead end (2026-08-06). Tapping the row does nothing today.
+    }
+}
+
+/**
+ * The merged "Open shift notifications" card: one header (title + [OPEN_SHIFTS_GROUP_SUB])
+ * over two independent switch rows, "At my house" and "At other houses" — the same
+ * disclosure shape [SHIFT_REMINDERS] uses for its lead-time checkboxes, so a worker reads
+ * one concept ("a shift opened up") with two toggles rather than two unrelated peer rows.
+ */
+@Composable
+private fun OpenShiftsSettingRow(
+    homeHouse: NotificationRowModel,
+    otherHouses: NotificationRowModel,
+    onToggle: (NotificationChannel) -> Unit,
+) {
+    val c = ShiftTheme.colors
+    Column {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(13.dp),
+        ) {
+            Box(
+                Modifier.size(30.dp).clip(RoundedCornerShape(8.dp)).background(c.pickupDot.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(ShiftIcons.Building, contentDescription = null, tint = c.pickupDot, modifier = Modifier.size(17.dp))
+            }
+            Column {
+                Text(OPEN_SHIFTS_GROUP_TITLE, color = c.ink, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                Text(OPEN_SHIFTS_GROUP_SUB, color = c.ter, fontSize = 12.5.sp, modifier = Modifier.padding(top = 1.dp))
+            }
+        }
+        listOf(homeHouse, otherHouses).forEach { row ->
+            Row(
+                Modifier.fillMaxWidth().padding(start = 57.dp, end = 14.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(row.title, color = c.ink, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
+                ShiftSwitch(
+                    checked = row.on,
+                    onCheckedChange = { onToggle(row.channel) },
+                    modifier =
+                        Modifier.testTag(
+                            if (row.channel == NotificationChannel.OPEN_SHIFTS_HOME_HOUSE) {
+                                "settings_open_home_toggle"
+                            } else {
+                                "settings_open_other_toggle"
+                            },
+                        ),
+                )
+            }
+        }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 57.dp)
+                .height(1.dp)
+                .background(c.divider),
+        )
+    }
+}
+
+/**
+ * The five mandatory notification rows (float, swap requests, break sign-up,
+ * preferences, schedule published), collapsed behind a disclosure so they do not compete
+ * with the rows a worker can actually change. Shown, never hidden entirely: a worker can
+ * still see that a swap request will always reach them, just one tap away instead of
+ * always on screen.
+ */
+@Composable
+private fun AlwaysOnNotificationsDisclosure(rows: List<NotificationRowModel>) {
+    val c = ShiftTheme.colors
+    var expanded by remember { mutableStateOf(false) }
+    Column(Modifier.animateContentSize()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(horizontal = 14.dp, vertical = 12.dp)
+                .testTag("settings_always_on_disclosure"),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                alwaysOnNotificationsLabel(rows.size),
+                color = c.sec,
+                fontSize = 13.sp,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                ShiftIcons.ChevronRight,
+                contentDescription = if (expanded) "Collapse" else "Expand",
+                tint = c.outline,
+                modifier = Modifier.size(15.dp).rotate(if (expanded) 90f else 0f),
+            )
+        }
+        if (expanded) {
+            rows.forEachIndexed { i, row ->
+                NotificationSettingRow(row, last = i == rows.lastIndex, onToggle = {})
+            }
+        }
     }
 }
 

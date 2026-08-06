@@ -38,7 +38,11 @@ object ThemePrefs {
                 ThemeChoice.DARK -> "dark"
                 ThemeChoice.SYSTEM -> "system"
             }
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, raw).apply()
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY, raw)
+            .apply()
     }
 }
 

@@ -64,6 +64,61 @@ struct ShiftRow: View {
     }
 }
 
+/// Trailing desk-name chip on a redesigned Upcoming Shifts card. Uppercase, brand-tinted,
+/// same visual language as `OpenPill` so the two widgets still read as one family.
+struct DeskChip: View {
+    var house: String
+    var body: some View {
+        Text(house.uppercased())
+            .font(.system(size: 10.5, weight: .bold))
+            .kerning(0.3)
+            .foregroundColor(WidgetStyle.brand)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(WidgetStyle.pillFill))
+    }
+}
+
+/// One shift, one line, one card: day, then time, then the desk as a trailing chip — all
+/// on the same baseline. Replaces the old two-line "day · time / place" row + hairline
+/// divider, which left the right half of every row blank. Consecutive cards alternate
+/// `fill` (`WidgetStyle.cardFillA` / `cardFillB`) so a stack of shifts reads as distinct
+/// entries instead of one dense block.
+struct ShiftCard: View {
+    var day: String
+    var isToday: Bool
+    var time: String
+    var house: String
+    var fill: Color
+    var vpad: CGFloat = WidgetSpace.cardPadV
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(day)
+                .font(.system(size: 13.5, weight: .bold))
+                .foregroundColor(isToday ? WidgetStyle.brand : WidgetStyle.ink)
+            Text("·")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(Color(.systemGray3))
+            Text(time)
+                .font(.system(size: 13.5, weight: .medium))
+                .foregroundColor(WidgetStyle.ink)
+                .monospacedDigit()
+            Spacer(minLength: 8)
+            DeskChip(house: house)
+        }
+        .lineLimit(1)
+        .padding(.horizontal, WidgetSpace.cardPadH)
+        .padding(.vertical, vpad)
+        .background(
+            RoundedRectangle(cornerRadius: WidgetSpace.cardRadius, style: .continuous)
+                .fill(fill)
+        )
+    }
+}
+
 /// The rounded "Open" capsule on open-shift rows.
 struct OpenPill: View {
     var body: some View {

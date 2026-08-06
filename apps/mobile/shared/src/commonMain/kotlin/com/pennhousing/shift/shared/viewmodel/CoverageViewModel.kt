@@ -25,6 +25,13 @@ data class RespondSheetState(
     /** The chosen outcome, or null while the manager is still on the "Did Allied confirm?" step. */
     val selectedOutcome: CoverageOutcome? = null,
     val note: String = "",
+    /**
+     * Set only by [CoverageViewModel.coverPersonally]. Distinguishes "I can cover it" (this
+     * manager takes the vacant blocks themselves) from the generic
+     * [CoverageOutcome.COVERED_INTERNALLY] outcome row, which shares the same wire outcome
+     * but leaves the schedule untouched — it may not be this manager who covered it.
+     */
+    val assignSelf: Boolean = false,
     /** True while a close write is in flight, so the UI can disable the buttons. */
     val submitting: Boolean = false,
 ) {
@@ -158,10 +165,21 @@ class CoverageViewModel(
         emit()
     }
 
-    /** The manager picked an outcome on the sheet. */
+    /** The manager picked an outcome from the "what happened" list. Never self-assigns. */
     fun selectOutcome(outcome: CoverageOutcome) {
         val sheet = _uiState.value.sheet ?: return
-        emit(sheet = sheet.copy(selectedOutcome = outcome))
+        emit(sheet = sheet.copy(selectedOutcome = outcome, assignSelf = false))
+    }
+
+    /**
+     * "I can cover it" — the manager is personally taking the request's vacant blocks.
+     * Distinct from [selectOutcome] with [CoverageOutcome.COVERED_INTERNALLY]: this sets
+     * [RespondSheetState.assignSelf], which [submitClose] carries into the write so the
+     * server assigns THIS manager rather than only recording the outcome.
+     */
+    fun coverPersonally() {
+        val sheet = _uiState.value.sheet ?: return
+        emit(sheet = sheet.copy(selectedOutcome = CoverageOutcome.COVERED_INTERNALLY, assignSelf = true))
     }
 
     /** Note text for a `desk_unstaffed` close. */
@@ -208,7 +226,13 @@ class CoverageViewModel(
                 }
             }
         _uiState.value = CoverageUiState(feed(), null, null)
-        return CloseIntent(requestId = requestId, outcome = outcome, note = note, previous = previous)
+        return CloseIntent(
+            requestId = requestId,
+            outcome = outcome,
+            note = note,
+            assignSelf = sheet.assignSelf,
+            previous = previous,
+        )
     }
 
     /** Undo an optimistic close when the server write failed. */
@@ -230,5 +254,7 @@ data class CloseIntent(
     val requestId: String,
     val outcome: CoverageOutcome,
     val note: String?,
+    /** See [RespondSheetState.assignSelf]. */
+    val assignSelf: Boolean,
     val previous: CoverageRequest,
 )

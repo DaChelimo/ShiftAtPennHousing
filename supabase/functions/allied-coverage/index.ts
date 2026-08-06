@@ -163,7 +163,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return jsonResponse(data ?? { acknowledged: false, reason: 'not_found' });
   }
 
-  const { outcome, note } = body as { outcome?: unknown; note?: unknown };
+  const { outcome, note, assignSelf } = body as {
+    outcome?: unknown;
+    note?: unknown;
+    assignSelf?: unknown;
+  };
 
   if (typeof outcome !== 'string' || !OUTCOMES.has(outcome)) {
     return jsonResponse({ error: 'outcome must be a valid coverage outcome' }, 400);
@@ -171,6 +175,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   if (note !== undefined && note !== null && typeof note !== 'string') {
     return jsonResponse({ error: 'note must be a string' }, 400);
+  }
+
+  if (assignSelf !== undefined && typeof assignSelf !== 'boolean') {
+    return jsonResponse({ error: 'assignSelf must be a boolean' }, 400);
   }
 
   // `desk_unstaffed` requires a note. The RPC raises `note_required` and stays
@@ -181,12 +189,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return jsonResponse({ error: 'note_required' }, 400);
   }
 
+  // assignSelf only ever means anything for 'covered_internally' (the mobile Coverage
+  // sheet's dedicated "I can cover it" action); the RPC ignores it for every other
+  // outcome, but there is no reason to forward true where it can't apply.
   const { data, error } = await supabase.rpc('close_allied_coverage_request', {
     p_request_id: requestId,
     p_user_id: user.id,
     p_outcome: outcome,
     p_note: trimmedNote === '' ? null : trimmedNote,
     p_now: nowIso,
+    p_assign_self: outcome === 'covered_internally' && assignSelf === true,
   });
 
   if (error !== null) {

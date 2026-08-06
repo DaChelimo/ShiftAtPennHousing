@@ -127,8 +127,27 @@ export function EditSection({
 
   // Assigning shows worker cards; swapping shows them minus the incumbent.
   const assigning = !occupied || action === 'replace';
-  const candidates = assignableWorkers.filter((w) => w.userId !== shift.userId);
-  const selectedName = candidates.find((w) => w.userId === workerId)?.name ?? null;
+  const eligible = assignableWorkers.filter((w) => w.userId !== shift.userId);
+
+  // Two identities are PINNED above the roster in a split chip (2026-08-05): the
+  // house's RSM and the Allied contractor. Both are standing, always-relevant
+  // answers to "who covers this desk" that were previously buried in an
+  // alphabetical list of ~40 students, and Allied in particular is the one a
+  // manager reaches for when they have already secured cover by phone and just
+  // needs to record it (force-triggering would fire an alert they are already
+  // holding). They are removed from the list below, so each appears exactly once.
+  const pinnedRsm = eligible.find((w) => w.isRsm) ?? null;
+  const pinnedAllied = eligible.find((w) => w.isAllied) ?? null;
+  const roster = eligible.filter((w) => !w.isRsm && !w.isAllied);
+
+  // Free-text filter over the roster only. The pinned chip stays put regardless of
+  // the query: it is a fixed two-target shortcut, not a search result, and having
+  // it disappear mid-type would be the opposite of what pinning is for.
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  const candidates = q === '' ? roster : roster.filter((w) => w.name.toLowerCase().includes(q));
+
+  const selectedName = eligible.find((w) => w.userId === workerId)?.name ?? null;
 
   function setRange(from: number, to: number) {
     setFromBlock(from);
@@ -411,10 +430,72 @@ export function EditSection({
         </div>
       )}
 
+      {/* Pinned split chip (RSM | Allied) + search, then the scrolling roster. */}
+      {assigning && (pinnedRsm !== null || pinnedAllied !== null) && (
+        <div className="wpin" role="group" aria-label="Standing cover options">
+          {pinnedRsm && (
+            <PinnedHalf
+              testId="override-pinned-rsm"
+              worker={pinnedRsm}
+              role="RSM"
+              sub="Manages this house · no hours cap"
+              selected={workerId === pinnedRsm.userId}
+              onSelect={() => {
+                setWorkerId(pinnedRsm.userId);
+                setError(null);
+              }}
+            />
+          )}
+          {pinnedAllied && (
+            <PinnedHalf
+              testId="override-pinned-allied"
+              worker={pinnedAllied}
+              role="Allied"
+              sub="External cover · any house"
+              selected={workerId === pinnedAllied.userId}
+              onSelect={() => {
+                setWorkerId(pinnedAllied.userId);
+                setError(null);
+              }}
+            />
+          )}
+        </div>
+      )}
+
+      {assigning && roster.length > 0 && (
+        <div className="wsearch">
+          <Icon name="search" size={14} className="muted" />
+          <input
+            type="search"
+            className="wsearch-input"
+            data-testid="override-worker-search"
+            placeholder="Search by name"
+            aria-label="Search workers by name"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          {q !== '' && (
+            <button
+              type="button"
+              className="wsearch-clear"
+              aria-label="Clear search"
+              data-testid="override-worker-search-clear"
+              onClick={() => setQuery('')}
+            >
+              <Icon name="close" size={12} />
+            </button>
+          )}
+        </div>
+      )}
+
       {/* worker cards — the one scrolling region inside the viewport */}
       {assigning &&
         (candidates.length === 0 ? (
-          <div className="edit-empty t-helper">No other workers are available for this house.</div>
+          <div className="edit-empty t-helper" data-testid="override-worker-empty">
+            {roster.length === 0
+              ? 'No other workers are available for this house.'
+              : `No worker matches "${query.trim()}".`}
+          </div>
         ) : (
           <div className="wpick-list" data-testid="override-worker-list" role="listbox">
             {candidates.map((w) => {

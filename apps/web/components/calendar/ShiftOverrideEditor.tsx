@@ -449,7 +449,7 @@ export function EditSection({
                   aria-checked={scope === 'permanent'}
                   onClick={() => setScope('permanent')}
                 >
-                  This week onward
+                  Permanent
                 </button>
               </div>
               <span className="t-helper" data-testid="override-scope-help">

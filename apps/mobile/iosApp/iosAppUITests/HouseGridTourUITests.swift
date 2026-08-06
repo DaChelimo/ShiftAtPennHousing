@@ -6,18 +6,27 @@ final class HouseGridTourUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    /// Reaches House via its bottom-bar tab, then taps its always-present header "?" to
+    /// force a replay. Settings used to carry a dedicated "Replay house grid tour" row for
+    /// this (removed 2026-08-06, see AGENTS.md); the header "?" was always the tour's real,
+    /// permanent entry point and still is.
     private func openTour(_ app: XCUIApplication) {
         app.launch()
-        let moreTab = app.buttons["tab_more"]
-        XCTAssertTrue(moreTab.waitForExistence(timeout: 10))
-        moreTab.tap()
-        let settingsRow = app.buttons["tab_settings"]
-        XCTAssertTrue(settingsRow.waitForExistence(timeout: 5))
-        settingsRow.tap()
+        let houseTab = app.buttons["tab_house"]
+        XCTAssertTrue(houseTab.waitForExistence(timeout: 10))
+        houseTab.tap()
 
-        let replayRow = app.buttons["settings_replay_housegrid_tour"]
-        XCTAssertTrue(replayRow.waitForExistence(timeout: 5))
-        replayRow.tap()
+        // First-ever reach of this surface auto-starts the tour, in which case its
+        // overlay is already covering the help button and tapping "housegrid_tour_help" would hit
+        // the overlay's own scrim instead (dismissing an already-showing tour on any
+        // dismissible step). A later run in the same test target has already marked the
+        // tour seen, so auto-start does not refire and the help button is reachable.
+        // Force it only when the tour is not already showing, so both orders are safe.
+        if !app.otherElements["housegrid_tour"].waitForExistence(timeout: 2) {
+            let helpButton = app.buttons["housegrid_tour_help"]
+            XCTAssertTrue(helpButton.waitForExistence(timeout: 5))
+            helpButton.tap()
+        }
     }
 
     func testReplayShowsFirstStep() {

@@ -405,16 +405,10 @@ INSERT INTO hm_leave (leave_id, user_id, start_date, end_date, replacement_user_
 INSERT INTO system_config (config_key, config_value, value_type) VALUES
   ('project_administrator_user_id', 'a0000000-0000-4000-8000-00000000000b', 'uuid');
 
--- --- Development only: permit the simulated clock to hold a non-zero offset.
--- The dev_sim_clock_environment_gate trigger (20260726000008) denies time travel by
--- DEFAULT, so a production database that was never explicitly told it may time-travel
--- cannot -- app_now() drives every escalation deadline and the season reconciliation
--- cutoff. This row is what makes the local time-travel harness work; production must
--- never have it. Resetting the offset to 0 is always allowed, gate or no gate. ---
-INSERT INTO system_config (config_key, config_value, value_type, notes) VALUES
-  ('allow_time_travel', 'true', 'enum',
-   'Development only. Permits dev_sim_clock to hold a non-zero offset (cost audit F-15).')
-ON CONFLICT (config_key) DO NOTHING;
+-- --- The simulated clock is gated by ROLE now, not environment (20260805000001):
+-- dev_sim_clock_admin_gate denies a non-zero offset unless set_by is a user holding the
+-- admin role, in every environment including production. `admin@upenn.edu` above already
+-- holds that role, so the local time-travel harness works with no extra config row. ---
 
 -- --- Close the preference window now that the fixtures are loaded (prefs locked,
 -- the realistic builder state — the submitted-but-locked period the SM builds against). ---

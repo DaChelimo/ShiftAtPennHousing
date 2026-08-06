@@ -2,25 +2,31 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { getSessionUser } from '../auth';
+import { getSessionUser, isAdmin } from '../auth';
 import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from '../env';
 import { createServiceClient } from '../supabase/server';
-import { invalidateSimOffset, isTimeTravelEnabled, simNow } from '../time/simClock';
+import { invalidateSimOffset, simNow } from '../time/simClock';
 
 export type DevClockResult = { ok: true; offsetSeconds: number } | { ok: false; error: string };
 
+const ADMIN_ONLY_ERROR = 'Only the project administrator can change simulated time.';
+
 // Set the simulated clock to `targetISO`. Stored as an offset from the real
 // clock, so simulated time keeps advancing at 1x from that instant (app_now()
-// adds the fixed offset to live now()). Gated to non-production builds.
+// adds the fixed offset to live now()). Admin-only, in every environment
+// including production — enforced here (a clean error for the UI) AND at the
+// database layer (dev_sim_clock_admin_gate, migration 20260805000001), which is
+// the boundary that actually matters since this write goes through the
+// service-role client.
 export async function setSimClock(targetISO: string): Promise<DevClockResult> {
-  if (!isTimeTravelEnabled()) {
-    return { ok: false, error: 'Time travel is disabled in this environment.' };
+  const me = await getSessionUser();
+  if (!isAdmin(me)) {
+    return { ok: false, error: ADMIN_ONLY_ERROR };
   }
   const target = new Date(targetISO);
   if (Number.isNaN(target.getTime())) {
     return { ok: false, error: 'Invalid date/time.' };
   }
-  const me = await getSessionUser();
   const offsetSeconds = (target.getTime() - Date.now()) / 1000;
 
   const svc = createServiceClient();
@@ -41,12 +47,13 @@ export async function setSimClock(targetISO: string): Promise<DevClockResult> {
   return { ok: true, offsetSeconds };
 }
 
-// Reset to real wall-clock time (offset 0).
+// Reset to real wall-clock time (offset 0). Admin-only for consistency with setSimClock,
+// even though the database itself always permits a reset to zero.
 export async function clearSimClock(): Promise<DevClockResult> {
-  if (!isTimeTravelEnabled()) {
-    return { ok: false, error: 'Time travel is disabled in this environment.' };
-  }
   const me = await getSessionUser();
+  if (!isAdmin(me)) {
+    return { ok: false, error: ADMIN_ONLY_ERROR };
+  }
   const svc = createServiceClient();
   const { error } = await svc
     .from('dev_sim_clock')
@@ -339,14 +346,15 @@ async function collectTickCoverage(
 // so a tick fired here evaluates every escalation boundary (T-3h broadcast, T-2h
 // float lookup, HMOD-for-Allied, T-15m no-ack void) against the SIMULATED clock —
 // the set-clock-then-tick loop that makes the time-driven flows testable without
-// real-time waits. Gated to non-production builds, same as the clock setter.
+// real-time waits. Admin-only, same as the clock setter (it lives in the same card).
 //
 // Unlike force-trigger (which the EF authorises from the signed-in user's token),
 // the orchestrator runs as the system: it authenticates with the service-role key
 // (the EF requires Authorization === service role), exactly like the cron caller.
 export async function runOrchestratorTick(): Promise<OrchestratorTickResult> {
-  if (!isTimeTravelEnabled()) {
-    return { ok: false, error: 'Time travel is disabled in this environment.' };
+  const me = await getSessionUser();
+  if (!isAdmin(me)) {
+    return { ok: false, error: ADMIN_ONLY_ERROR };
   }
 
   // Snapshot state BEFORE the tick so we can attribute new floats / fired steps

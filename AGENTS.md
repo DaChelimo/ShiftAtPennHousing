@@ -667,3 +667,20 @@ user, dest, effective_date, note)` is the entry point: either the SOURCE or DEST
   always remind the worker where to find the tour again, not just the first time ever.
   Do not fold this into the natural-finish pointer path; they are two distinct triggers by
   design.
+
+- [Simulated clock: role gate, not environment gate] **Moving `dev_sim_clock` off zero is
+  admin-only, in every environment including production** (2026-08-05, migration
+  `20260805000001`, superseding `20260726000008`'s "denied in production, full stop"
+  posture). `enforce_time_travel_gate` now checks `NEW.set_by` against `user_is_admin`, not
+  `system_config('allow_time_travel')` — that key and `time_travel_is_allowed()` are gone.
+  `apps/web/lib/actions/devClock.ts` (`setSimClock`/`clearSimClock`/`runOrchestratorTick`)
+  and both layouts (`(app)/layout.tsx`, `(worker)/layout.tsx`) gate on `isAdmin(user)`, not
+  the retired `isTimeTravelEnabled()`. `DevClockCard` stages a non-zero target behind a
+  client-side confirm step (`confirmTargetISO`) naming the production impact before writing
+  — a caution the administrator can proceed past, not a second permission gate; resetting to
+  real time skips it. Do NOT reintroduce an environment check here: the whole point of this
+  migration is that the admin role gate applies the same way everywhere, so a dev/prod branch
+  in either the DB trigger or the web gate would silently reopen the old "anyone in a
+  non-prod build" surface for every other role. Mobile's `SimClock` needed no change — it
+  already re-syncs at launch and on foreground return and simply reflects whatever offset the
+  DB holds, which can now only ever be non-zero because the admin set it.

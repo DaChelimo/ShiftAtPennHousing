@@ -1333,7 +1333,7 @@ Both HMs and BMs can:
 
 **Student Managers** can additionally use AI-assisted schedule building (Section 19) for any house they may already build for. The assistant grants no authority the SM does not already hold, and no proposal reaches a worker without the SM publishing it.
 
-**The Administrator** can additionally set the launch state of each house and the master switches of Sections 16.5 and 22.
+**The Administrator** can additionally set the launch state of each house, the master switches of Sections 16.5 and 22, and the simulated clock (Section 14, revised 2026-08-05) — in every environment including production, behind a warning naming the production impact. No other role can see or move the simulated clock; everyone else always operates on real system time.
 
 Allied is not a user of the Desk Assistant.
 
@@ -1388,7 +1388,7 @@ The following govern delivery and data lifetime (Sections 10.4 and 5.1):
 - **Push retry backoff cap**: 60 minutes. The retry interval doubles after each failure up to this ceiling.
 - **Operational retention**: 28 days. Terminal-state notifications and non-pending float assignments are deleted this long after creation. A pending float and an undelivered notification are never deleted (Section 10.4).
 - **Retention delete batch size**: 5,000 rows per statement, so the daily sweep never holds a long lock.
-- **Time-travel permission**: whether this environment may move the simulated clock. Default **off**, and it must stay off in production — the simulated clock drives every escalation deadline in the system. Returning the clock to real time is always permitted regardless of this setting.
+- **Simulated clock, admin-only** (revised 2026-08-05): only the project Administrator may move the simulated clock, in every environment including production — the simulated clock drives every escalation deadline in the system, so moving it is deliberately not something an environment can enable for anyone else. Everyone else always sees real system time; there is no way for them to change that. Setting a non-real time surfaces a warning naming the production impact before it takes effect, which the Administrator may proceed past — it is a caution, not an additional permission gate. Returning the clock to real time is always permitted and needs no warning.
 
 **Fixed system parameters, changed by deployment rather than configuration.** The open-shift feed horizons — 6 weeks for the weekly feed, 26 weeks for permanent openings (Section 5.1) — are not runtime-configurable. They were deliberately not made config values: reading them from configuration requires an elevated-privilege lookup that either costs more than the bound saves or, if unprivileged, silently resolves differently for a worker than for an administrator. A horizon that depends on who is asking is worse than a fixed one.
 

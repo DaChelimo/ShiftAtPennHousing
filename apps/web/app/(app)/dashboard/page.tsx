@@ -149,7 +149,7 @@ function ActionQueue({ model }: { model: DashboardModel }) {
           <div style={{ padding: 'var(--sp-6) 0' }}>
             <EmptyState
               title="Nothing needs you right now"
-              desc="No open coverage requests, no unfilled seats in the next 24 hours, and no unread notifications."
+              desc="No open coverage requests, no empty desk in the next 24 hours, and no unread notifications."
             />
           </div>
         ) : (
@@ -377,8 +377,11 @@ export default async function DashboardPage({
               <span className="dash-kv-val">{model.desk.weekGapCount}</span>
             </div>
             <div className="dash-kv">
-              <span className="dash-kv-key">Unfilled in 24h</span>
-              <span className="dash-kv-val">{model.desk.urgentGaps.length}</span>
+              {/* Two DIFFERENT measures, deliberately. Above is vacant SEATS; this is
+                  windows where the desk would be EMPTY (the coverage floor that decides
+                  escalation). A vacant second seat counts above and not here. */}
+              <span className="dash-kv-key">Desk empty in 24h</span>
+              <span className="dash-kv-val">{model.desk.urgentGapCount}</span>
             </div>
             <div className="dash-kv">
               {/* getManagerFloaters is scoped to initiated_by = 'force_triggered', so

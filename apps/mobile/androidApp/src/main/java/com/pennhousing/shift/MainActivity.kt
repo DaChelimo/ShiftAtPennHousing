@@ -899,10 +899,10 @@ private fun LiveShiftsRoot(
                         onAcknowledgeCoverage = { requestId ->
                             coverageRepo.acknowledge(requestId) != CoverageWriteResult.Failed
                         },
-                        onCloseCoverage = { requestId, outcome, note ->
+                        onCloseCoverage = { requestId, outcome, note, assignSelf ->
                             val parsed = CoverageOutcome.fromWire(outcome)
                             parsed != null &&
-                                coverageRepo.close(requestId, parsed, note) != CoverageWriteResult.Failed
+                                coverageRepo.close(requestId, parsed, note, assignSelf) != CoverageWriteResult.Failed
                         },
                         onCallPhone = { number -> if (number != null) dialPhoneNumber(coverageContext, number) },
                         onSubmitPreferences = {

@@ -558,7 +558,7 @@ internal fun ShiftsApp(
                                 val intent = coverageVm.submitClose()
                                 if (intent != null) {
                                     coverageAckScope.launch {
-                                        val ok = onCloseCoverage(intent.requestId, intent.outcome.wire, intent.note)
+                                        val ok = onCloseCoverage(intent.requestId, intent.outcome.wire, intent.note, intent.assignSelf)
                                         if (!ok) coverageVm.revertClose(intent)
                                     }
                                 }

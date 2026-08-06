@@ -37,18 +37,23 @@ export function HouseCalendarView({
   const weekScrollRef = useRef<HTMLDivElement>(null);
   const nowBlock = useNowBlock(model.dayStartMin, model.blocksPerDay);
 
-  // Mouse-wheel scrolling (and a trackpad swipe once the grid is already at
-  // its scroll edge) arrives as a vertical wheel delta, and at that edge the
-  // browser reinterprets it as a back/forward navigation swipe. A native,
-  // non-passive listener (React's synthetic onWheel can be passive) lets us
-  // redirect every delta into horizontal scroll and always preventDefault,
-  // which keeps the gesture inside the grid instead of escaping to page nav.
+  // A trackpad's horizontal swipe, once the grid is already at its scroll
+  // edge, gets reinterpreted by the browser as a back/forward navigation
+  // swipe. A native, non-passive listener (React's synthetic onWheel can be
+  // passive) intercepts ONLY genuinely horizontal gestures (|deltaX| >
+  // |deltaY|) and keeps those inside the grid. Plain vertical wheel/trackpad
+  // scrolling must fall through untouched — the grid has no internal vertical
+  // scroll of its own, so the page (`.main`) is what scrolls vertically, the
+  // same as the manager calendar. Redirecting deltaY into horizontal scroll
+  // here previously swallowed all vertical scrolling for the whole page,
+  // capping a worker's view at whatever fit in the first screenful.
   useEffect(() => {
     const el = weekScrollRef.current;
     if (el === null) return;
     const onWheel = (e: WheelEvent) => {
       if (el.scrollWidth <= el.clientWidth) return;
-      el.scrollLeft += e.deltaY + e.deltaX;
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+      el.scrollLeft += e.deltaX;
       e.preventDefault();
     };
     el.addEventListener('wheel', onWheel, { passive: false });

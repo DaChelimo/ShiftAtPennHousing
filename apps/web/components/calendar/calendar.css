@@ -665,7 +665,7 @@
 }
 .panel {
   position: fixed;
-  top: 48px;
+  top: 64px;
   right: 0;
   bottom: 0;
   width: var(--panel-w, 400px);

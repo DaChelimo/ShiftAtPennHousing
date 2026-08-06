@@ -61,7 +61,7 @@ export default async function LandingPage() {
     <div className="landing">
       <header className="landing-topline">
         <div className="landing-brand">
-          <LogoMark size={22} />
+          <LogoMark size={34} />
           <Wordmark />
         </div>
         <nav className="landing-nav" aria-label="Sections">

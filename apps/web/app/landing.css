@@ -17,14 +17,16 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 16px 34px;
+  height: 76px;
+  padding: 0 34px;
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .landing-brand {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  font-size: 19px;
 }
 
 .landing-nav {

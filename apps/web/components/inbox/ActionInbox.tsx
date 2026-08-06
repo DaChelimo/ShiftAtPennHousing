@@ -219,7 +219,11 @@ export function ActionInbox({
       ? `${String(actionCount)} Allied request${actionCount === 1 ? '' : 's'} need attention.`
       : 'No open Allied requests. New alerts appear here in real time.';
 
-  const archiveBadgeCutoffMs = Date.now() - ARCHIVE_BADGE_HOURS * 60 * 60 * 1000;
+  // `now` is captured once via a lazy useState initializer, never read via a bare
+  // Date.now() call during render (React Compiler purity).
+  const [now] = useState(() => Date.now());
+
+  const archiveBadgeCutoffMs = now - ARCHIVE_BADGE_HOURS * 60 * 60 * 1000;
   const archiveBadgeCount = archive.filter(
     (r) => new Date(r.windowStartIso).getTime() >= archiveBadgeCutoffMs,
   ).length;

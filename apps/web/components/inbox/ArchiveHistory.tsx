@@ -48,7 +48,11 @@ function StateTag({ row }: { row: CoverageArchiveRow }) {
 export function ArchiveHistory({ rows }: { rows: CoverageArchiveRow[] }) {
   const [rangeHours, setRangeHours] = useState(RANGES[0].hours);
 
-  const cutoffMs = Date.now() - rangeHours * 60 * 60 * 1000;
+  // `now` is captured once via a lazy useState initializer, never read via a bare
+  // Date.now() call during render (React Compiler purity).
+  const [now] = useState(() => Date.now());
+
+  const cutoffMs = now - rangeHours * 60 * 60 * 1000;
   const visible = rows.filter((r) => new Date(r.windowStartIso).getTime() >= cutoffMs);
   const incidents = visible.filter((r) => r.isIncident);
 

@@ -458,7 +458,7 @@ user_roles
 A user can hold multiple roles. The `hm`, `rsm`, and `bm` roles share identical **administrative** capabilities (overrides, force-triggers, notifications, leave, weekly-cap) but differ in **worker** behavior and in one role-specific carve-out (RSM cannot be HMOD). All three hold cross-house schedule authority as a tier; see the elevated-tier note below.
 
 - A user holding `hm` may also hold `sw`/`sm` roles and act as a worker (scheduled shifts, claimed pickups, schedule preferences). However, the float lookup eligibility and broadcast subscription pipelines exclude any user with the `hm` role: HMs are never assigned floats and never receive open-shifts broadcasts. They may still manually browse the open-shifts feed and claim.
-- A user holding `rsm` (Residential Services Manager — Behavioral Spec §2.3a) is below the HM and above the SM. The `rsm` role carries **every** HM power **except HMOD**: it is admitted to `user_has_house_admin_role` (own-house, scope-matched) and to `user_can_build_schedule`, so an RSM builds/overrides, administers people, sets the cap, and takes leave. Like an HM, an RSM holds shifts (claim pool) but is never auto-floated and never receives broadcast. As of migration `20260729000002`, an RSM is also assignable from the schedule-builder roster to their **own** house's desk, exempt from every hours check (see below). Two carve-outs: (a) an RSM is **never** placed on the `hmod_rotor` and is never a valid HMOD-transfer target; (b) an RSM has read visibility into _every_ house's live schedule via the `user_is_rsm(uuid)` predicate, which ORs into the schedule-visibility SELECT policies.
+- A user holding `rsm` (Residential Services Manager — Behavioral Spec §2.3a) is below the HM and above the SM. The `rsm` role carries **every** HM power **except HMOD**: it is admitted to `user_has_house_admin_role` (own-house, scope-matched) and to `user_can_build_schedule`, so an RSM builds/overrides, administers people, sets the cap, and takes leave. Like an HM, an RSM holds shifts (claim pool) but is never auto-floated and never receives broadcast. As of migration `20260729000002`, an RSM is also assignable from the schedule-builder roster to their **own** house's desk, exempt from every hours check (see below). Two carve-outs: (a) an RSM is **never** placed on the `hmod_rotor` and is never a valid HMOD-transfer target; (b) an RSM has read visibility into _every_ house's live schedule via the `user_is_rsm(uuid)` predicate, which ORs into the schedule-visibility SELECT policies. **The "holds shifts (claim pool)" clause was documented but not implemented until 2026-08-06** (migration `20260806000005`): `worker_open_shifts`'s `candidate_users` CTE was scoped to `sw`/`sm`/`hm` since before the `rsm` role existed, so an RSM's `eligible_user_id` never appeared in the view and their Open Shifts feed silently read as empty. See §21.3 for why the broadcast pipelines were deliberately **not** widened to match.
 
   **Scope of RSM writes (amended 2026-06-27, migration `20260627000002`).** The original rule that "every RSM write stays scope-matched to their own house" no longer holds for the schedule. `user_is_schedule_admin(uid)` is house-agnostic and true for `hm`/`bm`/`rsm` anywhere; `user_can_build_schedule` is redefined as `(user_is_schedule_admin OR sm-scoped-to-house)`. Every RPC gating on it — `publish_schedule` (3-arg, migration `20260614000002`), `admin_assign_worker`, `admin_remove_worker` — and the draft / `period_targets` / preferences admin RLS therefore become **cross-house** for the elevated tier. Publishing and overriding ride the same gate, so there is no house an elevated admin may override but not publish. `user_has_house_admin_role` is unchanged and still scope-matched for `hm`/`bm`/`rsm`, which is what keeps people administration, HM leave, and weekly-cap own-house; the lone exception is the top-level `admin` role, which ORs in unconditionally. **SM is untouched and stays own-house on both predicates.**
 
@@ -2055,11 +2055,22 @@ takes no user_id, so a client cannot aim it at somebody else.
 `process_broadcast_step` was rewritten to consult it. Previously the shift-opened
 notification rode on `users.broadcast_subscribed`, which defaults to FALSE and is presented
 in Settings as an unrelated "General updates" switch, so in practice nobody was told a
-shift had opened. The recipient set now mirrors `worker_open_shifts` eligibility exactly
+shift had opened. The recipient set mirrors `worker_open_shifts` eligibility
 (active, holds `sw`/`sm`/`hm`, not a `bm`) plus the Harnwell training invariant, because a
 notification about a seat the worker cannot claim is worse than no notification. The
 Kotlin defaults in `settings/NotificationPreferences` mirror the column defaults and the
 function; **if you change one, change all three.**
+
+**One deliberate divergence from "mirrors exactly" (2026-08-06):** `worker_open_shifts`
+gained `rsm` in its candidate role list (migration `20260806000005`; §2.3a "holds shifts
+like an HM" was already the spec, but the view's `candidate_users` CTE was scoped to
+`sw`/`sm`/`hm` since before the `rsm` role existed and nobody had added it, so an RSM's
+Open Shifts feed silently read as empty regardless of real vacancies at their house).
+`process_broadcast_step` and `notify_shift_opened` were **not** changed to match — BSpec
+§2.3a is explicit that an RSM "never receives broadcast notifications," so an RSM can browse
+and claim from Open Shifts but is not proactively pushed a notification for every vacancy
+the way an SW/SM/HM is. Do not "fix" this gap back to parity without a product decision; it
+is intentional, confirmed 2026-08-06.
 
 ### 21.3a The Instant Shift-Opened Notification
 

@@ -52,7 +52,7 @@ The escalation chain is not implemented as scattered if-then statements. A singl
 Some rules are absolute and enforced as algorithmic invariants in code, in addition to being expressible in config data:
 
 - **Float direction rules from Section 1.2 of the behavioral spec.** Workers at the 11 single-staff houses cannot be source houses. Quad workers cannot float to Harnwell. These are enforced as hard-coded eligibility checks in the float lookup algorithm, independent of the `float_routing` config table. A data-entry error in `float_routing` cannot bypass these constraints.
-- **Harnwell training constraint (universal).** No worker without Harnwell training may staff the Harnwell desk under any assignment mechanism: scheduled, claimed in-house, claimed cross-house, floated_in, force-triggered float, or permanent pickup. This is enforced as a hard-coded eligibility check in the claim/pickup handlers and in the float lookup algorithm. Equivalently: any assignment whose `block.house_id = Harnwell` requires `user.home_house_id = Harnwell`.
+- **Harnwell training constraint (universal, one exemption).** No worker without Harnwell training may staff the Harnwell desk under any assignment mechanism: scheduled, claimed in-house, claimed cross-house, floated_in, force-triggered float, or permanent pickup. This is enforced as a hard-coded eligibility check in the claim/pickup handlers and in the float lookup algorithm, and backstopped at the write itself by the `enforce_harnwell_assignment_training` trigger on `shift_block_assignments` / `draft_block_assignments`. Equivalently: any assignment whose `block.house_id = Harnwell` requires `user.home_house_id = Harnwell`. **Amended 2026-08-05 (`20260805000002`):** the Allied contractor is exempt, keyed on `houses.is_staffable = false` rather than on a hardcoded id, so the exemption covers exactly the pseudo-house population and cannot be widened by adding a normal house. See Section 25.
 - **Cross-house pickup eligibility.** The cross-house pickup matrix (Behavioral Spec Section 5.3) is enforced algorithmically in the claim and permanent-pickup handlers. The only structural rule is the Harnwell training constraint above; all other cross-house pickups are permitted.
 - **Minimum float chunk size.** The float lookup algorithm explicitly checks the minimum-chunk rule at every selection point, including each tiebreaker check.
 - **No-takeback rule for assigned floats.** Once assigned (pending or acknowledged), a float cannot be revoked by the system; the source-side gap is handled independently.
@@ -2048,16 +2048,26 @@ function; **if you change one, change all three.**
 
 _(Added 2026-07-29, migrations `20260729000012` + `20260729000013`.)_
 
-`notify_shift_opened(house_id, block_id, start_at, end_at, actor_user_id, now, recurring)`
-emits ONE `shift_opened` notification per dropped SPAN. It is called by `drop_shift` and by
-`permanent_drop_slot`, both already `SECURITY DEFINER`, so no client holds EXECUTE on it.
+`notify_shift_opened(house_id, block_id, start_at, end_at, actor_user_id, now, recurring,
+exclude_user_ids)` emits ONE `shift_opened` notification per opened SPAN. It is called by
+`drop_shift`, `permanent_drop_slot` and `admin_remove_worker`, all already `SECURITY
+DEFINER`, so no client holds EXECUTE on it.
+
+_(Signature amended 2026-08-06, migration `20260806000003`.)_ The 8-argument form above is
+the real body; the original 7-argument form survives as a thin `LANGUAGE sql` delegate that
+passes an empty exclusion list, so the recipient matrix exists in exactly ONE place and the
+two pre-existing call sites keep their exact behaviour. The 8th parameter deliberately takes
+**no** default: a defaulted 8th argument would make every 7-argument call ambiguous between
+the two overloads, so arity alone resolves it.
 
 Three things about the design are load-bearing:
 
 **One row per span, not per block.** A four-hour drop vacates eight `shift_block_assignments`
 rows. Eight pushes for one human event is how a worker mutes the app at the OS level, which
 would silently take the mandatory float-acknowledgment pushes down with it, since they share
-the channel. The span's start and end ride in the payload instead.
+the channel. The span's start and end ride in the payload instead. _(This was true of this
+function only until 2026-08-06; `process_broadcast_step` emitted one notification per block
+until `20260806000004` gave it the same property. See §21.3c.)_
 
 **The recipient predicate is `home_house_id = p_house_id OR wants_open_shift_notification(...)`.**
 The left side is what makes the home house mandatory: it short-circuits before the preference
@@ -2081,8 +2091,30 @@ different slot than the one vacated.
 
 Payload copy (`title` / `body`) is composed in SQL and read verbatim by both clients through
 `pushDisplayFromData` and the Updates feed, so the notification needs no client release to
-render. Float-out seat reopening and admin removal deliberately do NOT call this; they still
-rely on the feed plus the T-3h broadcast.
+render.
+
+**`admin_remove_worker` calls it too** _(2026-08-06, `20260806000003`; this SUPERSEDES the
+statement here that "admin removal deliberately does NOT call this")_. Only the `this_week`
+branch needed wiring: the `permanent` branch delegates to `permanent_drop_slot`, which has
+emitted its own recurring notification since `20260729000013`. Two differences from the
+worker drop path, both deliberate:
+
+- **Islands, not one span.** `drop_shift` enforces contiguity (`drop_not_contiguous`);
+  `admin_remove_worker` does not, because an operator clicks arbitrary seats on the grid. A
+  single `MIN..MAX` span would announce hours that were never vacated, so the removed set is
+  split into contiguous islands by the standard gaps-and-islands trick
+  (`block_start_at - row_number() OVER (ORDER BY block_start_at) * interval '30 minutes'`)
+  and one notification is emitted per island. Coverage-locked blocks are filtered out
+  BEFORE islanding, so they neither trigger an announcement nor extend one.
+- **Two exclusions.** `p_actor_user_id` is the OPERATOR; the removed worker rides the new
+  exclusion list. Telling someone "a shift just opened up, open the app to claim it" about
+  the shift you took off them thirty seconds ago is the worst available phrasing of that
+  event. The `this_week` branch still writes the removed worker no alert of its own, unlike
+  `permanent`, which writes `sw_permanent_removal_alert`; that asymmetry is a known gap and
+  is NOT closed by this migration.
+
+Float-out seat reopening still deliberately does NOT call this; it relies on the feed plus
+the T-3h broadcast.
 
 **The in-app toast was dead code until the same date.** `observeNotifications` streams
 realtime INSERTs on `notifications` and mapped each record with a function that read
@@ -2093,6 +2125,86 @@ foreground toast never fired once on either platform. It now reads `payload` fir
 the top-level lookup as a fallback, and moved out of `WorkerShiftsRepository` (AGENTS §5.2
 quarantine) into the pure `notifications/ToastNotification.kt`, where `ToastNotificationTest`
 covers it.
+
+### 21.3b Settings Grouping and Legal Links
+
+_(2026-08-06.)_ The two open-shift channels and the disclosure over the five mandatory
+channels (BSpec §20.5) are UI-only groupings; no schema change. `settings/Settings.kt`
+gained pure constants both platforms read: `OPEN_SHIFTS_GROUP_TITLE`/`_SUB` (the merged
+card's header copy) and `alwaysOnNotificationsLabel(count)` (the disclosure summary,
+computed from the row count so it can never drift from the actual mandatory-channel list).
+Android partitions `state.notifications` by `interactive`; iOS does the same with
+`.filter { $0.interactive }`. Neither platform hardcodes which channels are mandatory —
+that still comes from `buildNotificationRows` alone.
+
+`PRIVACY_POLICY_URL` / `TERMS_OF_SERVICE_URL` in the same file point at the standalone
+Astro guide site (`apps/docs`, deployed at `shiftatpenn.com/guide`), not in-app text, so
+the legal source of truth stays the markdown under `docs/legal/`. Opening them is a new
+`expect fun openUrl(url: String)` in `platform/PlatformHooks.kt`, mirroring the existing
+`openMailto`: Android uses
+`Intent.ACTION_VIEW`, iOS calls `UIApplication.shared.open` directly from SwiftUI rather
+than through the shared hook (no KMP round-trip needed for a `Link`-shaped action).
+
+`apps/docs`'s `nav.ts` gained a `legalPages` export, deliberately NOT part of `sections`:
+the three `sections` entries drive the sidebar's collapsible groups, the reading-order
+previous/next pager, and section overview cards, none of which fit a legal page (there is
+no "next" between a policy and a how-to guide). `Sidebar.astro` renders `legalPages` as a
+plain two-link list below the three collapsible groups. `sectionOf(slug)` special-cases
+the `legal/` prefix to still supply a "Legal" page-head eyebrow without registering a
+fourth `sections` entry. The pages themselves are ordinary content-collection `.mdx` files
+at `legal/privacy` and `legal/terms`, routed automatically by the existing `[...slug].astro`
+catch-all — no new routing code.
+
+### 21.3c Broadcast Span Merge and the Coverage-Lock Guard
+
+_(2026-08-06, migration `20260806000004`. Mechanism for BSpec §10.1's two amendments of the
+same date. Both defects were found by tracing a real pilot incident, not by review.)_
+
+`process_broadcast_step(block_id, house_id, block_start_at, now)` had two faults, and they
+live in the same function because they are the same oversight: the step was written per
+block and never asked anything about the block's neighbours or its claimability.
+
+**Defect 1, no span merge.** The signature takes ONE block, formats ONE start time, and
+claims `block_step_status(block_id, 'broadcast')`, so an N-block vacancy emitted N
+notifications. `20260729000013` had already named this failure mode precisely ("8 pushes for
+one event is how a mandatory channel gets muted at the OS level, which would silently break
+the float ack notifications that share it") and then fixed it only on the drop path.
+§21.3a's "one row per span" was true of `notify_shift_opened` and had never been true of the
+escalation chain.
+
+**Defect 2, announcing locked seats.** `coverage_locked_at` (BSpec §5.5) marks a block whose
+desk was empty at its T-2h step; `is_assignment_claimable` refuses those seats. `drop_shift`
+has suppressed `notify_shift_opened` on a locked block since `20260729000013`;
+`process_broadcast_step` had no such check. Ordering normally hides this, since broadcast is
+T-3h and the lock is T-2h — but a vacancy DISCOVERED inside T-2h fires both in the same
+minute, which is exactly what happened: locked at 14:58:00, broadcast at 14:59:00 telling
+every Harnwell worker to "Open the app to claim it."
+
+**What merging does and does not change.** The chain step stays PER BLOCK. Every block still
+claims its own `block_step_status` row, so step atomicity, the §4.5 rollback procedure, and
+onward escalation to `float_lookup` / `hmod_notify_allied` are all untouched — a locked block
+still claims its step and still escalates, it just says nothing. Only the NOTIFICATION is
+merged: a block computes the contiguous run of not-yet-announced vacant blocks it belongs to
+and emits only if it is that run's FIRST block, describing the whole run.
+
+Three details in the run predicate are load-bearing:
+
+- **Run membership is order-independent.** It is a property of the run's shape, not of which
+  block the tick visits first, so whichever order `processVacantBlocks` walks the rows in,
+  exactly one notification comes out. `broadcast-span-merge.sql` fires the blocks in reverse
+  and asserts this; do not "simplify" it into a look-behind at the previous block only.
+- **`block_has_escalation_coverage`, not `block_has_present_worker`.** The escalation
+  present-set (which counts `allied`) is the one the orchestrator used to decide the block
+  was actionable at all. The two predicates are distinct on purpose; see "Coverage lock".
+- **Blocks announced in an EARLIER tick are excluded** (`fired_at < p_now`; the orchestrator
+  passes one `now` for a whole tick). Without that clause an incremental vacancy goes silent
+  forever: 11:00 dropped and announced at 08:00, then 11:30 dropped at 09:00 would find
+  11:00 still vacant, conclude it was not the run start, and nobody would ever hear about
+  11:30. This is the subtlest part of the change and the reason the test asserts it directly.
+
+The payload gains `block_end_at` (appended; every consumer reads by key) and the body is
+phrased identically to `notify_shift_opened`, so the instant and T-3h channels are
+indistinguishable to a worker reading a lock screen.
 
 ### 21.4 Pending Swaps on the Live Calendars
 
@@ -2501,3 +2613,111 @@ routes, the mobile Ask chip and screen on both platforms) was removed; the knowl
 the classification/answer pipeline, and every Edge Function behind it (`supabase/functions/
 da-*`) are untouched. This is scoped as a permanent product removal rather than a
 pilot-scoped one, so restoring it later is a UI-only change, not a backend rebuild.
+
+---
+
+## 25. Assigning Allied and the RSM to a Desk
+
+Mechanism for Behavioral Spec Section 26. Migration `20260805000002_allied_desk_assignment.sql`.
+
+### 25.1 The Allied Account Is Provisioned by Migration, Not Seed
+
+`20260725000001` created the `allied-house` pseudo-house (`houses.is_staffable = false`) in
+a migration, but left its sole occupant to `supabase/seeds/prod/02-people.sql`. That split
+was a real defect: the hosted project has the house and no account, because its people came
+from the Staff@PennHousing data migration rather than that seed, so every surface built on
+"assign Allied" would have rendered nothing there with no error. `20260805000002` provisions
+the account itself: `auth.users` + `auth.identities` + `users` + a scopeless `sw` role + an
+open-ended `user_house_memberships` row backdated to the `2000-01-01` sentinel.
+
+Every insert is guarded (`ON CONFLICT DO NOTHING`, or `NOT EXISTS` for the membership row,
+whose primary key is a generated uuid and whose duplicate would trip
+`check_membership_no_overlap` rather than be skipped). Re-application is a no-op, and an
+environment that already seeded the account keeps what it has.
+
+The uuid `a111ed00-0000-4000-8000-000000000001` is fixed and load-bearing: it is already
+`ALLIED_USER_ID` in `apps/web/lib/workerColor.ts` and its Kotlin mirror
+`WorkerColors.kt`, where it selects the reserved solid-black card tint that distinguishes
+Allied coverage from every hashed per-worker colour. Do not change it.
+
+`broadcast_subscribed = false` keeps Allied out of the broadcast pool. Because Allied's home
+house is non-staffable, it holds no blocks there and so is never a float source; float
+lookup and swap counterparty selection are unaffected.
+
+### 25.2 `user_is_allied_contractor`
+
+A `STABLE SECURITY DEFINER` predicate: true when the user's `home_house_id` resolves to a
+house with `is_staffable = false`. Keyed on the flag rather than on a uuid or house id so it
+describes the pseudo-house _population_ introduced by `20260725000001`, not one row.
+`EXECUTE` is revoked from `anon` and `authenticated` explicitly and granted to
+`service_role`, per the definer-grant rule in `supabase/AGENTS.md`.
+
+### 25.3 The Two Gates That Blocked Allied
+
+Assigning Allied failed in two independent places; both now carry the exemption.
+
+1. **`admin_assign_worker`'s same-house guard (S1 OUT).** Allied's home house never equals a
+   block's house, so every attempt raised `cross_house_not_supported`. The guard now reads
+   `IF NOT v_is_rsm AND NOT v_is_allied AND v_worker.home_house_id <> v_block_house_id`.
+   `v_is_allied` also gates out the hard-cap check and the `over_target` advisory, mirroring
+   the RSM exemption from `20260729000002`. `v_over_soft` is only computed inside the
+   skipped branch, so the `soft_cap` advisory never fires for Allied either.
+
+2. **`enforce_harnwell_assignment_training`.** The trigger compared `home_house_id` to
+   `'harnwell'` and raised `check_violation`. It now returns early for
+   `user_is_allied_contractor(NEW.user_id)`, before that comparison. This is the amendment
+   to the hard invariant recorded in Section 1.5 and Behavioral Spec Section 26.1.
+
+   The trigger never saw Allied escalation coverage in the first place: a
+   `status = 'allied'` seat carries `user_id IS NULL` (enforced by the
+   `(status IN ('vacant','allied')) = (user_id IS NULL)` check from `20260528000017`), and
+   the trigger returns early on a null user. So the amendment changes who is _named_ on a
+   seat Allied could already occupy, not whether Allied may occupy it.
+
+An Allied assignment lands as a normal `claimed` seat with `is_cross_house_pickup = false`,
+so the calendar read model maps it to the ordinary `scheduled` state with a null
+`homeHouse`. The card shows "Allied" in the reserved black tint. No new `CalState` exists,
+and no read path needed changing.
+
+`admin_remove_worker` needed no change: its only `cross_house_not_supported` raise is the
+"all clicked seats must belong to one house" check, not a target-worker home-house check.
+
+### 25.4 Read Path: `loadAssignableWorkers`
+
+`apps/web/lib/data/calendarAssignees.ts`, extracted from `calendar.ts` (which is over the
+600-line ceiling). It composes the shift detail sheet's candidate set from three reads
+issued together:
+
+- this house's active home workers (`users.home_house_id = houseId`);
+- the house's RSM, resolved from the **role scope** (`user_roles.role = 'rsm' AND
+scope_house_id = houseId`) with the user row embedded, so it matches `admin_assign_worker`'s
+  own `v_is_rsm` test exactly even if `home_house_id` and role scope ever drift;
+- the Allied account, via `users → houses!inner` filtered on `is_staffable = false`, keyed
+  the same way as `user_is_allied_contractor`.
+
+A second wave sums each candidate's held hours across the viewed NY week. The RSM and Allied
+are returned first and flagged (`isRsm` / `isAllied`), and are removed from the ordinary
+roster so no identity appears twice.
+
+The function is fired _before_ `getHouseCalendar`'s wave-1 barrier and awaited where the old
+inline hours logic was, so its own second wave overlaps the chunked block reads instead of
+serialising ahead of them.
+
+### 25.5 UI
+
+`apps/web/components/calendar/WorkerPicker.tsx`, extracted from `ShiftOverrideEditor.tsx` for
+the same ceiling reason. It renders the pinned split chip (`.wpin` / `.wpin-half`), the name
+filter (`.wsearch`, roster only, never the pinned pair), and the existing roster cards.
+Neither pinned half renders a `capHint`, because both identities are cap-exempt server-side
+and an "Xh to cap" line would state a limit that does not apply.
+
+Top-of-sheet space was reclaimed for that picker in two ways: the escalation timeline is now
+a disclosure collapsed by default, with the current step stated in its summary row
+(`EscalationDisclosure` in `ShiftDetailPanel.tsx`), and the state tag is dropped when it only
+repeats the header, which is exactly when the card is unoccupied and its title already _is_
+the state name. Remaining tags (Float-in, Pending, Picked up, Home) moved inline onto the
+time row.
+
+The scope control's second option is labelled **Permanent** rather than "This week onward":
+both labels began with "This week", which is the phrase the reader scans first. Its
+`data-testid` (`override-scope-permanent`) and behavior are unchanged.

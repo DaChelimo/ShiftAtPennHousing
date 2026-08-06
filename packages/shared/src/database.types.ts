@@ -3813,6 +3813,7 @@ export type Database = {
       clear_break_period: { Args: { p_break_id: string }; Returns: number };
       close_allied_coverage_request: {
         Args: {
+          p_assign_self?: boolean;
           p_note: string;
           p_now: string;
           p_outcome: Database['public']['Enums']['allied_coverage_outcome'];

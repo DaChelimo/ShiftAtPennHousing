@@ -328,7 +328,7 @@ private fun RespondSheet(
                 ShiftButton(
                     text = "I can cover it",
                     onClick = {
-                        onSelectOutcome(CoverageOutcome.COVERED_INTERNALLY)
+                        onCoverPersonally()
                         onSubmit()
                     },
                     modifier = Modifier.weight(1f).testTag(CoverageTags.COVER_IT),
@@ -414,13 +414,15 @@ private fun RespondSheet(
 }
 
 /**
- * The three outcomes left once "I can cover it" is out of the way, in the order a manager
- * is likely to need them. `COVERED_INTERNALLY` is deliberately NOT here: it is recorded
- * directly by the "I can cover it" action above.
+ * The four outcomes, in the order a manager is likely to need them. `COVERED_INTERNALLY`
+ * here is "covered another way" — recorded, but with no self-assignment, unlike the
+ * dedicated "I can cover it" action above ([CoverageViewModel.coverPersonally]), which sets
+ * the SAME wire outcome but also puts the acting manager on the schedule.
  */
 private val OTHER_OUTCOMES =
     listOf(
         CoverageOutcome.ALLIED_SECURED,
+        CoverageOutcome.COVERED_INTERNALLY,
         CoverageOutcome.DESK_UNSTAFFED,
         CoverageOutcome.NO_LONGER_NEEDED,
     )

@@ -709,3 +709,19 @@ user, dest, effective_date, note)` is the entry point: either the SOURCE or DEST
   import of anything under `packages/core/dist` in an Edge Function — it will pass locally
   and fail silently on deploy, which is exactly how this went undetected. See
   `supabase/functions/README.md` and `supabase/AGENTS.md` "Required deploy configuration".
+- [Coverage close auto-staffs the schedule] **Closing a coverage request as `allied_secured`,
+  or as `covered_internally` with the new `p_assign_self` flag, now writes
+  `shift_block_assignments`, not just the request row** (2026-08-07, migration
+  `20260807000002`). Only these two paths ever write: `desk_unstaffed`, `no_longer_needed`,
+  and `covered_internally` WITHOUT `p_assign_self` ("covered another way" — someone other
+  than the acting manager covered it, or the caller has no self-cover control) all leave the
+  schedule exactly as it was. The write is delegated to `admin_assign_worker`, never
+  reimplemented inline — that function already carries the Harnwell training trigger and the
+  RSM own-house-only self-assignment guard (`v_is_rsm`, scoped to the RSM role's OWN house,
+  distinct from `user_can_build_schedule`'s cross-house grant for hm/bm/rsm), and a direct
+  `shift_block_assignments` UPDATE gated only on the outer `user_can_build_schedule` check
+  would silently reopen "an RSM covering another house's desk," which the elevated
+  cross-house-schedule tier otherwise permits for everything else. If `admin_assign_worker`
+  raises, the WHOLE close aborts (same transaction) — a request is never left closed with a
+  schedule that does not reflect its recorded outcome. Mobile's Coverage sheet "I can cover
+  it" action is the only caller that ever sends `p_assign_self = true`.

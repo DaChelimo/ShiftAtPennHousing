@@ -357,6 +357,56 @@ class CoverageViewModelTest {
         assertTrue(model.uiState.value.showsBanner)
     }
 
+    // ----- "I can cover it" sets assignSelf; nothing else does. -----
+
+    @Test
+    fun coverPersonallySelectsCoveredInternallyAndSetsAssignSelf() {
+        val model = vm(request())
+        model.openRespond("req-1")
+        model.coverPersonally()
+
+        val sheet = model.uiState.value.sheet!!
+        assertEquals(CoverageOutcome.COVERED_INTERNALLY, sheet.selectedOutcome)
+        assertTrue(sheet.assignSelf)
+
+        val intent = model.submitClose()
+        assertNotNull(intent)
+        assertEquals(CoverageOutcome.COVERED_INTERNALLY, intent.outcome)
+        assertTrue(intent.assignSelf, "the write must carry assignSelf so the server assigns the acting manager")
+    }
+
+    /**
+     * Picking the same wire outcome from the generic "what happened" list — "covered another
+     * way" — must NOT self-assign. Two different UI actions reach the same outcome value;
+     * only [CoverageViewModel.coverPersonally] sets the flag.
+     */
+    @Test
+    fun selectingCoveredInternallyFromTheListDoesNotSetAssignSelf() {
+        val model = vm(request())
+        model.openRespond("req-1")
+        model.selectOutcome(CoverageOutcome.COVERED_INTERNALLY)
+
+        val intent = model.submitClose()
+        assertNotNull(intent)
+        assertEquals(CoverageOutcome.COVERED_INTERNALLY, intent.outcome)
+        assertFalse(intent.assignSelf)
+    }
+
+    /** Switching away from coverPersonally() to a list pick must clear the flag, not carry it. */
+    @Test
+    fun selectingADifferentOutcomeAfterCoverPersonallyClearsAssignSelf() {
+        val model = vm(request())
+        model.openRespond("req-1")
+        model.coverPersonally()
+        model.selectOutcome(CoverageOutcome.DESK_UNSTAFFED)
+        model.updateNote("Allied had no one available.")
+
+        val intent = model.submitClose()
+        assertNotNull(intent)
+        assertEquals(CoverageOutcome.DESK_UNSTAFFED, intent.outcome)
+        assertFalse(intent.assignSelf)
+    }
+
     @Test
     fun deskPhoneReachesTheSheetSoTheCallActionCanDial() {
         val model = vm(request())

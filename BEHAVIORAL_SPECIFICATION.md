@@ -660,6 +660,13 @@ A rung holds the request for `allied_ladder_rung_timeout_minutes` (Section 14). 
 - **Acknowledging** means "I have seen this and I am handling it." It stops the ladder and stops the reminders. Any manager who can build for that house may acknowledge, not only the current rung holder: if an RSM picks up a request that has already passed to their HM, that is a good outcome.
 - **Closing out** means "here is what actually happened," and requires one of four outcomes: **Allied secured**, **Covered internally**, **Desk went unstaffed**, or **No longer needed**. Closing as _Desk went unstaffed_ additionally requires a written note.
 
+**Closing as Allied secured, or as Covered internally by the acting manager themselves, writes the schedule.** _(Added 2026-08-07.)_ Two of the four outcomes staff the request's currently-vacant blocks, not just record what happened:
+
+- **Allied secured** assigns the Allied contractor to every block in the request's window that is still vacant at the moment of closing. A block a float, a claim, or another manager already covered since the request opened is left untouched.
+- **Covered internally**, when closed through the dedicated **"I can cover it"** action (mobile Coverage sheet), assigns the ACTING manager themselves to every still-vacant block in the window, the same way. **Covered internally** closed any other way — the generic outcome row, used when someone other than the acting manager covered it, or on a surface with no dedicated self-cover control — records the outcome only and leaves the schedule exactly as it was, identically to **Desk went unstaffed** and **No longer needed**.
+
+An RSM may self-cover only their OWN house's request, never another house's, even though the elevated schedule-admin tier (Section 13) may otherwise build any house's schedule. Attempting to self-cover a request for a house that is not the acting manager's is refused outright, and the WHOLE close aborts: no outcome is recorded on a request nobody actually covered, rather than leaving a closed request with a schedule that does not reflect it.
+
 **An open request never clears itself.** Once its coverage window passes without a close-out, the request becomes **overdue** and stays visible until a human closes it. A request that was acknowledged but never closed also goes overdue. The system closes a request on its own in exactly one case: the coverage is no longer needed because the block was voided by a configuration change or the desk regained a worker, recorded as _No longer needed_.
 
 Every request closed as _Desk went unstaffed_, and every request that goes overdue, is a **missed-coverage incident** and appears, flagged as such, in the Action Inbox's Archive tab history for review.

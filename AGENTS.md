@@ -684,3 +684,21 @@ user, dest, effective_date, note)` is the entry point: either the SOURCE or DEST
   non-prod build" surface for every other role. Mobile's `SimClock` needed no change — it
   already re-syncs at launch and on foreground return and simply reflects whatever offset the
   DB holds, which can now only ever be non-zero because the admin set it.
+
+- [Orchestrator was never running in prod] **Found 2026-08-05, fixed 2026-08-06: the hosted
+  Shift project had never once executed `orchestrator-tick` via cron.** Two stacked, unrelated
+  causes — see ARCH "Deploy-time secrets" for the full incident writeup:
+  (1) `supabase/seed.sql`'s cron-teardown block was replayed against hosted, unscheduling all
+  seven jobs; it is now guarded on `app_runtime_setting('app.supabase_url')` resolving, but
+  **never replay `seed.sql` against a hosted project regardless** — the guard is a backstop.
+  (2) Five Edge Functions (`orchestrator-tick`, `force-trigger`, `create-swap`,
+  `permanent-drop`, `permanent-pickup`) reached `@shift/core` via a dynamic
+  `import('../../../packages/core/dist/...')`, which resolves under `supabase start` but not
+  under `supabase functions deploy` (the bundler follows only static imports), so every
+  deploy silently shipped without core. Fixed by vendoring the reachable subset of
+  `packages/core/dist` into a **committed** `supabase/functions/_shared/core/` and importing
+  it statically; `pnpm vendor:core` regenerates it after any `packages/core/src` change and
+  CI's `pnpm vendor:core:check` fails the build if it drifts. Do NOT reintroduce a dynamic
+  import of anything under `packages/core/dist` in an Edge Function — it will pass locally
+  and fail silently on deploy, which is exactly how this went undetected. See
+  `supabase/functions/README.md` and `supabase/AGENTS.md` "Required deploy configuration".

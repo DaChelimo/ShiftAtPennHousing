@@ -1,3 +1,4 @@
+// swapEligibility is vendored @shift/core -- see supabase/functions/README.md.
 import * as swapEligibility from '../_shared/core/swaps/eligibility.js';
 import {
   authenticate,
@@ -8,8 +9,6 @@ import {
   readObjectBody,
   type Supabase,
 } from '../_shared/swap-http.ts';
-// Vendored @shift/core -- static so `supabase functions deploy` actually bundles it.
-// See scripts/vendor-core-into-functions.mjs.
 
 type SwapType = 'shift_swap' | 'float_swap' | 'permanent_swap' | 'handoff';
 

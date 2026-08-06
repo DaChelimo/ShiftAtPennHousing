@@ -1,7 +1,6 @@
+// dropScope is vendored @shift/core -- see supabase/functions/README.md.
 import * as dropScope from '../_shared/core/permanent-ops/drop-scope.js';
 import { authenticate, jsonResponse, readObjectBody, type Supabase } from '../_shared/swap-http.ts';
-// Vendored @shift/core -- static so `supabase functions deploy` actually bundles it.
-// See scripts/vendor-core-into-functions.mjs.
 
 const TIMEZONE = 'America/New_York';
 

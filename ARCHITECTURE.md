@@ -1860,17 +1860,67 @@ Every one of these defaults to the **historical behavior** when absent. That is 
 
 ### Deploy-time secrets
 
-| Secret                                      | Used by                                                                                      |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `CLAUDE_AI_CHATBOT_DESK_ASSISTANT`          | Assistant generation (`da-ask`); model from `DA_GENERATION_MODEL`, default `claude-sonnet-5` |
-| `CLAUDE_AI_CHATBOT_UPLOAD_CHUNKER`          | Knowledge intake normalization and PDF vision fallback                                       |
-| `CLAUDE_AI_CHATBOT_PROPOSE`                 | Knowledge intake metadata proposal                                                           |
-| `CLAUDE_AI_CREATE_SCHEDULE_KEY`             | AI schedule agent (§15)                                                                      |
-| `VOYAGE_API_KEY`                            | Embeddings (`voyage-3`, 1024-dim)                                                            |
-| `FIREBASE_SERVICE_ACCOUNT_JSON`             | Push delivery (`dispatch-push`, both FCM and APNs)                                           |
-| `app.supabase_url` / `app.service_role_key` | Postgres settings for `deliver_pending_notifications`                                        |
+| Secret                                      | Used by                                                                                                                              |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `CLAUDE_AI_CHATBOT_DESK_ASSISTANT`          | Assistant generation (`da-ask`); model from `DA_GENERATION_MODEL`, default `claude-sonnet-5`                                         |
+| `CLAUDE_AI_CHATBOT_UPLOAD_CHUNKER`          | Knowledge intake normalization and PDF vision fallback                                                                               |
+| `CLAUDE_AI_CHATBOT_PROPOSE`                 | Knowledge intake metadata proposal                                                                                                   |
+| `CLAUDE_AI_CREATE_SCHEDULE_KEY`             | AI schedule agent (§15)                                                                                                              |
+| `VOYAGE_API_KEY`                            | Embeddings (`voyage-3`, 1024-dim)                                                                                                    |
+| `FIREBASE_SERVICE_ACCOUNT_JSON`             | Push delivery (`dispatch-push`, both FCM and APNs)                                                                                   |
+| `app.supabase_url` / `app.service_role_key` | Resolved via `app_runtime_setting()` by every pg_cron job that calls an Edge Function (`orchestrator-tick`, `deliver-notifications`) |
 
 One key per feature, with **no generic fallback**, so per-feature cost is attributable. Each client fails with a clear 503 when its key is absent rather than crashing.
+
+**`app.supabase_url` / `app.service_role_key` live in Supabase Vault, not a Postgres GUC.**
+Hosted Supabase grants no role permission to set a custom `app.*` parameter (`ALTER DATABASE
+... SET app.supabase_url = ...` → `42501 permission denied`), so a GUC-only design is
+inert-by-construction on every hosted project. `app_runtime_setting(p_name)` (migration
+`20260727000002`) resolves Vault first and falls back to a GUC, which is what keeps the
+local stack (which sets neither) and any future self-hosted environment (which still can
+set a GUC) working unchanged. The function is `SECURITY DEFINER` and granted to **no
+role** — not even `service_role` — because it returns the secret; pg_cron executes it as
+the owning `postgres` role, so the cron works while nothing else can call it.
+
+**Incident (found 2026-08-05, root-caused and fixed 2026-08-06): the orchestrator had
+never once run against the hosted Shift project.** Two independent causes stacked:
+
+1. `seed.sql`'s cron-teardown block (see the "LOCAL ONLY" guard, `supabase/seed.sql`) was
+   replayed against the hosted project during an earlier data load, unscheduling all seven
+   jobs registered by `20260727000001`. `net._http_response` was empty — the database had
+   never made a single outbound HTTP call — which is how a `SELECT * FROM cron.job` check
+   would still have reported the environment healthy (nothing to compare against). Fixed
+   by gating the teardown on `app_runtime_setting('app.supabase_url')` resolving to a real
+   value: if it does, this database is configured to run the jobs for real (hosted, or a
+   local stack deliberately rehearsing hosted behavior) and the teardown is skipped with a
+   `RAISE WARNING` instead of silently deleting the registration.
+2. Independently, five Edge Functions (`orchestrator-tick`, `force-trigger`, `create-swap`,
+   `permanent-drop`, `permanent-pickup`) reached `@shift/core` with a **dynamic** import of
+   a path outside the function directory: `await import('../../../packages/core/dist/...')`.
+   That resolves under `supabase start`, because the local edge runtime bind-mounts the
+   literal specifiers it discovers at start time. It does **not** survive `supabase
+functions deploy`: the deploy bundler follows only **static** relative imports, and
+   `packages/core/dist` is both outside the bundled tree and gitignored, so the deploy
+   reported success and shipped a bundle missing core entirely. Every invocation then died
+   at runtime with `Module not found: file:///var/tmp/sb-compile-edge-runtime/packages/
+core/dist/orchestrator/evaluate.js`. Confirmed against the deployed `orchestrator-tick`
+   bundle: it contained only `index.ts` and `floatLookup.ts`.
+
+The fix vendors the reachable subset of `@shift/core` into `supabase/functions/_shared/
+core/`, **committed** (not gitignored — a gitignored build artifact that had to exist at
+deploy time is exactly what caused this, so leaving the vendored copy gitignored would
+rebuild the same trap), and imported **statically**. `scripts/vendor-core-into-functions.mjs`
+discovers entrypoints from the function sources themselves, walks the transitive closure
+over `packages/core/dist` (`.js` and `.d.ts` together), fails loudly if the closure ever
+reaches a bare specifier Deno cannot resolve (core's only runtime dependency,
+`date-fns-tz`, is not reachable from any of the six entrypoints today), and — critically —
+also fails if any file **uses** a `_shared/core` import alias without importing it in that
+file. That second check exists because the first deploy attempt fixed the entrypoint files
+but dropped one import line in a concurrent edit, which passed every check that verifies
+imports that _exist_ resolve, and would have shipped the exact same "Module not found"
+failure one function deeper. `pnpm vendor:core:check` runs in CI before lint; see
+`supabase/functions/README.md` for the full mechanism. `supabase/AGENTS.md`'s "Required
+deploy configuration" list was updated to name Vault as the delivery mechanism.
 
 ---
 

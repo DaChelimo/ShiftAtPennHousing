@@ -262,8 +262,32 @@ Every deployed environment must set these or behavior silently degrades:
   contact when an urgent HMOD-for-Allied notification resolves past both HM and HMOD. If unset
   or invalid, the notification is logged via `RAISE WARNING` and no `hmod_urgent` row is
   created. `seed.sql` does not set it (the local seed has no users).
-- Postgres settings `app.supabase_url` and `app.service_role_key`.
+- `app.supabase_url` and `app.service_role_key` **in Supabase Vault** (`vault.create_secret`),
+  not a Postgres GUC — hosted Supabase grants no role permission to set a custom `app.*`
+  parameter. `app_runtime_setting()` (`20260727000002`) resolves Vault first, falling back
+  to a GUC only for environments that can actually set one. `verify_scheduled_jobs()`
+  checks both this and the seven expected cron jobs; run it after setting the secrets, and
+  after any suspected drift. A missing/invalid value means every pg*cron job that calls an
+  Edge Function (`orchestrator-tick`, `deliver-notifications`) 401s or errors once a
+  minute, invisibly, until someone opens the admin health page or `cron.job_run_details`.
+  The service role key must be the `sb_secret*…`value (the new-format secret key); the`orchestrator-tick`Edge Function does an exact string comparison against`SUPABASE_SERVICE_ROLE_KEY`, so a legacy `service_role` JWT (if legacy keys are still
+  enabled on the project) authenticates everywhere else but 401s here specifically.
+- **Never replay `seed.sql` against a hosted project.** It unschedules those same seven
+  cron jobs by name so the local stack stays cron-free; this happened for real against
+  the hosted Shift project and left the orchestrator, notification delivery, swap expiry,
+  and the coverage ladder silently inert for about a week. `seed.sql` now guards the
+  teardown on `app_runtime_setting('app.supabase_url')` resolving — if this environment is
+  configured to run the jobs for real, the teardown is skipped with a `RAISE WARNING`
+  instead of silently deleting the registration — but that guard is a backstop, not
+  permission to run `seed.sql` there on purpose.
 - Edge Function secret `FIREBASE_SERVICE_ACCOUNT_JSON`.
+- `@shift/core` reaches the five Edge Functions that use it (`orchestrator-tick`,
+  `force-trigger`, `create-swap`, `permanent-drop`, `permanent-pickup`) through a
+  **committed, generated** vendored copy at `supabase/functions/_shared/core/`, not a
+  dynamic import of `packages/core/dist`. After changing `packages/core/src`, run
+  `pnpm vendor:core` and commit the result — CI runs `pnpm vendor:core:check` and fails the
+  build if it's stale. See `supabase/functions/README.md` for why (a real outage: the
+  dynamic-import form silently shipped without core on every `supabase functions deploy`).
 
 ## Other
 

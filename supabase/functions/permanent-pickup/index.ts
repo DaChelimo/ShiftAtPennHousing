@@ -1,7 +1,6 @@
+// pickupEvaluator is vendored @shift/core -- see supabase/functions/README.md.
 import * as pickupEvaluator from '../_shared/core/permanent-ops/pickup-evaluator.js';
 import { authenticate, jsonResponse, readObjectBody, type Supabase } from '../_shared/swap-http.ts';
-// Vendored @shift/core -- static so `supabase functions deploy` actually bundles it.
-// See scripts/vendor-core-into-functions.mjs.
 
 const TIMEZONE = 'America/New_York';
 const WORKED_STATUSES = ['scheduled', 'claimed', 'floated_in', 'pending_float_in'];

@@ -207,8 +207,7 @@ private fun FloatRequestCardView(
                     clip = false,
                     ambientColor = if (isDark) Color.Transparent else Color.Black.copy(alpha = 0.07f),
                     spotColor = if (isDark) Color.Transparent else Color.Black.copy(alpha = 0.12f),
-                )
-                .clip(cardShape)
+                ).clip(cardShape)
                 .background(ShiftTheme.colors.surface)
                 .then(if (isDark) Modifier.border(2.dp, blue, cardShape) else Modifier)
                 .clickable(onClick = onOpenDetail)

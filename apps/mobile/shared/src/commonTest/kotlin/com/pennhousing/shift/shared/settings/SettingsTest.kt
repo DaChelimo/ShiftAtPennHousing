@@ -94,7 +94,7 @@ class SettingsTest {
     @Test fun the_three_offered_lead_times_are_longest_first() {
         assertEquals(listOf(120, 60, 30), SHIFT_REMINDER_LEAD_TIMES)
         assertEquals(
-            listOf("2 hours before", "1 hour before", "30 minutes before"),
+            listOf("2 hours before the shift", "1 hour before the shift", "30 minutes before the shift"),
             SHIFT_REMINDER_LEAD_TIMES.map { shiftReminderLabel(it) },
         )
     }
@@ -125,7 +125,10 @@ class SettingsTest {
             "Off. You will not be reminded before your shifts.",
             shiftReminderSummary(emptySet()),
         )
-        assertEquals("2 hours before, 30 minutes before", shiftReminderSummary(setOf(30, 120)))
+        assertEquals(
+            "2 hours before the shift, 30 minutes before the shift",
+            shiftReminderSummary(setOf(30, 120)),
+        )
     }
 
     @Test fun the_row_switch_is_a_shortcut_for_all_off_and_back_to_default() {
@@ -163,6 +166,22 @@ class SettingsTest {
     // `hours_limits_use_the_shared_caps` was removed with the Settings "Hours & limits"
     // group (2026-07-29): it asserted a static 20h/40h pair that the per-week server cap
     // replaced.
+
+    // ----- grouping / legal (2026-08-06 Settings redesign) -----
+
+    @Test fun open_shifts_group_copy_is_stable() {
+        assertEquals("Open shift notifications", OPEN_SHIFTS_GROUP_TITLE)
+        assertEquals("When a shift opens up for pickup", OPEN_SHIFTS_GROUP_SUB)
+    }
+
+    @Test fun always_on_disclosure_label_carries_the_count() {
+        assertEquals("Always-on notifications (5)", alwaysOnNotificationsLabel(5))
+    }
+
+    @Test fun legal_links_point_at_the_guide_site() {
+        assertEquals("https://shiftatpenn.com/guide/legal/privacy", PRIVACY_POLICY_URL)
+        assertEquals("https://shiftatpenn.com/guide/legal/terms", TERMS_OF_SERVICE_URL)
+    }
 
     @Test fun theme_choices_order_and_labels() {
         assertEquals(listOf(ThemeChoice.SYSTEM, ThemeChoice.LIGHT, ThemeChoice.DARK), THEME_CHOICES)

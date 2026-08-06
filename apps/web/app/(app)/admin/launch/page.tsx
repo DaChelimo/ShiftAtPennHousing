@@ -1,9 +1,12 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
 import { LaunchConsole } from '../../../../components/launch/LaunchConsole';
 import { Notification, PageHead } from '../../../../components/ui';
 import { getSessionUser, isAdmin } from '../../../../lib/auth';
 import { getLaunchBoard } from '../../../../lib/data/launch';
+
+export const metadata: Metadata = { title: 'Admin - Launch' };
 
 // Phase B — staggered-launch admin console. Project-admin only: flip the master switch,
 // take houses live one at a time, and invite each house's roster when it goes live.

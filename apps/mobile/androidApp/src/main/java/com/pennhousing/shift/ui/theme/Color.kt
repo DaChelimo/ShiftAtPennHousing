@@ -33,6 +33,7 @@ private object L {
     val bluePressed = Color(0xFF0A4ECB)
     val blueContainer = Color(0xFFE4EDFF)
     val onBlueContainer = Color(0xFF00307E)
+
     // Current-date / current-week emphasis (one consistent soft brand blue = "now")
     val today = Color(0xFFDCE8FF)
 
@@ -56,6 +57,7 @@ private object L {
     val floatInTint = Color(0xFFE4F4EA)
     val floatInDeep = Color(0xFF1E6B40)
     val floatInBadge = Color(0xFFCDEAD8)
+
     // Break period — cool slate-blue (de-yellowed; was golden/amber)
     val brk = Color(0xFF3F6079)
     val brkTint = Color(0xFFE8EDF3)
@@ -122,6 +124,7 @@ private object D {
     val floatInTint = Color(0xFF13271B)
     val floatInDeep = Color(0xFFA6E7BE)
     val floatInBadge = Color(0xFF1C3A27)
+
     // Break period — cool slate-blue (de-yellowed; was golden/amber)
     val brk = Color(0xFF93ADC9)
     val brkTint = Color(0xFF19232F)

@@ -1,3 +1,7 @@
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = { title: 'Admin - Preferences' };
+
 import { PreferencesOversight } from '../../../../components/preferences/PreferencesOversight';
 import { Notification } from '../../../../components/ui/Notification';
 import { PageHead } from '../../../../components/ui/PageHead';

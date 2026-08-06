@@ -12,17 +12,20 @@ import { SEED, login } from './helpers';
 //   active   → window not yet ended → the "Coverage" tab (resolve checkbox);
 //   archived → window ended < 24h ago → the "Archive" tab (read-only history);
 //   discarded→ older → hidden (the DB row is retained).
-// Non-Allied notifications (swaps/leave/reminders) live in the "Notifications" tab,
-// where they can be marked read. Resolving an Allied alert marks it HANDLED — it does
-// NOT fill the seat and does NOT move it to Archive (archive is window-based).
+// Resolving an Allied alert marks it HANDLED — it does NOT fill the seat and does NOT
+// move it to Archive (archive is window-based).
+//
+// 2026-08-05: the inbox's "Notifications" tab (non-Allied types: swaps, leave notices,
+// shift-opened/reminder alerts, etc.) was retired — those are personal to the
+// recipient as a shift-holder, not to their manager role, and reach them via mobile
+// push instead. The Action Inbox is Coverage + Archive only now.
 //
 // Selector contract (data-testid):
 //   inbox-coverage-card     — an Allied card (class .cov-card) in either grid.
 //   inbox-active-grid       — the Coverage tab's card grid.
 //   inbox-archive-grid      — the Archive tab's card grid.
 //   inbox-resolve-checkbox  — the native Resolved checkbox on an ACTIVE card.
-//   inbox-mark-read         — the mark-read button on a Notifications row (.inbox-item).
-// Tabs are role="tab" buttons labelled Coverage / Archive / Notifications.
+// Tabs are role="tab" buttons labelled Coverage / Archive.
 //
 // Route: /inbox (manager surface, gated to SM/HM/BM — workers use the mobile
 // "Updates" tab). Mutations use .click() so the post-write router.refresh() is not a
@@ -35,9 +38,11 @@ import { SEED, login } from './helpers';
 //      time."), window straddles now → ACTIVE, UNRESOLVED → Coverage tab.
 //   N2 hmod_urgent quad, reason floater_declined ("The assigned floater declined."),
 //      window ended ~1h ago → ARCHIVED, RESOLVED by Hana → Archive tab.
-//   N3 hm_leave_notice ("Leave / coverage change"), UNREAD → Notifications tab (the
-//      sole unread dot).
-//   N4 ack_reminder, scheduled now()+2d (future) → hidden (#18b due gate).
+//   N3 hm_leave_notice ("Leave / coverage change"), UNREAD → no longer fetched by the
+//      inbox at all (non-Allied type, retired 2026-08-05); the row is left in the seed
+//      as inert data.
+//   N4 ack_reminder, scheduled now()+2d (future) → non-Allied type, likewise not
+//      fetched; also would have been hidden by the due gate either way.
 // Alice (SEED.alice) is a Quad SW (the managers-only gate). The inbox e2e hits the
 // REAL new Date(), so the seed times are now()-relative.
 // ===========================================================================
@@ -46,7 +51,6 @@ const INBOX = '/inbox';
 
 const N1_REASON = /did not acknowledge/i; // float_no_acknowledgment (active)
 const N2_REASON = /assigned floater declined/i; // floater_declined (archived/resolved)
-const N3_TITLE = /coverage change/i; // hm_leave_notice → "Leave / coverage change"
 
 async function gotoInbox(page: Page): Promise<void> {
   await page.goto(INBOX);
@@ -124,16 +128,6 @@ test.describe('Action inbox — coverage lifecycle / resolve', () => {
     await expect(archived.getByText(/^resolved$/i)).toBeVisible();
     // Archived cards are read-only history — no resolve checkbox.
     await expect(archived.getByTestId('inbox-resolve-checkbox')).toHaveCount(0);
-  });
-
-  test('should mark a non-urgent notification read on the Notifications tab', async ({ page }) => {
-    await gotoInbox(page);
-    await tab(page, /notifications/i).click();
-
-    const n3 = page.locator('.inbox-item', { hasText: N3_TITLE });
-    await expect(n3.locator('.unread-dot')).toHaveCount(1);
-    await n3.getByTestId('inbox-mark-read').click();
-    await expect(n3.locator('.unread-dot')).toHaveCount(0);
   });
 
   test('should keep the Coverage tab to ACTIVE unresolved alerts only', async ({ page }) => {

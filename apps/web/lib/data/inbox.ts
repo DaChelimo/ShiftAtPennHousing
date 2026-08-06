@@ -25,8 +25,13 @@ import { createClient } from '../supabase/server';
 //   archived → the window has ended (resolved or not); kept for one day for reference.
 //   discarded→ older than that → hidden here (the DB row is retained).
 //
-// Non-Allied notifications (swaps, leave, etc.) have no coverage window and live in
-// the secondary "Notifications" list, where they can be marked read.
+// Manager-facing scope only (decided 2026-08-05): this read model surfaces
+// hmod_urgent and allied_page rows, the only types an SM/RSM/HM/BM is ever expected
+// to act on here (a desk about to go empty). Every other notification type
+// (shift_opened, shift_reminder, personal_shift, swap_request, hm_leave_notice,
+// ack_reminder, sw_permanent_removal_alert) is personal to the recipient as a
+// shift-holder, not to their manager role, and is delivered to them via mobile push
+// instead — this read model does not fetch or render them.
 // ===========================================================================
 
 const NY = 'America/New_York';
@@ -38,16 +43,14 @@ export type InboxItem = {
   type: string;
   urgent: boolean; // an unresolved Allied alert whose window is still active
   resolved: boolean; // a resolved Allied alert (hmod_urgent + resolved_at set)
-  unread: boolean; // not yet acknowledged
-  lifecycle: AlliedLifecycle | null; // Allied alerts only; null for other notifications
-  title: string;
+  lifecycle: AlliedLifecycle | null; // Allied alerts only; null for allied_page rows
   houseName: string | null;
-  dateLabel: string | null; // "Tue, Jun 24" — the coverage day
-  windowLabel: string | null; // "22:00–23:00" — the coverage window
+  dateLabel: string | null; // "Tue, Jun 24" (the coverage day)
+  windowLabel: string | null; // "22:00 to 23:00" (the coverage window)
   windowStartIso: string | null;
   agoLabel: string | null; // "Ended 2h ago" — archived cards only
   reason: string | null;
-  timeLabel: string; // when the notification arrived (the Notifications list)
+  timeLabel: string; // fallback label when a ladder page carries no block window
   alliedPageBlockId: string | null; // off-hours ladder alert: block to acknowledge
   deskPhone: string | null; // off-hours ladder alert: the desk to call
 };
@@ -56,22 +59,9 @@ export type InboxData = {
   alliedPages: InboxItem[]; // off-hours ladder "call the desk" alerts — ack, not resolve
   alliedActive: InboxItem[]; // window not yet ended — sorted soonest first
   alliedArchived: InboxItem[]; // window ended < 24h ago — sorted most-recent first
-  other: InboxItem[]; // non-Allied notifications, due — sorted newest first
   actionRequiredCount: number; // active Allied alerts / ladder pages still open
   activeCount: number; // Coverage tab badge (ladder pages + active Allied)
   archivedCount: number; // alliedArchived.length (the Archive tab badge)
-  otherUnreadCount: number; // unread non-Allied notifications (the Notifications badge)
-};
-
-const TITLE: Record<string, string> = {
-  hmod_urgent: 'Allied coverage needed',
-  allied_page: 'Call the desk for Allied coverage',
-  sw_permanent_removal_alert: 'You were removed from a recurring slot',
-  hm_leave_notice: 'Leave / coverage change',
-  swap_request: 'Swap request',
-  ack_reminder: 'Acknowledgment reminder',
-  broadcast: 'Open shift broadcast',
-  personal_shift: 'Shift update',
 };
 
 const REASON: Record<string, string> = {
@@ -184,9 +174,7 @@ function enrich(row: NotificationRow, lifecycle: AlliedLifecycle | null, now: Da
     type: row.type,
     urgent: row.type === 'hmod_urgent' && !resolved && lifecycle === 'active',
     resolved,
-    unread: row.acknowledged_at === null,
     lifecycle,
-    title: TITLE[row.type] ?? 'Notification',
     houseName: p.houseId ? prettifyHouse(p.houseId) : null,
     dateLabel: p.blockStart ? dayDateLabel(p.blockStart) : null,
     // Allied-page alerts carry only a block START (a 30-min block), so the label is the
@@ -227,22 +215,22 @@ export async function getInboxData(now: Date = new Date()): Promise<InboxData> {
     alliedPages: [],
     alliedActive: [],
     alliedArchived: [],
-    other: [],
     actionRequiredCount: 0,
     activeCount: 0,
     archivedCount: 0,
-    otherUnreadCount: 0,
   };
   if (user === null) return empty;
 
   const nowIso = now.toISOString();
 
-  // RLS scopes this to the signed-in recipient.
+  // RLS scopes this to the signed-in recipient. Only hmod_urgent and allied_page are
+  // fetched: the only two types a manager acts on here (see the module comment above).
   const { data: rows } = await supabase
     .from('notifications')
     .select(
       'notification_id, type, payload, created_at, scheduled_for, acknowledged_at, resolved_at, resolved_by',
     )
+    .in('type', ['hmod_urgent', 'allied_page'])
     .order('created_at', { ascending: false })
     .limit(200);
 
@@ -257,22 +245,17 @@ export async function getInboxData(now: Date = new Date()): Promise<InboxData> {
   const alliedPages = alliedPageRows.map((r) => enrich(r, null, now));
 
   const due = allRows
-    .filter((r) => r.type !== 'allied_page')
+    .filter((r) => r.type === 'hmod_urgent')
     .filter((r) => isDue(filterInput(r), nowIso));
 
   const activeRows: NotificationRow[] = [];
   const archivedRows: NotificationRow[] = [];
-  const otherRows: NotificationRow[] = [];
 
   for (const r of due) {
-    if (r.type === 'hmod_urgent') {
-      const phase = alliedLifecycle(filterInput(r), nowIso);
-      if (phase === 'active') activeRows.push(r);
-      else if (phase === 'archived') archivedRows.push(r);
-      // 'discarded' → drop (older than a day; the DB row is retained).
-    } else {
-      otherRows.push(r);
-    }
+    const phase = alliedLifecycle(filterInput(r), nowIso);
+    if (phase === 'active') activeRows.push(r);
+    else if (phase === 'archived') archivedRows.push(r);
+    // 'discarded' → drop (older than a day; the DB row is retained).
   }
 
   // Active: soonest coverage window first (the one about to arrive); unresolved before
@@ -287,17 +270,14 @@ export async function getInboxData(now: Date = new Date()): Promise<InboxData> {
 
   const alliedActive = activeRows.map((r) => enrich(r, 'active', now));
   const alliedArchived = archivedRows.map((r) => enrich(r, 'archived', now));
-  const other = otherRows.map((r) => enrich(r, null, now));
 
   return {
     alliedPages,
     alliedActive,
     alliedArchived,
-    other,
     // Ladder pages always need attention (an unacknowledged call-the-desk request).
     actionRequiredCount: alliedPages.length + alliedActive.filter((i) => i.urgent).length,
     activeCount: alliedPages.length + alliedActive.length,
     archivedCount: alliedArchived.length,
-    otherUnreadCount: other.filter((i) => i.unread).length,
   };
 }

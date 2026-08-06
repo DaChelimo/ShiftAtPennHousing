@@ -14,6 +14,8 @@
     "lint": "turbo run lint",
     "type-check": "turbo run type-check",
     "secrets:sync": "bash scripts/sync-secrets.sh",
+    "vendor:core": "pnpm --filter @shift/core build && node scripts/vendor-core-into-functions.mjs",
+    "vendor:core:check": "pnpm --filter @shift/core build && node scripts/vendor-core-into-functions.mjs --check",
     "db:reset": "supabase db reset",
     "db:reset:manual": "supabase db reset && psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -f supabase/seeds/manual-test.sql",
     "db:reset:seasons": "supabase db reset && psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -f supabase/seeds/seasons-test.sql && tsx supabase/seeds/seasons-cast.ts && psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -f supabase/seeds/harnwell-real-workers.sql",

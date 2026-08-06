@@ -87,7 +87,7 @@ UNION ALL SELECT E'-- launch_state stays pre_launch for ALL houses. The cutover 
 UNION ALL SELECT 'INSERT INTO houses (id, name, desk_phone, is_staffable, launch_state) VALUES'
 UNION ALL SELECT string_agg(format('  (%L,%L,%L,%L,''pre_launch'')', id, name, desk_phone, is_staffable), E',\n' ORDER BY id)
      || E'\nON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, desk_phone=EXCLUDED.desk_phone, is_staffable=EXCLUDED.is_staffable;' FROM houses
-UNION ALL SELECT E'\n-- system_config. allow_time_travel is OMITTED on purpose: absent means time travel is\n-- DENIED, which is what production must be (migration 20260726000008).'
+UNION ALL SELECT E'\n-- system_config. The simulated clock is gated by ROLE now, not by a system_config key\n-- (migration 20260805000001) -- no allow_time_travel row is needed in any environment.'
 UNION ALL SELECT 'INSERT INTO system_config (config_key, config_value, value_type, notes) VALUES'
 UNION ALL SELECT string_agg(format('  (%L,%L,%L::value_type_enum,%L)', config_key, config_value, value_type, notes), E',\n' ORDER BY config_key)
      || E'\nON CONFLICT (config_key) DO UPDATE SET config_value=EXCLUDED.config_value;'

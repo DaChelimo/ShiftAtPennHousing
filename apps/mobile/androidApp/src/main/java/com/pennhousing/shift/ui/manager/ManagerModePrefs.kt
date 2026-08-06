@@ -24,8 +24,7 @@ internal object ManagerModePrefs {
     private const val KEY = "role_shape"
 
     /** The stored shape, or null when absent, stale-versioned, or malformed. */
-    fun read(context: Context): CachedRoleShape? =
-        decodeRoleShape(prefs(context).getString(KEY, null))
+    fun read(context: Context): CachedRoleShape? = decodeRoleShape(prefs(context).getString(KEY, null))
 
     fun write(
         context: Context,

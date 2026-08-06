@@ -1,11 +1,14 @@
 import SwiftUI
+import UIKit
 import Shared
 
 /// Settings / Profile in SwiftUI, over the shared `SettingsViewModel` (observed — the
-/// broadcast toggle + theme mutate). Rebuilds worker-app.html `SettingsScreen`: the
-/// profile card, the Notifications group (only "General updates" / broadcast is
-/// user-toggleable), the Appearance theme segmented control, the read-only Hours &
-/// limits, and the Account group (Sign out). Selector ids match the Maestro contract.
+/// broadcast toggle + theme mutate). Rebuilds worker-app.html `SettingsScreen`,
+/// redesigned 2026-08-06 (BSpec §10.1): Notifications splits into what a worker can
+/// change (shift reminders, the merged open-shifts card, general updates) and a
+/// collapsed "Always-on notifications" disclosure for the five mandatory channels; the
+/// Account group is Sign out only, with Privacy policy / Terms of service links below
+/// it. Selector ids match the Maestro contract.
 @MainActor
 final class SettingsObservable: ObservableObject {
     private(set) var vm: SettingsViewModel
@@ -54,19 +57,9 @@ struct SettingsScreen: View {
     // shift-reminder lead times). Called with the WHOLE preference set, because the
     // RPC upserts every column at once. Nil on the demo path (local-only).
     var onToggleNotification: ((NotificationPreferences) -> Void)? = nil
-    /// Replay the interactive "Manage a shift" tour (the My-Shifts drop/swap/hand-off demo).
-    var onReplayShiftTour: () -> Void = {}
-    /// Replay the interactive Preferences (availability paint) tour.
-    var onReplayPreferencesTour: () -> Void = {}
-    /// Replay the interactive Break calendar (claim/drop) tour.
-    var onReplayBreakTour: () -> Void = {}
-    /// Replay the interactive swap-composer tour (fires the next time the swap page opens).
-    var onReplaySwapTour: () -> Void = {}
-    /// Replay the interactive House grid tour.
-    var onReplayHouseGridTour: () -> Void = {}
-    /// Replay the interactive Open-shifts claim tour (one-time vs permanent pickup).
-    var onReplayOpenClaimTour: () -> Void = {}
     @Environment(\.colorScheme) private var scheme
+    /// Whether the five mandatory notification rows are expanded (BSpec §10.1, 2026-08-06).
+    @State private var alwaysOnExpanded = false
     /// The app-wide appearance override the segmented control drives (and that the root
     /// applies via `.preferredColorScheme`). Persisted, so it is the source of truth for
     /// the selected segment — not the in-session-only VM theme.
@@ -83,9 +76,23 @@ struct SettingsScreen: View {
                 profileCard(st.profile, c)
 
             group("Notifications", c) {
-                ForEach(Array(st.notifications.enumerated()), id: \.offset) { idx, row in
-                    notificationRow(row, last: idx == st.notifications.count - 1, c)
+                let configurable = st.notifications.filter { $0.interactive }
+                let alwaysOn = st.notifications.filter { !$0.interactive }
+                ForEach(Array(configurable.enumerated()), id: \.offset) { idx, row in
+                    // The two open-shift channels render as ONE merged card; only emit it
+                    // once, on the home-house row, and skip the other-houses peer entirely.
+                    if row.channel == .openShiftsOtherHouses {
+                        EmptyView()
+                    } else if row.channel == .openShiftsHomeHouse {
+                        let otherHouses = configurable.first { $0.channel == .openShiftsOtherHouses }
+                        if let otherHouses {
+                            openShiftsRow(homeHouse: row, otherHouses: otherHouses, c: c)
+                        }
+                    } else {
+                        notificationRow(row, last: idx == configurable.count - 1, c)
+                    }
                 }
+                alwaysOnDisclosure(alwaysOn, c)
             }
 
             group("Appearance", c) {
@@ -108,72 +115,19 @@ struct SettingsScreen: View {
                 .padding(.horizontal, 14).padding(.vertical, 12)
             }
 
+            // PennKey & security, Help & policy, and the six tour-replay rows are gone
+            // (2026-08-06): every tour already has its own "?" entry point on its own tab
+            // header, so nothing is lost by dropping the Settings duplicate. Account is
+            // Sign out only.
             group("Account", c) {
-                settingsRow(icon: ShiftIcons.person, tint: c.blue, title: "PennKey & security", c: c) {
-                    AnyView(Image(systemName: ShiftIcons.chevronRight).font(.system(size: 15, weight: .semibold)).foregroundColor(c.outline))
-                }
-                divider(c)
-                settingsRow(icon: ShiftIcons.info, tint: c.ter, title: "Help & policy", c: c) {
-                    AnyView(Image(systemName: ShiftIcons.chevronRight).font(.system(size: 15, weight: .semibold)).foregroundColor(c.outline))
-                }
-                divider(c)
-                Button(action: onReplayShiftTour) {
-                    settingsRow(icon: ShiftIcons.list, tint: c.blue, title: "Replay shift tour", c: c) {
-                        AnyView(Image(systemName: ShiftIcons.chevronRight).font(.system(size: 15, weight: .semibold)).foregroundColor(c.outline))
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("settings_replay_shift_tour")
-                divider(c)
-                // Five more interactive tours, own Settings row each (never merged — a
-                // worker replaying "the shift tour" should not also see an unrelated
-                // break-calendar demo). Same row chrome, same "?" family they replay.
-                Button(action: onReplayPreferencesTour) {
-                    settingsRow(icon: ShiftIcons.tune, tint: c.blue, title: "Replay preferences tour", c: c) {
-                        AnyView(Image(systemName: ShiftIcons.chevronRight).font(.system(size: 15, weight: .semibold)).foregroundColor(c.outline))
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("settings_replay_preferences_tour")
-                divider(c)
-                Button(action: onReplayBreakTour) {
-                    settingsRow(icon: ShiftIcons.snowflake, tint: c.blue, title: "Replay break tour", c: c) {
-                        AnyView(Image(systemName: ShiftIcons.chevronRight).font(.system(size: 15, weight: .semibold)).foregroundColor(c.outline))
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("settings_replay_break_tour")
-                divider(c)
-                Button(action: onReplaySwapTour) {
-                    settingsRow(icon: "arrow.left.arrow.right", tint: c.blue, title: "Replay swap tour", c: c) {
-                        AnyView(Image(systemName: ShiftIcons.chevronRight).font(.system(size: 15, weight: .semibold)).foregroundColor(c.outline))
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("settings_replay_swap_tour")
-                divider(c)
-                Button(action: onReplayHouseGridTour) {
-                    settingsRow(icon: ShiftIcons.building, tint: c.blue, title: "Replay house grid tour", c: c) {
-                        AnyView(Image(systemName: ShiftIcons.chevronRight).font(.system(size: 15, weight: .semibold)).foregroundColor(c.outline))
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("settings_replay_housegrid_tour")
-                divider(c)
-                Button(action: onReplayOpenClaimTour) {
-                    settingsRow(icon: ShiftIcons.plus, tint: c.blue, title: "Replay open-shifts tour", c: c) {
-                        AnyView(Image(systemName: ShiftIcons.chevronRight).font(.system(size: 15, weight: .semibold)).foregroundColor(c.outline))
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("settings_replay_openclaim_tour")
-                divider(c)
                 Button(action: onSignOut) {
                     settingsRow(icon: ShiftIcons.logout, tint: c.danger.accent, title: "Sign out", titleColor: c.danger.accent, c: c) { AnyView(EmptyView()) }
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("settings_sign_out")
             }
+
+            legalLinks(c)
 
             Text("SHIFT · v\(st.appVersion)")
                 .font(ShiftFont.mono(11.5)).monospacedDigit().foregroundColor(c.ter)
@@ -185,8 +139,8 @@ struct SettingsScreen: View {
         .background(c.bg)
         // A non-wrapping marker, not the container itself — an identifier set directly on a
         // wrapping VStack leaks onto every descendant element in the XCUITest tree, shadowing
-        // every settings_replay_*_tour row (confirmed empirically; see ContentView.swift's
-        // matching `shifts_screen` fix for the full explanation).
+        // sibling rows below it (confirmed empirically; see ContentView.swift's matching
+        // `shifts_screen` fix for the full explanation).
         .overlay(alignment: .topLeading) {
             Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("settings_screen")
         }
@@ -204,7 +158,8 @@ struct SettingsScreen: View {
                 Text(profile.subtitle).font(ShiftFont.sans(13)).foregroundColor(c.sec)
             }
             Spacer(minLength: 0)
-            Image(systemName: ShiftIcons.chevronRight).font(.system(size: 16, weight: .semibold)).foregroundColor(c.outline)
+            // No trailing chevron: this card has never opened anything on tap, and the
+            // arrow read as a dead end (2026-08-06). Tapping the row does nothing today.
         }
         .padding(.horizontal, 16).padding(.vertical, 14)
         .background(c.surface)
@@ -269,6 +224,88 @@ struct SettingsScreen: View {
             if isReminders { leadTimeChecklist(c) }
             if !last { divider(c) }
         }
+    }
+
+    /// The merged "Open shift notifications" card: one header over two independent switch
+    /// rows, "At my house" and "At other houses" — the same disclosure shape the
+    /// shift-reminder row uses for its lead-time checkboxes, so a worker reads one concept
+    /// ("a shift opened up") with two toggles rather than two unrelated peer rows.
+    private func openShiftsRow(homeHouse: NotificationRowModel, otherHouses: NotificationRowModel, c: ShiftColors) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 13) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous).fill(c.blue.opacity(0.14)).frame(width: 30, height: 30)
+                    Image(systemName: ShiftIcons.building).font(.system(size: 16)).foregroundColor(c.blue)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(SettingsKt.OPEN_SHIFTS_GROUP_TITLE).font(ShiftFont.sans(15, .medium)).foregroundColor(c.ink)
+                    Text(SettingsKt.OPEN_SHIFTS_GROUP_SUB).font(ShiftFont.sans(12.5)).foregroundColor(c.ter)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 6)
+            ForEach([homeHouse, otherHouses], id: \.channel) { row in
+                HStack {
+                    Text(row.title).font(ShiftFont.sans(13.5)).foregroundColor(c.ink)
+                    Spacer(minLength: 0)
+                    Toggle("", isOn: Binding(get: { row.on }, set: { _ in toggleChannel(row) }))
+                        .labelsHidden().tint(c.blue)
+                        .accessibilityIdentifier(toggleIdentifier(row.channel))
+                }
+                .padding(.leading, 57).padding(.trailing, 14).padding(.bottom, 8)
+            }
+            divider(c)
+        }
+    }
+
+    /// The five mandatory notification rows, collapsed behind a disclosure so they do not
+    /// compete with the rows a worker can actually change. Shown, never hidden entirely: a
+    /// worker can still see that a swap request will always reach them, just one tap away.
+    private func alwaysOnDisclosure(_ rows: [NotificationRowModel], _ c: ShiftColors) -> some View {
+        VStack(spacing: 0) {
+            Button {
+                alwaysOnExpanded.toggle()
+            } label: {
+                HStack {
+                    Text(SettingsKt.alwaysOnNotificationsLabel(count: Int32(rows.count)))
+                        .font(ShiftFont.sans(13)).foregroundColor(c.sec)
+                    Spacer(minLength: 0)
+                    Image(systemName: ShiftIcons.chevronRight)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(c.outline)
+                        .rotationEffect(.degrees(alwaysOnExpanded ? 90 : 0))
+                }
+                .padding(.horizontal, 14).padding(.vertical, 12)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("settings_always_on_disclosure")
+            if alwaysOnExpanded {
+                ForEach(Array(rows.enumerated()), id: \.offset) { idx, row in
+                    notificationRow(row, last: idx == rows.count - 1, c)
+                }
+            }
+        }
+    }
+
+    /// Privacy policy / Terms of service — plain text links to the guide site
+    /// (`shiftatpenn.com/guide/legal/...`), above the version string.
+    private func legalLinks(_ c: ShiftColors) -> some View {
+        HStack(spacing: 6) {
+            Spacer(minLength: 0)
+            Button("Privacy policy") {
+                if let url = URL(string: SettingsKt.PRIVACY_POLICY_URL) { UIApplication.shared.open(url) }
+            }
+            .accessibilityIdentifier("settings_privacy_policy_link")
+            Text("·").foregroundColor(c.outline)
+            Button("Terms of service") {
+                if let url = URL(string: SettingsKt.TERMS_OF_SERVICE_URL) { UIApplication.shared.open(url) }
+            }
+            .accessibilityIdentifier("settings_terms_of_service_link")
+            Spacer(minLength: 0)
+        }
+        .font(ShiftFont.sans(12)).foregroundColor(c.sec)
+        .buttonStyle(.plain)
     }
 
     /// Flip one channel. Only the interactive ones reach here; GENERAL_UPDATES still goes

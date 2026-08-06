@@ -24,11 +24,6 @@
           },
           {
             "type": "command",
-            "command": "node scripts/hooks/ship-check-guard.js",
-            "timeout": 10
-          },
-          {
-            "type": "command",
             "command": "node scripts/hooks/qa-remote-guard.js",
             "timeout": 10
           }

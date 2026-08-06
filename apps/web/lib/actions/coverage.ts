@@ -54,7 +54,6 @@ export async function acknowledgeCoverageRequest(input: {
   if (error !== null) return { ok: false, error: friendlyMessage(error.message) };
 
   revalidatePath('/inbox');
-  revalidatePath('/admin/coverage');
   return { ok: true, data: undefined };
 }
 
@@ -91,6 +90,5 @@ export async function closeCoverageRequest(input: {
   if (error !== null) return { ok: false, error: friendlyMessage(error.message) };
 
   revalidatePath('/inbox');
-  revalidatePath('/admin/coverage');
   return { ok: true, data: undefined };
 }

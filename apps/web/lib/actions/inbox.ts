@@ -88,26 +88,3 @@ export async function acknowledgeAlliedPage(input: {
   revalidatePath('/inbox');
   return { ok: true, data: undefined };
 }
-
-// Mark a (non-urgent) notification read — reuses the existing mark_notification_read
-// RPC (migration 20260601000001). Any signed-in user may mark their own read; the
-// RPC's spoof guard + recipient scope enforce ownership.
-export async function markRead(input: {
-  notificationId: string;
-}): Promise<ActionResult<undefined>> {
-  const me = await getSessionUser();
-  if (me === null) {
-    return { ok: false, error: 'Your session has expired. Sign in again.' };
-  }
-
-  const service = createServiceClient();
-  const { error } = await service.rpc('mark_notification_read', {
-    p_notification_id: input.notificationId,
-    p_user_id: me.userId,
-    p_now: (await simNow()).toISOString(),
-  });
-  if (error !== null) return { ok: false, error: friendlyMessage(error.message) };
-
-  revalidatePath('/inbox');
-  return { ok: true, data: undefined };
-}

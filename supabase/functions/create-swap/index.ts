@@ -1,3 +1,5 @@
+// swapEligibility is vendored @shift/core -- see supabase/functions/README.md.
+import * as swapEligibility from '../_shared/core/swaps/eligibility.js';
 import {
   authenticate,
   edgeHandler,
@@ -245,11 +247,8 @@ Deno.serve(
         return jsonResponse({ error: 'user_inactive' }, 403);
       }
 
-      const module =
-        (await import('../../../packages/core/dist/swaps/eligibility.js')) as typeof import('../../../packages/core/dist/swaps/eligibility.js');
-
       if (swapType !== 'permanent_swap') {
-        const eligibility = module.evaluateSwapEligibility({
+        const eligibility = swapEligibility.evaluateSwapEligibility({
           // A handoff reuses the symmetric receiver-eligibility checks (Harnwell /
           // float direction) on its single non-empty span; the empty side adds no
           // checks. Treat it as a shift_swap for eligibility (no float requirement).
@@ -306,7 +305,7 @@ Deno.serve(
       }
 
       const pendingSwaps = await loadPendingSwaps(auth.supabase, [auth.userId, counterpartyUserId]);
-      const conflicts = module.findConflictingPendingSwaps({
+      const conflicts = swapEligibility.findConflictingPendingSwaps({
         newAssignmentIds: touchedAssignmentIds,
         pendingSwaps,
       });

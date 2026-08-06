@@ -22,7 +22,7 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--sans);
-  font-size: 14.5px;
+  font-size: 16.5px;
   line-height: 1.62;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -64,21 +64,21 @@ h4 {
 }
 
 h1 {
-  font-size: 30px;
+  font-size: 34px;
   line-height: 1.14;
   letter-spacing: -0.026em;
   font-weight: 660;
 }
 
 h2 {
-  font-size: 17.5px;
+  font-size: 20px;
   line-height: 1.4;
   letter-spacing: -0.02em;
   font-weight: 640;
 }
 
 h3 {
-  font-size: 14.5px;
+  font-size: 16.5px;
   line-height: 1.45;
   letter-spacing: -0.01em;
   font-weight: 640;
@@ -111,13 +111,12 @@ code {
   display: grid;
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--contents-w);
   align-items: start;
-  max-width: 1400px;
-  margin: 0 auto;
 }
 
 .shell__main {
   min-width: 0;
-  padding: 26px 34px 40px;
+  max-width: 1180px;
+  padding: 26px 40px 40px;
 }
 
 /* §3: running text is capped near 66 to 70 characters. Diagrams, tables, and
@@ -207,7 +206,7 @@ h3:hover .heading-anchor,
 .prose .table-frame table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12.5px;
+  font-size: 16.5px;
   line-height: 1.5;
 }
 
@@ -222,7 +221,7 @@ h3:hover .heading-anchor,
   background: var(--bg-2);
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 12px;
   letter-spacing: 0.11em;
   text-transform: uppercase;
   font-weight: 500;
@@ -256,7 +255,7 @@ h3:hover .heading-anchor,
 
 .eyebrow {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 12px;
   letter-spacing: 0.11em;
   text-transform: uppercase;
   font-weight: 500;
@@ -264,7 +263,7 @@ h3:hover .heading-anchor,
 }
 
 .lede {
-  font-size: 14.5px;
+  font-size: 16.5px;
   line-height: 1.62;
   color: var(--ink-2);
   margin-top: 10px;

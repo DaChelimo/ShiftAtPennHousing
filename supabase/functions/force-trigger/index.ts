@@ -32,6 +32,10 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 import { fetchAppNow } from '../_shared/clock.ts';
+// Vendored @shift/core -- static so `supabase functions deploy` actually bundles it.
+// See scripts/vendor-core-into-functions.mjs.
+import { findFloaters as coreFindFloaters } from '../_shared/core/float-lookup/index.js';
+import { validateForceTrigger as coreValidateForceTrigger } from '../_shared/core/force-trigger/index.js';
 
 const TIMEZONE = 'America/New_York';
 const BLOCK_MINUTES = 30;
@@ -159,22 +163,16 @@ function localDateIso(date: Date, timezone = TIMEZONE): string {
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
-// ----- packages/core (pure) — same dynamic-import pattern as orchestrator-tick -----
+// ----- packages/core (pure) — vendored + statically imported, as in orchestrator-tick -----
 
-async function validateForceTrigger(
-  input: ForceTriggerValidationInput,
-): Promise<ForceTriggerValidationResult> {
-  const module = (await import('../../../packages/core/dist/force-trigger/index.js')) as {
-    validateForceTrigger: (input: ForceTriggerValidationInput) => ForceTriggerValidationResult;
-  };
-  return module.validateForceTrigger(input);
+function validateForceTrigger(input: ForceTriggerValidationInput): ForceTriggerValidationResult {
+  return (
+    coreValidateForceTrigger as (input: ForceTriggerValidationInput) => ForceTriggerValidationResult
+  )(input);
 }
 
-async function findFloaters(input: FloatLookupInput): Promise<FloatLookupResult> {
-  const module = (await import('../../../packages/core/dist/float-lookup/index.js')) as {
-    findFloaters: (input: FloatLookupInput) => FloatLookupResult;
-  };
-  return module.findFloaters(input);
+function findFloaters(input: FloatLookupInput): FloatLookupResult {
+  return (coreFindFloaters as (input: FloatLookupInput) => FloatLookupResult)(input);
 }
 
 // ----- snapshot builders -----
@@ -654,7 +652,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       earliestStart === null ? null : await loadProfileForBlock(supabase, earliestStart);
     const floatEnabled = profile?.floatEnabled ?? false;
 
-    const validation = await validateForceTrigger({
+    const validation = validateForceTrigger({
       initiator: { rolesAtDestinationHouse, isCurrentHmod, isScheduleAdmin },
       destinationHouseId,
       blocks: snapshots,
@@ -674,7 +672,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       profile!.profileName,
       gapRows,
     );
-    const result = await findFloaters(snapshot.input);
+    const result = findFloaters(snapshot.input);
 
     // ----- per-floater atomic execution (force_trigger_float RPC) -----
     const floatAssignmentIds: string[] = [];

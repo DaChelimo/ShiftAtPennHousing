@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
 import { HmodRotor } from '../../../../components/rotor/HmodRotor';
@@ -5,6 +6,8 @@ import { Notification } from '../../../../components/ui/Notification';
 import { PageHead } from '../../../../components/ui/PageHead';
 import { getSessionUser, isHouseAdmin } from '../../../../lib/auth';
 import { getRotorData } from '../../../../lib/data/rotor';
+
+export const metadata: Metadata = { title: 'Admin - Rotor' };
 
 // §2.5 HMOD rotor admin — HM/BM only.
 export default async function RotorPage() {

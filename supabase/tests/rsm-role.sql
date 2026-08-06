@@ -9,7 +9,7 @@
 
 BEGIN;
 
-SELECT plan(14);
+SELECT plan(15);
 
 -- ============================================================
 -- Fixture: at lower-quad an RSM (Diana), an HM (Henry), a plain SW (Stu).
@@ -190,6 +190,26 @@ RESET ROLE;
 
 SELECT cmp_ok(current_setting('test.rsm.rsm_count')::int, '>=', 1, 'RSM can READ another house''s assignments (cross-house view)');
 SELECT is(current_setting('test.rsm.sw_count')::int, 0, 'a plain SW at the same home house cannot read another house''s assignments');
+
+-- ============================================================
+-- 15. worker_open_shifts: RSM is claim-pool-eligible like an HM (AGENTS.md "RSM holds
+-- shifts like an HM"; regression guard for the 2026-08-06 fix where candidate_users'
+-- role filter never included 'rsm', so an RSM's eligible_user_id never appeared in the
+-- view no matter how many seats were vacant at their house).
+-- ============================================================
+INSERT INTO public.shift_blocks (block_id, house_id, block_start_at, required_headcount)
+VALUES ('a5b10000-0000-0000-0000-0000000000c2', 'lower-quad', date_trunc('day', now()) + interval '3 days' + interval '10 hours', 1);
+-- assignment_id is a generated PK, not the block_id -- worker_open_shifts.id keys off it.
+INSERT INTO public.shift_block_assignments (assignment_id, block_id, user_id, status, vacancy_origin)
+VALUES ('a5a10000-0000-0000-0000-0000000000c2', 'a5b10000-0000-0000-0000-0000000000c2', NULL, 'vacant', 'never_assigned');
+
+SELECT cmp_ok(
+  (SELECT count(*) FROM public.worker_open_shifts
+    WHERE eligible_user_id = 'a5000000-0000-0000-0000-000000000001'
+      AND id = 'a5a10000-0000-0000-0000-0000000000c2')::int,
+  '>=', 1,
+  'RSM appears as a candidate for a vacant seat at their house in worker_open_shifts'
+);
 
 SELECT * FROM finish();
 ROLLBACK;

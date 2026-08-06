@@ -84,7 +84,19 @@ export const sections: NavSection[] = [
 /** Standalone pages that sit above the three sections. */
 export const topLevel: NavEntry[] = [{ slug: 'getting-started', label: 'Getting started' }];
 
-/** Flat reading order, used for the previous / next footer links. */
+/**
+ * Privacy Policy / Terms of Service. Deliberately NOT one of `sections`: those three
+ * drive the sidebar's collapsible groups, the reading-order previous/next pager, and the
+ * section overview cards, none of which make sense for legal pages (there is no "next"
+ * concept between a policy and a how-to guide). They render in Sidebar.astro as a quiet
+ * two-link footer group below the three sections instead of competing with them.
+ */
+export const legalPages: NavEntry[] = [
+  { slug: 'legal/privacy', label: 'Privacy policy' },
+  { slug: 'legal/terms', label: 'Terms of service' },
+];
+
+/** Flat reading order, used for the previous / next footer links. Legal pages excluded. */
 export const readingOrder: NavEntry[] = [
   ...topLevel,
   ...sections.flatMap((section) => [
@@ -94,5 +106,11 @@ export const readingOrder: NavEntry[] = [
 ];
 
 export function sectionOf(slug: string): NavSection | undefined {
-  return sections.find((s) => slug === s.slug || slug.startsWith(`${s.slug}/`));
+  const found = sections.find((s) => slug === s.slug || slug.startsWith(`${s.slug}/`));
+  if (found) return found;
+  // Legal pages still get the page-head eyebrow, just not a sidebar group or a pager.
+  if (slug.startsWith('legal/')) {
+    return { slug: 'legal', label: 'Legal', blurb: '', entries: legalPages };
+  }
+  return undefined;
 }

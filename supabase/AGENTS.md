@@ -254,6 +254,28 @@ personal notifications are mandatory, so a rare duplicate is preferable to a los
 Firebase routes both FCM and APNs tokens; iOS clients register their Firebase FCM registration
 token, not a raw APNs token, and `dispatch-push` does not branch on platform.
 
+**A device token belongs to ONE account.** `register-push-token` deletes rows carrying the
+same `device_token` under a different `user_id` before upserting. Do not drop that delete and
+rely on the `(user_id, device_token)` conflict key alone: that key is per-account, so account
+switching on one handset accumulates a recipient per account and the phone is pushed once per
+account, forever. This shipped broken and was found on the pilot phone (2026-08-06), which
+rang four times for two notification rows.
+
+**An open-shift announcement is per SPAN, never per block, on BOTH paths.**
+`notify_shift_opened` has merged spans since `20260729000013`; `process_broadcast_step` since
+`20260806000004`. The broadcast step still claims `block_step_status` per block (atomicity,
+ARCH §4.5 rollback, onward escalation all depend on that) but emits only from the first block
+of a contiguous run. Three things not to undo: run membership excludes blocks whose broadcast
+fired in an **earlier tick** (`fired_at < p_now`), without which an incremental vacancy goes
+silent forever; the run-start test must stay a property of the run's shape, not a look-behind
+at the previous block, or it becomes order-dependent on the tick's row order; and it uses
+`block_has_escalation_coverage`, not `block_has_present_worker` (see "Coverage lock").
+
+**Nothing announces a `coverage_locked_at` block.** Its seats are not claimable and the copy
+says "Open the app to claim it." `drop_shift`, `admin_remove_worker` and
+`process_broadcast_step` all suppress on it. The chain step is still claimed, so escalation is
+unaffected. Any NEW path that opens a seat needs the same guard.
+
 ## Required deploy configuration
 
 Every deployed environment must set these or behavior silently degrades:
@@ -262,8 +284,34 @@ Every deployed environment must set these or behavior silently degrades:
   contact when an urgent HMOD-for-Allied notification resolves past both HM and HMOD. If unset
   or invalid, the notification is logged via `RAISE WARNING` and no `hmod_urgent` row is
   created. `seed.sql` does not set it (the local seed has no users).
-- Postgres settings `app.supabase_url` and `app.service_role_key`.
+- `app.supabase_url` and `app.service_role_key` **in Supabase Vault** (`vault.create_secret`),
+  not a Postgres GUC — hosted Supabase grants no role permission to set a custom `app.*`
+  parameter. `app_runtime_setting()` (`20260727000002`) resolves Vault first, falling back
+  to a GUC only for environments that can actually set one. `verify_scheduled_jobs()`
+  checks both this and the seven expected cron jobs; run it after setting the secrets, and
+  after any suspected drift. A missing/invalid value means every `pg_cron` job that calls
+  an Edge Function (`orchestrator-tick`, `deliver-notifications`) 401s or errors once a
+  minute, invisibly, until someone opens the admin health page or `cron.job_run_details`.
+  The service role key must be the new-format `sb_secret_` key: `orchestrator-tick` does an
+  exact string comparison against `SUPABASE_SERVICE_ROLE_KEY`, so a legacy `service_role`
+  JWT (if legacy keys are still enabled on the project) authenticates everywhere else but
+  401s here specifically.
+- **Never replay `seed.sql` against a hosted project.** It unschedules those same seven
+  cron jobs by name so the local stack stays cron-free; this happened for real against
+  the hosted Shift project and left the orchestrator, notification delivery, swap expiry,
+  and the coverage ladder silently inert for about a week. `seed.sql` now guards the
+  teardown on `app_runtime_setting('app.supabase_url')` resolving — if this environment is
+  configured to run the jobs for real, the teardown is skipped with a `RAISE WARNING`
+  instead of silently deleting the registration — but that guard is a backstop, not
+  permission to run `seed.sql` there on purpose.
 - Edge Function secret `FIREBASE_SERVICE_ACCOUNT_JSON`.
+- `@shift/core` reaches the five Edge Functions that use it (`orchestrator-tick`,
+  `force-trigger`, `create-swap`, `permanent-drop`, `permanent-pickup`) through a
+  **committed, generated** vendored copy at `supabase/functions/_shared/core/`, not a
+  dynamic import of `packages/core/dist`. After changing `packages/core/src`, run
+  `pnpm vendor:core` and commit the result — CI runs `pnpm vendor:core:check` and fails the
+  build if it's stale. See `supabase/functions/README.md` for why (a real outage: the
+  dynamic-import form silently shipped without core on every `supabase functions deploy`).
 
 ## Other
 

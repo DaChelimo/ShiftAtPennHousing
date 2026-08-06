@@ -3308,13 +3308,6 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: 'swap_requests_counterparty_user_id_fkey';
-            columns: ['counterparty_user_id'];
-            isOneToOne: false;
-            referencedRelation: 'users';
-            referencedColumns: ['user_id'];
-          },
-          {
-            foreignKeyName: 'swap_requests_counterparty_user_id_fkey';
             columns: ['awaiting_user_id'];
             isOneToOne: false;
             referencedRelation: 'users';
@@ -3324,7 +3317,7 @@ export type Database = {
             foreignKeyName: 'swap_requests_counterparty_user_id_fkey';
             columns: ['counterparty_user_id'];
             isOneToOne: false;
-            referencedRelation: 'worker_directory';
+            referencedRelation: 'users';
             referencedColumns: ['user_id'];
           },
           {
@@ -3337,13 +3330,20 @@ export type Database = {
           {
             foreignKeyName: 'swap_requests_counterparty_user_id_fkey';
             columns: ['counterparty_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'worker_directory';
+            referencedColumns: ['user_id'];
+          },
+          {
+            foreignKeyName: 'swap_requests_counterparty_user_id_fkey';
+            columns: ['awaiting_user_id'];
             isOneToOne: false;
             referencedRelation: 'worker_open_shifts';
             referencedColumns: ['eligible_user_id'];
           },
           {
             foreignKeyName: 'swap_requests_counterparty_user_id_fkey';
-            columns: ['awaiting_user_id'];
+            columns: ['counterparty_user_id'];
             isOneToOne: false;
             referencedRelation: 'worker_open_shifts';
             referencedColumns: ['eligible_user_id'];
@@ -4108,18 +4108,32 @@ export type Database = {
         Args: { p_attempts: number };
         Returns: string;
       };
-      notify_shift_opened: {
-        Args: {
-          p_actor_user_id: string;
-          p_block_id: string;
-          p_end_at: string;
-          p_house_id: string;
-          p_now: string;
-          p_recurring?: boolean;
-          p_start_at: string;
-        };
-        Returns: number;
-      };
+      notify_shift_opened:
+        | {
+            Args: {
+              p_actor_user_id: string;
+              p_block_id: string;
+              p_end_at: string;
+              p_house_id: string;
+              p_now: string;
+              p_recurring?: boolean;
+              p_start_at: string;
+            };
+            Returns: number;
+          }
+        | {
+            Args: {
+              p_actor_user_id: string;
+              p_block_id: string;
+              p_end_at: string;
+              p_exclude_user_ids: string[];
+              p_house_id: string;
+              p_now: string;
+              p_recurring: boolean;
+              p_start_at: string;
+            };
+            Returns: number;
+          };
       offhours_ladder_timeout_minutes: { Args: never; Returns: number };
       open_allied_coverage_request: {
         Args: {
@@ -4459,7 +4473,6 @@ export type Database = {
         Args: { p_now: string };
         Returns: number;
       };
-      time_travel_is_allowed: { Args: never; Returns: boolean };
       touch_kb_embedding_cache: {
         Args: { p_content_hashes: string[]; p_model: string; p_now?: string };
         Returns: number;
@@ -4492,6 +4505,10 @@ export type Database = {
         Returns: boolean;
       };
       user_is_admin: { Args: { check_user_id: string }; Returns: boolean };
+      user_is_allied_contractor: {
+        Args: { p_user_id: string };
+        Returns: boolean;
+      };
       user_is_rsm: { Args: { check_user_id: string }; Returns: boolean };
       user_is_schedule_admin: {
         Args: { check_user_id: string };

@@ -202,15 +202,22 @@ class CoverageRepository(
      * [note] is required for [CoverageOutcome.DESK_UNSTAFFED]; the Edge Function and the RPC
      * both enforce that, so a missing note surfaces as [CoverageWriteResult.Failed] rather
      * than a silent success.
+     *
+     * [assignSelf] only means anything for [CoverageOutcome.COVERED_INTERNALLY]: it is what
+     * distinguishes the Respond sheet's "I can cover it" action (assigns the ACTING manager
+     * to the request's vacant blocks) from the generic "Covered internally" outcome row
+     * (records the outcome only; the schedule is left as-is, since it is not necessarily this
+     * manager who covered it).
      */
     suspend fun close(
         requestId: String,
         outcome: CoverageOutcome,
         note: String?,
+        assignSelf: Boolean = false,
     ): CoverageWriteResult {
         val body =
             Json.encodeToString(
-                CloseRequest(requestId = requestId, outcome = outcome.wire, note = note),
+                CloseRequest(requestId = requestId, outcome = outcome.wire, note = note, assignSelf = assignSelf),
             )
         val result = edge.invoke("allied-coverage/close", body)
         if (!result.ok) return CoverageWriteResult.Failed
@@ -296,6 +303,7 @@ private data class CloseRequest(
     @SerialName("request_id") val requestId: String,
     val outcome: String,
     val note: String? = null,
+    val assignSelf: Boolean = false,
 )
 
 @Serializable

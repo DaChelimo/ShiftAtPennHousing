@@ -9,14 +9,16 @@
 --   F-08  suppressed ack reminders reach a terminal state and leave the queue
 --   F-10  swap expiry defers to the cron when one is scheduled
 --   F-14  retention deletes only terminal/non-pending rows past the horizon
---   F-15  the simulated clock refuses to move outside a dev environment
+--   F-15  the simulated clock can only be moved by the project administrator, in every
+--         environment (superseded 20260726000008's environment gate with a role gate,
+--         migration 20260805000001)
 --
 -- Dates are relative to now() so the fixtures land outside the seeded schedule's window.
 -- Self-contained; everything rolls back.
 
 BEGIN;
 
-SELECT plan(26);
+SELECT plan(27);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures
@@ -27,12 +29,19 @@ VALUES
   ('ca000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'ca-hw@test.local')
 ON CONFLICT (id) DO NOTHING;
 
+INSERT INTO auth.users (id, instance_id, aud, role, email)
+VALUES
+  ('ca000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'ca-admin@test.local')
+ON CONFLICT (id) DO NOTHING;
+
 INSERT INTO public.users (user_id, name, email, home_house_id, is_active) VALUES
   ('ca000000-0000-0000-0000-000000000001', 'Cost Worker', 'ca-w1@test.local', 'quad', true),
-  ('ca000000-0000-0000-0000-000000000002', 'Harn Worker', 'ca-hw@test.local', 'harnwell', true);
+  ('ca000000-0000-0000-0000-000000000002', 'Harn Worker', 'ca-hw@test.local', 'harnwell', true),
+  ('ca000000-0000-0000-0000-000000000003', 'Cost Admin', 'ca-admin@test.local', 'quad', true);
 INSERT INTO public.user_roles (user_id, role, scope_house_id) VALUES
   ('ca000000-0000-0000-0000-000000000001', 'sw', 'quad'),
-  ('ca000000-0000-0000-0000-000000000002', 'sw', 'harnwell');
+  ('ca000000-0000-0000-0000-000000000002', 'sw', 'harnwell'),
+  ('ca000000-0000-0000-0000-000000000003', 'admin', NULL);
 
 -- Regular-school-year calendar days: one inside the weekly horizon, one beyond it but
 -- inside the permanent horizon, one beyond both.
@@ -276,16 +285,17 @@ SELECT ok(
 );
 
 -- ---------------------------------------------------------------------------
--- F-15 -- time-travel environment gate
+-- F-15 -- time-travel admin gate (role, not environment; migration 20260805000001)
 -- ---------------------------------------------------------------------------
-INSERT INTO system_config (config_key, config_value, value_type)
-VALUES ('allow_time_travel', 'false', 'enum')
-ON CONFLICT (config_key) DO UPDATE SET config_value = 'false';
-
 SELECT throws_ok(
-  $$UPDATE dev_sim_clock SET offset_seconds = -3600 WHERE id$$,
-  'time_travel_disabled',
-  'F-15: the simulated clock cannot be moved when the environment forbids it'
+  $$UPDATE dev_sim_clock SET offset_seconds = -3600, set_by = 'ca000000-0000-0000-0000-000000000001' WHERE id$$,
+  'time_travel_admin_only',
+  'F-15: a non-admin set_by cannot move the simulated clock'
+);
+
+SELECT lives_ok(
+  $$UPDATE dev_sim_clock SET offset_seconds = -3600, set_by = 'ca000000-0000-0000-0000-000000000003' WHERE id$$,
+  'F-15: the project administrator can move the simulated clock (no environment check)'
 );
 
 SELECT lives_ok(

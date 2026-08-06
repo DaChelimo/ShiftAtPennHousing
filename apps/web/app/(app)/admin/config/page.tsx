@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
 import { SystemConfigEditor } from '../../../../components/config/SystemConfigEditor';
@@ -5,6 +6,8 @@ import { Notification } from '../../../../components/ui/Notification';
 import { PageHead } from '../../../../components/ui/PageHead';
 import { getSessionUser } from '../../../../lib/auth';
 import { getSystemConfig, isProjectAdministrator } from '../../../../lib/data/config';
+
+export const metadata: Metadata = { title: 'Admin - Config' };
 
 export default async function ConfigPage() {
   const user = await getSessionUser();

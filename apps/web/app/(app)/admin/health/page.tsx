@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
 import { Card } from '../../../../components/ui/Card';
@@ -8,6 +9,8 @@ import { Tag } from '../../../../components/ui/Tag';
 import { getSessionUser, isHouseAdmin } from '../../../../lib/auth';
 import { isProjectAdministrator } from '../../../../lib/data/config';
 import { getOrchestratorHealth, getPushDeliveryHealth } from '../../../../lib/data/health';
+
+export const metadata: Metadata = { title: 'Admin - Health' };
 
 export default async function HealthPage() {
   const user = await getSessionUser();

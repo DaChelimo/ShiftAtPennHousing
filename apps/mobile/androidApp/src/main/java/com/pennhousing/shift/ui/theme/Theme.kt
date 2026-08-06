@@ -1,12 +1,18 @@
 package com.pennhousing.shift.ui.theme
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Density
+import androidx.core.view.WindowCompat
 
 /**
  * Mobile reskin foundation — the theme entry point.
@@ -39,6 +45,28 @@ fun ShiftTheme(
     val shiftColors = if (darkTheme) DarkShiftColors else LightShiftColors
     val scaledDensity = LocalDensity.current.let { Density(it.density, it.fontScale * APP_FONT_SCALE) }
 
+    // Status/navigation bar ICON tint must follow the IN-APP theme, not the OS one.
+    // `enableEdgeToEdge()` (MainActivity) defaults to SystemBarStyle.auto, whose
+    // detectDarkMode reads Configuration.uiMode — i.e. the SYSTEM appearance. With the app
+    // on Dark while the phone is on Light, the bars stayed in their light-background mode
+    // and the clock / battery / signal icons rendered near-black on our dark chrome. Driving
+    // the appearance flags off `darkTheme` here (the same flag the palette resolves from)
+    // ties them to whatever the worker picked in Settings, and re-fires on every theme
+    // change because this composable recomposes with the new value. iOS never had the bug:
+    // its bar style rides the SwiftUI color scheme, which is already the in-app choice.
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        val window = (view.context.findActivity())?.window
+        if (window != null) {
+            SideEffect {
+                WindowCompat.getInsetsController(window, view).apply {
+                    isAppearanceLightStatusBars = !darkTheme
+                    isAppearanceLightNavigationBars = !darkTheme
+                }
+            }
+        }
+    }
+
     CompositionLocalProvider(
         LocalShiftColors provides shiftColors,
         LocalShiftTypeExtras provides ShiftTypeExtras(),
@@ -52,6 +80,17 @@ fun ShiftTheme(
         )
     }
 }
+
+/**
+ * The Activity behind a composition's view, unwrapping ContextThemeWrappers. Null under a
+ * preview / non-Activity host, where there is no window to tint.
+ */
+private tailrec fun Context.findActivity(): Activity? =
+    when (this) {
+        is Activity -> this
+        is ContextWrapper -> baseContext.findActivity()
+        else -> null
+    }
 
 /** Convenience accessors for the bespoke token layers, mirroring `MaterialTheme.*`. */
 object ShiftTheme {

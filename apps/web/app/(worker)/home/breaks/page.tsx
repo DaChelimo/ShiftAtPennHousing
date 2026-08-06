@@ -1,3 +1,7 @@
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = { title: 'Breaks' };
+
 import { BreakClaim } from '../../../../components/worker/BreakClaim';
 import { getSessionUser } from '../../../../lib/auth';
 import { getWorkerBreakBoard } from '../../../../lib/data/worker/breaks';

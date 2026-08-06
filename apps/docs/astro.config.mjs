@@ -8,13 +8,13 @@ import rehypeAutolinkHeadings from 'rehype-autolink-headings'
 // of apps/web so a docs deploy can never break the product app.
 //
 // It shares a domain with the product app through Vercel microfrontends path
-// routing (microfrontends.json in apps/web): shiftatpenn.edu/guide/* is served by
+// routing (microfrontends.json in apps/web): shiftatpenn.com/guide/* is served by
 // THIS deployment straight off the CDN, everything else by apps/web. `base` is
 // what makes that work — every page and every emitted asset lives under /guide,
 // so the one routing rule covers the whole site and nothing can collide with the
 // app's own /_next paths. Internal links go through withBase() in src/href.ts.
 export default defineConfig({
-  site: 'https://shiftatpenn.edu',
+  site: 'https://shiftatpenn.com',
   base: '/guide',
   // `base` rewrites the URLs Astro emits but does NOT nest the build output, so a
   // default build writes dist/workers/index.html while linking to /guide/workers/.

@@ -8,23 +8,28 @@ final class ShiftTourUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    private func openSettings(_ app: XCUIApplication) {
+    /// Reaches the surface (My Shifts is the app's landing tab, so just launching is enough)
+    /// and taps its always-present header "?" to force a replay. Settings used to carry a
+    /// dedicated "Replay shift tour" row for this (removed 2026-08-06, see AGENTS.md); the
+    /// header "?" was always the tour's real, permanent entry point and still is.
+    private func openTour(_ app: XCUIApplication) {
         app.launch()
-        let moreTab = app.buttons["tab_more"]
-        XCTAssertTrue(moreTab.waitForExistence(timeout: 10))
-        moreTab.tap()
-        let settingsRow = app.buttons["tab_settings"]
-        XCTAssertTrue(settingsRow.waitForExistence(timeout: 5))
-        settingsRow.tap()
+        // First-ever reach of this surface auto-starts the tour, in which case its
+        // overlay is already covering the help button and tapping "shift_tour_help" would hit
+        // the overlay's own scrim instead (dismissing an already-showing tour on any
+        // dismissible step). A later run in the same test target has already marked the
+        // tour seen, so auto-start does not refire and the help button is reachable.
+        // Force it only when the tour is not already showing, so both orders are safe.
+        if !app.otherElements["shift_tour"].waitForExistence(timeout: 2) {
+            let helpButton = app.buttons["shift_tour_help"]
+            XCTAssertTrue(helpButton.waitForExistence(timeout: 5))
+            helpButton.tap()
+        }
     }
 
-    func testReplayFromSettingsShowsFirstStep() {
+    func testReplayFromHelpButtonShowsFirstStep() {
         let app = XCUIApplication()
-        openSettings(app)
-
-        let replayRow = app.buttons["settings_replay_shift_tour"]
-        XCTAssertTrue(replayRow.waitForExistence(timeout: 5))
-        replayRow.tap()
+        openTour(app)
 
         let tour = app.otherElements["shift_tour"]
         XCTAssertTrue(tour.waitForExistence(timeout: 5))
@@ -33,8 +38,7 @@ final class ShiftTourUITests: XCTestCase {
 
     func testRangeStepAdvancesSummaryOnDrag() {
         let app = XCUIApplication()
-        openSettings(app)
-        app.buttons["settings_replay_shift_tour"].tap()
+        openTour(app)
 
         XCTAssertTrue(app.otherElements["shift_tour"].waitForExistence(timeout: 5))
         app.buttons["shift_tour_next"].tap()
@@ -53,8 +57,7 @@ final class ShiftTourUITests: XCTestCase {
 
     func testSkipClosesTheTour() {
         let app = XCUIApplication()
-        openSettings(app)
-        app.buttons["settings_replay_shift_tour"].tap()
+        openTour(app)
 
         XCTAssertTrue(app.otherElements["shift_tour"].waitForExistence(timeout: 5))
         app.buttons["shift_tour_skip"].tap()
@@ -65,8 +68,7 @@ final class ShiftTourUITests: XCTestCase {
 
     func testFullStepSequenceReachesDone() {
         let app = XCUIApplication()
-        openSettings(app)
-        app.buttons["settings_replay_shift_tour"].tap()
+        openTour(app)
 
         XCTAssertTrue(app.otherElements["shift_tour"].waitForExistence(timeout: 5))
         // Step 1 -> 2
@@ -85,8 +87,7 @@ final class ShiftTourUITests: XCTestCase {
 
     func testTappingOutsideDismissesOnADismissibleStep() {
         let app = XCUIApplication()
-        openSettings(app)
-        app.buttons["settings_replay_shift_tour"].tap()
+        openTour(app)
 
         XCTAssertTrue(app.otherElements["shift_tour"].waitForExistence(timeout: 5))
         // Step 1 (MANAGE) has no drag gesture, so tapping the scrim should dismiss the tour.
@@ -102,8 +103,7 @@ final class ShiftTourUITests: XCTestCase {
 
     func testTappingOutsideDoesNotDismissOnTheRangeStep() {
         let app = XCUIApplication()
-        openSettings(app)
-        app.buttons["settings_replay_shift_tour"].tap()
+        openTour(app)
 
         XCTAssertTrue(app.otherElements["shift_tour"].waitForExistence(timeout: 5))
         app.buttons["shift_tour_next"].tap()

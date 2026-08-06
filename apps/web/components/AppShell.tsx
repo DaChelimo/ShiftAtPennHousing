@@ -13,7 +13,7 @@ import { Icon, type IconName } from './ui/Icon';
 import { LogoMark, Wordmark } from './ui/Logo';
 import { Tag } from './ui/Tag';
 
-export type ShellHouse = { id: string; name: string; restricted: boolean };
+export type ShellHouse = { id: string; name: string };
 
 export type NavItem = {
   href: string;
@@ -129,7 +129,6 @@ function HouseSwitcher({
         <span className="hswitch-eyebrow">HOUSE</span>
         <span className="hswitch-cur">
           {cur.name}
-          {cur.restricted && <span className="hswitch-chip">Restricted</span>}
           {locked ? (
             <Icon name="grid" size={13} style={{ opacity: 0.5 }} />
           ) : (
@@ -152,7 +151,6 @@ function HouseSwitcher({
               onClick={() => select(h.id)}
             >
               <span>{h.name}</span>
-              {h.restricted && <span className="hswitch-chip">Restricted</span>}
             </button>
           ))}
         </div>
@@ -168,7 +166,6 @@ export function AppShell({
   canSwitchHouse = false,
   canSwitchToWorker = false,
   houses,
-  unreadCount = 0,
   coverageCount = 0,
   coverageOverdue = false,
   coverageUnavailable = false,
@@ -183,11 +180,7 @@ export function AppShell({
   /** This admin also holds the sw role — offer a link into the worker portal. */
   canSwitchToWorker?: boolean;
   houses?: ShellHouse[];
-  unreadCount?: number;
-  /**
-   * Open Allied coverage requests still needing a manager. Rendered as a SEPARATE red
-   * badge from `unreadCount`: an unstaffed desk must never look like a swap request.
-   */
+  /** Open Allied coverage requests still needing a manager. The bell's only badge. */
   coverageCount?: number;
   /** At least one open request whose coverage window has already passed. */
   coverageOverdue?: boolean;
@@ -273,10 +266,10 @@ export function AppShell({
           aria-label="Toggle navigation"
           aria-expanded={!navCollapsed}
         >
-          <Icon name="menu" size={18} />
+          <Icon name="menu" size={20} />
         </button>
         <Link href="/dashboard" className="hdr-brand">
-          <LogoMark size={24} variant="reversed" />
+          <LogoMark size={32} variant="reversed" />
           <Wordmark />
         </Link>
         <div className="hdr-sep hdr-nonessential" />
@@ -287,7 +280,6 @@ export function AppShell({
                 {
                   id: user.homeHouseId,
                   name: prettifyHouse(user.homeHouseId),
-                  restricted: user.homeHouseId === 'harnwell',
                 },
               ]
             }
@@ -331,25 +323,15 @@ export function AppShell({
           aria-label={
             coverageCount > 0
               ? `${coverageCount} Allied coverage requests need attention`
-              : unreadCount > 0
-                ? `Notifications, ${unreadCount} unread`
-                : 'Notifications'
+              : 'Action inbox'
           }
-          title={coverageCount > 0 ? 'Allied coverage needed' : 'Notifications'}
+          title={coverageCount > 0 ? 'Allied coverage needed' : 'Action inbox'}
         >
           <Icon name="bell" size={18} />
-          {/* The urgent badge WINS over the plain unread badge. A desk about to go
-              unstaffed and a swap request must not render identically. */}
-          {coverageCount > 0 ? (
+          {coverageCount > 0 && (
             <span data-testid="bell-urgent-count" className="bell-count is-urgent">
               {coverageCount}
             </span>
-          ) : (
-            unreadCount > 0 && (
-              <span data-testid="bell-count" className="bell-count">
-                {unreadCount}
-              </span>
-            )
           )}
         </Link>
 
@@ -361,7 +343,7 @@ export function AppShell({
             aria-label="Account menu"
             aria-expanded={userOpen}
           >
-            <Avatar name={user.name} size={28} color="#0061FC" />
+            <Avatar name={user.name} size={32} color="#0061FC" />
           </button>
           {userOpen && (
             <div className="user-menu">
@@ -373,32 +355,50 @@ export function AppShell({
                     {ROLE_LABEL[primaryRole] ?? 'Worker'} · {prettifyHouse(user.homeHouseId)}
                   </span>
                 </div>
+                <Tag kind="blue" className="user-menu-primary-role">
+                  {primaryRole.toUpperCase()}
+                </Tag>
               </div>
-              <div className="user-roles">
-                {roles.map((r, i) => (
-                  <Tag key={r} kind={i === 0 ? 'blue' : 'gray'}>
-                    {r.toUpperCase()}
-                  </Tag>
-                ))}
-                {roles.length > 1 && (
+              {roles.length > 1 && (
+                <div className="user-roles">
+                  {roles.slice(1).map((r) => (
+                    <Tag key={r} kind="gray">
+                      {r.toUpperCase()}
+                    </Tag>
+                  ))}
                   <span className="t-meta" style={{ marginLeft: 'auto' }}>
                     Roles stack
                   </span>
+                </div>
+              )}
+              <div className="user-actions">
+                {canSwitchToWorker && (
+                  <Link
+                    href="/home"
+                    data-testid="switch-to-worker"
+                    className="user-item"
+                    onClick={() => setUserOpen(false)}
+                  >
+                    Switch to worker view
+                  </Link>
                 )}
-              </div>
-              {canSwitchToWorker && (
                 <Link
-                  href="/home"
-                  data-testid="switch-to-worker"
+                  href="/welcome"
+                  data-testid="view-landing-page"
                   className="user-item"
                   onClick={() => setUserOpen(false)}
                 >
-                  Switch to worker view
+                  About Shift
                 </Link>
-              )}
-              <button type="button" onClick={signOut} data-testid="sign-out" className="user-item">
-                Sign out
-              </button>
+                <button
+                  type="button"
+                  onClick={signOut}
+                  data-testid="sign-out"
+                  className="user-item user-item-danger"
+                >
+                  Sign out
+                </button>
+              </div>
             </div>
           )}
         </div>

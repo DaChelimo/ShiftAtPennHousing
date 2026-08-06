@@ -1,3 +1,5 @@
+// pickupEvaluator is vendored @shift/core -- see supabase/functions/README.md.
+import * as pickupEvaluator from '../_shared/core/permanent-ops/pickup-evaluator.js';
 import { authenticate, jsonResponse, readObjectBody, type Supabase } from '../_shared/swap-http.ts';
 
 const TIMEZONE = 'America/New_York';
@@ -257,9 +259,7 @@ async function buildPickupSnapshot(supabase: Supabase, userId: string, slot: Slo
   );
 
   weeks.sort((left, right) => left.weekStartDate.localeCompare(right.weekStartDate));
-  const module =
-    (await import('../../../packages/core/dist/permanent-ops/pickup-evaluator.js')) as typeof import('../../../packages/core/dist/permanent-ops/pickup-evaluator.js');
-  return module.evaluatePermanentPickup({ weeks });
+  return pickupEvaluator.evaluatePermanentPickup({ weeks });
 }
 
 function queryObject(url: URL): Record<string, unknown> {

@@ -1,8 +1,12 @@
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = { title: 'Inbox' };
+
 import { ActionInbox } from '../../../components/inbox/ActionInbox';
 import { Notification } from '../../../components/ui/Notification';
 import { PageHead } from '../../../components/ui/PageHead';
 import { canBuildSchedule, getSessionUser } from '../../../lib/auth';
-import { getCoverageData } from '../../../lib/data/coverage';
+import { getCoverageArchive, getCoverageData } from '../../../lib/data/coverage';
 import { getInboxData } from '../../../lib/data/inbox';
 import { simNow } from '../../../lib/time/simClock';
 
@@ -10,7 +14,9 @@ import { simNow } from '../../../lib/time/simClock';
 // notifications (RLS-scoped); actions go through lib/actions/inbox. Manager surface —
 // gated to SM/HM/BM (workers use the mobile "Updates" tab). Allied-coverage alerts
 // are surfaced soonest-window-first and archive themselves a day after their coverage
-// window passes (see lib/data/inbox + @shift/core alliedLifecycle).
+// window passes (see lib/data/inbox + @shift/core alliedLifecycle). The Archive tab's
+// history table (getCoverageArchive) folds in the former standalone /admin/coverage
+// report — same allied_coverage_requests audit trail, one manager surface instead of two.
 export default async function InboxPage() {
   const user = await getSessionUser();
   if (user === null) return null;
@@ -27,6 +33,10 @@ export default async function InboxPage() {
   }
 
   const now = await simNow();
-  const [data, coverage] = await Promise.all([getInboxData(now), getCoverageData(now)]);
-  return <ActionInbox data={data} coverage={coverage} />;
+  const [data, coverage, archive] = await Promise.all([
+    getInboxData(now),
+    getCoverageData(now),
+    getCoverageArchive(now),
+  ]);
+  return <ActionInbox data={data} coverage={coverage} archive={archive} />;
 }

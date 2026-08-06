@@ -12,6 +12,10 @@ package com.pennhousing.shift.shared.platform
  * - [openMailto]: open a `mailto:` URL — the leave-request generator's output
  *   (phase-12 §"leave mailto generator"). Android uses `Intent.ACTION_SENDTO`;
  *   iOS uses `UIApplication.shared.open`.
+ * - [openUrl]: open an `https:` URL in the platform's browser — the Settings
+ *   Privacy Policy / Terms of Service links (2026-08-06), which point at the guide
+ *   site rather than in-app text. Android uses `Intent.ACTION_VIEW`; iOS uses
+ *   `UIApplication.shared.open`.
  */
 expect fun registerPushToken(
     token: String,
@@ -19,3 +23,5 @@ expect fun registerPushToken(
 )
 
 expect fun openMailto(url: String)
+
+expect fun openUrl(url: String)

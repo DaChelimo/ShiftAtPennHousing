@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -5,6 +6,8 @@ import { CreateSeasonForm } from '../../../../components/operations/CreateSeason
 import { Card, EmptyState, Icon, Notification, PageHead, Tag } from '../../../../components/ui';
 import { getSessionUser, isAdmin } from '../../../../lib/auth';
 import { listSeasons } from '../../../../lib/data/operatingSeasons';
+
+export const metadata: Metadata = { title: 'Admin - Operations' };
 
 function fmtRange(start: string, end: string): string {
   const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' };

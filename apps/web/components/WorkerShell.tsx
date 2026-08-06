@@ -119,10 +119,10 @@ export function WorkerShell({
           aria-label="Toggle navigation"
           aria-expanded={!navCollapsed}
         >
-          <Icon name="menu" size={18} />
+          <Icon name="menu" size={20} />
         </button>
         <Link href="/home" className="hdr-brand">
-          <LogoMark size={24} variant="reversed" />
+          <LogoMark size={32} variant="reversed" />
           <Wordmark />
         </Link>
 
@@ -163,7 +163,7 @@ export function WorkerShell({
             aria-label="Account menu"
             aria-expanded={userOpen}
           >
-            <Avatar name={user.name} size={28} color="#0061FC" />
+            <Avatar name={user.name} size={32} color="#0061FC" />
           </button>
           {userOpen && (
             <div className="user-menu">
@@ -184,6 +184,14 @@ export function WorkerShell({
                   Switch to admin console
                 </Link>
               )}
+              <Link
+                href="/welcome"
+                data-testid="view-landing-page"
+                className="user-item"
+                onClick={() => setUserOpen(false)}
+              >
+                About Shift
+              </Link>
               <button type="button" onClick={signOut} data-testid="sign-out" className="user-item">
                 Sign out
               </button>

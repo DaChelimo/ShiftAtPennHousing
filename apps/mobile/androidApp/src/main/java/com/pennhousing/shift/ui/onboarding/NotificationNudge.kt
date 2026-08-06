@@ -68,7 +68,11 @@ object NotificationPrefs {
         context: Context,
         key: String,
     ) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(key, true).apply()
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(key, true)
+            .apply()
     }
 
     /**

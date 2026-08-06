@@ -1177,7 +1177,7 @@ private data class BreakRangeRequest(
 /** Parse the `break-claim` drag response `{ claimed: [{ block_id, assignment_id }] }`. */
 internal fun parseClaimedAssignmentIds(body: String): List<String> =
     runCatching {
-        Json { ignoreUnknownKeys = true }
+        permanentPickupJson
             .decodeFromString<JsonObject>(body)["claimed"]
             ?.jsonArray
             ?.mapNotNull { it.jsonObject["assignment_id"]?.jsonPrimitive?.content }
@@ -1510,7 +1510,7 @@ private val permanentPickupJson = Json { ignoreUnknownKeys = true }
  */
 fun parseProjectedHours(body: String): Double? =
     runCatching {
-        Json { ignoreUnknownKeys = true }
+        permanentPickupJson
             .decodeFromString<JsonObject>(body)["projectedHours"]
             ?.jsonPrimitive
             ?.content

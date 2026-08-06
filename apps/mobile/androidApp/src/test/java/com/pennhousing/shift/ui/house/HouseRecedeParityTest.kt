@@ -2,10 +2,10 @@ package com.pennhousing.shift.ui.house
 
 import androidx.compose.ui.graphics.Color
 import com.pennhousing.shift.ui.theme.mixedWithWhite
-import kotlin.math.abs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.abs
 
 /**
  * Pins the house-grid recede maths to the values iOS produces, so the two platforms cannot
@@ -17,7 +17,12 @@ import org.junit.Test
  * that exists twice is a colour rule that silently drifts.
  */
 class HouseRecedeParityTest {
-    private fun assertChannels(actual: Color, r: Float, g: Float, b: Float) {
+    private fun assertChannels(
+        actual: Color,
+        r: Float,
+        g: Float,
+        b: Float,
+    ) {
         val d = listOf(abs(actual.red - r), abs(actual.green - g), abs(actual.blue - b)).max()
         assertTrue("expected ($r, $g, $b) got (${actual.red}, ${actual.green}, ${actual.blue})", d < 0.002f)
     }

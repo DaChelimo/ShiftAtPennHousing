@@ -665,7 +665,7 @@
 }
 .panel {
   position: fixed;
-  top: 48px;
+  top: 64px;
   right: 0;
   bottom: 0;
   width: var(--panel-w, 400px);
@@ -723,6 +723,16 @@
   gap: 6px;
   margin-top: 12px;
 }
+/* Tags now ride the time row instead of owning a second full-width row (2026-08-05).
+   Right-aligned so the time stays the row's anchor. */
+.detail-row-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+  padding-left: 8px;
+}
 .detail-note {
   display: flex;
   gap: 8px;
@@ -756,6 +766,51 @@
   padding: 14px;
   background: var(--surface-2);
   border: 1px solid var(--border-subtle);
+}
+/* Collapsed escalation (2026-08-05). The open timeline cost ~110px of the sheet's
+   scarcest space to answer one question; the summary line answers it in one row and
+   the timeline is one click away. Tighter padding than the open card since the
+   summary IS the content when collapsed. */
+.detail-esc.is-collapsible {
+  margin-top: 12px;
+  padding: 0;
+}
+.esc-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.esc-summary:hover {
+  background: var(--surface-3);
+}
+.esc-summary .t-label {
+  flex-shrink: 0;
+}
+.esc-summary-step {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.esc-caret {
+  color: var(--text-secondary);
+  transform: rotate(-90deg);
+  transition: transform var(--motion) var(--ease);
+}
+.esc-caret.is-open {
+  transform: rotate(0deg);
+}
+.esc-detail {
+  padding: 4px 12px 12px;
+  border-top: 1px solid var(--border-subtle);
 }
 /* Edit section: fills the remaining body height as a flex column — fixed top
    (time range + action + list label), a scrolling worker list, and a footer
@@ -1034,6 +1089,124 @@ button.pchip:hover {
   color: var(--st-danger);
   background: var(--st-danger-bg);
   border-color: var(--st-danger-bd);
+}
+
+/* --- pinned standing-cover chip (RSM | Allied) ---
+   One chip split in two, sitting above the roster. Reads as a single control with
+   two targets rather than two loose buttons, which is what keeps it visually
+   distinct from the worker cards below it. Neither half shows a cap hint: both
+   identities are cap-exempt server-side. */
+.wpin {
+  display: flex;
+  flex-shrink: 0;
+  margin-top: 8px;
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+.wpin-half {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 1;
+  min-width: 0;
+  padding: 8px 11px;
+  text-align: left;
+  background: var(--surface);
+  border: 0;
+  cursor: pointer;
+  transition: background var(--motion) var(--ease);
+}
+.wpin-half + .wpin-half {
+  border-left: 1px solid var(--border-subtle);
+}
+.wpin-half:hover {
+  background: var(--surface-2);
+}
+.wpin-half.is-sel {
+  background: var(--brand-subtle-bg);
+  box-shadow: inset 0 0 0 2px var(--brand);
+}
+.wpin-role {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.wpin-half.is-sel .wpin-role {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+.wpin-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+.wpin-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wpin-sub {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- name filter over the roster (the pinned chip is never filtered) --- */
+.wsearch {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  margin-top: 8px;
+  padding: 0 10px;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+}
+.wsearch:focus-within {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 2px var(--brand-subtle-bg);
+}
+.wsearch-input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.wsearch-input::-webkit-search-cancel-button {
+  display: none;
+}
+.wsearch-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 3px;
+  background: transparent;
+  border: 0;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.wsearch-clear:hover {
+  color: var(--text-primary);
 }
 
 /* --- worker-card picker (cap-aware) — the one scrolling region in the panel --- */

@@ -22,8 +22,8 @@ INSERT INTO houses (id, name, desk_phone, is_staffable, launch_state) VALUES
   ('rodin','Rodin',NULL,'t','pre_launch')
 ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, desk_phone=EXCLUDED.desk_phone, is_staffable=EXCLUDED.is_staffable;
 
--- system_config. allow_time_travel is OMITTED on purpose: absent means time travel is
--- DENIED, which is what production must be (migration 20260726000008).
+-- system_config. The simulated clock is gated by ROLE now, not by a system_config key
+-- (migration 20260805000001) -- no allow_time_travel row is needed in any environment.
 INSERT INTO system_config (config_key, config_value, value_type, notes) VALUES
   ('ack_deadline_offset_minutes','10','integer'::value_type_enum,NULL),
   ('drop_horizon_days','30','integer'::value_type_enum,NULL),

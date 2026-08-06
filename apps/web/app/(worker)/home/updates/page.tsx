@@ -1,3 +1,7 @@
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = { title: 'Updates' };
+
 import { UpdatesFeed } from '../../../../components/worker/UpdatesFeed';
 import { getSessionUser } from '../../../../lib/auth';
 import { getUpdatesBoard } from '../../../../lib/data/worker/floats';

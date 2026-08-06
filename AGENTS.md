@@ -104,6 +104,14 @@ critical things is the failure mode to avoid.
 1. **Harnwell training constraint**: no worker whose home_house != Harnwell may staff the
    Harnwell desk under any mechanism (scheduled, claimed, floated, picked up, force-triggered).
    Enforce in code at every assignment write point — not only in config tables.
+   **AMENDED 2026-08-05 (migration `20260805000002`, BSpec §26.1 / ARCH §25.3):** the Allied
+   contractor is the ONE exemption. It is keyed on `houses.is_staffable = false`
+   (`user_is_allied_contractor`), never on a uuid or house id, so it covers exactly the
+   pseudo-house population and cannot be widened by adding a normal house. Allied could
+   already stand at the Harnwell desk via the escalation ladder's `status = 'allied'`,
+   `user_id IS NULL` seat, which the trigger never inspected; the amendment changes only
+   whether that coverage is recorded with Allied NAMED on the seat. Every other
+   non-Harnwell-home worker stays hard-blocked. Do not generalise this exemption.
 
 2. **Float direction rules (config-driven with hard guards; amended 2026-07-02)**: which
    houses may source floats and to which destinations is the period's `float_routing`.
@@ -667,3 +675,37 @@ user, dest, effective_date, note)` is the entry point: either the SOURCE or DEST
   always remind the worker where to find the tour again, not just the first time ever.
   Do not fold this into the natural-finish pointer path; they are two distinct triggers by
   design.
+
+- [Simulated clock: role gate, not environment gate] **Moving `dev_sim_clock` off zero is
+  admin-only, in every environment including production** (2026-08-05, migration
+  `20260805000001`, superseding `20260726000008`'s "denied in production, full stop"
+  posture). `enforce_time_travel_gate` now checks `NEW.set_by` against `user_is_admin`, not
+  `system_config('allow_time_travel')` — that key and `time_travel_is_allowed()` are gone.
+  `apps/web/lib/actions/devClock.ts` (`setSimClock`/`clearSimClock`/`runOrchestratorTick`)
+  and both layouts (`(app)/layout.tsx`, `(worker)/layout.tsx`) gate on `isAdmin(user)`, not
+  the retired `isTimeTravelEnabled()`. `DevClockCard` stages a non-zero target behind a
+  client-side confirm step (`confirmTargetISO`) naming the production impact before writing
+  — a caution the administrator can proceed past, not a second permission gate; resetting to
+  real time skips it. Do NOT reintroduce an environment check here: the whole point of this
+  migration is that the admin role gate applies the same way everywhere, so a dev/prod branch
+  in either the DB trigger or the web gate would silently reopen the old "anyone in a
+  non-prod build" surface for every other role. Mobile's `SimClock` needed no change — it
+  already re-syncs at launch and on foreground return and simply reflects whatever offset the
+  DB holds, which can now only ever be non-zero because the admin set it.
+- [Orchestrator was never running in prod] **Found 2026-08-05, fixed 2026-08-06: the hosted
+  Shift project had never once executed `orchestrator-tick` via cron.** Two stacked, unrelated
+  causes — see ARCH "Deploy-time secrets" for the full incident writeup:
+  (1) `supabase/seed.sql`'s cron-teardown block was replayed against hosted, unscheduling all
+  seven jobs; it is now guarded on `app_runtime_setting('app.supabase_url')` resolving, but
+  **never replay `seed.sql` against a hosted project regardless** — the guard is a backstop.
+  (2) Five Edge Functions (`orchestrator-tick`, `force-trigger`, `create-swap`,
+  `permanent-drop`, `permanent-pickup`) reached `@shift/core` via a dynamic
+  `import('../../../packages/core/dist/...')`, which resolves under `supabase start` but not
+  under `supabase functions deploy` (the bundler follows only static imports), so every
+  deploy silently shipped without core. Fixed by vendoring the reachable subset of
+  `packages/core/dist` into a **committed** `supabase/functions/_shared/core/` and importing
+  it statically; `pnpm vendor:core` regenerates it after any `packages/core/src` change and
+  CI's `pnpm vendor:core:check` fails the build if it drifts. Do NOT reintroduce a dynamic
+  import of anything under `packages/core/dist` in an Edge Function — it will pass locally
+  and fail silently on deploy, which is exactly how this went undetected. See
+  `supabase/functions/README.md` and `supabase/AGENTS.md` "Required deploy configuration".

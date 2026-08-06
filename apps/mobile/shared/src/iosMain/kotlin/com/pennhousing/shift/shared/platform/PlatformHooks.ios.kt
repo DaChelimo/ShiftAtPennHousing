@@ -21,3 +21,9 @@ actual fun openMailto(url: String) {
     val nsUrl = NSURL.URLWithString(url) ?: return
     UIApplication.sharedApplication.openURL(nsUrl)
 }
+
+/** iOS: open an `https:` URL with `UIApplication.openURL` (the Settings legal links). */
+actual fun openUrl(url: String) {
+    val nsUrl = NSURL.URLWithString(url) ?: return
+    UIApplication.sharedApplication.openURL(nsUrl)
+}

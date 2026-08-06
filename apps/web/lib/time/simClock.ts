@@ -3,17 +3,13 @@ import { cache } from 'react';
 import { cachedGlobal, invalidateGlobal } from '../cache/ttl';
 import { createServiceClient } from '../supabase/server';
 
-// Dev-only simulated clock. The whole admin app reads "now" through simNow() so a
-// time-travel offset (dev_sim_clock.offset_seconds, set from the top-bar card)
-// fast-forwards both the website and the orchestrator off one shared clock. In a
-// production build the offset is always 0 and the setter UI is gated off, so
-// simNow() is identical to the wall clock.
-
-// Time travel is a non-production affordance only. Mirrors the DB guarantee that
-// the offset stays 0 in prod — this just hides the control so it can never be set.
-export function isTimeTravelEnabled(): boolean {
-  return process.env.NODE_ENV !== 'production';
-}
+// Simulated clock. The whole app reads "now" through simNow() so a time-travel offset
+// (dev_sim_clock.offset_seconds, set from the top-bar card) fast-forwards both the website
+// and the orchestrator off one shared clock. Moving it is admin-only, enforced at the
+// database layer (dev_sim_clock_admin_gate, migration 20260805000001) regardless of
+// environment — production included, deliberately, so the project administrator can still
+// exercise time-driven flows there. The default and the only state anyone else ever sees is
+// offset 0, which makes simNow() identical to the wall clock.
 
 const OFFSET_KEY = 'dev_sim_clock:offset_seconds';
 // Short: the offset only moves when someone drives the dev clock card, and that
@@ -56,8 +52,5 @@ export function invalidateSimOffset(): void {
 // Wrapped in React's cache() (per-request) so one navigation sees one consistent `now`
 // across the layout and every page segment.
 export const simNow = cache(async (): Promise<Date> => {
-  // Production short-circuit: no offset can exist (the setter is gated off), so
-  // skip the lookup and behave exactly like the old `new Date()`.
-  if (!isTimeTravelEnabled()) return new Date();
   return new Date(Date.now() + (await getSimOffsetSeconds()) * 1000);
 });

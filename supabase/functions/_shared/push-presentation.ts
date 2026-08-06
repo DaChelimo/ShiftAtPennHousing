@@ -123,16 +123,37 @@ export function buildFcmMessage(
   presentation: PushPresentation,
   data: Record<string, string>,
 ): Record<string, unknown> {
+  // A top-level `notification` block makes Android auto-render a bare system
+  // banner when the app is backgrounded, bypassing AppFirebaseMessagingService
+  // entirely (and with it, the app's own title/body formatting and accent
+  // color). For every notification EXCEPT urgent Allied-paging ones, Android
+  // now gets a DATA-ONLY message so it always builds the notification itself;
+  // AppFirebaseMessagingService already reads title/body out of `data.payload`
+  // via `pushDisplayFromData` (the T2-13 path), so no client change is needed.
+  // Urgent messages keep the old notification+android.notification shape
+  // unchanged: the worker app has no client-side handling of the
+  // `desk_page_critical` channel today, so regressing background delivery for
+  // an Allied page is not an acceptable trade for prettier styling. iOS is
+  // unaffected either way — it always renders from `apns.payload.aps.alert`,
+  // never from the top-level `notification` field.
+  const urgent = presentation.urgency === 'urgent';
+
   return {
     data,
-    notification: { title: presentation.title, body: presentation.body },
+    ...(urgent ? { notification: { title: presentation.title, body: presentation.body } } : {}),
     android: {
       priority: presentation.urgency === 'normal' ? 'normal' : 'high',
-      notification: {
-        ...(presentation.androidChannel === null ? {} : { channelId: presentation.androidChannel }),
-        ...(presentation.sound === null ? {} : { sound: presentation.sound }),
-        ...(presentation.androidFullScreenIntent ? { visibility: 'public' } : {}),
-      },
+      ...(urgent
+        ? {
+            notification: {
+              ...(presentation.androidChannel === null
+                ? {}
+                : { channelId: presentation.androidChannel }),
+              ...(presentation.sound === null ? {} : { sound: presentation.sound }),
+              ...(presentation.androidFullScreenIntent ? { visibility: 'public' } : {}),
+            },
+          }
+        : {}),
     },
     apns: {
       headers: {

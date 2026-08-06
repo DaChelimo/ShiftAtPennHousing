@@ -34,11 +34,12 @@ import com.pennhousing.shift.shared.manager.coverage.outcomeLabel
 import com.pennhousing.shift.shared.viewmodel.CoverageUiState
 import com.pennhousing.shift.shared.viewmodel.RespondSheetState
 import com.pennhousing.shift.ui.common.PageTitle
-import com.pennhousing.shift.ui.kit.ButtonVariant
 import com.pennhousing.shift.ui.kit.ButtonSize
+import com.pennhousing.shift.ui.kit.ButtonVariant
 import com.pennhousing.shift.ui.kit.EmptyState
-import com.pennhousing.shift.ui.kit.ShiftButton
 import com.pennhousing.shift.ui.kit.ShiftBottomSheet
+import com.pennhousing.shift.ui.kit.ShiftButton
+import com.pennhousing.shift.ui.kit.SectionHeader
 import com.pennhousing.shift.ui.kit.ShiftIcons
 import com.pennhousing.shift.ui.theme.ShiftTheme
 
@@ -63,12 +64,11 @@ internal object CoverageTags {
     const val CARD = "coverage_card"
     const val SHEET = "coverage_respond_sheet"
     const val CALL_ALLIED = "coverage_call_allied"
-    const val CONFIRM_SECURED = "coverage_confirm_secured"
+    const val COVER_IT = "coverage_cover_it"
     const val OTHER_OUTCOMES = "coverage_other_outcomes"
     const val NOTE_FIELD = "coverage_note"
     const val SUBMIT = "coverage_submit"
     const val NOT_YET = "coverage_not_yet"
-    const val FORCE_TRIGGER = "coverage_force_trigger"
     const val ALREADY_HANDLED = "coverage_already_handled"
 
     fun outcome(outcome: CoverageOutcome): String = "coverage_outcome_${outcome.wire}"
@@ -87,11 +87,11 @@ internal fun CoverageScreen(
     state: CoverageUiState,
     onRespond: (String) -> Unit,
     onSelectOutcome: (CoverageOutcome) -> Unit,
+    onCoverPersonally: () -> Unit,
     onNoteChange: (String) -> Unit,
     onSubmit: () -> Unit,
     onDismissSheet: () -> Unit,
     onCallAllied: (String?) -> Unit,
-    onForceTrigger: (String) -> Unit,
     onClearAlreadyHandled: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -109,7 +109,8 @@ internal fun CoverageScreen(
         } else {
             LazyColumn(
                 Modifier.fillMaxWidth().testTag(CoverageTags.LIST),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                contentPadding = androidx.compose.foundation.layout
+                    .PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(state.feed.cards, key = { it.requestId }) { card ->
@@ -143,11 +144,11 @@ internal fun CoverageScreen(
         RespondSheet(
             sheet = sheet,
             onSelectOutcome = onSelectOutcome,
+            onCoverPersonally = onCoverPersonally,
             onNoteChange = onNoteChange,
             onSubmit = onSubmit,
             onDismiss = onDismissSheet,
             onCallAllied = { onCallAllied(sheet.card.deskPhone) },
-            onForceTrigger = { onForceTrigger(sheet.card.requestId) },
         )
     }
 }
@@ -300,11 +301,11 @@ private fun StatusPill(
 private fun RespondSheet(
     sheet: RespondSheetState,
     onSelectOutcome: (CoverageOutcome) -> Unit,
+    onCoverPersonally: () -> Unit,
     onNoteChange: (String) -> Unit,
     onSubmit: () -> Unit,
     onDismiss: () -> Unit,
     onCallAllied: () -> Unit,
-    onForceTrigger: () -> Unit,
 ) {
     val c = ShiftTheme.colors
     ShiftBottomSheet(onDismiss = onDismiss, modifier = Modifier.testTag(CoverageTags.SHEET)) {
@@ -318,44 +319,35 @@ private fun RespondSheet(
             )
             Text(sheet.card.reasonLabel, color = c.sec, fontSize = 13.sp, lineHeight = 18.sp)
 
-            // 1. The primary action. Everything else on this sheet is subordinate to it.
-            ShiftButton(
-                text = sheet.card.deskPhone?.let { "Call Allied ($it)" } ?: "Call Allied",
-                onClick = onCallAllied,
-                fullWidth = true,
-                size = ButtonSize.Lg,
-                icon = ShiftIcons.Phone,
-                modifier = Modifier.testTag(CoverageTags.CALL_ALLIED),
-            )
+            // 1. Get coverage. Roughly 80% of the time an RSM covers it themselves and 20%
+            // it goes to Allied, so the two actions sit at EQUAL weight — neither is the
+            // fallback for the other. Both record their outcome immediately: there is
+            // nothing left to confirm once the manager has committed to one.
+            SectionHeader("Get coverage")
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ShiftButton(
+                    text = "I can cover it",
+                    onClick = {
+                        onSelectOutcome(CoverageOutcome.COVERED_INTERNALLY)
+                        onSubmit()
+                    },
+                    modifier = Modifier.weight(1f).testTag(CoverageTags.COVER_IT),
+                    variant = ButtonVariant.Success,
+                    size = ButtonSize.Lg,
+                    icon = ShiftIcons.Person,
+                )
+                ShiftButton(
+                    text = sheet.card.deskPhone?.let { "Call Allied ($it)" } ?: "Call Allied",
+                    onClick = onCallAllied,
+                    modifier = Modifier.weight(1f).testTag(CoverageTags.CALL_ALLIED),
+                    size = ButtonSize.Lg,
+                    icon = ShiftIcons.Phone,
+                )
+            }
 
-            // One more chance to solve it internally before committing to Allied.
-            // Force-trigger is a deliberate manual override and is intentionally NOT gated by
-            // the coverage floor.
-            ShiftButton(
-                text = "Try an internal float first",
-                onClick = onForceTrigger,
-                fullWidth = true,
-                variant = ButtonVariant.Text,
-                size = ButtonSize.Sm,
-                modifier = Modifier.testTag(CoverageTags.FORCE_TRIGGER),
-            )
-
-            // 2. The outcome. Phrased as a question about what happened, not as a filing task.
-            Text("Did Allied confirm coverage?", color = c.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-
-            ShiftButton(
-                text = "Yes, Allied is covering it",
-                onClick = {
-                    onSelectOutcome(CoverageOutcome.ALLIED_SECURED)
-                    onSubmit()
-                },
-                fullWidth = true,
-                variant = ButtonVariant.Tonal,
-                icon = ShiftIcons.Check,
-                modifier = Modifier.testTag(CoverageTags.CONFIRM_SECURED),
-            )
-
-            Text("Something else happened", color = c.ter, fontSize = 12.5.sp, modifier = Modifier.testTag(CoverageTags.OTHER_OUTCOMES))
+            // 2. What happened. One flat, organized list of the remaining outcomes — no
+            // separate confirm button plus a buried "something else" list to parse.
+            SectionHeader("What happened", modifier = Modifier.testTag(CoverageTags.OTHER_OUTCOMES))
 
             OTHER_OUTCOMES.forEach { outcome ->
                 val selected = sheet.selectedOutcome == outcome
@@ -368,8 +360,7 @@ private fun RespondSheet(
                             1.dp,
                             if (selected) c.outline else c.divider,
                             RoundedCornerShape(11.dp),
-                        )
-                        .clickable { onSelectOutcome(outcome) }
+                        ).clickable { onSelectOutcome(outcome) }
                         .padding(horizontal = 12.dp, vertical = 11.dp)
                         .testTag(CoverageTags.outcome(outcome)),
                     verticalAlignment = Alignment.CenterVertically,
@@ -423,12 +414,13 @@ private fun RespondSheet(
 }
 
 /**
- * The three non-happy-path outcomes, in the order a manager is likely to need them. Allied
- * secured is deliberately NOT here: it has its own prominent confirm above.
+ * The three outcomes left once "I can cover it" is out of the way, in the order a manager
+ * is likely to need them. `COVERED_INTERNALLY` is deliberately NOT here: it is recorded
+ * directly by the "I can cover it" action above.
  */
 private val OTHER_OUTCOMES =
     listOf(
-        CoverageOutcome.COVERED_INTERNALLY,
+        CoverageOutcome.ALLIED_SECURED,
         CoverageOutcome.DESK_UNSTAFFED,
         CoverageOutcome.NO_LONGER_NEEDED,
     )

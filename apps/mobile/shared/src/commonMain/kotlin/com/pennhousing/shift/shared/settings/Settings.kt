@@ -116,12 +116,12 @@ data class NotificationPreferences(
  */
 val SHIFT_REMINDER_LEAD_TIMES: List<Int> = listOf(120, 60, 30)
 
-/** "2 hours before" / "1 hour before" / "30 minutes before". No em/en dashes. */
+/** "2 hours before the shift" / "1 hour before the shift" / "30 minutes before the shift". */
 fun shiftReminderLabel(offsetMinutes: Int): String =
     when {
-        offsetMinutes >= 120 -> "${offsetMinutes / 60} hours before"
-        offsetMinutes >= 60 -> "${offsetMinutes / 60} hour before"
-        else -> "$offsetMinutes minutes before"
+        offsetMinutes >= 120 -> "${offsetMinutes / 60} hours before the shift"
+        offsetMinutes >= 60 -> "${offsetMinutes / 60} hour before the shift"
+        else -> "$offsetMinutes minutes before the shift"
     }
 
 /**
@@ -200,16 +200,20 @@ fun buildNotificationRows(
             on = prefs.shiftReminderOffsets.isNotEmpty(),
             interactive = true,
         ),
+        // These two render as ONE "Open shift notifications" card with two sub-toggles
+        // (the UI groups them by channel; see OPEN_SHIFTS_GROUP_TITLE/SUB below), the
+        // same pattern SHIFT_REMINDERS uses for its lead-time checkboxes. They stay two
+        // separate channels/columns underneath because they persist and toggle independently.
         NotificationRowModel(
             NotificationChannel.OPEN_SHIFTS_HOME_HOUSE,
-            "Open shifts at my house",
+            "At my house",
             "When someone drops a shift at your house",
             on = prefs.openShiftsHomeHouse,
             interactive = true,
         ),
         NotificationRowModel(
             NotificationChannel.OPEN_SHIFTS_OTHER_HOUSES,
-            "Open shifts at other houses",
+            "At other houses",
             "When a shift you could pick up opens elsewhere",
             on = prefs.openShiftsOtherHouses,
             interactive = true,
@@ -257,3 +261,30 @@ fun NotificationPreferences.withShiftReminderToggled(offsetMinutes: Int): Notifi
 // the client-side cap constants: the cap is per-week server config (see
 // `effective_weekly_caps`), so a fixed pair of numbers on a settings screen could only
 // ever be wrong once a season set its own cap.
+
+/**
+ * Header copy for the merged "Open shift notifications" card (BSpec §10.1, amended
+ * 2026-08-06): [NotificationChannel.OPEN_SHIFTS_HOME_HOUSE] and
+ * [NotificationChannel.OPEN_SHIFTS_OTHER_HOUSES] used to render as two unrelated peer
+ * rows; they are one concept (a shift opened up) with two independent toggles, same as
+ * the shift-reminder lead times.
+ */
+const val OPEN_SHIFTS_GROUP_TITLE = "Open shift notifications"
+const val OPEN_SHIFTS_GROUP_SUB = "When a shift opens up for pickup"
+
+/**
+ * The Settings redesign (2026-08-06) collapsed the six mandatory (non-interactive)
+ * notification rows behind a disclosure so the two configurable groups (shift reminders,
+ * open shifts) and General updates are not competing for attention with rows a worker
+ * cannot change. This is the label for that disclosure's summary row.
+ */
+fun alwaysOnNotificationsLabel(count: Int): String = "Always-on notifications ($count)"
+
+/**
+ * Privacy Policy / Terms of Service, hosted as real pages on the guide site
+ * (`apps/docs`, deployed at shiftatpenn.com/guide) rather than in-app text, so the one
+ * legal source of truth (the markdown files under `docs/legal`) is never forked. Settings
+ * links out to these; there is no offline/in-app fallback copy.
+ */
+const val PRIVACY_POLICY_URL = "https://shiftatpenn.com/guide/legal/privacy"
+const val TERMS_OF_SERVICE_URL = "https://shiftatpenn.com/guide/legal/terms"

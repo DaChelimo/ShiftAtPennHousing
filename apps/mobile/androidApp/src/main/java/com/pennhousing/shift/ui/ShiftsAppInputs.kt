@@ -159,10 +159,8 @@ internal data class ShiftsActions(
      * going. NEVER queue this offline.
      */
     val onAcknowledgeCoverage: suspend (String) -> Boolean = { false },
-    /** Record the outcome and close: (requestId, outcome wire value, note). */
-    val onCloseCoverage: suspend (String, String, String?) -> Boolean = { _, _, _ -> false },
+    /** Record the outcome and close: (requestId, outcome wire value, note, assignSelf). */
+    val onCloseCoverage: suspend (String, String, String?, Boolean) -> Boolean = { _, _, _, _ -> false },
     /** Dial the desk / Allied. The host opens a `tel:` intent; null number → no-op. */
     val onCallPhone: (String?) -> Unit = {},
-    /** One more attempt at an internal float before committing to Allied, from the Respond sheet. */
-    val onForceTriggerCoverage: (String) -> Unit = {},
 )

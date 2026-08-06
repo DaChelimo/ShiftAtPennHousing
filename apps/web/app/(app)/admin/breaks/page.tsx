@@ -1,3 +1,7 @@
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = { title: 'Admin - Breaks' };
+
 import { BreakAuthoring } from '../../../../components/breaks/BreakAuthoring';
 import { Notification } from '../../../../components/ui/Notification';
 import { PageHead } from '../../../../components/ui/PageHead';

@@ -1,6 +1,7 @@
 import './dashboard.css';
 
 import { canViewOtherHouses, resolveCalendarHouse } from '@shift/core';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { Card } from '../../../components/ui/Card';
@@ -23,6 +24,8 @@ import { isProjectAdministrator } from '../../../lib/data/config';
 import { getDashboard, type DashboardModel, type DeskShift } from '../../../lib/data/dashboard';
 import { getOnDutyHmodId, getShellHouses } from '../../../lib/data/hmod';
 import { simNow } from '../../../lib/time/simClock';
+
+export const metadata: Metadata = { title: 'Dashboard' };
 
 // ===========================================================================
 // Dashboard — where every manager lands after signing in.
@@ -149,7 +152,7 @@ function ActionQueue({ model }: { model: DashboardModel }) {
           <div style={{ padding: 'var(--sp-6) 0' }}>
             <EmptyState
               title="Nothing needs you right now"
-              desc="No open coverage requests, no unfilled seats in the next 24 hours, and no unread notifications."
+              desc="No open coverage requests, no empty desk in the next 24 hours, and no unread notifications."
             />
           </div>
         ) : (
@@ -262,9 +265,9 @@ export default async function DashboardPage({
       sub: 'Who has submitted, who has not',
     },
     {
-      href: `/admin/coverage${houseQuery}`,
+      href: '/inbox',
       icon: 'shield',
-      label: 'Coverage report',
+      label: 'Action inbox',
       sub: 'Every Allied request and its outcome',
     },
   ];
@@ -300,8 +303,7 @@ export default async function DashboardPage({
       <PageHead
         eyebrow={
           <>
-            {model.houseName}
-            {model.restricted && ' · Restricted'} · {model.todayLabel}
+            {model.houseName} · {model.todayLabel}
           </>
         }
         title={`${greeting(model.nowLabel)}, ${firstName(user.name)}`}
@@ -378,8 +380,11 @@ export default async function DashboardPage({
               <span className="dash-kv-val">{model.desk.weekGapCount}</span>
             </div>
             <div className="dash-kv">
-              <span className="dash-kv-key">Unfilled in 24h</span>
-              <span className="dash-kv-val">{model.desk.urgentGaps.length}</span>
+              {/* Two DIFFERENT measures, deliberately. Above is vacant SEATS; this is
+                  windows where the desk would be EMPTY (the coverage floor that decides
+                  escalation). A vacant second seat counts above and not here. */}
+              <span className="dash-kv-key">Desk empty in 24h</span>
+              <span className="dash-kv-val">{model.desk.urgentGapCount}</span>
             </div>
             <div className="dash-kv">
               {/* getManagerFloaters is scoped to initiated_by = 'force_triggered', so

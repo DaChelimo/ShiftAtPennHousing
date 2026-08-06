@@ -5,6 +5,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 // section you touched on your way out" rule applies. loadCoveredBlockIds moved WITH it
 // and is unchanged — it is the coverage-floor-of-one invariant and both of its call
 // sites are non-negotiable (audit §5 item 2).
+import { evaluateChainSteps as coreEvaluateChainSteps } from '../_shared/core/orchestrator/evaluate.js';
+
 import {
   floatLookupStep,
   lockBlockCoverage,
@@ -12,6 +14,10 @@ import {
   type RuntimeConfig,
   type VacantAssignment,
 } from './floatLookup.ts';
+// Vendored @shift/core. STATIC and inside supabase/functions on purpose: the deploy
+// bundler follows static relative imports only, so the previous dynamic import of
+// ../../../packages/core/dist/** shipped a bundle without core and every tick died with
+// "Module not found". See scripts/vendor-core-into-functions.mjs.
 
 const TIMEZONE = 'America/New_York';
 const LOOKAHEAD_MINUTES = 3 * 60 + 5;
@@ -200,24 +206,23 @@ function parseEscalationChain(value: unknown): ChainStep[] {
 
 // C6a: delegate to the canonical, unit-tested implementation in
 // packages/core/src/orchestrator/evaluate.ts (covered by escalation-timing.test.ts),
-// using the same dynamic-import pattern as findFloaters. This removes the
+// reached through the vendored copy in _shared/core. This removes the
 // previously-duplicated inline copy so the deployed orchestrator runs exactly
 // the logic the tests exercise.
-async function evaluateChainSteps(params: {
+function evaluateChainSteps(params: {
   blockStartAt: Date;
   now: Date;
   chain: ChainStep[];
   stepStatus: StepStatusMap;
-}): Promise<ChainStepEvaluation[]> {
-  const module = (await import('../../../packages/core/dist/orchestrator/evaluate.js')) as {
-    evaluateChainSteps: (input: {
+}): ChainStepEvaluation[] {
+  return (
+    coreEvaluateChainSteps as (input: {
       blockStartAt: Date;
       now: Date;
       chain: ChainStep[];
       stepStatus: StepStatusMap;
-    }) => ChainStepEvaluation[];
-  };
-  return module.evaluateChainSteps(params);
+    }) => ChainStepEvaluation[]
+  )(params);
 }
 
 type BlockProfile = { profileName: string; chain: ChainStep[]; floatEnabled: boolean };
@@ -597,7 +602,7 @@ async function processVacantBlocks(
     // A block with no block_step_status rows yet is absent from the batch, which means
     // the same thing the per-block query's empty result meant: no step has fired.
     const stepStatus = stepStatusByBlock.get(block.blockId) ?? {};
-    const dueSteps = await evaluateChainSteps({
+    const dueSteps = evaluateChainSteps({
       blockStartAt: block.blockStartAt,
       now,
       chain: profile.chain,

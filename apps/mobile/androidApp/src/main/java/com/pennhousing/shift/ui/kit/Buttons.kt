@@ -10,15 +10,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -29,7 +29,7 @@ import com.pennhousing.shift.ui.theme.ShiftShapes
 import com.pennhousing.shift.ui.theme.ShiftTheme
 
 /** worker-app.html `Btn` kinds. */
-enum class ButtonVariant { Filled, Tonal, Outlined, Text, Destructive, DestructiveFilled }
+enum class ButtonVariant { Filled, Tonal, Outlined, Text, Destructive, DestructiveFilled, Success }
 
 /** worker-app.html `Btn` sizes (heights 34 / 44 / 52). */
 enum class ButtonSize { Sm, Md, Lg }
@@ -154,6 +154,7 @@ private fun ButtonVariant.colors(): ButtonColors {
             containerColor = c.danger.accent,
             contentColor = androidx.compose.ui.graphics.Color.White,
         )
+        ButtonVariant.Success -> ButtonDefaults.buttonColors(containerColor = c.success.tint, contentColor = c.success.accent)
         // Outlined/Text never reach here.
         else -> ButtonDefaults.buttonColors()
     }

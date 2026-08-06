@@ -9,13 +9,12 @@ import {
   type OverrideScope,
 } from '../../lib/actions/override';
 import type { AssignableWorker, CalShift } from '../../lib/data/calendar';
-import { Avatar, Button, Icon, Notification } from '../ui';
+import { Button, Icon, Notification } from '../ui';
 
 import { RangeSlider } from './RangeSlider';
+import { WorkerPicker } from './WorkerPicker';
 import type { WriteStatusEvent } from './WriteStatusToasts';
 import { fmtH, shiftOriginMinutes, spanLabel } from './format';
-
-type CapTone = 'muted' | 'warn' | 'danger';
 
 // Harnwell pilot workstream G. Harnwell excluded (never a float destination, hard
 // invariant); the other 12 houses are the fixed, load-bearing id set from AGENTS.md.
@@ -33,28 +32,6 @@ const FLOAT_DESTINATION_HOUSES: { id: string; name: string }[] = [
   { id: 'radian', name: 'Radian' },
   { id: 'rodin', name: 'Rodin' },
 ];
-
-// Per-candidate cap context for the swap/assign cards: their current weekly load
-// and headroom against the week's soft cap, flagged when adding the selected range
-// would push them over (danger when the week's cap is a hard break cap).
-function capHint(
-  weeklyHours: number,
-  addHours: number,
-  cap: number,
-  enforcement: 'soft' | 'hard',
-): { text: string; tone: CapTone } {
-  if (weeklyHours + addHours > cap) {
-    return {
-      text: `${fmtH(weeklyHours)}h this week · +${fmtH(addHours)}h over ${cap}h cap`,
-      tone: enforcement === 'hard' ? 'danger' : 'warn',
-    };
-  }
-  const headroom = cap - weeklyHours;
-  return {
-    text: `${fmtH(weeklyHours)}h this week · ${fmtH(headroom)}h to cap`,
-    tone: headroom <= 2 ? 'warn' : 'muted',
-  };
-}
 
 // Unified inline edit for the shift detail panel's edit section. Occupied seats lead
 // with an action choice (Swap / Remove, no label), nothing below it renders until
@@ -125,10 +102,11 @@ export function EditSection({
   // "05:30-08:00" while this label claimed "08:00-10:30" for the very same blocks.
   const rangeLabel = spanLabel(fromBlock, toBlock, origin);
 
-  // Assigning shows worker cards; swapping shows them minus the incumbent.
+  // Assigning shows the worker picker; swapping shows it minus the incumbent.
+  // WorkerPicker owns the pinned RSM/Allied chip, the name filter, and the roster.
   const assigning = !occupied || action === 'replace';
-  const candidates = assignableWorkers.filter((w) => w.userId !== shift.userId);
-  const selectedName = candidates.find((w) => w.userId === workerId)?.name ?? null;
+  const eligible = assignableWorkers.filter((w) => w.userId !== shift.userId);
+  const selectedName = eligible.find((w) => w.userId === workerId)?.name ?? null;
 
   function setRange(from: number, to: number) {
     setFromBlock(from);
@@ -411,43 +389,21 @@ export function EditSection({
         </div>
       )}
 
-      {/* worker cards — the one scrolling region inside the viewport */}
-      {assigning &&
-        (candidates.length === 0 ? (
-          <div className="edit-empty t-helper">No other workers are available for this house.</div>
-        ) : (
-          <div className="wpick-list" data-testid="override-worker-list" role="listbox">
-            {candidates.map((w) => {
-              const hint = capHint(w.weeklyHours, rangeHours, softCapHours, capEnforcement);
-              const sel = workerId === w.userId;
-              return (
-                <button
-                  type="button"
-                  key={w.userId}
-                  role="option"
-                  aria-selected={sel}
-                  data-testid="override-worker-card"
-                  data-worker-id={w.userId}
-                  className={`wpick ${sel ? 'is-sel' : ''}`.trim()}
-                  onClick={() => {
-                    setWorkerId(w.userId);
-                    setError(null);
-                  }}
-                >
-                  <Avatar name={w.name} size={30} />
-                  <span className="wpick-main">
-                    <b className="wpick-name">{w.name}</b>
-                    <span className={`wpick-hint tone-${hint.tone}`}>
-                      {hint.tone !== 'muted' && <Icon name="warn" size={12} />}
-                      {hint.text}
-                    </span>
-                  </span>
-                  {sel && <Icon name="checkCircle" size={18} className="wpick-check" />}
-                </button>
-              );
-            })}
-          </div>
-        ))}
+      {/* Pinned split chip (RSM | Allied), search, then the scrolling roster —
+          the one scrolling region inside the viewport. See WorkerPicker.tsx. */}
+      {assigning && (
+        <WorkerPicker
+          workers={eligible}
+          selectedId={workerId}
+          rangeHours={rangeHours}
+          softCapHours={softCapHours}
+          capEnforcement={capEnforcement}
+          onSelect={(id) => {
+            setWorkerId(id);
+            setError(null);
+          }}
+        />
+      )}
 
       {/* fixed footer — scope + apply. Shows together with the slider, once an
           action is chosen (or immediately for an open seat). */}
@@ -493,7 +449,7 @@ export function EditSection({
                   aria-checked={scope === 'permanent'}
                   onClick={() => setScope('permanent')}
                 >
-                  This week onward
+                  Permanent
                 </button>
               </div>
               <span className="t-helper" data-testid="override-scope-help">

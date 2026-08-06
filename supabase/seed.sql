@@ -405,16 +405,10 @@ INSERT INTO hm_leave (leave_id, user_id, start_date, end_date, replacement_user_
 INSERT INTO system_config (config_key, config_value, value_type) VALUES
   ('project_administrator_user_id', 'a0000000-0000-4000-8000-00000000000b', 'uuid');
 
--- --- Development only: permit the simulated clock to hold a non-zero offset.
--- The dev_sim_clock_environment_gate trigger (20260726000008) denies time travel by
--- DEFAULT, so a production database that was never explicitly told it may time-travel
--- cannot -- app_now() drives every escalation deadline and the season reconciliation
--- cutoff. This row is what makes the local time-travel harness work; production must
--- never have it. Resetting the offset to 0 is always allowed, gate or no gate. ---
-INSERT INTO system_config (config_key, config_value, value_type, notes) VALUES
-  ('allow_time_travel', 'true', 'enum',
-   'Development only. Permits dev_sim_clock to hold a non-zero offset (cost audit F-15).')
-ON CONFLICT (config_key) DO NOTHING;
+-- --- The simulated clock is gated by ROLE now, not environment (20260805000001):
+-- dev_sim_clock_admin_gate denies a non-zero offset unless set_by is a user holding the
+-- admin role, in every environment including production. `admin@upenn.edu` above already
+-- holds that role, so the local time-travel harness works with no extra config row. ---
 
 -- --- Close the preference window now that the fixtures are loaded (prefs locked,
 -- the realistic builder state — the submitted-but-locked period the SM builds against). ---
@@ -594,6 +588,43 @@ FROM (SELECT ((now() AT TIME ZONE 'America/New_York') - interval '8 hours')::dat
 ON CONFLICT (week_start_date) DO UPDATE SET hmod_user_id = EXCLUDED.hmod_user_id;
 
 -- =====================================================================
+-- Harnwell HM fixture.
+-- Harnwell (2026-08-06) has no HM seeded anywhere above (only Quad/Lower Quad
+-- managers exist). Michelle Majeski fills that gap. Fixed id a0…000d (next
+-- free id after the S4 fire-worker fixture at …000c) + ON CONFLICT → idempotent.
+-- =====================================================================
+INSERT INTO auth.users (
+  instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+  created_at, updated_at, raw_app_meta_data, raw_user_meta_data,
+  confirmation_token, recovery_token, email_change_token_new, email_change
+) VALUES (
+  '00000000-0000-0000-0000-000000000000',
+  'a0000000-0000-4000-8000-00000000000d',
+  'authenticated', 'authenticated', 'mmajeski@upenn.edu',
+  extensions.crypt('abc123', extensions.gen_salt('bf')),
+  now(), now(), now(),
+  '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb,
+  '', '', '', ''
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO auth.identities (provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
+VALUES (
+  'a0000000-0000-4000-8000-00000000000d', 'a0000000-0000-4000-8000-00000000000d',
+  jsonb_build_object('sub', 'a0000000-0000-4000-8000-00000000000d', 'email', 'mmajeski@upenn.edu'),
+  'email', now(), now(), now()
+)
+ON CONFLICT (provider_id, provider) DO NOTHING;
+
+INSERT INTO users (user_id, name, email, home_house_id, is_active) VALUES
+  ('a0000000-0000-4000-8000-00000000000d', 'Michelle Majeski', 'mmajeski@upenn.edu', 'harnwell', true)
+ON CONFLICT (user_id) DO NOTHING;
+
+INSERT INTO user_roles (user_id, role, scope_house_id) VALUES
+  ('a0000000-0000-4000-8000-00000000000d', 'hm', 'harnwell')
+ON CONFLICT (user_id, role, scope_house_id) DO NOTHING;
+
+-- =====================================================================
 -- LOCAL ONLY: keep this stack cron-free.
 --
 -- 20260727000001_enable_scheduling_extensions.sql creates pg_cron/pg_net and registers
@@ -614,13 +645,38 @@ ON CONFLICT (week_start_date) DO UPDATE SET hmod_user_id = EXCLUDED.hmod_user_id
 --
 -- To rehearse hosted behaviour locally, comment this block out, set the two settings with
 -- ALTER DATABASE, and expect that F-10 assertion to flip.
+--
+-- GUARD (added 2026-08-06 after a real incident): this file was replayed against the
+-- HOSTED Shift project outside a `db reset` flow. It unscheduled all seven jobs by name,
+-- and the orchestrator, notification delivery, swap expiry, and the coverage ladder went
+-- silently inert for about a week -- nothing surfaced it except a manually-opened admin
+-- health page. "Is this local" has no reliable SQL test, so this guards on the thing that
+-- actually matters: whether the jobs would DO anything if left registered. That is exactly
+-- what app_runtime_setting('app.supabase_url') resolves for the orchestrator cron body
+-- itself (Vault first, GUC fallback -- 20260727000002). If it resolves to a real value,
+-- this database is configured to run the jobs for real (hosted, or a local stack
+-- deliberately rehearsing hosted behaviour per the comment above) and unscheduling them
+-- would repeat the incident. Only a database where NEITHER Vault nor the GUC is set --
+-- genuine fresh local dev -- ever reaches the unschedule loop below.
 -- =====================================================================
 DO $$
 DECLARE
   v_job text;
+  v_configured text;
 BEGIN
   IF to_regprocedure('cron.unschedule(text)') IS NULL THEN
     RETURN;
+  END IF;
+
+  IF to_regprocedure('app_runtime_setting(text)') IS NOT NULL THEN
+    v_configured := app_runtime_setting('app.supabase_url');
+    IF COALESCE(v_configured, '') <> '' THEN
+      RAISE WARNING 'seed.sql: app.supabase_url resolves (Vault or GUC) -- skipping the '
+        'cron unschedule block. This database is configured to run the scheduled jobs '
+        'for real; seed.sql must never tear that down. If this really is a fresh local '
+        'reset, clear the Vault secret / GUC first.';
+      RETURN;
+    END IF;
   END IF;
 
   FOREACH v_job IN ARRAY ARRAY[

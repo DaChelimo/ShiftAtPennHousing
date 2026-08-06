@@ -78,7 +78,9 @@ final class CoverageObservable: ObservableObject {
     func submitClose(repo: CoverageRepository) {
         guard let intent = vm.submitClose() else { return }
         Task { [weak self] in
-            let result = try? await repo.close(requestId: intent.requestId, outcome: intent.outcome, note: intent.note)
+            let result = try? await repo.close(
+                requestId: intent.requestId, outcome: intent.outcome, note: intent.note, assignSelf: intent.assignSelf
+            )
             if result == nil || result == .failed {
                 self?.vm.revertClose(intent: intent)
             }
@@ -128,7 +130,6 @@ struct CoverageBannerView: View {
 struct CoverageView: View {
     @ObservedObject var model: CoverageObservable
     let onCallAllied: (String?) -> Void
-    let onForceTrigger: (String) -> Void
     let repo: CoverageRepository
     @Environment(\.colorScheme) private var scheme
     private var c: ShiftColors { .resolve(scheme) }
@@ -183,8 +184,7 @@ struct CoverageView: View {
                     onNoteChange: { model.vm.updateNote(note: $0) },
                     onSubmit: { model.submitClose(repo: repo) },
                     onDismiss: { model.vm.dismissSheet() },
-                    onCallAllied: { onCallAllied(sheet.card.deskPhone) },
-                    onForceTrigger: { onForceTrigger(sheet.card.requestId) }
+                    onCallAllied: { onCallAllied(sheet.card.deskPhone) }
                 )
             }
         }
@@ -259,11 +259,12 @@ private struct RespondSheetView: View {
     let onSubmit: () -> Void
     let onDismiss: () -> Void
     let onCallAllied: () -> Void
-    let onForceTrigger: () -> Void
     @Environment(\.colorScheme) private var scheme
     private var c: ShiftColors { .resolve(scheme) }
 
-    private static let otherOutcomes: [CoverageOutcome] = [.coveredInternally, .deskUnstaffed, .noLongerNeeded]
+    /// The three outcomes left once "I can cover it" is out of the way. `.coveredInternally`
+    /// is deliberately NOT here: it is recorded directly by the "I can cover it" action above.
+    private static let otherOutcomes: [CoverageOutcome] = [.alliedSecured, .deskUnstaffed, .noLongerNeeded]
 
     var body: some View {
         ShiftSheet(onClose: onDismiss) {
@@ -273,25 +274,29 @@ private struct RespondSheetView: View {
                     .font(ShiftFont.sans(14.5, .medium)).foregroundColor(c.ink)
                 Text(sheet.card.reasonLabel).font(ShiftFont.sans(13)).foregroundColor(c.sec)
 
-                ShiftButton(
-                    title: sheet.card.deskPhone.map { "Call Allied (\($0))" } ?? "Call Allied",
-                    action: onCallAllied, size: .lg, systemIcon: ShiftIcons.phone, fullWidth: true
-                )
-                .accessibilityIdentifier("coverage_call_allied")
+                // 1. Get coverage. Roughly 80% of the time an RSM covers it themselves and
+                // 20% it goes to Allied, so the two actions sit at EQUAL weight — neither is
+                // the fallback for the other. Both record their outcome immediately: there
+                // is nothing left to confirm once the manager has committed to one.
+                SectionHeader(title: "Get coverage")
+                HStack(spacing: 10) {
+                    ShiftButton(
+                        title: "I can cover it",
+                        action: { onSelectOutcome(.coveredInternally); onSubmit() },
+                        variant: .success, size: .lg, systemIcon: ShiftIcons.person, fullWidth: true
+                    )
+                    .accessibilityIdentifier("coverage_cover_it")
 
-                ShiftButton(title: "Try an internal float first", action: onForceTrigger, variant: .text, size: .sm, fullWidth: true)
-                    .accessibilityIdentifier("coverage_force_trigger")
+                    ShiftButton(
+                        title: sheet.card.deskPhone.map { "Call Allied (\($0))" } ?? "Call Allied",
+                        action: onCallAllied, size: .lg, systemIcon: ShiftIcons.phone, fullWidth: true
+                    )
+                    .accessibilityIdentifier("coverage_call_allied")
+                }
 
-                Text("Did Allied confirm coverage?").font(ShiftFont.sans(15, .semibold)).foregroundColor(c.ink)
-
-                ShiftButton(
-                    title: "Yes, Allied is covering it",
-                    action: { onSelectOutcome(.alliedSecured); onSubmit() },
-                    variant: .tonal, systemIcon: ShiftIcons.check, fullWidth: true
-                )
-                .accessibilityIdentifier("coverage_confirm_secured")
-
-                Text("Something else happened").font(ShiftFont.sans(12.5)).foregroundColor(c.ter)
+                // 2. What happened. One flat, organized list of the remaining outcomes — no
+                // separate confirm button plus a buried "something else" list to parse.
+                SectionHeader(title: "What happened")
                     .accessibilityIdentifier("coverage_other_outcomes")
 
                 ForEach(Self.otherOutcomes, id: \.wire) { outcome in

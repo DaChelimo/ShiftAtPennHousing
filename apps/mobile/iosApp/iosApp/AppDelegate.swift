@@ -64,6 +64,21 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         // raised by the inline ask on My Shifts (see NotificationNudgeRow in Onboarding.swift
         // → NotificationAuthorizer.request), so the worker sees WHY alerts matter, on the
         // screen where it matters, before the one-shot OS dialog appears.
+        //
+        // Registering for REMOTE notifications is a different thing from ASKING for
+        // permission, and Apple requires it on EVERY launch: APNs may issue a new device
+        // token at any time (restore from backup, reinstall, OS update) and the system does
+        // not persist it for us. It presents no UI, so it does not undo the deferred-ask
+        // decision above.
+        //
+        // Before this call existed, `registerForRemoteNotifications()` was reachable ONLY
+        // from the permission-granted callback inside NotificationAuthorizer.request(), and
+        // that callback only runs while the status is `.notDetermined`. So the FIRST launch
+        // after a grant worked and EVERY launch afterwards silently did not: no APNs token
+        // arrived, Firebase never derived an FCM token, `didRegisterForRemoteNotifications`
+        // never fired, and nothing was ever POSTed to `register-push-token`. Android was
+        // unaffected because ShiftApp.onCreate fetches its FCM token unconditionally.
+        NotificationAuthorizer.registerIfAlreadyAuthorized()
         return true
     }
 
@@ -75,7 +90,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         Messaging.messaging().apnsToken = deviceToken
         Messaging.messaging().token { fcmToken, _ in
             if let fcmToken {
-                PlatformHooksKt.registerPushToken(token: fcmToken, platform: "ios")
+                PlatformHooks_iosKt.registerPushToken(token: fcmToken, platform: "ios")
             }
         }
         #else
@@ -129,7 +144,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 extension AppDelegate: MessagingDelegate {
     func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
         if let fcmToken {
-            PlatformHooksKt.registerPushToken(token: fcmToken, platform: "ios")
+            PlatformHooks_iosKt.registerPushToken(token: fcmToken, platform: "ios")
         }
     }
 }
@@ -148,4 +163,21 @@ enum NotificationAuthorizer {
         }
     }
 
+    /// Re-register with APNs when the worker has ALREADY granted permission, which is the
+    /// case on every launch after the one where they granted it. Presents no UI and never
+    /// prompts: `registerForRemoteNotifications()` only asks APNs for a device token, and
+    /// the OS dialog is governed solely by `requestAuthorization` above.
+    ///
+    /// `.provisional` and `.ephemeral` deliver notifications too, so they register as well,
+    /// matching how `NotificationNudgeObservable.refresh()` treats them as granted.
+    static func registerIfAlreadyAuthorized() {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            switch settings.authorizationStatus {
+            case .authorized, .provisional, .ephemeral:
+                DispatchQueue.main.async { UIApplication.shared.registerForRemoteNotifications() }
+            default:
+                break
+            }
+        }
+    }
 }

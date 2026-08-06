@@ -16,6 +16,7 @@ import com.pennhousing.shift.shared.shifts.buildOtherHousesTab
 import com.pennhousing.shift.shared.shifts.classifyMyShift
 import com.pennhousing.shift.shared.shifts.dropOptionsFor
 import com.pennhousing.shift.shared.shifts.evaluateClaimCap
+import com.pennhousing.shift.shared.shifts.groupOpenShiftsByDay
 import com.pennhousing.shift.shared.shifts.isClaimable
 import com.pennhousing.shift.shared.shifts.roundDownToBlock
 import kotlin.test.Test
@@ -173,6 +174,42 @@ class ShiftsScreenViewModelTest {
     fun tab2ExcludesCrossHouseShifts() {
         val ids = vm().uiState.value.homeOpen.let { it.weekly + it.permanentOpenings }.map { it.id }
         assertFalse(ids.any { it in setOf("qw1", "qp1", "h5w1") })
+    }
+
+    @Test
+    fun weeklyOpenShiftsGroupSameDayShiftsUnderOneGroup() {
+        // hw2 (10:00) and hw1 (18:00) both fall on 2026-01-15 — one group, two shifts.
+        val groups = groupOpenShiftsByDay(vm().uiState.value.homeOpen.weekly)
+        assertEquals(1, groups.size)
+        assertEquals(listOf("hw2", "hw1"), groups.single().shifts.map { it.id })
+        assertEquals(2, groups.single().count)
+    }
+
+    @Test
+    fun weeklyOpenShiftsStillGroupASingleShiftDay() {
+        // A lone shift on its day still gets a group (count == 1) — the view, not the
+        // pure function, decides whether a size-1 group renders bare or wrapped.
+        val groups = groupOpenShiftsByDay(listOf(homeWeeklyEarly))
+        assertEquals(1, groups.size)
+        assertEquals(1, groups.single().count)
+    }
+
+    @Test
+    fun weeklyOpenShiftsGroupsOrderChronologicallyByDay() {
+        val mon = at("2026-01-19T09:00:00-05:00")
+        val feed =
+            listOf(
+                OpenShift("mon", harnwell, mon, mon + 30.minutes, OpenFeed.WEEKLY, homeHouse = true),
+                homeWeeklyEarly, // 2026-01-15
+            )
+        val groups = groupOpenShiftsByDay(feed)
+        assertEquals(listOf("hw2", "mon"), groups.map { it.shifts.single().id })
+    }
+
+    @Test
+    fun weeklyOpenShiftsGroupTitleIsTheDayLabel() {
+        val group = groupOpenShiftsByDay(listOf(homeWeeklyEarly)).single()
+        assertEquals("Thu · Jan 15", group.title)
     }
 
     // ===================================================================

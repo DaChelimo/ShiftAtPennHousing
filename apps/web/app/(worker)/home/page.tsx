@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { Card } from '../../../components/ui/Card';
@@ -7,6 +8,8 @@ import { Tag, type TagKind } from '../../../components/ui/Tag';
 import { getSessionUser } from '../../../lib/auth';
 import { getWorkerHomeSummary } from '../../../lib/data/worker/home';
 import { simNow } from '../../../lib/time/simClock';
+
+export const metadata: Metadata = { title: 'Home' };
 
 function firstName(full: string): string {
   const n = full.trim().split(/\s+/)[0];

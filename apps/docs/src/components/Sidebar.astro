@@ -5,7 +5,7 @@
  * and is itself clickable. No third-level nesting except under /system/floating.
  */
 import { withBase } from '../href'
-import { sections, topLevel } from '../nav'
+import { legalPages, sections, topLevel } from '../nav'
 import Search from './Search.astro'
 import ThemeToggle from './ThemeToggle.astro'
 
@@ -17,8 +17,12 @@ const { current } = Astro.props
   <div class="sidebar__inner">
     <div class="sidebar__top">
       <a class="sidebar__brand" href={withBase('/')}>
-        <span class="sidebar__brand-mark">Shift</span>
-        <span class="sidebar__brand-sub">User guide</span>
+        <img class="sidebar__brand-icon sidebar__brand-icon--light" src={withBase('/brand/crest.png')} alt="" width="24" height="24" />
+        <img class="sidebar__brand-icon sidebar__brand-icon--dark" src={withBase('/brand/crest-reversed.png')} alt="" width="24" height="24" />
+        <span class="sidebar__brand-text">
+          <span class="sidebar__brand-mark">Shift</span>
+          <span class="sidebar__brand-sub">User guide</span>
+        </span>
       </a>
       <ThemeToggle />
     </div>
@@ -48,8 +52,8 @@ const { current } = Astro.props
           return (
             <details class="sidebar__group" open={inSection}>
               <summary class="sidebar__summary">
-                <span class="eyebrow">{section.label}</span>
-                <svg class="sidebar__chevron" viewBox="0 0 10 10" width="9" height="9" aria-hidden="true">
+                <span class="sidebar__summary-label">{section.label}</span>
+                <svg class="sidebar__chevron" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
                   <path d="M3 1.5 6.5 5 3 8.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
                 </svg>
               </summary>
@@ -83,6 +87,22 @@ const { current } = Astro.props
           )
         })
       }
+
+      <ul class="sidebar__list sidebar__legal">
+        {
+          legalPages.map((entry) => (
+            <li>
+              <a
+                class:list={['sidebar__link', current === entry.slug && 'is-current']}
+                href={withBase(`/${entry.slug}`)}
+                aria-current={current === entry.slug ? 'page' : undefined}
+              >
+                {entry.label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
     </nav>
   </div>
 </div>
@@ -113,28 +133,69 @@ const { current } = Astro.props
 
   .sidebar__brand {
     display: flex;
-    align-items: baseline;
-    gap: 6px;
+    align-items: center;
+    gap: 9px;
     text-decoration: none;
   }
 
+  .sidebar__brand-icon {
+    width: 24px;
+    height: 24px;
+    flex: none;
+  }
+
+  .sidebar__brand-icon--dark {
+    display: none;
+  }
+
+  :root[data-theme='dark'] .sidebar__brand-icon--light {
+    display: none;
+  }
+
+  :root[data-theme='dark'] .sidebar__brand-icon--dark {
+    display: block;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) .sidebar__brand-icon--light {
+      display: none;
+    }
+
+    :root:not([data-theme]) .sidebar__brand-icon--dark {
+      display: block;
+    }
+  }
+
+  .sidebar__brand-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
   .sidebar__brand-mark {
-    font-size: 15px;
+    font-size: 17px;
     font-weight: 680;
     letter-spacing: -0.024em;
+    line-height: 1.1;
     color: var(--ink);
   }
 
   .sidebar__brand-sub {
+    display: inline-block;
+    width: fit-content;
     font-family: var(--mono);
-    font-size: 10.5px;
-    letter-spacing: 0.11em;
+    font-size: 10px;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
     color: var(--muted);
+    background: var(--bg-3);
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    padding: 2px 6px;
   }
 
   .sidebar__nav {
-    margin-top: 14px;
+    margin-top: 18px;
   }
 
   .sidebar__list {
@@ -144,6 +205,14 @@ const { current } = Astro.props
 
   .sidebar__group {
     margin-top: 14px;
+    background: var(--bg-3);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    padding: 6px 10px;
+  }
+
+  .sidebar__group[open] {
+    padding-bottom: 12px;
   }
 
   .sidebar__summary {
@@ -151,18 +220,20 @@ const { current } = Astro.props
     align-items: center;
     justify-content: space-between;
     gap: 6px;
-    padding: 4px 8px;
+    padding: 8px 4px;
     cursor: pointer;
     list-style: none;
-    border-radius: var(--radius-nav);
   }
 
   .sidebar__summary::-webkit-details-marker {
     display: none;
   }
 
-  .sidebar__summary:hover {
-    background: var(--bg-3);
+  .sidebar__summary-label {
+    font-size: 15px;
+    font-weight: 620;
+    letter-spacing: -0.012em;
+    color: var(--ink);
   }
 
   .sidebar__chevron {
@@ -174,11 +245,18 @@ const { current } = Astro.props
     transform: rotate(90deg);
   }
 
+  .sidebar__group > .sidebar__list {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
   .sidebar__link {
     display: block;
     padding: 4px 8px;
     border-radius: var(--radius-nav);
-    font-size: 12.5px;
+    font-size: 16.5px;
     line-height: 1.45;
     color: var(--ink-2);
     text-decoration: none;
@@ -205,6 +283,14 @@ const { current } = Astro.props
   .sidebar__link--nested {
     margin-left: 12px;
     border-left: 1px solid var(--rule);
+  }
+
+  /* A quiet footer group, not a fourth collapsible section: legal pages are not
+     reading-order content and should not compete with Workers/Managers/System. */
+  .sidebar__legal {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--rule);
   }
 
   @media (max-width: 900px) {

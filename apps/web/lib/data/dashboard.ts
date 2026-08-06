@@ -86,9 +86,15 @@ export type DashboardDesk = {
   onNow: DeskShift[];
   /** The next few starts within NEXT_UP_HOURS. */
   nextUp: DeskShift[];
-  /** Vacant runs starting within URGENT_GAP_HOURS. */
+  /**
+   * Runs within URGENT_GAP_HOURS where the desk would be EMPTY, capped for display.
+   * A vacant seat on a desk that still has a worker is NOT here — see uncoveredRuns.
+   * Never count this array; it is truncated. Use `urgentGapCount`.
+   */
   urgentGaps: DeskShift[];
-  /** Vacant runs anywhere in the viewed week. */
+  /** How many uncovered runs there really are inside URGENT_GAP_HOURS, untruncated. */
+  urgentGapCount: number;
+  /** Vacant SEATS anywhere in the viewed week, covered desk or not. */
   weekGapCount: number;
   /** This house is closed today per the operating calendar. */
   closedToday: boolean;
@@ -119,7 +125,6 @@ export type DashboardHours = {
 export type DashboardModel = {
   houseId: string;
   houseName: string;
-  restricted: boolean;
   /** "Wednesday, July 23" (NY). */
   todayLabel: string;
   /** "14:07" (NY) — the clock this page was rendered against (honors the sim clock). */
@@ -191,6 +196,101 @@ function toDeskShift(shift: CalShift): DeskShift {
     rangeLabel: `${nyTime(shift.startAtIso)} to ${nyTime(endIso)}`,
     dayLabel: nyDay(shift.startAtIso),
   };
+}
+
+/**
+ * The vacant runs where the desk would genuinely be EMPTY.
+ *
+ * The coverage floor is ONE worker, not required headcount (BSpec §5.4): the
+ * escalation ladder fires for a block only when nobody at all is on the desk. A
+ * second seat sitting vacant while a real worker is present is a staffing shortfall,
+ * not a coverage gap, and the orchestrator will never escalate it (`loadCoveredBlockIds`
+ * in orchestrator-tick). Raising it in the action queue was a false alarm: on a
+ * 2-staff Harnwell or a 3-staff Quad it fires on essentially every temporary drop and
+ * buries the one run that IS a real empty desk.
+ *
+ * A `CalShift` is per-seat and knows nothing about its neighbours, so recover the
+ * floor here by subtracting the union of present runs from each vacant run. Every
+ * non-vacant atom on the house calendar is presence at THIS desk — toAtom already
+ * drops floated_out/pending_float_out — which matches the orchestrator's present-set
+ * (scheduled/claimed/floated_in/pending_float_in/allied) plus cross-house pickups.
+ *
+ * Subtracting can leave zero, one, or two pieces of a run (a gap straddling a lone
+ * covered block splits in half), so this returns runs, not a filtered subset.
+ *
+ * The surviving pieces are then MERGED into distinct windows. Once the unit is the
+ * desk rather than the seat, an empty 2-staff Harnwell would otherwise report the same
+ * 05:30 to 08:00 twice (once per vacant seat) and read as two separate problems when a
+ * manager has exactly one hole to fill.
+ */
+function uncoveredRuns(all: DeskShift[]): DeskShift[] {
+  const present = all
+    .filter((s) => !s.vacant)
+    .map((s) => [new Date(s.startIso).getTime(), new Date(s.endIso).getTime()] as const);
+
+  const holes: { piece: [number, number]; gap: DeskShift }[] = [];
+
+  for (const gap of all.filter((s) => s.vacant)) {
+    let pieces: [number, number][] = [
+      [new Date(gap.startIso).getTime(), new Date(gap.endIso).getTime()],
+    ];
+
+    for (const [presentStart, presentEnd] of present) {
+      const next: [number, number][] = [];
+      for (const [gapStart, gapEnd] of pieces) {
+        if (presentEnd <= gapStart || presentStart >= gapEnd) {
+          next.push([gapStart, gapEnd]); // disjoint — the whole piece survives
+          continue;
+        }
+        if (presentStart > gapStart) next.push([gapStart, presentStart]);
+        if (presentEnd < gapEnd) next.push([presentEnd, gapEnd]);
+      }
+      pieces = next;
+      if (pieces.length === 0) break; // fully covered
+    }
+
+    for (const piece of pieces) holes.push({ piece, gap });
+  }
+
+  // Merge into distinct windows. Touching intervals (08:00 end, 08:00 start) are one
+  // continuous hole, so merge on >= rather than >.
+  holes.sort((a, b) => a.piece[0] - b.piece[0] || a.piece[1] - b.piece[1]);
+
+  const merged: DeskShift[] = [];
+  let open: { start: number; end: number; gap: DeskShift } | null = null;
+
+  const flush = () => {
+    if (open === null) return;
+    const startIso = new Date(open.start).toISOString();
+    const endIso = new Date(open.end).toISOString();
+    merged.push({
+      ...open.gap,
+      // Reuse the calendar id only when the window IS that one gap, untouched.
+      id:
+        new Date(open.gap.startIso).getTime() === open.start &&
+        new Date(open.gap.endIso).getTime() === open.end
+          ? open.gap.id
+          : `uncovered-${open.start}`,
+      startIso,
+      endIso,
+      rangeLabel: `${nyTime(startIso)} to ${nyTime(endIso)}`,
+      dayLabel: nyDay(startIso),
+    });
+    open = null;
+  };
+
+  for (const { piece, gap } of holes) {
+    const [start, end] = piece;
+    if (open !== null && start <= open.end) {
+      open.end = Math.max(open.end, end);
+      continue;
+    }
+    flush();
+    open = { start, end, gap };
+  }
+  flush();
+
+  return merged;
 }
 
 /** `settled` if it resolved, otherwise null plus the source's display name. */
@@ -292,7 +392,7 @@ export async function getDashboard(
     .sort((a, b) => a.startIso.localeCompare(b.startIso))
     .slice(0, 4);
   const weekGaps = all.filter((s) => s.vacant);
-  const urgentGaps = weekGaps
+  const urgentGaps = uncoveredRuns(all)
     .filter((s) => new Date(s.endIso).getTime() > nowMs)
     .filter((s) => new Date(s.startIso).getTime() <= urgentMs)
     .sort((a, b) => a.startIso.localeCompare(b.startIso));
@@ -301,6 +401,7 @@ export async function getDashboard(
     onNow,
     nextUp,
     urgentGaps: urgentGaps.slice(0, 4),
+    urgentGapCount: urgentGaps.length,
     weekGapCount: weekGaps.length,
     closedToday: cal?.days.find((d) => d.dateKey === today)?.closed ?? false,
     hasBlocks: cal?.hasBlocks ?? false,
@@ -338,10 +439,10 @@ export async function getDashboard(
       icon: 'calendar',
       title:
         urgentGaps.length === 1
-          ? 'A seat is unfilled in the next 24 hours'
-          : `${urgentGaps.length} seats are unfilled in the next 24 hours`,
+          ? 'The desk is empty for a window in the next 24 hours'
+          : `The desk is empty for ${urgentGaps.length} windows in the next 24 hours`,
       detail:
-        'Escalation covers a desk that would be empty, not every empty seat. Fill these from the calendar before they escalate.',
+        'Nobody is on the desk for this. Fill it from the calendar before the escalation ladder starts broadcasting and floating.',
       meta: `Next: ${first.dayLabel} · ${first.rangeLabel}`,
       href: `/calendar?house=${encodeURIComponent(houseId)}`,
       cta: 'Open the calendar',
@@ -410,20 +511,6 @@ export async function getDashboard(
     });
   }
 
-  const unread = inbox.value?.otherUnreadCount ?? 0;
-  if (unread > 0) {
-    actions.push({
-      id: 'inbox-unread',
-      severity: 'info',
-      icon: 'bell',
-      title: unread === 1 ? '1 unread notification' : `${unread} unread notifications`,
-      detail: 'Leave notices, removals from recurring slots, and other updates addressed to you.',
-      meta: null,
-      href: '/inbox',
-      cta: 'Read them',
-    });
-  }
-
   const tick = health.value;
   if (tick !== null) {
     const ageMin = Math.round((nowMs - new Date(tick.lastTickAt).getTime()) / MS_PER_MIN);
@@ -447,7 +534,6 @@ export async function getDashboard(
   return {
     houseId,
     houseName: cal?.houseName ?? prefs?.houseName ?? houseId,
-    restricted: cal?.restricted ?? houseId === 'harnwell',
     todayLabel: nyLongDay(now),
     nowLabel: nyTime(now.toISOString()),
     weekStartDate,

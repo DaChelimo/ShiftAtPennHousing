@@ -275,7 +275,12 @@ private fun LegendSwatch(v: StateVisual) {
         when {
             v.dot -> Box(Modifier.size(8.dp).background(c.pickupDot, RoundedCornerShape(50)))
             v.tagIcon != null -> Icon(v.tagIcon, contentDescription = null, tint = v.tagColor ?: c.ink, modifier = Modifier.size(15.dp))
-            v.leftBorder != null -> Icon(ShiftIcons.Snowflake, contentDescription = null, tint = v.leftBorder, modifier = Modifier.size(15.dp))
+            v.leftBorder != null -> Icon(
+                ShiftIcons.Snowflake,
+                contentDescription = null,
+                tint = v.leftBorder,
+                modifier = Modifier.size(15.dp),
+            )
         }
     }
 }

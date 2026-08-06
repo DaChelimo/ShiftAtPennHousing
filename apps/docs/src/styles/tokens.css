@@ -41,7 +41,7 @@
   --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
   /* §4 Layout */
-  --sidebar-w: 218px;
+  --sidebar-w: 260px;
   --contents-w: 178px;
   --radius: 6px;
   --radius-nav: 5px;

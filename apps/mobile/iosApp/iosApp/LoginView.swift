@@ -41,19 +41,31 @@ final class LoginObservable: ObservableObject {
         self.gateway = gateway
     }
 
+    /// Every assignment here is guarded, because each one is a separate `@Published` send and
+    /// therefore a separate view invalidation. Unguarded, a single keystroke published five
+    /// changes (four of them writing nil over nil), and UIKit reconfigured the text field on
+    /// each — which is what made typing stutter and the AutoFill/QuickType bar re-appear
+    /// mid-word. Measured on the simulator: `domainWarning` costs <0.06ms, so the cost was
+    /// never the shared validator, only the churn.
     func setEmail(_ value: String) {
+        guard value != email else { return }
         email = value
-        emailError = nil
-        emailWarning = LoginFormValidator.shared.domainWarning(email: value)
-        formError = nil
-        formErrorDetail = nil
+        if emailError != nil { emailError = nil }
+        let warning = LoginFormValidator.shared.domainWarning(email: value)
+        if warning != emailWarning { emailWarning = warning }
+        clearFormError()
     }
 
     func setPassword(_ value: String) {
+        guard value != password else { return }
         password = value
-        passwordError = nil
-        formError = nil
-        formErrorDetail = nil
+        if passwordError != nil { passwordError = nil }
+        clearFormError()
+    }
+
+    private func clearFormError() {
+        if formError != nil { formError = nil }
+        if formErrorDetail != nil { formErrorDetail = nil }
     }
 
     /// Maps the gateway's classified `AuthError` to user-facing copy (mirrors Android's
@@ -134,6 +146,12 @@ struct LoginScreen: View {
 
     private enum Field { case email, password }
 
+    /// One binding shared by both branches of the reveal toggle, so showing and hiding the
+    /// password does not swap in a differently-constructed binding alongside the field swap.
+    private var passwordBinding: Binding<String> {
+        Binding(get: { model.password }, set: { model.setPassword($0) })
+    }
+
     var body: some View {
         let c = ShiftColors.resolve(scheme)
         return ScrollView {
@@ -151,11 +169,20 @@ struct LoginScreen: View {
                 VStack(spacing: 16) {
                     field(
                         label: "Your email", placeholder: "andrew@upenn.edu",
-                        icon: ShiftIcons.person, text: model.email,
-                        onChange: model.setEmail, error: model.emailError, warning: model.emailWarning, isFocused: focused == .email
+                        icon: ShiftIcons.person,
+                        text: Binding(get: { model.email }, set: { model.setEmail($0) }),
+                        // `.username` is what makes Face ID / Touch ID credential fill deliver
+                        // the ACCOUNT as well as the secret. Without it iOS sees one recognised
+                        // field (the SecureField) and fills the password alone, leaving the
+                        // worker to type their address by hand after every biometric unlock.
+                        contentType: .username,
+                        error: model.emailError, warning: model.emailWarning, focusField: .email
                     )
-                    .focused($focused, equals: .email)
                     .keyboardType(.emailAddress).textInputAutocapitalization(.never)
+                    // An address is not prose. Autocorrect re-ran a suggestion pass on every
+                    // keystroke, which both fought the typed text and kept the QuickType bar
+                    // rebuilding above the keyboard.
+                    .autocorrectionDisabled()
                     .submitLabel(.next)
                     .onSubmit { focused = .password }
                     .accessibilityIdentifier("login_email")
@@ -263,17 +290,28 @@ struct LoginScreen: View {
                 Image(systemName: ShiftIcons.lock).font(.system(size: 18)).foregroundColor(c.ter)
                 Group {
                     if model.showPassword {
-                        TextField("", text: Binding(get: { model.password }, set: { model.setPassword($0) }))
+                        TextField("", text: passwordBinding)
                     } else {
-                        SecureField("", text: Binding(get: { model.password }, set: { model.setPassword($0) }))
+                        SecureField("", text: passwordBinding)
                     }
                 }
                 .font(ShiftFont.sans(16, .medium)).foregroundColor(c.ink)
                 .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                // Pairs with `.username` on the email row: together they are the credential
+                // pair iOS fills from Keychain after a Face ID unlock, and they are what stop
+                // it re-offering the saved entry once a field is already satisfied.
+                .textContentType(.password)
                 .focused($focused, equals: .password)
                 .submitLabel(.go)
                 .onSubmit { model.submit() }
-                Button(action: { model.showPassword.toggle() }) {
+                Button(action: {
+                    model.showPassword.toggle()
+                    // Swapping SecureField for TextField destroys the live editor and builds a
+                    // new one, so focus (and the keyboard) would otherwise drop on every
+                    // reveal. Re-assert it on the next runloop turn, once the new field exists.
+                    DispatchQueue.main.async { focused = .password }
+                }) {
                     Text(model.showPassword ? "Hide" : "Show").font(ShiftFont.sans(13, .semibold)).foregroundColor(c.blue)
                 }
                 .buttonStyle(.plain)
@@ -285,6 +323,11 @@ struct LoginScreen: View {
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
                     .strokeBorder(model.passwordError != nil ? c.danger.accent : (focused == .password ? c.blue : c.divider), lineWidth: 1.5)
             )
+            // Same full-pill tap target as the email row, and it mattered more here: an empty
+            // SecureField renders no placeholder, so there was no visual cue where the live
+            // ~22pt strip sat inside the 52pt pill. The "Show" Button keeps its own tap.
+            .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .onTapGesture { focused = .password }
             if let err = model.passwordError {
                 Text(err).font(ShiftFont.sans(12.5)).foregroundColor(c.danger.accent)
             }
@@ -299,16 +342,30 @@ struct LoginScreen: View {
     }
 
     private func field(
-        label: String, placeholder: String = "", icon: String, text: String, onChange: @escaping (String) -> Void,
-        error: String?, warning: String? = nil, isFocused: Bool
+        label: String, placeholder: String = "", icon: String, text: Binding<String>,
+        contentType: UITextContentType? = nil,
+        error: String?, warning: String? = nil, focusField: Field
     ) -> some View {
         let c = ShiftColors.resolve(scheme)
+        let isFocused = focused == focusField
         return VStack(alignment: .leading, spacing: 7) {
             Text(label).font(ShiftFont.sans(12.5, .semibold)).foregroundColor(c.sec)
             HStack(spacing: 10) {
                 Image(systemName: icon).font(.system(size: 18)).foregroundColor(c.ter)
-                TextField(placeholder, text: Binding(get: { text }, set: onChange))
+                // A real Binding onto the model rather than a get/set proxy closing over a
+                // value captured when the body was built, so the getter cannot read back a
+                // stale string after an edit. Note this is NOT what removed the duplicate
+                // write: instrumenting the simulator showed UIKit calls the setter twice per
+                // keystroke either way, and it is the equality guard in `setEmail` that makes
+                // the second call a no-op. Keep both.
+                TextField(placeholder, text: text)
                     .font(ShiftFont.sans(16, .medium)).foregroundColor(c.ink)
+                    .textContentType(contentType)
+                    // Bind focus to the TEXT FIELD, not to the enclosing VStack. Bound on the
+                    // container, `focused == focusField` tracked the container rather than the
+                    // editor, so the blue focus ring and the `.onSubmit` next-field hop rode a
+                    // binding that the field itself never drove.
+                    .focused($focused, equals: focusField)
             }
             .padding(.horizontal, 14).frame(height: 52)
             .background(c.surface)
@@ -317,6 +374,13 @@ struct LoginScreen: View {
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
                     .strokeBorder(error != nil ? c.danger.accent : (isFocused ? c.blue : c.divider), lineWidth: 1.5)
             )
+            // The whole 52pt pill is the tap target. Without this, only the TextField's own
+            // ~22pt intrinsic line accepted taps: `.frame(height: 52)` centres the HStack in a
+            // taller box and `.background()` paints without hit-testing, so ~58% of the pill a
+            // worker aims at (everything above and below the text line) was dead. Measured on
+            // the simulator: taps at the pill's exact vertical centre did not focus the field.
+            .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .onTapGesture { focused = focusField }
             if let error {
                 Text(error).font(ShiftFont.sans(12.5)).foregroundColor(c.danger.accent)
             } else if let warning {

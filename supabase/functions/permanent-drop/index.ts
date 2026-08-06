@@ -1,3 +1,5 @@
+// dropScope is vendored @shift/core -- see supabase/functions/README.md.
+import * as dropScope from '../_shared/core/permanent-ops/drop-scope.js';
 import { authenticate, jsonResponse, readObjectBody, type Supabase } from '../_shared/swap-http.ts';
 
 const TIMEZONE = 'America/New_York';
@@ -99,10 +101,7 @@ async function loadFloatCommitmentWarnings(
 
   if (floatError !== null) throw floatError;
 
-  const module =
-    (await import('../../../packages/core/dist/permanent-ops/drop-scope.js')) as typeof import('../../../packages/core/dist/permanent-ops/drop-scope.js');
-
-  return module.findFloatCommitmentWarnings({
+  return dropScope.findFloatCommitmentWarnings({
     slotAssignmentIds,
     floatCommitments: (floats ?? []).map((float) => ({
       floatId: float.float_id,

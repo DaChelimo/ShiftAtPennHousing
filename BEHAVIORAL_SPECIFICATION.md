@@ -14,7 +14,7 @@ It covers the **whole product**. Sections 1 through 15 define the staffing engin
 
 Penn Housing operates 13 college houses. They are not interchangeable.
 
-**Harnwell** is the system's emergency call center. Workers at Harnwell receive additional training that workers at other houses do not. Because of this training requirement, no worker from another house may be assigned to cover the Harnwell desk under any circumstance.
+**Harnwell** is the system's emergency call center. Workers at Harnwell receive additional training that workers at other houses do not. Because of this training requirement, no worker from another house may be assigned to cover the Harnwell desk under any circumstance. The single exception, added 2026-08-05, is the Allied contractor, which is separately trained and contracted by the department rather than being a student worker of any house; see Section 26.
 
 **Quad** is a multi-staff training-equivalent house whose workers can cover any other house except Harnwell. Workers at all other 11 houses share the same training and procedures as Quad workers, so a Quad worker can substitute at any of those 11 houses without issue.
 
@@ -41,7 +41,8 @@ configuration can override. In any period where floating is permitted:
   entirely and proceeds to HMOD-for-Allied (Section 6.1).
 - **No non-Harnwell-trained worker ever staffs Harnwell**, by any mechanism (the training
   invariant, Section 1.1). Harnwell never being a float destination means no float targets
-  it in the first place.
+  it in the first place. The Allied contractor is the one exception (Section 26); it is not
+  a worker of any house and reaches a desk only by manager assignment, never by float.
 
 The first two are the training-equivalency and coverage-floor rules; the last two are the
 absolute Harnwell guards. The float lookup algorithm (Section 6) and the assignment write
@@ -661,7 +662,9 @@ A rung holds the request for `allied_ladder_rung_timeout_minutes` (Section 14). 
 
 **An open request never clears itself.** Once its coverage window passes without a close-out, the request becomes **overdue** and stays visible until a human closes it. A request that was acknowledged but never closed also goes overdue. The system closes a request on its own in exactly one case: the coverage is no longer needed because the block was voided by a configuration change or the desk regained a worker, recorded as _No longer needed_.
 
-Every request closed as _Desk went unstaffed_, and every request that goes overdue, is a **missed-coverage incident** and appears in the coverage report for review.
+Every request closed as _Desk went unstaffed_, and every request that goes overdue, is a **missed-coverage incident** and appears, flagged as such, in the Action Inbox's Archive tab history for review.
+
+**The Archive tab's history holds every request, closed or not, for one month.** _(Amended 2026-08-05.)_ Unlike the live Coverage tab (which shows only open requests), the Archive tab's history table includes closed requests too, with their recorded outcome, so a manager can review what happened to a request after the fact — most commonly when approving hours. It defaults to showing the last 24 hours and can be widened to the last week or the last month; requests older than one month drop out of this view (the underlying record is retained, just no longer surfaced here). This history previously lived on a separate standalone page; it was folded into the inbox because both read the same underlying coverage-request data and a manager only ever needed one surface for it.
 
 **A coverage status the system cannot read is never presented as quiet.** Because managers carry no push devices, open requests reach a human through a persistent alert shown on every page of the manager console while any request needs attention. Silence on that alert therefore means "every desk is accounted for," which makes a failed read the most dangerous thing this surface can hide. So if the coverage status cannot be loaded, the manager is told exactly that, with the same prominence as a real alert, and told that open requests may exist and are not being shown. It never resolves to an empty or all-clear state, and a failed read never removes the manager's ability to use the rest of the console.
 
@@ -1085,13 +1088,21 @@ Notifications are routed by recipient role and urgency. The system does not deli
 
 **Personal notifications** (your own shift was dropped, you've been assigned a float, your acknowledgment is overdue) are sent immediately to the affected worker. These notifications are mandatory and cannot be silenced.
 
-**A shift just opened** _(added 2026-07-29)_. The moment a worker drops a shift, every OTHER worker who could claim that seat is notified. This fires on the drop itself, at any distance from the shift, and it fires whether or not the desk still has another worker on it: a vacant seat is claimable regardless of coverage (Section 5.4), so the coverage floor governs escalation only and never this notification. The dropper is not notified about their own drop. One notification covers the whole dropped span, not one per 30-minute block, and a recurring (permanent) drop produces a single notification describing the weekly slot.
+**A shift just opened** _(added 2026-07-29; extended to manager removals 2026-08-06)_. The moment a seat is given up, every OTHER worker who could claim it is notified. This covers both ways a seat opens: a worker dropping their own shift, and a manager removing a worker from one. It fires at any distance from the shift, and it fires whether or not the desk still has another worker on it: a vacant seat is claimable regardless of coverage (Section 5.4), so the coverage floor governs escalation only and never this notification.
+
+Neither the person who caused it nor the person it happened to is notified. The dropper already knows; a worker a manager has just removed is told that they were removed, and must not instead be invited to "claim" the shift that was taken off them.
+
+One notification covers a whole continuous span, not one per 30-minute block. A manager may remove seats that are not next to each other, in which case each continuous run is announced separately and no announcement ever covers hours that are still staffed. A recurring (permanent) drop produces a single notification describing the weekly slot.
 
 For a worker's OWN house this notification is mandatory and cannot be turned off. For OTHER houses it is opt-in (Section 10.1a). Eligibility is the same rule the open-shifts feed uses: the worker is active, holds `sw`/`sm`/`hm`, is not a `bm`, and, for a Harnwell seat, is home-Harnwell. The training constraint outranks the opt-in: a worker who is not home-Harnwell is never told about a Harnwell seat even if they have opted into other houses, because they could never claim it.
 
 A seat whose block is already coverage-locked (Section 5.5) is not announced, because it is no longer claimable.
 
 **Open shift broadcasts** (T-3 hour notifications about an unclaimed shift) are a separate, later statement: not "someone gave this up" but "this is still uncovered with three hours to go." They fire from the escalation chain, only when the desk would otherwise be empty. They go to every worker who is eligible to claim that seat and who has not turned the channel off. Eligibility is the same as above. A worker is notified about their OWN house by default and about OTHER houses only if they opted in (Section 10.1a). Because the two notifications answer different questions, a worker may hear about the same seat twice; this is intended.
+
+_(Amended 2026-08-06.)_ Like the instant notification above, a broadcast covers a whole continuous uncovered span rather than one 30-minute block, so a four-hour gap is one notification and not eight. A block that already has a worker on it breaks the span, so a broadcast never describes hours that are staffed. And a broadcast is never sent for a seat that is already coverage-locked (Section 5.5): that seat cannot be claimed, and telling a worker to open the app and claim it sends them to a dead end.
+
+_(Amended 2026-08-06, from a live pilot incident. A manager removed a worker from a one-hour Harnwell shift on the web. That path was outside the 2026-07-29 rule, so nothing was said at the time; the escalation chain then announced the two 30-minute blocks as two separate notifications, one minute before the shift began, after both had already been coverage-locked and could no longer be claimed. Three statements in this section are superseded by the paragraphs above: that the instant notification fires only on a worker's own drop, that a broadcast describes a single block, and that a broadcast is sent for any uncovered block regardless of whether its seats are still claimable.)_
 
 _(Amended 2026-07-29. Before this date a drop wrote no notification at all. The only "a shift opened up" a worker could receive was the T-3 hour broadcast, which fires only for a desk that would otherwise be EMPTY, so on a multi-staffed desk such as Harnwell or Upper Quad a drop notified nobody, ever, and a shift dropped a week in advance sat silent until three hours before it started.)_
 
@@ -1198,6 +1209,18 @@ A notification exists the moment the event happens; **pushing** it to the worker
 **A notification that is deliberately not sent is closed out, not left pending.** An acknowledgment reminder whose float has already been acknowledged, declined, or voided is suppressed rather than sent, and is then marked suppressed. This is distinct from being delivered.
 
 **Retention.** Notifications that have reached a terminal state (delivered, suppressed, or given up) are deleted 28 days after creation, as are float assignment records that are no longer pending. A notification that is somehow still undelivered, and a float that is still pending, are never deleted regardless of age — deleting a pending float would revoke it, which no automated process may do (Section 6.3).
+
+### 10.5 Receiving Pushes Requires a Registered Device
+
+A notification is routed and recorded regardless of any device (Section 10.1). **Pushing** it additionally requires that the worker's device be registered with the system. The worker never does this explicitly: it happens on their behalf once they are signed in and have allowed notifications.
+
+**The guarantee.** A worker who has allowed notifications and is signed in has a registered device, with no further action from them, and stays registered across app relaunches and across signing out and back in. The order of those two steps does not matter: a worker who allows notifications before signing in, and a worker who signs in first, both end up registered.
+
+**Allowing notifications once is enough.** A worker is asked for permission at most once (Section 20.2). Every launch after they allow it must register the device again on its own, because the identifier a device is reached by is not permanent and may be reissued by the platform at any time. A worker is never asked to re-confirm, and never has to reinstall the app, to keep receiving pushes.
+
+**A phone belongs to one account at a time** _(added 2026-08-06)_. Signing in on a phone ends any earlier account's registration on that same phone. The person now signed in receives that phone's pushes, and nobody else does. This matters wherever accounts are shared or handed over, such as a demonstration handset or a manager checking a worker's view: without it, the phone would keep ringing for every account that had ever signed in on it, and a two-block vacancy could arrive as four separate notifications. Each account's own notifications are unaffected and still wait for it in the app; only the push to that particular phone stops.
+
+**Registration failure is silent to the worker, deliberately.** Registering must never block or interrupt using the app, so a failure produces no error and no prompt. It is therefore not something a worker can notice, report, or retry, and detecting it is the operator's responsibility, not the worker's (Section 10.4 gives the operator-facing signal). A worker whose device is not registered still accrues every notification and still sees them in the app; only the push to their phone is missing.
 
 ---
 
@@ -1331,7 +1354,7 @@ Both HMs and BMs can:
 
 **Student Managers** can additionally use AI-assisted schedule building (Section 19) for any house they may already build for. The assistant grants no authority the SM does not already hold, and no proposal reaches a worker without the SM publishing it.
 
-**The Administrator** can additionally set the launch state of each house and the master switches of Sections 16.5 and 22.
+**The Administrator** can additionally set the launch state of each house, the master switches of Sections 16.5 and 22, and the simulated clock (Section 14, revised 2026-08-05) — in every environment including production, behind a warning naming the production impact. No other role can see or move the simulated clock; everyone else always operates on real system time.
 
 Allied is not a user of the Desk Assistant.
 
@@ -1386,7 +1409,7 @@ The following govern delivery and data lifetime (Sections 10.4 and 5.1):
 - **Push retry backoff cap**: 60 minutes. The retry interval doubles after each failure up to this ceiling.
 - **Operational retention**: 28 days. Terminal-state notifications and non-pending float assignments are deleted this long after creation. A pending float and an undelivered notification are never deleted (Section 10.4).
 - **Retention delete batch size**: 5,000 rows per statement, so the daily sweep never holds a long lock.
-- **Time-travel permission**: whether this environment may move the simulated clock. Default **off**, and it must stay off in production — the simulated clock drives every escalation deadline in the system. Returning the clock to real time is always permitted regardless of this setting.
+- **Simulated clock, admin-only** (revised 2026-08-05): only the project Administrator may move the simulated clock, in every environment including production — the simulated clock drives every escalation deadline in the system, so moving it is deliberately not something an environment can enable for anyone else. Everyone else always sees real system time; there is no way for them to change that. Setting a non-real time surfaces a warning naming the production impact before it takes effect, which the Administrator may proceed past — it is a caution, not an additional permission gate. Returning the clock to real time is always permitted and needs no warning.
 
 **Fixed system parameters, changed by deployment rather than configuration.** The open-shift feed horizons — 6 weeks for the weekly feed, 26 weeks for permanent openings (Section 5.1) — are not runtime-configurable. They were deliberately not made config values: reading them from configuration requires an elevated-privilege lookup that either costs more than the bound saves or, if unprivileged, silently resolves differently for a worker than for an administrator. A horizon that depends on who is asking is worse than a fixed one.
 
@@ -1631,7 +1654,7 @@ Guided interactions that involve a gesture demonstrate the gesture rather than d
 
 Two moments consequently have no in-app teaching surface: **responding to an incoming swap request** (the swap tour teaches composing one, not answering one) and **an incoming float request**. Both carry their own Accept and Decline controls and their own deadline, and both are covered by the written guides. If workers are observed to be confused at either moment, the fix is an interactive tour for it, not a card.
 
-Each of the six tours auto-starts the first time a worker reaches its surface; the swap tour gates on first reaching the swap composer inside the manage-shift sheet. A tour is shown once per worker per surface: finishing it or skipping it both mark it done, and it does not auto-start again after either. Tapping outside a tour's highlighted content dismisses the tour the same way the Skip control does, except during a step whose whole point is a drag gesture (choosing part of a shift or break by dragging a range, or dragging to claim or drop a break slot) — a stray tap while a worker is mid-drag must not lose their place, so those steps cannot be dismissed by tapping outside them. After a tour first finishes, whether by completion, Skip, or an outside tap, a one-time pointer briefly indicates the surface's help control, so the worker learns where to find it again. A tour can be replayed at any time from that help control or from its own row in Settings; replaying does not require the tour's done state to be cleared.
+Each of the six tours auto-starts the first time a worker reaches its surface; the swap tour gates on first reaching the swap composer inside the manage-shift sheet. A tour is shown once per worker per surface: finishing it or skipping it both mark it done, and it does not auto-start again after either. Tapping outside a tour's highlighted content dismisses the tour the same way the Skip control does, except during a step whose whole point is a drag gesture (choosing part of a shift or break by dragging a range, or dragging to claim or drop a break slot) — a stray tap while a worker is mid-drag must not lose their place, so those steps cannot be dismissed by tapping outside them. After a tour first finishes, whether by completion, Skip, or an outside tap, a one-time pointer briefly indicates the surface's help control, so the worker learns where to find it again. A tour can be replayed at any time from that help control; replaying does not require the tour's done state to be cleared. **(Revised 2026-08-06:** each tour's own row in Settings, one per tour, is gone. Settings was accumulating a duplicate entry point per tour, competing for space with the controls a worker actually changes there; the help control on each tour's own surface is the one remaining way to replay it, and was already reachable before this change.)
 
 ### 20.2 Asking for Notification Permission
 
@@ -1667,6 +1690,18 @@ There is no dedicated prompt encouraging a worker to add a widget. **(Revised 20
 The worker app is navigated by a bottom bar carrying the four frequent surfaces (My Shifts, Open Shifts, House, Swaps) plus a **More** overflow that reaches the episodic ones (Updates, Preferences, Break shifts, Settings, the Desk Assistant). My Shifts is the home surface the app opens on.
 
 **(Added 2026-07-23, Android:** the Android app has a back stack. The system back button returns to My Shifts from any other surface, and only exits the app from My Shifts itself. Each surface keeps its own place while the worker is elsewhere. Leaving Preferences with unsaved edits raises the same save-or-discard prompt whether the worker leaves by tapping another surface **or** by pressing back. iOS does not yet mirror this back-button behavior; bringing it to iOS is pending.)\*\*
+
+### 20.5 Settings
+
+_(Redesigned 2026-08-06.)_ Settings groups into Notifications, Appearance, and Account, in that order, followed by legal links and the app version.
+
+**Notifications** shows what a worker can actually act on first: shift reminders, one merged **Open shift notifications** control (with independent sub-toggles for "At my house" and "At other houses," governing the same two channels as Section 10.1a), and General updates. The five mandatory channels (float, swap requests, break sign-up, preferences, schedule published) sit behind a collapsed disclosure below them, labelled with their count, so a worker can still confirm they will hear about a swap request without those rows crowding out the ones they can change. Which channels are mandatory versus configurable is unchanged from Section 10.1a; only how they are grouped on screen changed.
+
+**Account** is Sign out only. PennKey & security and Help & policy, which never opened anything, and a per-tour "Replay" row for each of the six tours (Section 20.1), are gone. Every tour's help control on its own surface remains the way to replay it.
+
+**Privacy policy and Terms of service** are plain text links below Account, opening the corresponding page on the public guide site (`shiftatpenn.com/guide/legal/...`) rather than in-app text, so the policy has one source of truth. There is no offline fallback; the links require connectivity.
+
+The profile card at the top of Settings no longer shows a trailing chevron: tapping the card has never opened anything, and the arrow read as a control that did nothing.
 
 ---
 
@@ -1909,3 +1944,59 @@ unacknowledged with a fresh reminder cadence, while the portion that stayed keep
 acknowledgment state it already had. Both are then visible as separate lines in the floaters
 view, which is the honest representation of two different people now covering two different
 parts of what was originally one float.
+
+---
+
+## 26. Assigning Allied and the RSM to a Desk
+
+Added 2026-08-05. This section covers who a manager may place on a desk directly from the
+live calendar's shift detail sheet, and amends the Harnwell training constraint of
+Section 1.1.
+
+### 26.1 Allied Is an Assignable Identity
+
+Allied is the department's external staffing contractor. Until now the system could only
+record Allied coverage as an _outcome_ of the automated escalation ladder (Section 6.1): a
+desk that reached the fallback step was marked as Allied-covered, with no named occupant.
+
+A manager may now assign Allied to a desk directly, exactly as they would assign a student
+worker. This exists because the real sequence is frequently the reverse of the automated
+one: a manager working an Allied coverage alert often secures Allied by phone _before_ any
+automated step would fire, and needs to record that on the schedule. Force-triggering is the
+wrong instrument for this, because it fires an alert the manager is already holding.
+
+- Allied has no home house. It may be assigned to **any** house's desk, including Harnwell.
+- Allied is exempt from every weekly-hours check: the hard cap, the soft cap, and the
+  over-target advisory. It is a contracted vendor, not a capped student worker, so those
+  limits do not describe it.
+- Allied is never in the broadcast pool, is never selected by float lookup, and is never a
+  swap counterparty. It reaches a desk only by a manager assigning it.
+- An Allied-occupied seat behaves like any other occupied seat: it can be removed, replaced,
+  or assigned for this week only or permanently.
+
+**Amendment to the Harnwell training constraint (Section 1.1).** The constraint is amended
+to exempt the Allied contractor, and only the Allied contractor. Every other worker whose
+home house is not Harnwell remains hard-blocked from the Harnwell desk under every
+mechanism. The amendment does not change whether Allied may stand at the Harnwell desk,
+which it already could through the escalation ladder; it changes only whether that coverage
+is recorded with Allied named on the seat.
+
+### 26.2 The RSM May Be Assigned to Their Own House's Desk
+
+Unchanged in substance from the 2026-07-29 decision, restated here because it now shares a
+surface with Allied: a house's RSM may be assigned to that house's desk, is exempt from
+every hours check, and remains own-house only.
+
+### 26.3 What the Manager Sees
+
+In the shift detail sheet, the RSM and Allied appear as a single control split in two,
+pinned above the alphabetical worker list. They are the two standing answers to "who covers
+this desk" and were previously buried in a list of every student at the house. Neither half
+shows hours-cap headroom, because neither is subject to a cap; each states its standing
+instead. Both are removed from the list below, so no person appears twice.
+
+The worker list carries a name filter, so a manager who already knows who they want types
+the name instead of scrolling. The filter never hides the pinned pair.
+
+The scope control offers **This week only** and **Permanent**. Both options are available
+for the RSM and for Allied on the same terms as for any worker.

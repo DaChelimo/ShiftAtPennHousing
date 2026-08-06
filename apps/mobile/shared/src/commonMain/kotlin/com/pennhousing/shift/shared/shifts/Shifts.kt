@@ -87,6 +87,31 @@ fun buildHomeOpenShiftsTab(openShifts: List<OpenShift>): HomeOpenShiftsTab {
     )
 }
 
+/**
+ * Groups an open-shift list by calendar day (NY-anchored) so the "Weekly open shifts"
+ * feed can wrap same-day openings under one outer card (product decision 2026-08-06).
+ * Every day gets a group, including a single-shift day (count == 1) — the view decides
+ * whether a lone shift renders bare or inside a wrapper. Groups sort by their earliest
+ * start; shifts within a group sort by start. Reuses [OpenShiftGroup] (Tab 3's grouping
+ * type) since the shape — a stable key, a title, an ordered shift list — is identical.
+ */
+fun groupOpenShiftsByDay(
+    shifts: List<OpenShift>,
+    zone: TimeZone = NEW_YORK,
+): List<OpenShiftGroup> =
+    shifts
+        .groupBy { it.start.toLocalDateTime(zone).date }
+        .toList()
+        .sortedBy { (date, _) -> date }
+        .map { (date, dayShifts) ->
+            val sorted = dayShifts.sortedBy { it.start }
+            OpenShiftGroup(
+                key = date.toString(),
+                title = formatDayLabel(sorted.first().start, zone),
+                shifts = sorted,
+            )
+        }
+
 // ===================================================================
 // Tab 3 — Open Shifts in Other Houses (§5.6 Tab 3).
 // ===================================================================

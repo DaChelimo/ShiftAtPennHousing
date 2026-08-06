@@ -52,7 +52,7 @@ The escalation chain is not implemented as scattered if-then statements. A singl
 Some rules are absolute and enforced as algorithmic invariants in code, in addition to being expressible in config data:
 
 - **Float direction rules from Section 1.2 of the behavioral spec.** Workers at the 11 single-staff houses cannot be source houses. Quad workers cannot float to Harnwell. These are enforced as hard-coded eligibility checks in the float lookup algorithm, independent of the `float_routing` config table. A data-entry error in `float_routing` cannot bypass these constraints.
-- **Harnwell training constraint (universal).** No worker without Harnwell training may staff the Harnwell desk under any assignment mechanism: scheduled, claimed in-house, claimed cross-house, floated_in, force-triggered float, or permanent pickup. This is enforced as a hard-coded eligibility check in the claim/pickup handlers and in the float lookup algorithm. Equivalently: any assignment whose `block.house_id = Harnwell` requires `user.home_house_id = Harnwell`.
+- **Harnwell training constraint (universal, one exemption).** No worker without Harnwell training may staff the Harnwell desk under any assignment mechanism: scheduled, claimed in-house, claimed cross-house, floated_in, force-triggered float, or permanent pickup. This is enforced as a hard-coded eligibility check in the claim/pickup handlers and in the float lookup algorithm, and backstopped at the write itself by the `enforce_harnwell_assignment_training` trigger on `shift_block_assignments` / `draft_block_assignments`. Equivalently: any assignment whose `block.house_id = Harnwell` requires `user.home_house_id = Harnwell`. **Amended 2026-08-05 (`20260805000002`):** the Allied contractor is exempt, keyed on `houses.is_staffable = false` rather than on a hardcoded id, so the exemption covers exactly the pseudo-house population and cannot be widened by adding a normal house. See Section 25.
 - **Cross-house pickup eligibility.** The cross-house pickup matrix (Behavioral Spec Section 5.3) is enforced algorithmically in the claim and permanent-pickup handlers. The only structural rule is the Harnwell training constraint above; all other cross-house pickups are permitted.
 - **Minimum float chunk size.** The float lookup algorithm explicitly checks the minimum-chunk rule at every selection point, including each tiebreaker check.
 - **No-takeback rule for assigned floats.** Once assigned (pending or acknowledged), a float cannot be revoked by the system; the source-side gap is handled independently.
@@ -458,7 +458,7 @@ user_roles
 A user can hold multiple roles. The `hm`, `rsm`, and `bm` roles share identical **administrative** capabilities (overrides, force-triggers, notifications, leave, weekly-cap) but differ in **worker** behavior and in one role-specific carve-out (RSM cannot be HMOD). All three hold cross-house schedule authority as a tier; see the elevated-tier note below.
 
 - A user holding `hm` may also hold `sw`/`sm` roles and act as a worker (scheduled shifts, claimed pickups, schedule preferences). However, the float lookup eligibility and broadcast subscription pipelines exclude any user with the `hm` role: HMs are never assigned floats and never receive open-shifts broadcasts. They may still manually browse the open-shifts feed and claim.
-- A user holding `rsm` (Residential Services Manager — Behavioral Spec §2.3a) is below the HM and above the SM. The `rsm` role carries **every** HM power **except HMOD**: it is admitted to `user_has_house_admin_role` (own-house, scope-matched) and to `user_can_build_schedule`, so an RSM builds/overrides, administers people, sets the cap, and takes leave. Like an HM, an RSM holds shifts (claim pool) but is never auto-floated and never receives broadcast. As of migration `20260729000002`, an RSM is also assignable from the schedule-builder roster to their **own** house's desk, exempt from every hours check (see below). Two carve-outs: (a) an RSM is **never** placed on the `hmod_rotor` and is never a valid HMOD-transfer target; (b) an RSM has read visibility into _every_ house's live schedule via the `user_is_rsm(uuid)` predicate, which ORs into the schedule-visibility SELECT policies.
+- A user holding `rsm` (Residential Services Manager — Behavioral Spec §2.3a) is below the HM and above the SM. The `rsm` role carries **every** HM power **except HMOD**: it is admitted to `user_has_house_admin_role` (own-house, scope-matched) and to `user_can_build_schedule`, so an RSM builds/overrides, administers people, sets the cap, and takes leave. Like an HM, an RSM holds shifts (claim pool) but is never auto-floated and never receives broadcast. As of migration `20260729000002`, an RSM is also assignable from the schedule-builder roster to their **own** house's desk, exempt from every hours check (see below). Two carve-outs: (a) an RSM is **never** placed on the `hmod_rotor` and is never a valid HMOD-transfer target; (b) an RSM has read visibility into _every_ house's live schedule via the `user_is_rsm(uuid)` predicate, which ORs into the schedule-visibility SELECT policies. **The "holds shifts (claim pool)" clause was documented but not implemented until 2026-08-06** (migration `20260806000005`): `worker_open_shifts`'s `candidate_users` CTE was scoped to `sw`/`sm`/`hm` since before the `rsm` role existed, so an RSM's `eligible_user_id` never appeared in the view and their Open Shifts feed silently read as empty. See §21.3 for why the broadcast pipelines were deliberately **not** widened to match.
 
   **Scope of RSM writes (amended 2026-06-27, migration `20260627000002`).** The original rule that "every RSM write stays scope-matched to their own house" no longer holds for the schedule. `user_is_schedule_admin(uid)` is house-agnostic and true for `hm`/`bm`/`rsm` anywhere; `user_can_build_schedule` is redefined as `(user_is_schedule_admin OR sm-scoped-to-house)`. Every RPC gating on it — `publish_schedule` (3-arg, migration `20260614000002`), `admin_assign_worker`, `admin_remove_worker` — and the draft / `period_targets` / preferences admin RLS therefore become **cross-house** for the elevated tier. Publishing and overriding ride the same gate, so there is no house an elevated admin may override but not publish. `user_has_house_admin_role` is unchanged and still scope-matched for `hm`/`bm`/`rsm`, which is what keeps people administration, HM leave, and weekly-cap own-house; the lone exception is the top-level `admin` role, which ORs in unconditionally. **SM is untouched and stays own-house on both predicates.**
 
@@ -1357,6 +1357,41 @@ The `notifications` table has a `scheduled_for` column. The scheduler component 
 
 `notifications_delivery_queue_idx` is a partial index on `(scheduled_for, notification_id)` over the **live queue only** (`delivered_at IS NULL AND suppressed_at IS NULL AND dead_lettered_at IS NULL`). Its predicate matches the terminal states above, so a finished row physically leaves the index and its size tracks the queue rather than all history. Before it, the every-minute query had no usable index at all: the only candidate led with `recipient_user_id`, which the query does not filter on.
 
+**Incident (found and fixed 2026-08-06): `deliver_pending_notifications` could never run on hosted Supabase, so no notification of any type had ever been pushed.** The function resolved its HTTP target with raw `current_setting('app.supabase_url', true)` / `current_setting('app.service_role_key', true)`. Hosted Supabase permits no role to set a custom `app.*` GUC at all (see "Deploy-time secrets"), so both always resolved NULL, the function took its own "must be configured" early return, emitted a `RAISE WARNING`, and returned 0 on every one of its once-a-minute invocations since phase 12. `20260727000002` had already introduced `app_runtime_setting()` for precisely this reason and repointed the `orchestrator-tick` cron at it, but never touched this function: a fix applied to one call site of a pattern and not the other. `20260806000001` switches it to `app_runtime_setting()`; nothing else in the body changes, and at-least-once delivery is untouched.
+
+**The readiness check had been silently reverted, and reported a healthy project as broken.** `20260727000002` also taught `verify_scheduled_jobs()` to resolve settings through `app_runtime_setting()`. `20260728000003` then re-declared that function with `CREATE OR REPLACE` for the sole purpose of adding `shift-reminders` to its expected-job list, and in doing so reinstated the pre-fix body: the job list moved forward while the settings check moved back to `current_setting()`. A correctly configured hosted project was therefore reported as `setting: app.supabase_url MISSING`. That is worse than having no check, because this is the one authoritative readiness probe for an autonomous environment, and a probe that lies trains its reader to disbelieve it. `20260806000002` restores the Vault-aware body. The general rule this yields: a `CREATE OR REPLACE` of a function that has been fixed before must start from the **current** definition, because the fix is not in the migration being edited.
+
+### 9.3a Device Registration
+
+Mechanism for Behavioral Spec §10.5. A push is deliverable only to a worker holding a row in `push_tokens`. Both clients POST the **FCM registration token** (never a raw APNs device token; Firebase routes both transports and `dispatch-push` deliberately does not branch on `push_tokens.platform`) to `register-push-token`, whose body contract is `{ device_token, platform }` with `platform ∈ {android, ios}`. A registered iOS token is ~142 characters; a 64-character hex string means the APNs-to-FCM conversion never happened and Firebase is misconfigured on the device.
+
+Registration is best-effort and asynchronous (`PushTokenRegistrar` in `commonMain`, fire-and-forget on a background scope). That design makes three failure modes structural rather than incidental. All three were live until 2026-08-06, and together they are why `push_tokens` had never held a single row in the project's history:
+
+- **The token can arrive before a session exists.** The OS token callbacks fire at launch, so on a first-ever sign-in there is no worker JWT yet and the POST carries only the anon key. The registrar now mirrors `EdgeFunctionClient.authed`: pre-flight `ensureFreshSession(false)`, then one forced refresh and retry on a `401`. That alone is not sufficient, because on a genuinely fresh install there is no session to refresh **to**, so the registrar also remembers the last token it was handed and `WorkerBackend.wireAccessToken()` calls `retryLastRegistration()` after sign-in or session restore. Without that second half a new worker's token is dropped and nothing retries until FCM rotates it, which may be weeks away or never.
+- **iOS must re-register on every launch.** `UIApplication.registerForRemoteNotifications()` was reachable only from the permission-granted callback, which by construction runs only while authorization is `.notDetermined`. The launch on which a worker granted permission therefore worked, and every launch afterwards silently did not. `AppDelegate` now calls `NotificationAuthorizer.registerIfAlreadyAuthorized()` unconditionally at launch. It presents no UI and never prompts, so the deferred permission ask (BSpec §20.2) is unaffected: the OS dialog remains governed solely by `requestAuthorization`. Android was never exposed to this, because `ShiftApp.onCreate` fetches its FCM token unconditionally.
+- **Failures are invisible on the client by design.** The whole path is wrapped in `runCatching` so registration can never block app start, which means a wrong field name or a rejected credential produces no user-visible symptom. The only reliable signal is server-side: a `register-push-token` `4xx` in the Edge Function logs, or an empty `push_tokens`. Diagnose from there, never from the device.
+
+**A device token identifies a phone, not an account, and is evicted on re-registration**
+_(2026-08-06)_. `register-push-token` deletes every row carrying the incoming `device_token`
+under a **different** `user_id` before upserting its own. Without that delete the upsert's
+`onConflict: 'user_id,device_token'` key made the table additive across accounts: signing in
+as a second person on one handset ADDED a row rather than replacing one, and `dispatch-push`
+then sent that phone one push per account for every notification either account received.
+Found live on the Harnwell pilot phone, which held a `sw` row and an `hm` row for the same
+iPhone and so rang **four** times for a two-block vacancy that had produced exactly two
+`notifications` rows. The delete is ordered before the upsert and excludes the caller's own
+`user_id`, so it can never remove the row about to be written, and a crash between the two
+statements leaves the device unregistered (it re-registers on next launch) rather than
+double-registered.
+
+Note what this does NOT do: it is keyed on the token, so it only resolves accounts sharing
+one **live** token. A signed-out account whose phone has since rotated its FCM token keeps
+its stale row until the gap below is closed.
+
+**Known gap: stale tokens are never pruned.** `dispatch-push` counts per-token failures into `failureCount` but does not act on them, and nothing deletes a `push_tokens` row when the platform reports the token invalid (app deleted, token rotated). Rows therefore accumulate per reinstall, and a worker's dead devices are re-attempted on every send. This is bounded and harmless today at pilot scale; it is a real cleanup task before wider rollout, not a design decision.
+
+**iOS deploy-time prerequisites**, none of which live in the repository: the Firebase SDK added to `iosApp.xcodeproj` via SPM (`FirebaseCore` + `FirebaseMessaging`), a `GoogleService-Info.plist` for the **same** Firebase project the `FIREBASE_SERVICE_ACCOUNT_JSON` service account belongs to, the Push Notifications capability (the `aps-environment` entitlement), and an APNs authentication key (`.p8`) uploaded to Firebase for the **same Apple team** that signs the app. An APNs key is scoped to a developer team, not to a bundle id, so one key serves every app under that team. A team mismatch between the `.p8` and the app's signed `application-identifier` fails only at the FCM-to-APNs hop, long after a token has registered successfully, which makes it one of the harder misconfigurations to attribute.
+
 ### 9.4 The Calendar Render
 
 The calendar view at any house for any date range queries `shift_block_assignments` joined to users, filtered by `house_id` and `block_start_at` range. The application layer aggregates contiguous blocks into displayed shift cards.
@@ -1847,29 +1882,80 @@ Every one of these defaults to the **historical behavior** when absent. That is 
 
 ### Keys added by the cost-audit remediation (2026-07-26)
 
-| `system_config` key                      | Default        | Effect when absent                                                                                                                |
-| ---------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `max_notification_delivery_attempts`     | 12             | Falls back to 12. Attempts before a push is dead-lettered (§9.3).                                                                 |
-| `notification_retry_backoff_cap_minutes` | 60             | Falls back to 60. Ceiling on the exponential retry interval (§9.3).                                                               |
-| `operational_retention_days`             | 28             | Falls back to 28. Age past which terminal notifications and non-pending floats are deleted (§9.6).                                |
-| `retention_delete_batch_size`            | 5000           | Falls back to 5000. Rows per delete statement in the retention sweep.                                                             |
-| `allow_time_travel`                      | absent = false | **Time travel is DENIED.** The one key here whose absent-default is not the historical behavior, and deliberately so — see below. |
+| `system_config` key                      | Default | Effect when absent                                                                                 |
+| ---------------------------------------- | ------- | -------------------------------------------------------------------------------------------------- |
+| `max_notification_delivery_attempts`     | 12      | Falls back to 12. Attempts before a push is dead-lettered (§9.3).                                  |
+| `notification_retry_backoff_cap_minutes` | 60      | Falls back to 60. Ceiling on the exponential retry interval (§9.3).                                |
+| `operational_retention_days`             | 28      | Falls back to 28. Age past which terminal notifications and non-pending floats are deleted (§9.6). |
+| `retention_delete_batch_size`            | 5000    | Falls back to 5000. Rows per delete statement in the retention sweep.                              |
 
-`allow_time_travel` inverts the convention on purpose. `20260611000007_dev_sim_clock.sql` ships to every environment, and `app_now()` is where `orchestrator-tick` sources the entire tick's notion of "now" and where `apply_compiled_season` gates future-block reconciliation — so anything that can set the offset in production moves every escalation deadline at once. The only guard was a build-time flag in `apps/web/lib/actions/devClock.ts`, which anything holding the service-role key bypasses. `enforce_time_travel_gate` (migration `20260726000008`) is a `BEFORE INSERT OR UPDATE` trigger on `dev_sim_clock` that rejects a non-zero offset unless this key is `'true'`, so a production database that was never explicitly told it may time-travel cannot. Resetting the offset to **zero is always permitted**, gate or no gate, so no database can get stuck in a time-travelled state it cannot leave. `seed.sql` sets the key, and the migration self-enables on any database whose clock has evidently already been used for time travel, so existing development environments are unaffected.
+**`allow_time_travel` is retired** (migration `20260805000001`, superseding `20260726000008` below it in this section's own history). There is no `system_config` key governing the simulated clock any more; the gate moved from the environment to the acting user's role.
+
+`20260611000007_dev_sim_clock.sql` ships to every environment, and `app_now()` is where `orchestrator-tick` sources the entire tick's notion of "now" and where `apply_compiled_season` gates future-block reconciliation — so anything that can set the offset moves every escalation deadline at once, in whatever environment it runs in. The original guard (`20260726000008`) denied a non-zero offset in every environment unless `system_config('allow_time_travel') = 'true'`, on the theory that production must never time-travel, full stop. Product decision 2026-08-05 reversed that: the project administrator must be able to exercise the time-driven escalation chain against production too, once the app is live there, so an environment-wide deny is no longer the right shape. `enforce_time_travel_gate` (redefined by `20260805000001`) is still a `BEFORE INSERT OR UPDATE` trigger on `dev_sim_clock`, but it now rejects a non-zero offset unless `NEW.set_by` is a user holding the `admin` role (`user_is_admin`, migration `20260702000002`) — checked against WHO the app claims performed the write, not what key it used to perform it, so the guard holds even though the actual write goes through the service-role client (`setSimClock` / `clearSimClock` in `apps/web/lib/actions/devClock.ts`, which also check `isAdmin` themselves for a clean error message before ever reaching the database). Resetting the offset to **zero is always permitted**, gate or no gate, so no database can get stuck in a time-travelled state it cannot leave. The web UI additionally surfaces a client-side confirmation step before writing a non-zero offset (BSpec §14) — a caution the administrator can proceed past, not a second permission gate. `seed.sql`'s local admin user already holds the `admin` role, so no extra config row is needed to make the local time-travel harness work.
 
 ### Deploy-time secrets
 
-| Secret                                      | Used by                                                                                      |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `CLAUDE_AI_CHATBOT_DESK_ASSISTANT`          | Assistant generation (`da-ask`); model from `DA_GENERATION_MODEL`, default `claude-sonnet-5` |
-| `CLAUDE_AI_CHATBOT_UPLOAD_CHUNKER`          | Knowledge intake normalization and PDF vision fallback                                       |
-| `CLAUDE_AI_CHATBOT_PROPOSE`                 | Knowledge intake metadata proposal                                                           |
-| `CLAUDE_AI_CREATE_SCHEDULE_KEY`             | AI schedule agent (§15)                                                                      |
-| `VOYAGE_API_KEY`                            | Embeddings (`voyage-3`, 1024-dim)                                                            |
-| `FIREBASE_SERVICE_ACCOUNT_JSON`             | Push delivery (`dispatch-push`, both FCM and APNs)                                           |
-| `app.supabase_url` / `app.service_role_key` | Postgres settings for `deliver_pending_notifications`                                        |
+| Secret                                      | Used by                                                                                                                              |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `CLAUDE_AI_CHATBOT_DESK_ASSISTANT`          | Assistant generation (`da-ask`); model from `DA_GENERATION_MODEL`, default `claude-sonnet-5`                                         |
+| `CLAUDE_AI_CHATBOT_UPLOAD_CHUNKER`          | Knowledge intake normalization and PDF vision fallback                                                                               |
+| `CLAUDE_AI_CHATBOT_PROPOSE`                 | Knowledge intake metadata proposal                                                                                                   |
+| `CLAUDE_AI_CREATE_SCHEDULE_KEY`             | AI schedule agent (§15)                                                                                                              |
+| `VOYAGE_API_KEY`                            | Embeddings (`voyage-3`, 1024-dim)                                                                                                    |
+| `FIREBASE_SERVICE_ACCOUNT_JSON`             | Push delivery (`dispatch-push`, both FCM and APNs)                                                                                   |
+| `app.supabase_url` / `app.service_role_key` | Resolved via `app_runtime_setting()` by every pg_cron job that calls an Edge Function (`orchestrator-tick`, `deliver-notifications`) |
 
 One key per feature, with **no generic fallback**, so per-feature cost is attributable. Each client fails with a clear 503 when its key is absent rather than crashing.
+
+**`app.supabase_url` / `app.service_role_key` live in Supabase Vault, not a Postgres GUC.**
+Hosted Supabase grants no role permission to set a custom `app.*` parameter (`ALTER DATABASE
+... SET app.supabase_url = ...` → `42501 permission denied`), so a GUC-only design is
+inert-by-construction on every hosted project. `app_runtime_setting(p_name)` (migration
+`20260727000002`) resolves Vault first and falls back to a GUC, which is what keeps the
+local stack (which sets neither) and any future self-hosted environment (which still can
+set a GUC) working unchanged. The function is `SECURITY DEFINER` and granted to **no
+role** — not even `service_role` — because it returns the secret; pg_cron executes it as
+the owning `postgres` role, so the cron works while nothing else can call it.
+
+**Incident (found 2026-08-05, root-caused and fixed 2026-08-06): the orchestrator had
+never once run against the hosted Shift project.** Two independent causes stacked:
+
+1. `seed.sql`'s cron-teardown block (see the "LOCAL ONLY" guard, `supabase/seed.sql`) was
+   replayed against the hosted project during an earlier data load, unscheduling all seven
+   jobs registered by `20260727000001`. `net._http_response` was empty — the database had
+   never made a single outbound HTTP call — which is how a `SELECT * FROM cron.job` check
+   would still have reported the environment healthy (nothing to compare against). Fixed
+   by gating the teardown on `app_runtime_setting('app.supabase_url')` resolving to a real
+   value: if it does, this database is configured to run the jobs for real (hosted, or a
+   local stack deliberately rehearsing hosted behavior) and the teardown is skipped with a
+   `RAISE WARNING` instead of silently deleting the registration.
+2. Independently, five Edge Functions (`orchestrator-tick`, `force-trigger`, `create-swap`,
+   `permanent-drop`, `permanent-pickup`) reached `@shift/core` with a **dynamic** import of
+   a path outside the function directory: `await import('../../../packages/core/dist/...')`.
+   That resolves under `supabase start`, because the local edge runtime bind-mounts the
+   literal specifiers it discovers at start time. It does **not** survive `supabase
+functions deploy`: the deploy bundler follows only **static** relative imports, and
+   `packages/core/dist` is both outside the bundled tree and gitignored, so the deploy
+   reported success and shipped a bundle missing core entirely. Every invocation then died
+   at runtime with `Module not found: file:///var/tmp/sb-compile-edge-runtime/packages/
+core/dist/orchestrator/evaluate.js`. Confirmed against the deployed `orchestrator-tick`
+   bundle: it contained only `index.ts` and `floatLookup.ts`.
+
+The fix vendors the reachable subset of `@shift/core` into `supabase/functions/_shared/
+core/`, **committed** (not gitignored — a gitignored build artifact that had to exist at
+deploy time is exactly what caused this, so leaving the vendored copy gitignored would
+rebuild the same trap), and imported **statically**. `scripts/vendor-core-into-functions.mjs`
+discovers entrypoints from the function sources themselves, walks the transitive closure
+over `packages/core/dist` (`.js` and `.d.ts` together), fails loudly if the closure ever
+reaches a bare specifier Deno cannot resolve (core's only runtime dependency,
+`date-fns-tz`, is not reachable from any of the six entrypoints today), and — critically —
+also fails if any file **uses** a `_shared/core` import alias without importing it in that
+file. That second check exists because the first deploy attempt fixed the entrypoint files
+but dropped one import line in a concurrent edit, which passed every check that verifies
+imports that _exist_ resolve, and would have shipped the exact same "Module not found"
+failure one function deeper. `pnpm vendor:core:check` runs in CI before lint; see
+`supabase/functions/README.md` for the full mechanism. `supabase/AGENTS.md`'s "Required
+deploy configuration" list was updated to name Vault as the delivery mechanism.
 
 ---
 
@@ -1969,26 +2055,47 @@ takes no user_id, so a client cannot aim it at somebody else.
 `process_broadcast_step` was rewritten to consult it. Previously the shift-opened
 notification rode on `users.broadcast_subscribed`, which defaults to FALSE and is presented
 in Settings as an unrelated "General updates" switch, so in practice nobody was told a
-shift had opened. The recipient set now mirrors `worker_open_shifts` eligibility exactly
+shift had opened. The recipient set mirrors `worker_open_shifts` eligibility
 (active, holds `sw`/`sm`/`hm`, not a `bm`) plus the Harnwell training invariant, because a
 notification about a seat the worker cannot claim is worse than no notification. The
 Kotlin defaults in `settings/NotificationPreferences` mirror the column defaults and the
 function; **if you change one, change all three.**
 
+**One deliberate divergence from "mirrors exactly" (2026-08-06):** `worker_open_shifts`
+gained `rsm` in its candidate role list (migration `20260806000005`; §2.3a "holds shifts
+like an HM" was already the spec, but the view's `candidate_users` CTE was scoped to
+`sw`/`sm`/`hm` since before the `rsm` role existed and nobody had added it, so an RSM's
+Open Shifts feed silently read as empty regardless of real vacancies at their house).
+`process_broadcast_step` and `notify_shift_opened` were **not** changed to match — BSpec
+§2.3a is explicit that an RSM "never receives broadcast notifications," so an RSM can browse
+and claim from Open Shifts but is not proactively pushed a notification for every vacancy
+the way an SW/SM/HM is. Do not "fix" this gap back to parity without a product decision; it
+is intentional, confirmed 2026-08-06.
+
 ### 21.3a The Instant Shift-Opened Notification
 
 _(Added 2026-07-29, migrations `20260729000012` + `20260729000013`.)_
 
-`notify_shift_opened(house_id, block_id, start_at, end_at, actor_user_id, now, recurring)`
-emits ONE `shift_opened` notification per dropped SPAN. It is called by `drop_shift` and by
-`permanent_drop_slot`, both already `SECURITY DEFINER`, so no client holds EXECUTE on it.
+`notify_shift_opened(house_id, block_id, start_at, end_at, actor_user_id, now, recurring,
+exclude_user_ids)` emits ONE `shift_opened` notification per opened SPAN. It is called by
+`drop_shift`, `permanent_drop_slot` and `admin_remove_worker`, all already `SECURITY
+DEFINER`, so no client holds EXECUTE on it.
+
+_(Signature amended 2026-08-06, migration `20260806000003`.)_ The 8-argument form above is
+the real body; the original 7-argument form survives as a thin `LANGUAGE sql` delegate that
+passes an empty exclusion list, so the recipient matrix exists in exactly ONE place and the
+two pre-existing call sites keep their exact behaviour. The 8th parameter deliberately takes
+**no** default: a defaulted 8th argument would make every 7-argument call ambiguous between
+the two overloads, so arity alone resolves it.
 
 Three things about the design are load-bearing:
 
 **One row per span, not per block.** A four-hour drop vacates eight `shift_block_assignments`
 rows. Eight pushes for one human event is how a worker mutes the app at the OS level, which
 would silently take the mandatory float-acknowledgment pushes down with it, since they share
-the channel. The span's start and end ride in the payload instead.
+the channel. The span's start and end ride in the payload instead. _(This was true of this
+function only until 2026-08-06; `process_broadcast_step` emitted one notification per block
+until `20260806000004` gave it the same property. See §21.3c.)_
 
 **The recipient predicate is `home_house_id = p_house_id OR wants_open_shift_notification(...)`.**
 The left side is what makes the home house mandatory: it short-circuits before the preference
@@ -2012,8 +2119,30 @@ different slot than the one vacated.
 
 Payload copy (`title` / `body`) is composed in SQL and read verbatim by both clients through
 `pushDisplayFromData` and the Updates feed, so the notification needs no client release to
-render. Float-out seat reopening and admin removal deliberately do NOT call this; they still
-rely on the feed plus the T-3h broadcast.
+render.
+
+**`admin_remove_worker` calls it too** _(2026-08-06, `20260806000003`; this SUPERSEDES the
+statement here that "admin removal deliberately does NOT call this")_. Only the `this_week`
+branch needed wiring: the `permanent` branch delegates to `permanent_drop_slot`, which has
+emitted its own recurring notification since `20260729000013`. Two differences from the
+worker drop path, both deliberate:
+
+- **Islands, not one span.** `drop_shift` enforces contiguity (`drop_not_contiguous`);
+  `admin_remove_worker` does not, because an operator clicks arbitrary seats on the grid. A
+  single `MIN..MAX` span would announce hours that were never vacated, so the removed set is
+  split into contiguous islands by the standard gaps-and-islands trick
+  (`block_start_at - row_number() OVER (ORDER BY block_start_at) * interval '30 minutes'`)
+  and one notification is emitted per island. Coverage-locked blocks are filtered out
+  BEFORE islanding, so they neither trigger an announcement nor extend one.
+- **Two exclusions.** `p_actor_user_id` is the OPERATOR; the removed worker rides the new
+  exclusion list. Telling someone "a shift just opened up, open the app to claim it" about
+  the shift you took off them thirty seconds ago is the worst available phrasing of that
+  event. The `this_week` branch still writes the removed worker no alert of its own, unlike
+  `permanent`, which writes `sw_permanent_removal_alert`; that asymmetry is a known gap and
+  is NOT closed by this migration.
+
+Float-out seat reopening still deliberately does NOT call this; it relies on the feed plus
+the T-3h broadcast.
 
 **The in-app toast was dead code until the same date.** `observeNotifications` streams
 realtime INSERTs on `notifications` and mapped each record with a function that read
@@ -2024,6 +2153,86 @@ foreground toast never fired once on either platform. It now reads `payload` fir
 the top-level lookup as a fallback, and moved out of `WorkerShiftsRepository` (AGENTS §5.2
 quarantine) into the pure `notifications/ToastNotification.kt`, where `ToastNotificationTest`
 covers it.
+
+### 21.3b Settings Grouping and Legal Links
+
+_(2026-08-06.)_ The two open-shift channels and the disclosure over the five mandatory
+channels (BSpec §20.5) are UI-only groupings; no schema change. `settings/Settings.kt`
+gained pure constants both platforms read: `OPEN_SHIFTS_GROUP_TITLE`/`_SUB` (the merged
+card's header copy) and `alwaysOnNotificationsLabel(count)` (the disclosure summary,
+computed from the row count so it can never drift from the actual mandatory-channel list).
+Android partitions `state.notifications` by `interactive`; iOS does the same with
+`.filter { $0.interactive }`. Neither platform hardcodes which channels are mandatory —
+that still comes from `buildNotificationRows` alone.
+
+`PRIVACY_POLICY_URL` / `TERMS_OF_SERVICE_URL` in the same file point at the standalone
+Astro guide site (`apps/docs`, deployed at `shiftatpenn.com/guide`), not in-app text, so
+the legal source of truth stays the markdown under `docs/legal/`. Opening them is a new
+`expect fun openUrl(url: String)` in `platform/PlatformHooks.kt`, mirroring the existing
+`openMailto`: Android uses
+`Intent.ACTION_VIEW`, iOS calls `UIApplication.shared.open` directly from SwiftUI rather
+than through the shared hook (no KMP round-trip needed for a `Link`-shaped action).
+
+`apps/docs`'s `nav.ts` gained a `legalPages` export, deliberately NOT part of `sections`:
+the three `sections` entries drive the sidebar's collapsible groups, the reading-order
+previous/next pager, and section overview cards, none of which fit a legal page (there is
+no "next" between a policy and a how-to guide). `Sidebar.astro` renders `legalPages` as a
+plain two-link list below the three collapsible groups. `sectionOf(slug)` special-cases
+the `legal/` prefix to still supply a "Legal" page-head eyebrow without registering a
+fourth `sections` entry. The pages themselves are ordinary content-collection `.mdx` files
+at `legal/privacy` and `legal/terms`, routed automatically by the existing `[...slug].astro`
+catch-all — no new routing code.
+
+### 21.3c Broadcast Span Merge and the Coverage-Lock Guard
+
+_(2026-08-06, migration `20260806000004`. Mechanism for BSpec §10.1's two amendments of the
+same date. Both defects were found by tracing a real pilot incident, not by review.)_
+
+`process_broadcast_step(block_id, house_id, block_start_at, now)` had two faults, and they
+live in the same function because they are the same oversight: the step was written per
+block and never asked anything about the block's neighbours or its claimability.
+
+**Defect 1, no span merge.** The signature takes ONE block, formats ONE start time, and
+claims `block_step_status(block_id, 'broadcast')`, so an N-block vacancy emitted N
+notifications. `20260729000013` had already named this failure mode precisely ("8 pushes for
+one event is how a mandatory channel gets muted at the OS level, which would silently break
+the float ack notifications that share it") and then fixed it only on the drop path.
+§21.3a's "one row per span" was true of `notify_shift_opened` and had never been true of the
+escalation chain.
+
+**Defect 2, announcing locked seats.** `coverage_locked_at` (BSpec §5.5) marks a block whose
+desk was empty at its T-2h step; `is_assignment_claimable` refuses those seats. `drop_shift`
+has suppressed `notify_shift_opened` on a locked block since `20260729000013`;
+`process_broadcast_step` had no such check. Ordering normally hides this, since broadcast is
+T-3h and the lock is T-2h — but a vacancy DISCOVERED inside T-2h fires both in the same
+minute, which is exactly what happened: locked at 14:58:00, broadcast at 14:59:00 telling
+every Harnwell worker to "Open the app to claim it."
+
+**What merging does and does not change.** The chain step stays PER BLOCK. Every block still
+claims its own `block_step_status` row, so step atomicity, the §4.5 rollback procedure, and
+onward escalation to `float_lookup` / `hmod_notify_allied` are all untouched — a locked block
+still claims its step and still escalates, it just says nothing. Only the NOTIFICATION is
+merged: a block computes the contiguous run of not-yet-announced vacant blocks it belongs to
+and emits only if it is that run's FIRST block, describing the whole run.
+
+Three details in the run predicate are load-bearing:
+
+- **Run membership is order-independent.** It is a property of the run's shape, not of which
+  block the tick visits first, so whichever order `processVacantBlocks` walks the rows in,
+  exactly one notification comes out. `broadcast-span-merge.sql` fires the blocks in reverse
+  and asserts this; do not "simplify" it into a look-behind at the previous block only.
+- **`block_has_escalation_coverage`, not `block_has_present_worker`.** The escalation
+  present-set (which counts `allied`) is the one the orchestrator used to decide the block
+  was actionable at all. The two predicates are distinct on purpose; see "Coverage lock".
+- **Blocks announced in an EARLIER tick are excluded** (`fired_at < p_now`; the orchestrator
+  passes one `now` for a whole tick). Without that clause an incremental vacancy goes silent
+  forever: 11:00 dropped and announced at 08:00, then 11:30 dropped at 09:00 would find
+  11:00 still vacant, conclude it was not the run start, and nobody would ever hear about
+  11:30. This is the subtlest part of the change and the reason the test asserts it directly.
+
+The payload gains `block_end_at` (appended; every consumer reads by key) and the body is
+phrased identically to `notify_shift_opened`, so the instant and T-3h channels are
+indistinguishable to a worker reading a lock screen.
 
 ### 21.4 Pending Swaps on the Live Calendars
 
@@ -2432,3 +2641,111 @@ routes, the mobile Ask chip and screen on both platforms) was removed; the knowl
 the classification/answer pipeline, and every Edge Function behind it (`supabase/functions/
 da-*`) are untouched. This is scoped as a permanent product removal rather than a
 pilot-scoped one, so restoring it later is a UI-only change, not a backend rebuild.
+
+---
+
+## 25. Assigning Allied and the RSM to a Desk
+
+Mechanism for Behavioral Spec Section 26. Migration `20260805000002_allied_desk_assignment.sql`.
+
+### 25.1 The Allied Account Is Provisioned by Migration, Not Seed
+
+`20260725000001` created the `allied-house` pseudo-house (`houses.is_staffable = false`) in
+a migration, but left its sole occupant to `supabase/seeds/prod/02-people.sql`. That split
+was a real defect: the hosted project has the house and no account, because its people came
+from the Staff@PennHousing data migration rather than that seed, so every surface built on
+"assign Allied" would have rendered nothing there with no error. `20260805000002` provisions
+the account itself: `auth.users` + `auth.identities` + `users` + a scopeless `sw` role + an
+open-ended `user_house_memberships` row backdated to the `2000-01-01` sentinel.
+
+Every insert is guarded (`ON CONFLICT DO NOTHING`, or `NOT EXISTS` for the membership row,
+whose primary key is a generated uuid and whose duplicate would trip
+`check_membership_no_overlap` rather than be skipped). Re-application is a no-op, and an
+environment that already seeded the account keeps what it has.
+
+The uuid `a111ed00-0000-4000-8000-000000000001` is fixed and load-bearing: it is already
+`ALLIED_USER_ID` in `apps/web/lib/workerColor.ts` and its Kotlin mirror
+`WorkerColors.kt`, where it selects the reserved solid-black card tint that distinguishes
+Allied coverage from every hashed per-worker colour. Do not change it.
+
+`broadcast_subscribed = false` keeps Allied out of the broadcast pool. Because Allied's home
+house is non-staffable, it holds no blocks there and so is never a float source; float
+lookup and swap counterparty selection are unaffected.
+
+### 25.2 `user_is_allied_contractor`
+
+A `STABLE SECURITY DEFINER` predicate: true when the user's `home_house_id` resolves to a
+house with `is_staffable = false`. Keyed on the flag rather than on a uuid or house id so it
+describes the pseudo-house _population_ introduced by `20260725000001`, not one row.
+`EXECUTE` is revoked from `anon` and `authenticated` explicitly and granted to
+`service_role`, per the definer-grant rule in `supabase/AGENTS.md`.
+
+### 25.3 The Two Gates That Blocked Allied
+
+Assigning Allied failed in two independent places; both now carry the exemption.
+
+1. **`admin_assign_worker`'s same-house guard (S1 OUT).** Allied's home house never equals a
+   block's house, so every attempt raised `cross_house_not_supported`. The guard now reads
+   `IF NOT v_is_rsm AND NOT v_is_allied AND v_worker.home_house_id <> v_block_house_id`.
+   `v_is_allied` also gates out the hard-cap check and the `over_target` advisory, mirroring
+   the RSM exemption from `20260729000002`. `v_over_soft` is only computed inside the
+   skipped branch, so the `soft_cap` advisory never fires for Allied either.
+
+2. **`enforce_harnwell_assignment_training`.** The trigger compared `home_house_id` to
+   `'harnwell'` and raised `check_violation`. It now returns early for
+   `user_is_allied_contractor(NEW.user_id)`, before that comparison. This is the amendment
+   to the hard invariant recorded in Section 1.5 and Behavioral Spec Section 26.1.
+
+   The trigger never saw Allied escalation coverage in the first place: a
+   `status = 'allied'` seat carries `user_id IS NULL` (enforced by the
+   `(status IN ('vacant','allied')) = (user_id IS NULL)` check from `20260528000017`), and
+   the trigger returns early on a null user. So the amendment changes who is _named_ on a
+   seat Allied could already occupy, not whether Allied may occupy it.
+
+An Allied assignment lands as a normal `claimed` seat with `is_cross_house_pickup = false`,
+so the calendar read model maps it to the ordinary `scheduled` state with a null
+`homeHouse`. The card shows "Allied" in the reserved black tint. No new `CalState` exists,
+and no read path needed changing.
+
+`admin_remove_worker` needed no change: its only `cross_house_not_supported` raise is the
+"all clicked seats must belong to one house" check, not a target-worker home-house check.
+
+### 25.4 Read Path: `loadAssignableWorkers`
+
+`apps/web/lib/data/calendarAssignees.ts`, extracted from `calendar.ts` (which is over the
+600-line ceiling). It composes the shift detail sheet's candidate set from three reads
+issued together:
+
+- this house's active home workers (`users.home_house_id = houseId`);
+- the house's RSM, resolved from the **role scope** (`user_roles.role = 'rsm' AND
+scope_house_id = houseId`) with the user row embedded, so it matches `admin_assign_worker`'s
+  own `v_is_rsm` test exactly even if `home_house_id` and role scope ever drift;
+- the Allied account, via `users → houses!inner` filtered on `is_staffable = false`, keyed
+  the same way as `user_is_allied_contractor`.
+
+A second wave sums each candidate's held hours across the viewed NY week. The RSM and Allied
+are returned first and flagged (`isRsm` / `isAllied`), and are removed from the ordinary
+roster so no identity appears twice.
+
+The function is fired _before_ `getHouseCalendar`'s wave-1 barrier and awaited where the old
+inline hours logic was, so its own second wave overlaps the chunked block reads instead of
+serialising ahead of them.
+
+### 25.5 UI
+
+`apps/web/components/calendar/WorkerPicker.tsx`, extracted from `ShiftOverrideEditor.tsx` for
+the same ceiling reason. It renders the pinned split chip (`.wpin` / `.wpin-half`), the name
+filter (`.wsearch`, roster only, never the pinned pair), and the existing roster cards.
+Neither pinned half renders a `capHint`, because both identities are cap-exempt server-side
+and an "Xh to cap" line would state a limit that does not apply.
+
+Top-of-sheet space was reclaimed for that picker in two ways: the escalation timeline is now
+a disclosure collapsed by default, with the current step stated in its summary row
+(`EscalationDisclosure` in `ShiftDetailPanel.tsx`), and the state tag is dropped when it only
+repeats the header, which is exactly when the card is unoccupied and its title already _is_
+the state name. Remaining tags (Float-in, Pending, Picked up, Home) moved inline onto the
+time row.
+
+The scope control's second option is labelled **Permanent** rather than "This week onward":
+both labels began with "This week", which is the phrase the reader scans first. Its
+`data-testid` (`override-scope-permanent`) and behavior are unchanged.

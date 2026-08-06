@@ -4,6 +4,7 @@ import com.pennhousing.shift.shared.auth.AuthSession
 import com.pennhousing.shift.shared.auth.SessionValidity
 import com.pennhousing.shift.shared.network.createAppSupabaseClient
 import com.pennhousing.shift.shared.platform.AppConfig
+import com.pennhousing.shift.shared.platform.PushTokenRegistrar
 import com.pennhousing.shift.shared.platform.SimClock
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
@@ -89,6 +90,11 @@ object WorkerBackend {
     @Suppress("DEPRECATION")
     fun wireAccessToken() {
         AppConfig.accessTokenProvider = { client.auth.currentAccessTokenOrNull() }
+        // A session now exists, so re-send any device token the OS handed us before sign-in.
+        // The FCM/APNs callbacks fire at LAUNCH; on a first-ever sign-in that is before any
+        // session, so their POST (and its 401 retry) legitimately fail and nothing else would
+        // ever try again until the token rotates. No-ops when no token has arrived yet.
+        PushTokenRegistrar.retryLastRegistration()
         AppConfig.ensureFreshSession = { force ->
             runCatching {
                 if (client.auth.currentSessionOrNull() == null) {

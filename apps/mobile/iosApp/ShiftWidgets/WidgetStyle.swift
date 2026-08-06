@@ -17,6 +17,11 @@ enum WidgetStyle {
     /// Float banner fill (#F2F7FF) and the "Open" pill fill (#E8F0FF).
     static let floatFill = Color(red: 0xF2 / 255, green: 0xF7 / 255, blue: 0xFF / 255)
     static let pillFill = Color(red: 0xE8 / 255, green: 0xF0 / 255, blue: 0xFF / 255)
+    /// Alternating shift-card shades (Upcoming Shifts) — two near-whites, close enough to
+    /// read as "the same white" but distinct enough to separate consecutive cards without
+    /// a divider line.
+    static let cardFillA = Color(red: 0xF7 / 255, green: 0xF8 / 255, blue: 0xFB / 255)
+    static let cardFillB = Color(red: 0xEF / 255, green: 0xF1 / 255, blue: 0xF7 / 255)
 }
 
 /// Shared spacing rhythm so every tile reads with the same vertical cadence.
@@ -31,6 +36,14 @@ enum WidgetSpace {
     /// Per-row vertical padding.
     static let rowV: CGFloat = 6
     static let rowVLarge: CGFloat = 9
+    /// Gap between consecutive shift cards (Upcoming Shifts).
+    static let cardGap: CGFloat = 8
+    static let cardGapLarge: CGFloat = 10
+    /// Per-card padding (Upcoming Shifts).
+    static let cardPadH: CGFloat = 12
+    static let cardPadV: CGFloat = 11
+    static let cardPadVLarge: CGFloat = 13
+    static let cardRadius: CGFloat = 14
 }
 
 /// Wall-clock formatting in America/New_York.

@@ -1371,6 +1371,23 @@ Registration is best-effort and asynchronous (`PushTokenRegistrar` in `commonMai
 - **iOS must re-register on every launch.** `UIApplication.registerForRemoteNotifications()` was reachable only from the permission-granted callback, which by construction runs only while authorization is `.notDetermined`. The launch on which a worker granted permission therefore worked, and every launch afterwards silently did not. `AppDelegate` now calls `NotificationAuthorizer.registerIfAlreadyAuthorized()` unconditionally at launch. It presents no UI and never prompts, so the deferred permission ask (BSpec §20.2) is unaffected: the OS dialog remains governed solely by `requestAuthorization`. Android was never exposed to this, because `ShiftApp.onCreate` fetches its FCM token unconditionally.
 - **Failures are invisible on the client by design.** The whole path is wrapped in `runCatching` so registration can never block app start, which means a wrong field name or a rejected credential produces no user-visible symptom. The only reliable signal is server-side: a `register-push-token` `4xx` in the Edge Function logs, or an empty `push_tokens`. Diagnose from there, never from the device.
 
+**A device token identifies a phone, not an account, and is evicted on re-registration**
+_(2026-08-06)_. `register-push-token` deletes every row carrying the incoming `device_token`
+under a **different** `user_id` before upserting its own. Without that delete the upsert's
+`onConflict: 'user_id,device_token'` key made the table additive across accounts: signing in
+as a second person on one handset ADDED a row rather than replacing one, and `dispatch-push`
+then sent that phone one push per account for every notification either account received.
+Found live on the Harnwell pilot phone, which held a `sw` row and an `hm` row for the same
+iPhone and so rang **four** times for a two-block vacancy that had produced exactly two
+`notifications` rows. The delete is ordered before the upsert and excludes the caller's own
+`user_id`, so it can never remove the row about to be written, and a crash between the two
+statements leaves the device unregistered (it re-registers on next launch) rather than
+double-registered.
+
+Note what this does NOT do: it is keyed on the token, so it only resolves accounts sharing
+one **live** token. A signed-out account whose phone has since rotated its FCM token keeps
+its stale row until the gap below is closed.
+
 **Known gap: stale tokens are never pruned.** `dispatch-push` counts per-token failures into `failureCount` but does not act on them, and nothing deletes a `push_tokens` row when the platform reports the token invalid (app deleted, token rotated). Rows therefore accumulate per reinstall, and a worker's dead devices are re-attempted on every send. This is bounded and harmless today at pilot scale; it is a real cleanup task before wider rollout, not a design decision.
 
 **iOS deploy-time prerequisites**, none of which live in the repository: the Firebase SDK added to `iosApp.xcodeproj` via SPM (`FirebaseCore` + `FirebaseMessaging`), a `GoogleService-Info.plist` for the **same** Firebase project the `FIREBASE_SERVICE_ACCOUNT_JSON` service account belongs to, the Push Notifications capability (the `aps-environment` entitlement), and an APNs authentication key (`.p8`) uploaded to Firebase for the **same Apple team** that signs the app. An APNs key is scoped to a developer team, not to a bundle id, so one key serves every app under that team. A team mismatch between the `.p8` and the app's signed `application-identifier` fails only at the FCM-to-APNs hop, long after a token has registered successfully, which makes it one of the harder misconfigurations to attribute.

@@ -1218,6 +1218,8 @@ A notification is routed and recorded regardless of any device (Section 10.1). *
 
 **Allowing notifications once is enough.** A worker is asked for permission at most once (Section 20.2). Every launch after they allow it must register the device again on its own, because the identifier a device is reached by is not permanent and may be reissued by the platform at any time. A worker is never asked to re-confirm, and never has to reinstall the app, to keep receiving pushes.
 
+**A phone belongs to one account at a time** _(added 2026-08-06)_. Signing in on a phone ends any earlier account's registration on that same phone. The person now signed in receives that phone's pushes, and nobody else does. This matters wherever accounts are shared or handed over, such as a demonstration handset or a manager checking a worker's view: without it, the phone would keep ringing for every account that had ever signed in on it, and a two-block vacancy could arrive as four separate notifications. Each account's own notifications are unaffected and still wait for it in the app; only the push to that particular phone stops.
+
 **Registration failure is silent to the worker, deliberately.** Registering must never block or interrupt using the app, so a failure produces no error and no prompt. It is therefore not something a worker can notice, report, or retry, and detecting it is the operator's responsibility, not the worker's (Section 10.4 gives the operator-facing signal). A worker whose device is not registered still accrues every notification and still sees them in the app; only the push to their phone is missing.
 
 ---

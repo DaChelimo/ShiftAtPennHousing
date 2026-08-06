@@ -66,6 +66,30 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return jsonResponse({ error: 'device_token must be a non-empty string' }, 400);
   }
 
+  // A device token identifies a PHONE, not an account, so it may belong to exactly one
+  // user at a time. Evict every other user's claim on it before recording ours.
+  //
+  // Without this, account switching on one handset silently fans out: the upsert below is
+  // keyed on (user_id, device_token), so signing in as a second person ADDS a row rather
+  // than replacing one, and `dispatch-push` then sends that phone one push per account for
+  // every notification either account receives. Found 2026-08-06 on the Harnwell pilot
+  // phone, which held two rows (a `sw` and an `hm`) and so rang four times for a two-block
+  // vacancy that had produced exactly two notification rows.
+  //
+  // Ordered before the upsert on purpose: the DELETE excludes our own user_id, so it can
+  // never remove the row we are about to write, and a crash between the two statements
+  // leaves the device unregistered (it re-registers on next launch) rather than
+  // double-registered.
+  const { error: evictError } = await supabase
+    .from('push_tokens')
+    .delete()
+    .eq('device_token', deviceToken)
+    .neq('user_id', user.id);
+
+  if (evictError !== null) {
+    return jsonResponse({ error: evictError.message }, 400);
+  }
+
   const { data, error } = await supabase
     .from('push_tokens')
     .upsert(

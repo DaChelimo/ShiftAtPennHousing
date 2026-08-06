@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import com.google.firebase.messaging.FirebaseMessagingService
@@ -13,6 +14,20 @@ import com.pennhousing.shift.R
 import com.pennhousing.shift.shared.ack.floatAckDeepLink
 import com.pennhousing.shift.shared.ack.pushDisplayFromData
 import com.pennhousing.shift.shared.platform.registerPushToken
+
+// Accent color per notification type, matching the house/urgency color used
+// elsewhere in the app (schedule rails, badges). No large icon is set — the
+// small icon + this accent color are the only branding, so a redesign never
+// re-adds a right-side icon.
+private val URGENT_TYPES = setOf("hmod_urgent", "allied_page")
+private val OPEN_SHIFT_TYPES = setOf("broadcast")
+
+private fun accentColorFor(type: String?): Int =
+    when (type) {
+        in URGENT_TYPES -> Color.parseColor("#E24B4A")
+        in OPEN_SHIFT_TYPES -> Color.parseColor("#639922")
+        else -> Color.parseColor("#378ADD")
+    }
 
 /**
  * Phase 13a — FCM service (deliverable #6) + T2-13 push routing.
@@ -54,6 +69,8 @@ class AppFirebaseMessagingService : FirebaseMessagingService() {
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
             .setContentText(body)
+            .setStyle(Notification.BigTextStyle().bigText(body))
+            .setColor(accentColorFor(message.data["type"]))
             .setAutoCancel(true)
             .setContentIntent(contentIntent(display.floatId))
 

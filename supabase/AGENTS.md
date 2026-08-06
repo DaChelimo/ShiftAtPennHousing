@@ -254,6 +254,28 @@ personal notifications are mandatory, so a rare duplicate is preferable to a los
 Firebase routes both FCM and APNs tokens; iOS clients register their Firebase FCM registration
 token, not a raw APNs token, and `dispatch-push` does not branch on platform.
 
+**A device token belongs to ONE account.** `register-push-token` deletes rows carrying the
+same `device_token` under a different `user_id` before upserting. Do not drop that delete and
+rely on the `(user_id, device_token)` conflict key alone: that key is per-account, so account
+switching on one handset accumulates a recipient per account and the phone is pushed once per
+account, forever. This shipped broken and was found on the pilot phone (2026-08-06), which
+rang four times for two notification rows.
+
+**An open-shift announcement is per SPAN, never per block, on BOTH paths.**
+`notify_shift_opened` has merged spans since `20260729000013`; `process_broadcast_step` since
+`20260806000004`. The broadcast step still claims `block_step_status` per block (atomicity,
+ARCH §4.5 rollback, onward escalation all depend on that) but emits only from the first block
+of a contiguous run. Three things not to undo: run membership excludes blocks whose broadcast
+fired in an **earlier tick** (`fired_at < p_now`), without which an incremental vacancy goes
+silent forever; the run-start test must stay a property of the run's shape, not a look-behind
+at the previous block, or it becomes order-dependent on the tick's row order; and it uses
+`block_has_escalation_coverage`, not `block_has_present_worker` (see "Coverage lock").
+
+**Nothing announces a `coverage_locked_at` block.** Its seats are not claimable and the copy
+says "Open the app to claim it." `drop_shift`, `admin_remove_worker` and
+`process_broadcast_step` all suppress on it. The chain step is still claimed, so escalation is
+unaffected. Any NEW path that opens a seat needs the same guard.
+
 ## Required deploy configuration
 
 Every deployed environment must set these or behavior silently degrades:

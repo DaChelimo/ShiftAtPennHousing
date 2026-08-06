@@ -2,6 +2,7 @@ package com.pennhousing.shift
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
@@ -129,6 +130,21 @@ import kotlin.time.Instant
  */
 private const val SPLASH_MIN_VISIBLE_MS = 450L
 
+/**
+ * A transparent system-bar style whose icon tint is pinned to the IN-APP theme.
+ *
+ * `SystemBarStyle.dark` draws light (white) icons; `SystemBarStyle.light` draws dark icons
+ * and needs a scrim colour for the API levels that cannot tint icons, so it gets the same
+ * transparent value twice. Both are passed an explicit `detectDarkMode` via the factory
+ * choice rather than letting `auto` read `Configuration.uiMode`, which is the OS appearance.
+ */
+private fun systemBarStyle(darkTheme: Boolean): SystemBarStyle =
+    if (darkTheme) {
+        SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+    } else {
+        SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
+    }
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         // Cold-start splash (Theme.ShiftPennHousing.Splash in the manifest supplies the
@@ -140,7 +156,18 @@ class MainActivity : ComponentActivity() {
         splashScreen.setKeepOnScreenCondition { keepNativeSplash }
 
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // The persisted appearance choice, resolved without composition (see
+        // ThemeChoice.resolveDark(Configuration) for why this cannot be the @Composable one).
+        val initialDarkTheme = ThemePrefs.read(this).resolveDark(resources.configuration)
+        // Explicit bar styles, NOT the no-arg default: SystemBarStyle.auto detects dark mode
+        // from Configuration.uiMode (the SYSTEM appearance), so app-Dark on a system-Light
+        // phone got light-mode bars with black clock/battery icons over our dark chrome.
+        // ShiftTheme re-applies the appearance flags on every theme change; this only seeds
+        // the frames that exist before the first composition.
+        enableEdgeToEdge(
+            statusBarStyle = systemBarStyle(initialDarkTheme),
+            navigationBarStyle = systemBarStyle(initialDarkTheme),
+        )
         // The POST_NOTIFICATIONS runtime request is no longer fired cold on launch. It is
         // raised by the inline ask on My Shifts (NotificationNudgeRow in
         // ui/onboarding/NotificationNudge.kt), so the worker sees WHY alerts matter, on the
@@ -151,12 +178,11 @@ class MainActivity : ComponentActivity() {
         // opens the FULL-SCREEN FloatAckSurface on launch. Pure parser; null when the
         // app was launched normally.
         val launchFloatAckId = parseFloatAckDeepLink(intent?.dataString)
-        // Resolved BEFORE setContent, via the non-Compose ThemeChoice.resolveDark(Configuration)
-        // (a plain field read), not the @Composable rememberPersistedDarkTheme() — see that
+        // `initialDarkTheme` (resolved above, before enableEdgeToEdge) is also what the splash
+        // paints with: it comes from the non-Compose ThemeChoice.resolveDark(Configuration), a
+        // plain field read, not the @Composable rememberPersistedDarkTheme() — see that
         // function's doc for why: the splash is the first thing SplashOverlay ever paints, and
         // isSystemInDarkTheme() can misresolve on exactly that first composition pass.
-        val initialDarkTheme = ThemePrefs.read(this).resolveDark(resources.configuration)
-
         setContent {
             LaunchedEffect(Unit) { keepNativeSplash = false }
             // The splash now stays up until there is something REAL to show: the login

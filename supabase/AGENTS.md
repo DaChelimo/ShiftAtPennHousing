@@ -267,11 +267,13 @@ Every deployed environment must set these or behavior silently degrades:
   parameter. `app_runtime_setting()` (`20260727000002`) resolves Vault first, falling back
   to a GUC only for environments that can actually set one. `verify_scheduled_jobs()`
   checks both this and the seven expected cron jobs; run it after setting the secrets, and
-  after any suspected drift. A missing/invalid value means every pg*cron job that calls an
-  Edge Function (`orchestrator-tick`, `deliver-notifications`) 401s or errors once a
+  after any suspected drift. A missing/invalid value means every `pg_cron` job that calls
+  an Edge Function (`orchestrator-tick`, `deliver-notifications`) 401s or errors once a
   minute, invisibly, until someone opens the admin health page or `cron.job_run_details`.
-  The service role key must be the `sb_secret*…`value (the new-format secret key); the`orchestrator-tick`Edge Function does an exact string comparison against`SUPABASE_SERVICE_ROLE_KEY`, so a legacy `service_role` JWT (if legacy keys are still
-  enabled on the project) authenticates everywhere else but 401s here specifically.
+  The service role key must be the new-format `sb_secret_` key: `orchestrator-tick` does an
+  exact string comparison against `SUPABASE_SERVICE_ROLE_KEY`, so a legacy `service_role`
+  JWT (if legacy keys are still enabled on the project) authenticates everywhere else but
+  401s here specifically.
 - **Never replay `seed.sql` against a hosted project.** It unschedules those same seven
   cron jobs by name so the local stack stays cron-free; this happened for real against
   the hosted Shift project and left the orchestrator, notification delivery, swap expiry,

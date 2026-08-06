@@ -78,7 +78,9 @@ final class CoverageObservable: ObservableObject {
     func submitClose(repo: CoverageRepository) {
         guard let intent = vm.submitClose() else { return }
         Task { [weak self] in
-            let result = try? await repo.close(requestId: intent.requestId, outcome: intent.outcome, note: intent.note)
+            let result = try? await repo.close(
+                requestId: intent.requestId, outcome: intent.outcome, note: intent.note, assignSelf: intent.assignSelf
+            )
             if result == nil || result == .failed {
                 self?.vm.revertClose(intent: intent)
             }

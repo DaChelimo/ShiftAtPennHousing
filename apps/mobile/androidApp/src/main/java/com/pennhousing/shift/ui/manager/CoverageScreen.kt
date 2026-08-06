@@ -87,6 +87,7 @@ internal fun CoverageScreen(
     state: CoverageUiState,
     onRespond: (String) -> Unit,
     onSelectOutcome: (CoverageOutcome) -> Unit,
+    onCoverPersonally: () -> Unit,
     onNoteChange: (String) -> Unit,
     onSubmit: () -> Unit,
     onDismissSheet: () -> Unit,
@@ -143,6 +144,7 @@ internal fun CoverageScreen(
         RespondSheet(
             sheet = sheet,
             onSelectOutcome = onSelectOutcome,
+            onCoverPersonally = onCoverPersonally,
             onNoteChange = onNoteChange,
             onSubmit = onSubmit,
             onDismiss = onDismissSheet,
@@ -299,6 +301,7 @@ private fun StatusPill(
 private fun RespondSheet(
     sheet: RespondSheetState,
     onSelectOutcome: (CoverageOutcome) -> Unit,
+    onCoverPersonally: () -> Unit,
     onNoteChange: (String) -> Unit,
     onSubmit: () -> Unit,
     onDismiss: () -> Unit,

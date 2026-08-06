@@ -1144,7 +1144,7 @@ textarea {
 .shell {
   display: grid;
   grid-template-columns: 256px 1fr;
-  grid-template-rows: 48px 1fr;
+  grid-template-rows: 64px 1fr;
   grid-template-areas: "hdr hdr" "nav main";
   height: 100%;
   /* Slide the nav column open/closed instead of snapping (menu toggle). */
@@ -1175,8 +1175,8 @@ textarea {
   z-index: 50;
 }
 .hdr-menu {
-  width: 48px;
-  height: 48px;
+  width: 64px;
+  height: 64px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1190,11 +1190,11 @@ textarea {
 .hdr-brand {
   display: flex;
   align-items: center;
-  gap: 9px;
-  font-size: 14px;
+  gap: 11px;
+  font-size: 17px;
   font-weight: 600;
   letter-spacing: 0.01em;
-  padding: 0 16px 0 4px;
+  padding: 0 18px 0 4px;
   white-space: nowrap;
   color: #fff;
   text-decoration: none;
@@ -1208,10 +1208,10 @@ textarea {
 /* House switcher */
 .hswitch {
   position: relative;
-  height: 48px;
+  height: 64px;
 }
 .hswitch-btn {
-  height: 48px;
+  height: 64px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -1252,7 +1252,7 @@ textarea {
 }
 .hswitch-menu {
   position: absolute;
-  top: 48px;
+  top: 64px;
   left: 0;
   width: 320px;
   background: var(--surface);
@@ -1367,8 +1367,8 @@ textarea {
 }
 .hdr-bell {
   position: relative;
-  width: 48px;
-  height: 48px;
+  width: 64px;
+  height: 64px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1400,8 +1400,8 @@ textarea {
   position: relative;
 }
 .hdr-user {
-  width: 48px;
-  height: 48px;
+  width: 64px;
+  height: 64px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1413,7 +1413,7 @@ textarea {
 }
 .user-menu {
   position: absolute;
-  top: 48px;
+  top: 64px;
   right: 0;
   width: 280px;
   background: var(--surface);

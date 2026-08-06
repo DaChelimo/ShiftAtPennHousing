@@ -329,25 +329,31 @@ export async function getCoverageActionCount(now: Date = new Date()): Promise<nu
   ).length;
 }
 
-export type CoverageReportRow = CoverageItem & { incidentReason: string | null };
+export type CoverageArchiveRow = CoverageItem & { incidentReason: string | null };
 
-// The missed-coverage report (/admin/coverage). Includes CLOSED requests, which the
-// live list deliberately excludes: this is the audit trail that the old
-// archive-then-discard model destroyed.
-export async function getCoverageReport(
-  fromIso: string,
-  toIso: string,
-  now: Date = new Date(),
-): Promise<CoverageReportRow[]> {
+// The Action Inbox Archive tab's history read. Includes CLOSED requests, which
+// getCoverageData's live list deliberately excludes: this is the audit trail that the
+// old archive-then-discard notifications model destroyed (formerly a separate
+// /admin/coverage page; folded into the inbox 2026-08-05 since both surfaces read the
+// same table and a manager only ever needed this for approving hours).
+//
+// Always fetches the full ARCHIVE_MAX_DAYS window; the UI's 24h/week/month chips
+// filter this one result client-side rather than re-fetching per range, so switching
+// ranges doesn't cost another round trip.
+export const ARCHIVE_MAX_DAYS = 30;
+
+export async function getCoverageArchive(now: Date = new Date()): Promise<CoverageArchiveRow[]> {
   const supabase = await createClient();
   const user = await getSessionUser();
   if (user === null) return [];
+
+  const fromIso = new Date(now.getTime() - ARCHIVE_MAX_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
   const { data: rows } = await supabase
     .from('allied_coverage_requests')
     .select(SELECT)
     .gte('window_start_at', fromIso)
-    .lte('window_start_at', toIso)
+    .lte('window_start_at', now.toISOString())
     .order('window_start_at', { ascending: false })
     .limit(500);
 

@@ -13,7 +13,7 @@ import { Icon, type IconName } from './ui/Icon';
 import { LogoMark, Wordmark } from './ui/Logo';
 import { Tag } from './ui/Tag';
 
-export type ShellHouse = { id: string; name: string; restricted: boolean };
+export type ShellHouse = { id: string; name: string };
 
 export type NavItem = {
   href: string;
@@ -129,7 +129,6 @@ function HouseSwitcher({
         <span className="hswitch-eyebrow">HOUSE</span>
         <span className="hswitch-cur">
           {cur.name}
-          {cur.restricted && <span className="hswitch-chip">Restricted</span>}
           {locked ? (
             <Icon name="grid" size={13} style={{ opacity: 0.5 }} />
           ) : (
@@ -152,7 +151,6 @@ function HouseSwitcher({
               onClick={() => select(h.id)}
             >
               <span>{h.name}</span>
-              {h.restricted && <span className="hswitch-chip">Restricted</span>}
             </button>
           ))}
         </div>
@@ -168,7 +166,6 @@ export function AppShell({
   canSwitchHouse = false,
   canSwitchToWorker = false,
   houses,
-  unreadCount = 0,
   coverageCount = 0,
   coverageOverdue = false,
   coverageUnavailable = false,
@@ -183,11 +180,7 @@ export function AppShell({
   /** This admin also holds the sw role — offer a link into the worker portal. */
   canSwitchToWorker?: boolean;
   houses?: ShellHouse[];
-  unreadCount?: number;
-  /**
-   * Open Allied coverage requests still needing a manager. Rendered as a SEPARATE red
-   * badge from `unreadCount`: an unstaffed desk must never look like a swap request.
-   */
+  /** Open Allied coverage requests still needing a manager. The bell's only badge. */
   coverageCount?: number;
   /** At least one open request whose coverage window has already passed. */
   coverageOverdue?: boolean;
@@ -287,7 +280,6 @@ export function AppShell({
                 {
                   id: user.homeHouseId,
                   name: prettifyHouse(user.homeHouseId),
-                  restricted: user.homeHouseId === 'harnwell',
                 },
               ]
             }
@@ -331,25 +323,15 @@ export function AppShell({
           aria-label={
             coverageCount > 0
               ? `${coverageCount} Allied coverage requests need attention`
-              : unreadCount > 0
-                ? `Notifications, ${unreadCount} unread`
-                : 'Notifications'
+              : 'Action inbox'
           }
-          title={coverageCount > 0 ? 'Allied coverage needed' : 'Notifications'}
+          title={coverageCount > 0 ? 'Allied coverage needed' : 'Action inbox'}
         >
           <Icon name="bell" size={18} />
-          {/* The urgent badge WINS over the plain unread badge. A desk about to go
-              unstaffed and a swap request must not render identically. */}
-          {coverageCount > 0 ? (
+          {coverageCount > 0 && (
             <span data-testid="bell-urgent-count" className="bell-count is-urgent">
               {coverageCount}
             </span>
-          ) : (
-            unreadCount > 0 && (
-              <span data-testid="bell-count" className="bell-count">
-                {unreadCount}
-              </span>
-            )
           )}
         </Link>
 

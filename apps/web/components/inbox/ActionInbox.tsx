@@ -3,12 +3,14 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
-import { acknowledgeAlliedPage, markRead, setAlliedResolved } from '../../lib/actions/inbox';
-import type { CoverageData } from '../../lib/data/coverage';
+import { acknowledgeAlliedPage, setAlliedResolved } from '../../lib/actions/inbox';
+import type { CoverageArchiveRow, CoverageData } from '../../lib/data/coverage';
 import type { InboxData, InboxItem as InboxItemT } from '../../lib/data/inbox';
 import { createClient } from '../../lib/supabase/client';
 import { CoverageSection } from '../coverage/CoverageSection';
-import { Button, EmptyState, Icon, PageHead, Tabs, Tag, type IconName } from '../ui';
+import { Button, Icon, PageHead, Tabs, Tag } from '../ui';
+
+import { ArchiveHistory } from './ArchiveHistory';
 import './inbox.css';
 
 // Realtime: open a postgres_changes channel on `notifications` so new/changed
@@ -30,16 +32,6 @@ function useInboxRealtime() {
     };
   }, [router]);
 }
-
-const ICON_FOR: Record<string, IconName> = {
-  hmod_urgent: 'shield',
-  sw_permanent_removal_alert: 'warn',
-  hm_leave_notice: 'power',
-  swap_request: 'swap',
-  ack_reminder: 'clock',
-  broadcast: 'inbox',
-  personal_shift: 'calendar',
-};
 
 // The status pill on a coverage card. Action-required (red) only while the window is
 // still open; resolved (green) once handled; "Window passed" (neutral) for an archived
@@ -203,62 +195,21 @@ function CoverageGrid({ items, testId }: { items: InboxItemT[]; testId: string }
   );
 }
 
-// A non-Allied notification (swap / leave / reminder). Plain row + mark-read.
-function NotificationRow({ item }: { item: InboxItemT }) {
-  const router = useRouter();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+type Tab = 'coverage' | 'archive';
 
-  async function onMarkRead() {
-    setBusy(true);
-    setError(null);
-    const res = await markRead({ notificationId: item.id });
-    setBusy(false);
-    if (!res.ok) {
-      setError(res.error);
-      return;
-    }
-    router.refresh();
-  }
+// Matches ArchiveHistory's default (tightest) range: the tab badge shows what a manager
+// would see without touching a chip, not the full 30-day fetch.
+const ARCHIVE_BADGE_HOURS = 24;
 
-  return (
-    <div className="inbox-item">
-      <div className="inbox-icon">
-        <Icon name={ICON_FOR[item.type] ?? 'inbox'} size={18} />
-      </div>
-      <div className="inbox-main">
-        <div className="row gap-2 between">
-          <div className="row gap-2">
-            {item.unread && <span className="unread-dot" />}
-            <span className="inbox-title">{item.title}</span>
-          </div>
-          <span className="t-meta">{item.timeLabel}</span>
-        </div>
-        {item.reason && <div className="inbox-reason">{item.reason}</div>}
-        <div className="row gap-2" style={{ marginTop: 10 }}>
-          <Button
-            kind="tertiary"
-            size="sm"
-            data-testid="inbox-mark-read"
-            disabled={busy}
-            onClick={onMarkRead}
-          >
-            Mark read
-          </Button>
-        </div>
-        {error !== null && (
-          <div className="inbox-reason" style={{ color: 'var(--st-danger)', marginTop: 8 }}>
-            {error}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-type Tab = 'coverage' | 'archive' | 'other';
-
-export function ActionInbox({ data, coverage }: { data: InboxData; coverage: CoverageData }) {
+export function ActionInbox({
+  data,
+  coverage,
+  archive,
+}: {
+  data: InboxData;
+  coverage: CoverageData;
+  archive: CoverageArchiveRow[];
+}) {
   const [tab, setTab] = useState<Tab>('coverage');
   useInboxRealtime();
 
@@ -267,6 +218,11 @@ export function ActionInbox({ data, coverage }: { data: InboxData; coverage: Cov
     actionCount > 0
       ? `${String(actionCount)} Allied request${actionCount === 1 ? '' : 's'} need attention.`
       : 'No open Allied requests. New alerts appear here in real time.';
+
+  const archiveBadgeCutoffMs = Date.now() - ARCHIVE_BADGE_HOURS * 60 * 60 * 1000;
+  const archiveBadgeCount = archive.filter(
+    (r) => new Date(r.windowStartIso).getTime() >= archiveBadgeCutoffMs,
+  ).length;
 
   return (
     <div className="page" style={{ maxWidth: 980 }}>
@@ -282,8 +238,11 @@ export function ActionInbox({ data, coverage }: { data: InboxData; coverage: Cov
               label: 'Coverage',
               count: coverage.openCount + data.alliedPages.length,
             },
-            { key: 'archive', label: 'Archive', count: data.archivedCount },
-            { key: 'other', label: 'Notifications', count: data.otherUnreadCount },
+            {
+              key: 'archive',
+              label: 'Archive',
+              count: data.archivedCount + archiveBadgeCount,
+            },
           ]}
         />
       </div>
@@ -313,35 +272,17 @@ export function ActionInbox({ data, coverage }: { data: InboxData; coverage: Cov
           </>
         )}
 
-        {tab === 'archive' &&
-          (data.alliedArchived.length === 0 ? (
-            <div className="card">
-              <EmptyState
-                title="Nothing archived"
-                desc="Requests whose coverage window has passed stay here for a day, then clear."
-                tone="neutral"
-              />
-            </div>
-          ) : (
-            <CoverageGrid items={data.alliedArchived} testId="inbox-archive-grid" />
-          ))}
-
-        {tab === 'other' &&
-          (data.other.length === 0 ? (
-            <div className="card">
-              <EmptyState
-                title="No notifications"
-                desc="Swaps, leave and reminders show up here."
-                tone="neutral"
-              />
-            </div>
-          ) : (
-            <div className="inbox-list">
-              {data.other.map((n) => (
-                <NotificationRow key={n.id} item={n} />
-              ))}
-            </div>
-          ))}
+        {tab === 'archive' && (
+          <>
+            {data.alliedArchived.length > 0 && (
+              <>
+                <div className="inbox-group-label muted">Earlier alerts</div>
+                <CoverageGrid items={data.alliedArchived} testId="inbox-archive-grid" />
+              </>
+            )}
+            <ArchiveHistory rows={archive} />
+          </>
+        )}
       </div>
     </div>
   );

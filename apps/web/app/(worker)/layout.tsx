@@ -2,10 +2,10 @@ import { redirect } from 'next/navigation';
 
 import { HouseNotLive } from '../../components/HouseNotLive';
 import { WorkerShell, type WorkerNavItem } from '../../components/WorkerShell';
-import { getSessionUser, hasAdminSurface } from '../../lib/auth';
+import { getSessionUser, hasAdminSurface, isAdmin } from '../../lib/auth';
 import { getHouseGate } from '../../lib/data/config';
 import { getUpdatesBadgeCount } from '../../lib/data/worker/floats';
-import { getSimOffsetSeconds, isTimeTravelEnabled, simNow } from '../../lib/time/simClock';
+import { getSimOffsetSeconds, simNow } from '../../lib/time/simClock';
 
 // The worker portal shell (route group `(worker)`, mounted at /home). Any
 // authenticated user may enter — a pure Student Worker lands here from /login, and
@@ -45,7 +45,8 @@ export default async function WorkerLayout({ children }: { children: React.React
   // One wave, not three sequential round trips. This shell renders on every worker tab
   // click, and each await here was a separate request to the hosted Supabase project.
   const [devOffsetSeconds, updatesCount] = await Promise.all([
-    isTimeTravelEnabled() ? getSimOffsetSeconds() : Promise.resolve(null),
+    // Simulated-clock card, admin-only (a dual-role admin previewing /home still gets it).
+    isAdmin(user) ? getSimOffsetSeconds() : Promise.resolve(null),
     simNow().then((now) => getUpdatesBadgeCount(user.userId, now)),
   ]);
   const devClock = devOffsetSeconds === null ? null : { offsetSeconds: devOffsetSeconds };

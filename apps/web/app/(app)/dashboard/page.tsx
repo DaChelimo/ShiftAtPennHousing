@@ -262,9 +262,9 @@ export default async function DashboardPage({
       sub: 'Who has submitted, who has not',
     },
     {
-      href: `/admin/coverage${houseQuery}`,
+      href: '/inbox',
       icon: 'shield',
-      label: 'Coverage report',
+      label: 'Action inbox',
       sub: 'Every Allied request and its outcome',
     },
   ];
@@ -300,8 +300,7 @@ export default async function DashboardPage({
       <PageHead
         eyebrow={
           <>
-            {model.houseName}
-            {model.restricted && ' · Restricted'} · {model.todayLabel}
+            {model.houseName} · {model.todayLabel}
           </>
         }
         title={`${greeting(model.nowLabel)}, ${firstName(user.name)}`}

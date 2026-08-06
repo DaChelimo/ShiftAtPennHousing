@@ -15,8 +15,8 @@ import {
 } from '../../lib/auth';
 import { isProjectAdministrator } from '../../lib/data/config';
 import { getShellCoverage } from '../../lib/data/coverage';
-import { getOnDutyHmodId, getShellHouses, getUnreadCount } from '../../lib/data/hmod';
-import { getSimOffsetSeconds, isTimeTravelEnabled, simNow } from '../../lib/time/simClock';
+import { getOnDutyHmodId, getShellHouses } from '../../lib/data/hmod';
+import { getSimOffsetSeconds, simNow } from '../../lib/time/simClock';
 
 function prettifyHouse(id: string): string {
   if (!id) return 'House';
@@ -44,17 +44,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Kick the whole shell context off in ONE wave, before the synchronous nav-building
   // below runs, so nothing in here sits on the critical path one round trip at a time.
   // `now` no longer costs a round trip (simClock reads a memoized offset), which is what
-  // lets getOnDutyHmodId/getUnreadCount — both of which need it — start immediately
-  // rather than after a preceding await. Each of these is memoized (React cache() per
-  // request, plus a process-wide memo for the two global config reads), so awaiting the
-  // same promise again later is free.
+  // lets getOnDutyHmodId start immediately rather than after a preceding await. Each of
+  // these is memoized (React cache() per request, plus a process-wide memo for the two
+  // global config reads), so awaiting the same promise again later is free.
   const isProjectAdminPromise = isProjectAdministrator(user.userId);
   const nowPromise = simNow();
   const canSeeCoverage = canBuildSchedule(user);
   const shellContextPromise = nowPromise.then((now) =>
     Promise.all([
       getOnDutyHmodId(now),
-      getUnreadCount(user.userId, now),
       // The app-wide coverage banner and the red bell badge. Allied coverage alerts
       // apply to anyone who can build a schedule (sm/hm/bm/rsm), the same audience as
       // the Action Inbox and the RLS policy on the table.
@@ -65,8 +63,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       // loop). getShellCoverage degrades to `unavailable` instead, and the banner says
       // so out loud rather than implying all clear.
       canSeeCoverage ? getShellCoverage(now) : Promise.resolve(null),
-      // Dev-only time-travel card (left of the HMOD pill). Hidden in production.
-      isTimeTravelEnabled() ? getSimOffsetSeconds() : Promise.resolve(null),
+      // Simulated-clock card (left of the HMOD pill). Admin-only, in every environment
+      // including production (BSpec §14) — hidden for everyone else.
+      isAdmin(user) ? getSimOffsetSeconds() : Promise.resolve(null),
       // Fetched unconditionally rather than only when the switcher turns out to be
       // unlocked: it is memoized reference data, and starting it here keeps it off the
       // tail of the render, where it used to be a lone sequential round trip after this
@@ -112,13 +111,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       label: 'Floaters',
       testId: 'nav-floaters',
       icon: 'swap',
-      group: 'Operate',
-    });
-    nav.push({
-      href: '/admin/coverage',
-      label: 'Coverage report',
-      testId: 'nav-admin-coverage',
-      icon: 'shield',
       group: 'Operate',
     });
     nav.push({
@@ -227,8 +219,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Postgres round trip (~130ms p50, ~280ms p90 against the hosted project), so every
   // tab click under this shell paid their full sum in latency. Everything is now kicked
   // off in a single wave at the top of the render and merely collected here.
-  const [onDutyId, unreadCount, shellCoverage, devOffsetSeconds, allHouses] =
-    await shellContextPromise;
+  const [onDutyId, shellCoverage, devOffsetSeconds, allHouses] = await shellContextPromise;
   const coverage = shellCoverage?.data ?? null;
   const coverageUnavailable = shellCoverage?.unavailable ?? false;
   const hmodOnDuty = onDutyId === user.userId;
@@ -249,7 +240,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         {
           id: user.homeHouseId,
           name: prettifyHouse(user.homeHouseId),
-          restricted: user.homeHouseId === 'harnwell',
         },
       ];
   const devClock = devOffsetSeconds === null ? null : { offsetSeconds: devOffsetSeconds };
@@ -267,7 +257,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       canSwitchHouse={canSwitchHouse}
       canSwitchToWorker={isWorker(user)}
       houses={houses}
-      unreadCount={unreadCount}
       coverageCount={coverage?.actionRequiredCount ?? 0}
       coverageOverdue={(coverage?.overdue.length ?? 0) > 0}
       coverageUnavailable={coverageUnavailable}

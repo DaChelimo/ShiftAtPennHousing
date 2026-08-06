@@ -119,7 +119,6 @@ export type DashboardHours = {
 export type DashboardModel = {
   houseId: string;
   houseName: string;
-  restricted: boolean;
   /** "Wednesday, July 23" (NY). */
   todayLabel: string;
   /** "14:07" (NY) — the clock this page was rendered against (honors the sim clock). */
@@ -410,20 +409,6 @@ export async function getDashboard(
     });
   }
 
-  const unread = inbox.value?.otherUnreadCount ?? 0;
-  if (unread > 0) {
-    actions.push({
-      id: 'inbox-unread',
-      severity: 'info',
-      icon: 'bell',
-      title: unread === 1 ? '1 unread notification' : `${unread} unread notifications`,
-      detail: 'Leave notices, removals from recurring slots, and other updates addressed to you.',
-      meta: null,
-      href: '/inbox',
-      cta: 'Read them',
-    });
-  }
-
   const tick = health.value;
   if (tick !== null) {
     const ageMin = Math.round((nowMs - new Date(tick.lastTickAt).getTime()) / MS_PER_MIN);
@@ -447,7 +432,6 @@ export async function getDashboard(
   return {
     houseId,
     houseName: cal?.houseName ?? prefs?.houseName ?? houseId,
-    restricted: cal?.restricted ?? houseId === 'harnwell',
     todayLabel: nyLongDay(now),
     nowLabel: nyTime(now.toISOString()),
     weekStartDate,

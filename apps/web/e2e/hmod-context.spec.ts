@@ -45,7 +45,9 @@ import { SEED, login } from './helpers';
 //   hmod-pill           — the HMOD on-duty pill; contains the state word
 //                         "On duty" / "Off duty".
 //   nav-bell            — the notification bell button; links to /inbox.
-//   bell-count          — the unread badge; rendered ONLY when the count > 0.
+//   bell-urgent-count   — the open-Allied-request badge; rendered ONLY when
+//                         coverageCount > 0. The plain "unread notification"
+//                         bell-count badge was retired 2026-08-05 (below, group C).
 //   house-switcher      — the house-context switcher button (always renders;
 //                         clicking reveals options only when UNLOCKED).
 //   house-option-<id>   — a switcher menu item per house (e.g. house-option-harnwell)
@@ -174,22 +176,23 @@ test.describe('S6 — HMOD on-duty pill', () => {
 });
 
 // =====================================================================
-// C. Notification bell — the unread badge (C1).
+// C. Notification bell — the coverage badge (C1).
 // =====================================================================
+//
+// 2026-08-05: the bell no longer reflects raw unread `notifications` rows. The
+// Action Inbox dropped its "Notifications" tab (shift_opened / shift_reminder /
+// personal_shift / swap_request / hm_leave_notice / ack_reminder /
+// sw_permanent_removal_alert are personal-to-the-shift-holder and delivered via
+// mobile push instead), so the bell now shows exactly one badge — open Allied
+// coverage requests — sourced from the same `actionRequiredCount` the Action
+// Inbox's Coverage tab counts. There is no longer a "plain unread" state to test
+// here; that behavior belongs to inbox-resolve.spec.ts (Coverage/Archive).
 
 test.describe('S6 — notification bell', () => {
-  test('should show a positive unread badge linking to /inbox', async ({ page }) => {
-    // C1: Hana has ≥1 due, unacknowledged notification (S3's seeded row) ⇒ a visible
-    // bell-count badge with a positive integer; the bell links to /inbox.
+  test('should link to /inbox regardless of badge state', async ({ page }) => {
     await login(page, HANA);
-
-    const badge = page.getByTestId('bell-count');
-    await expect(badge).toBeVisible();
-    const text = ((await badge.textContent()) ?? '').trim();
-    expect(text).toMatch(/^\d+$/);
-    expect(Number(text)).toBeGreaterThan(0);
-
     const bell = page.getByTestId('nav-bell');
+    await expect(bell).toBeVisible();
     await bell.click();
     await expect(page).toHaveURL(/\/inbox(?:\?.*)?$/);
   });

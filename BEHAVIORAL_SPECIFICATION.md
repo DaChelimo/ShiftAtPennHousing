@@ -1201,6 +1201,16 @@ A notification exists the moment the event happens; **pushing** it to the worker
 
 **Retention.** Notifications that have reached a terminal state (delivered, suppressed, or given up) are deleted 28 days after creation, as are float assignment records that are no longer pending. A notification that is somehow still undelivered, and a float that is still pending, are never deleted regardless of age — deleting a pending float would revoke it, which no automated process may do (Section 6.3).
 
+### 10.5 Receiving Pushes Requires a Registered Device
+
+A notification is routed and recorded regardless of any device (Section 10.1). **Pushing** it additionally requires that the worker's device be registered with the system. The worker never does this explicitly: it happens on their behalf once they are signed in and have allowed notifications.
+
+**The guarantee.** A worker who has allowed notifications and is signed in has a registered device, with no further action from them, and stays registered across app relaunches and across signing out and back in. The order of those two steps does not matter: a worker who allows notifications before signing in, and a worker who signs in first, both end up registered.
+
+**Allowing notifications once is enough.** A worker is asked for permission at most once (Section 20.2). Every launch after they allow it must register the device again on its own, because the identifier a device is reached by is not permanent and may be reissued by the platform at any time. A worker is never asked to re-confirm, and never has to reinstall the app, to keep receiving pushes.
+
+**Registration failure is silent to the worker, deliberately.** Registering must never block or interrupt using the app, so a failure produces no error and no prompt. It is therefore not something a worker can notice, report, or retry, and detecting it is the operator's responsibility, not the worker's (Section 10.4 gives the operator-facing signal). A worker whose device is not registered still accrues every notification and still sees them in the app; only the push to their phone is missing.
+
 ---
 
 ## 11. Visual Indicators

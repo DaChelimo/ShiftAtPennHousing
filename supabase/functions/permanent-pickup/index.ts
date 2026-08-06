@@ -1,4 +1,7 @@
+import * as pickupEvaluator from '../_shared/core/permanent-ops/pickup-evaluator.js';
 import { authenticate, jsonResponse, readObjectBody, type Supabase } from '../_shared/swap-http.ts';
+// Vendored @shift/core -- static so `supabase functions deploy` actually bundles it.
+// See scripts/vendor-core-into-functions.mjs.
 
 const TIMEZONE = 'America/New_York';
 const WORKED_STATUSES = ['scheduled', 'claimed', 'floated_in', 'pending_float_in'];
@@ -257,9 +260,7 @@ async function buildPickupSnapshot(supabase: Supabase, userId: string, slot: Slo
   );
 
   weeks.sort((left, right) => left.weekStartDate.localeCompare(right.weekStartDate));
-  const module =
-    (await import('../../../packages/core/dist/permanent-ops/pickup-evaluator.js')) as typeof import('../../../packages/core/dist/permanent-ops/pickup-evaluator.js');
-  return module.evaluatePermanentPickup({ weeks });
+  return pickupEvaluator.evaluatePermanentPickup({ weeks });
 }
 
 function queryObject(url: URL): Record<string, unknown> {

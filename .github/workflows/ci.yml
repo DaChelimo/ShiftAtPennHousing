@@ -25,6 +25,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # The five core-importing Edge Functions read @shift/core from the COMMITTED
+      # supabase/functions/_shared/core/ tree, not from packages/core/dist. If someone
+      # edits packages/core/src and forgets `pnpm vendor:core`, the deployed functions
+      # would silently keep running the previous logic. Fail the build instead.
+      - name: Verify vendored core is up to date
+        run: pnpm vendor:core:check
+
       - name: Lint
         run: pnpm turbo run lint
 
@@ -69,14 +76,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      # `supabase start` bundles the Edge Functions, and five of them import the
-      # compiled `packages/core/dist/**` (see supabase/functions/create-swap). That
-      # dist/ is build output and gitignored, so it exists locally but never on a
-      # fresh CI checkout — without this step `supabase start` dies on
-      # "failed to read file: packages/core/dist/swaps/eligibility.js".
-      - name: Build packages/core (Edge Functions import its dist/)
-        run: pnpm --filter @shift/core build
 
       # Pinned, not `latest`, so this job pulls the same Postgres and pgtap images
       # developers run locally rather than drifting on its own schedule. Bump it

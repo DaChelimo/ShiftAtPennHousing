@@ -7,15 +7,17 @@
 // namely the gap builder, the DB snapshot, the pure algorithm call, and the step itself.
 //
 // Supabase deploys the whole function directory, so a sibling import is fine; the
-// repo already relies on multi-file functions via supabase/functions/_shared/. The
-// dynamic import of packages/core keeps its original ../../../ depth because this file
-// sits in the same directory index.ts did.
+// repo already relies on multi-file functions via supabase/functions/_shared/.
+// packages/core is reached through the vendored copy in _shared/core, imported
+// STATICALLY -- see scripts/vendor-core-into-functions.mjs for why.
 //
 // NOTHING here changed behaviour in the move. In particular loadCoveredBlockIds is
 // byte-identical and still called from loadVacantGap: it IS the coverage-floor-of-one
 // invariant (BSpec §5.4) and the audit calls out both call sites as non-negotiable.
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+import { findFloaters as coreFindFloaters } from '../_shared/core/float-lookup/index.js';
 
 type Supabase = SupabaseClient;
 
@@ -103,11 +105,8 @@ type FloatLookupSnapshot = {
   sourceAssignmentByWorkerBlockId: Map<string, string>;
 };
 
-async function findFloaters(input: FloatLookupInput): Promise<FloatLookupResult> {
-  const module = (await import('../../../packages/core/dist/float-lookup/index.js')) as {
-    findFloaters: (input: FloatLookupInput) => FloatLookupResult;
-  };
-  return module.findFloaters(input);
+function findFloaters(input: FloatLookupInput): FloatLookupResult {
+  return (coreFindFloaters as (input: FloatLookupInput) => FloatLookupResult)(input);
 }
 
 export async function loadCoveredBlockIds(
@@ -515,7 +514,7 @@ export async function floatLookupStep(
     profileName,
     config.blockMinutes,
   );
-  const result = await findFloaters(snapshot.input);
+  const result = findFloaters(snapshot.input);
 
   if (result.assignments.length === 0) {
     return 'no_float';

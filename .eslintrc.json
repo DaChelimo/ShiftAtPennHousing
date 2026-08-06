@@ -24,5 +24,12 @@
     "node": true,
     "es2022": true
   },
-  "ignorePatterns": ["node_modules/", "dist/", ".next/", "*.config.js", "*.config.mjs"]
+  "ignorePatterns": [
+    "supabase/functions/_shared/core/",
+    "node_modules/",
+    "dist/",
+    ".next/",
+    "*.config.js",
+    "*.config.mjs"
+  ]
 }

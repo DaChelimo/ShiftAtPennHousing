@@ -1944,69 +1944,94 @@ textarea {
   font-size: 11px;
   color: var(--text-secondary);
 }
-.hchip-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-}
-.hchip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 10px;
-  border-radius: 99px;
-  border: 1px solid var(--st-out-bd);
-  background: var(--st-out-bg);
-  color: var(--st-out-fg);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.hchip:hover:not(:disabled) {
-  filter: brightness(0.96);
-}
-.hchip:disabled {
-  cursor: default;
-}
-.hchip-empty {
-  background: var(--surface-3);
-  color: var(--text-secondary);
-  border-color: var(--border-subtle);
-}
-.hchip-count {
-  background: color-mix(in srgb, var(--st-out-fg) 16%, transparent);
-  border-radius: 99px;
-  padding: 1px 6px;
-  font-size: 11px;
-}
-.hcard-detail {
-  margin-top: 10px;
-  padding-top: 10px;
+/* Each category (floated out / cross-house pickup) gets the full card width,
+   stacked one below the other, with its shifts wrapping into a tile grid —
+   deliberately NOT a fixed-width column, so a worker covering several houses
+   in a week grows the card downward instead of crowding a half-width panel. */
+.hcard-section {
+  margin-top: 12px;
+  padding-top: 12px;
   border-top: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  min-width: 280px;
 }
-.hcard-shift-row {
+.hcard-section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  font-size: 13px;
+  gap: 12px;
+  margin-bottom: 9px;
 }
-.hcard-shift-day {
+.hcard-section-label {
+  font-size: 12.5px;
+  font-weight: 600;
   color: var(--text-primary);
-  font-weight: 500;
 }
-.hcard-shift-time {
+.hcard-section-count {
+  font-size: 10px;
+  color: var(--text-secondary);
+  background: var(--surface-3);
+  border-radius: 99px;
+  padding: 1px 6px;
+}
+.hcard-section-hours {
+  font-size: 13px;
+  font-weight: 600;
+}
+.hcard-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+.shift-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: var(--surface-2);
+}
+.shift-tile-float {
+  background: var(--st-out-bg);
+  border-color: var(--st-out-bd);
+}
+.shift-tile-pickup {
+  background: var(--surface-2);
+  border-color: var(--border-subtle);
+}
+.shift-tile-day {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.shift-tile-house {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 99px;
+  padding: 1px 7px;
+  width: fit-content;
+}
+.shift-tile-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+.shift-tile-time {
+  font-size: 11px;
   color: var(--text-secondary);
 }
-.hcard-shift-dur {
+.shift-tile-dur {
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.shift-tile-float .shift-tile-dur {
   color: var(--st-out-fg);
-  font-weight: 600;
+}
+.shift-tile-pickup .shift-tile-dur {
+  color: var(--st-pickup);
 }
 
 /* ---------- Upload dropzone + file rows ---------- */

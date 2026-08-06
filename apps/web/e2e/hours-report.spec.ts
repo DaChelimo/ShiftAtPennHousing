@@ -17,7 +17,9 @@ import { SEED, login } from './helpers';
 // Selector contract:
 //   hours-unauthorized — shown to a non-manager (an SW) instead of the report.
 //   heading "Hours report" (h1) + one .hcard per worker, each with a Total /
-//   At home stat and a "Floated out" chip that expands into per-shift detail.
+//   At <houseName> stat, and a full-width "Floated out" / "Cross-house pickup"
+//   section (hidden when that category is 0) whose shifts render as a wrapping
+//   tile grid with day, house, time and duration.
 
 test.describe('Hours report (§6.10)', () => {
   test('a manager sees the decomposed per-worker hours cards', async ({ page }) => {
@@ -30,8 +32,10 @@ test.describe('Hours report (§6.10)', () => {
     await expect(page.getByText('Total hours')).toBeVisible();
 
     // The decomposition — the report's reason for existing — renders as legend +
-    // per-card stats (a table header no longer exists; this is a card list).
+    // per-card stats (a table header no longer exists; this is a card list). The
+    // legend still says "At home"; the per-worker stat names the actual house.
     await expect(page.getByText('At home').first()).toBeVisible();
+    await expect(page.getByText('At Upper Quad').first()).toBeVisible();
     await expect(page.getByText('Floated out').first()).toBeVisible();
     await expect(page.getByText('Cross-house pickup').first()).toBeVisible();
 

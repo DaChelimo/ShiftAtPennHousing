@@ -2,6 +2,7 @@ import type { EscalationStep } from '../../components/ui';
 import { createServiceClient } from '../supabase/server';
 
 import { selectByAssignmentIdChunks, selectByBlockIdChunks } from './blockChunks';
+import { loadAssignableWorkers, type AssignableWorker } from './calendarAssignees';
 
 // ===========================================================================
 // Live house calendar — READ model (presentation + wiring over EXISTING data).
@@ -112,17 +113,9 @@ export type CalendarDay = {
   laneSegments: LaneSegment[];
 };
 
-// Same-house roster for the inline-override worker picker (S1). Filtered to this
-// house's home workers (so a Harnwell calendar naturally offers only Harnwell-home
-// workers — training satisfied by construction, TEST_PLAN D8) and to active users.
-// `weeklyHours` is the worker's held hours across the viewed NY week (all houses) —
-// the decision-relevant number the Replace cards show against the week's soft cap.
-export type AssignableWorker = {
-  userId: string;
-  name: string;
-  isActive: boolean;
-  weeklyHours: number;
-};
+// The inline-override picker's candidate set. Lives in ./calendarAssignees, which
+// owns both the composition rules (pinned RSM + Allied, deduped) and the reads.
+export type { AssignableWorker } from './calendarAssignees';
 
 export type CalendarModel = {
   houseId: string;
@@ -278,16 +271,6 @@ type AssignmentRow = {
   is_cross_house_pickup: boolean;
   source_house_id: string | null;
 };
-
-// PostgREST embeds a many-to-one relation as either an object or a 1-element array
-// depending on the inference; normalize when reading the candidate's weekly hours.
-type EmbeddedBlock = { block_start_at: string };
-type HoursRow = { user_id: string | null; shift_blocks: EmbeddedBlock | EmbeddedBlock[] | null };
-function embeddedStartAt(row: HoursRow): string | null {
-  const sb = row.shift_blocks;
-  if (sb === null) return null;
-  return Array.isArray(sb) ? (sb[0]?.block_start_at ?? null) : sb.block_start_at;
-}
 
 type Atom = {
   state: CalState;
@@ -512,7 +495,16 @@ export async function getHouseCalendar(
   // (winter break → only Harnwell open; no-operating-calendar date → all closed).
   // One RPC per column (≤7).
   const dateKeys = Array.from({ length: 7 }, (_, i) => addDays(weekStartDate, i));
-  const [closedFlags, houseResult, rosterResult, capResult, blockResult] = await Promise.all([
+
+  // The inline-override picker's candidates (S1): this house's home roster, plus the
+  // pinned RSM and Allied entries. Composition and reads live in ./calendarAssignees.
+  // Fired here but deliberately NOT awaited in the wave-1 barrier below: it runs its
+  // own second wave (weekly hours, which needs the ids), and holding wave 1 open for
+  // that would serialise the block reads behind it. Awaited at the same two points
+  // the old inline `applyHours` was.
+  const assigneesPromise = loadAssignableWorkers(supabase, houseId, weekStartDate);
+
+  const [closedFlags, houseResult, capResult, blockResult] = await Promise.all([
     Promise.all(
       dateKeys.map(async (dateKey) => {
         const { data } = await supabase.rpc('house_closure', {
@@ -524,14 +516,6 @@ export async function getHouseCalendar(
     ),
     // House name.
     supabase.from('houses').select('id, name').eq('id', houseId).maybeSingle(),
-    // Same-house roster for the inline-override picker (S1). Mirrors people.ts's
-    // home_house_id-scoped read; the override RPC rejects a cross-house target, so
-    // the picker is filtered to this house (Harnwell ⇒ only Harnwell-home, D8).
-    supabase
-      .from('users')
-      .select('user_id, name, is_active')
-      .eq('home_house_id', houseId)
-      .order('name'),
     // Campus-wide cap for the week (no per-user/house arg — confirmed global).
     supabase.rpc('effective_weekly_cap', {
       p_week_start_date: weekStartDate,
@@ -580,61 +564,16 @@ export async function getHouseCalendar(
   const house = houseResult.data;
   if (house) base.houseName = house.name;
 
-  const roster = (rosterResult.data ?? []).filter((u) => u.is_active);
-  const rosterIds = roster.map((u) => u.user_id);
-
   const cap = capResult.data?.[0];
   if (cap) {
     base.softCapHours = cap.hours_cap;
     base.capEnforcement = cap.cap_enforcement;
   }
 
-  // WAVE 2 — the two reads that need wave 1's output, and need nothing from each
-  // other: per-candidate weekly hours (keyed by the roster) and this week's seats +
-  // escalation steps (keyed by the blocks). Kicked off together below; the hours read
-  // starts here so it overlaps the chunked block reads rather than preceding them.
-  //
-  // Per-candidate weekly hours are the Replace cards' decision number. Mirrors
-  // lib/data/people.ts: counting-status seats whose block lands in the NY week, summed
-  // in JS (×0.5). A ±12h UTC buffer on the query bound keeps it DST-safe; the precise
-  // NY-week filter happens in JS. Hours span ALL houses (a home worker may also hold a
-  // cross-house pickup that week).
-  const hoursPromise: Promise<HoursRow[]> =
-    rosterIds.length === 0
-      ? Promise.resolve([])
-      : (async () => {
-          const lo = new Date(
-            new Date(`${weekStartDate}T00:00:00Z`).getTime() - 12 * 3600 * 1000,
-          ).toISOString();
-          const hi = new Date(
-            new Date(`${weekEnd}T00:00:00Z`).getTime() + 12 * 3600 * 1000,
-          ).toISOString();
-          const { data: asg } = await supabase
-            .from('shift_block_assignments')
-            .select('user_id, shift_blocks!inner(block_start_at)')
-            .in('user_id', rosterIds)
-            .in('status', ['scheduled', 'claimed', 'floated_in', 'pending_float_in'])
-            .gte('shift_blocks.block_start_at', lo)
-            .lt('shift_blocks.block_start_at', hi);
-          return (asg ?? []) as unknown as HoursRow[];
-        })();
-
-  const applyHours = async (): Promise<void> => {
-    const hoursByUser = new Map<string, number>();
-    for (const row of await hoursPromise) {
-      const startAt = embeddedStartAt(row);
-      if (startAt === null || row.user_id === null) continue;
-      const d = nyDate(startAt);
-      if (d >= weekStartDate && d < weekEnd) {
-        hoursByUser.set(row.user_id, (hoursByUser.get(row.user_id) ?? 0) + 1);
-      }
-    }
-    base.assignableWorkers = roster.map((u) => ({
-      userId: u.user_id,
-      name: u.name,
-      isActive: u.is_active,
-      weeklyHours: (hoursByUser.get(u.user_id) ?? 0) * 0.5,
-    }));
+  // WAVE 2 — this week's seats + escalation steps (keyed by the blocks). The
+  // picker's candidates resolve alongside them, off the promise fired before wave 1.
+  const applyAssignees = async (): Promise<void> => {
+    base.assignableWorkers = await assigneesPromise;
   };
 
   const weekBlocks = (blockResult.data ?? []).filter((b) => {
@@ -644,7 +583,7 @@ export async function getHouseCalendar(
   if (weekBlocks.length === 0) {
     // Still populate the override picker's candidate list before bailing — a week with
     // no blocks yet is exactly when a manager reaches for it.
-    await applyHours();
+    await applyAssignees();
     return base;
   }
 
@@ -703,7 +642,7 @@ export async function getHouseCalendar(
         .in('block_id', chunk)
         .order('fired_at', { ascending: true }),
     ),
-    applyHours(),
+    applyAssignees(),
   ]);
   const assignments = assignmentRows as AssignmentRow[];
 

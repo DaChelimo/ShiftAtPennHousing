@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
 import { WeeklyCapModifier } from '../../../../components/cap/WeeklyCapModifier';
@@ -5,6 +6,8 @@ import { Notification } from '../../../../components/ui/Notification';
 import { PageHead } from '../../../../components/ui/PageHead';
 import { canModifyWeeklyCap, getSessionUser } from '../../../../lib/auth';
 import { getWeeklyCaps } from '../../../../lib/data/cap';
+
+export const metadata: Metadata = { title: 'Admin - Cap' };
 
 export default async function CapPage() {
   const user = await getSessionUser();

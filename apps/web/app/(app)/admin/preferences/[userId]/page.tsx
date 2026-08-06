@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
 import { Notification } from '../../../../../components/ui/Notification';
@@ -7,6 +8,8 @@ import { canBuildForHouse, canBuildSchedule, getSessionUser } from '../../../../
 import { getWorkerPreferenceBoard } from '../../../../../lib/data/worker/preferences';
 import { createServiceClient } from '../../../../../lib/supabase/server';
 import { simNow } from '../../../../../lib/time/simClock';
+
+export const metadata: Metadata = { title: 'Admin - Preferences' };
 
 // Author ONE roster member's semester preferences (BSpec §4.2/§4.4). Opened by
 // clicking a worker on /admin/preferences. Reuses the worker paint grid, scoped to
@@ -37,7 +40,9 @@ export default async function WorkerPreferenceEditorPage({
 
   const { userId } = await params;
   const { house } = await searchParams;
-  const backHref = house ? `/admin/preferences?house=${encodeURIComponent(house)}` : '/admin/preferences';
+  const backHref = house
+    ? `/admin/preferences?house=${encodeURIComponent(house)}`
+    : '/admin/preferences';
 
   const svc = createServiceClient();
   const { data: worker } = await svc

@@ -1,3 +1,7 @@
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = { title: 'Preferences' };
+
 import { PreferenceBoard } from '../../../../components/worker/PreferenceBoard';
 import { getSessionUser } from '../../../../lib/auth';
 import { getWorkerPreferenceBoard } from '../../../../lib/data/worker/preferences';

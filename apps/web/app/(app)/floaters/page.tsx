@@ -1,3 +1,7 @@
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = { title: 'Floaters' };
+
 import './floaters.css';
 
 import { Notification } from '../../../components/ui/Notification';

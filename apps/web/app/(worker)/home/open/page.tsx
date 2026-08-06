@@ -1,3 +1,7 @@
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = { title: 'Open Shifts' };
+
 import { OpenShifts } from '../../../../components/worker/OpenShifts';
 import { getSessionUser } from '../../../../lib/auth';
 import { getOpenShiftsBoard } from '../../../../lib/data/worker/openShifts';

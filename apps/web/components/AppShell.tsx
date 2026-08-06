@@ -355,32 +355,50 @@ export function AppShell({
                     {ROLE_LABEL[primaryRole] ?? 'Worker'} · {prettifyHouse(user.homeHouseId)}
                   </span>
                 </div>
+                <Tag kind="blue" className="user-menu-primary-role">
+                  {primaryRole.toUpperCase()}
+                </Tag>
               </div>
-              <div className="user-roles">
-                {roles.map((r, i) => (
-                  <Tag key={r} kind={i === 0 ? 'blue' : 'gray'}>
-                    {r.toUpperCase()}
-                  </Tag>
-                ))}
-                {roles.length > 1 && (
+              {roles.length > 1 && (
+                <div className="user-roles">
+                  {roles.slice(1).map((r) => (
+                    <Tag key={r} kind="gray">
+                      {r.toUpperCase()}
+                    </Tag>
+                  ))}
                   <span className="t-meta" style={{ marginLeft: 'auto' }}>
                     Roles stack
                   </span>
+                </div>
+              )}
+              <div className="user-actions">
+                {canSwitchToWorker && (
+                  <Link
+                    href="/home"
+                    data-testid="switch-to-worker"
+                    className="user-item"
+                    onClick={() => setUserOpen(false)}
+                  >
+                    Switch to worker view
+                  </Link>
                 )}
-              </div>
-              {canSwitchToWorker && (
                 <Link
-                  href="/home"
-                  data-testid="switch-to-worker"
+                  href="/welcome"
+                  data-testid="view-landing-page"
                   className="user-item"
                   onClick={() => setUserOpen(false)}
                 >
-                  Switch to worker view
+                  About Shift
                 </Link>
-              )}
-              <button type="button" onClick={signOut} data-testid="sign-out" className="user-item">
-                Sign out
-              </button>
+                <button
+                  type="button"
+                  onClick={signOut}
+                  data-testid="sign-out"
+                  className="user-item user-item-danger"
+                >
+                  Sign out
+                </button>
+              </div>
             </div>
           )}
         </div>

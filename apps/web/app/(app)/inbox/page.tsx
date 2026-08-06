@@ -1,3 +1,7 @@
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = { title: 'Inbox' };
+
 import { ActionInbox } from '../../../components/inbox/ActionInbox';
 import { Notification } from '../../../components/ui/Notification';
 import { PageHead } from '../../../components/ui/PageHead';

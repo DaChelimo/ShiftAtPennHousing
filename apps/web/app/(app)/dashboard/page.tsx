@@ -1,6 +1,7 @@
 import './dashboard.css';
 
 import { canViewOtherHouses, resolveCalendarHouse } from '@shift/core';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { Card } from '../../../components/ui/Card';
@@ -23,6 +24,8 @@ import { isProjectAdministrator } from '../../../lib/data/config';
 import { getDashboard, type DashboardModel, type DeskShift } from '../../../lib/data/dashboard';
 import { getOnDutyHmodId, getShellHouses } from '../../../lib/data/hmod';
 import { simNow } from '../../../lib/time/simClock';
+
+export const metadata: Metadata = { title: 'Dashboard' };
 
 // ===========================================================================
 // Dashboard — where every manager lands after signing in.

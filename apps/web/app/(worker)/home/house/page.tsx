@@ -1,3 +1,7 @@
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = { title: 'House' };
+
 import { HouseCalendarView } from '../../../../components/worker/HouseCalendarView';
 import { getSessionUser } from '../../../../lib/auth';
 import { mondayOf, nyToday } from '../../../../lib/data/calendar';

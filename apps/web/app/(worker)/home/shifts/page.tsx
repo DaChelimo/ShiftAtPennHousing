@@ -1,3 +1,7 @@
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = { title: 'My Shifts' };
+
 import { MyShifts } from '../../../../components/worker/MyShifts';
 import { getSessionUser } from '../../../../lib/auth';
 import { getMyShiftsBoard } from '../../../../lib/data/worker/myShifts';

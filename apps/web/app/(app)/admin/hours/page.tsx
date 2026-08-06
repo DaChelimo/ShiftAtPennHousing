@@ -1,4 +1,5 @@
 import { resolveCalendarHouse } from '@shift/core';
+import type { Metadata } from 'next';
 
 import { HoursReport } from '../../../../components/hours/HoursReport';
 import { Notification } from '../../../../components/ui/Notification';
@@ -8,6 +9,8 @@ import { isProjectAdministrator } from '../../../../lib/data/config';
 import { getOnDutyHmodId, getShellHouses } from '../../../../lib/data/hmod';
 import { getHoursReport } from '../../../../lib/data/hours';
 import { simNow } from '../../../../lib/time/simClock';
+
+export const metadata: Metadata = { title: 'Admin - Hours' };
 
 // Hours report (design §6.10). READ-only presentation over existing data
 // (lib/data/hours) — per-worker weekly hours decomposed vs the week's cap.

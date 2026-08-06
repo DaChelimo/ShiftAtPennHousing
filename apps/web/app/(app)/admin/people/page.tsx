@@ -1,4 +1,5 @@
 import { resolveCalendarHouse } from '@shift/core';
+import type { Metadata } from 'next';
 
 import { PeopleRoster } from '../../../../components/people/PeopleRoster';
 import { Notification } from '../../../../components/ui/Notification';
@@ -14,6 +15,8 @@ import { isProjectAdministrator } from '../../../../lib/data/config';
 import { getOnDutyHmodId, getShellHouses } from '../../../../lib/data/hmod';
 import { getPeopleData } from '../../../../lib/data/people';
 import { simNow } from '../../../../lib/time/simClock';
+
+export const metadata: Metadata = { title: 'Admin - People' };
 
 // People / roster (design §6.6). READ-only presentation over existing data
 // (lib/data/people). Admin-over-people is HM/BM-only (§2.3/§2.6) — an SM or any

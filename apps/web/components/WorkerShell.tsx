@@ -184,6 +184,14 @@ export function WorkerShell({
                   Switch to admin console
                 </Link>
               )}
+              <Link
+                href="/welcome"
+                data-testid="view-landing-page"
+                className="user-item"
+                onClick={() => setUserOpen(false)}
+              >
+                About Shift
+              </Link>
               <button type="button" onClick={signOut} data-testid="sign-out" className="user-item">
                 Sign out
               </button>

@@ -1,4 +1,5 @@
 import { canViewOtherHouses, resolveCalendarHouse } from '@shift/core';
+import type { Metadata } from 'next';
 
 import { HouseCalendar } from '../../../components/calendar/HouseCalendar';
 import { Notification } from '../../../components/ui/Notification';
@@ -20,6 +21,8 @@ import {
 import { isProjectAdministrator } from '../../../lib/data/config';
 import { getOnDutyHmodId, getShellHouses } from '../../../lib/data/hmod';
 import { simNow } from '../../../lib/time/simClock';
+
+export const metadata: Metadata = { title: 'Calendar' };
 
 // Live house calendar — the source-of-truth week grid for the user's house
 // (design screen 03/04). READ-only presentation over existing schedule data

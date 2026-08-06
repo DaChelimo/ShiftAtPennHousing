@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
 import { KnowledgeIntake } from '../../../../components/knowledge/KnowledgeIntake';
@@ -6,6 +7,8 @@ import { PageHead } from '../../../../components/ui/PageHead';
 import { loadIntakeQueue } from '../../../../lib/actions/kbIntake';
 import { getSessionUser, isAdmin, isHouseAdmin, isRsm } from '../../../../lib/auth';
 import { createServiceClient } from '../../../../lib/supabase/server';
+
+export const metadata: Metadata = { title: 'Admin - Knowledge Base' };
 
 // KB Intake admin (INTAKE_PLAN Phase 3). HM / BM / RSM / admin only, matching the
 // da_is_kb_admin gate on kb_intake. The queue + review UI drives the whole

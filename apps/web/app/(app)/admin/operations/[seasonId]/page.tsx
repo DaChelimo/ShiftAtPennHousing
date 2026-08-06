@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
 
 import { DevSeedingCard } from '../../../../../components/operations/DevSeedingCard';
@@ -5,6 +6,8 @@ import { SeasonEditor } from '../../../../../components/operations/SeasonEditor'
 import { Notification, PageHead } from '../../../../../components/ui';
 import { getSessionUser, isAdmin } from '../../../../../lib/auth';
 import { getAuditLog, getSeasonDetail, listHouses } from '../../../../../lib/data/operatingSeasons';
+
+export const metadata: Metadata = { title: 'Admin - Operating Season' };
 
 export default async function SeasonDetailPage({
   params,

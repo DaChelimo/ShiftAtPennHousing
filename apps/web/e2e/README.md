@@ -157,15 +157,19 @@ in `packages/core/tests/s1-admin-override/admin-override.test.ts`; the authorita
 RPC behavior in `supabase/tests/s1-admin-override.sql`. Seed is **Quad-only** — the
 Harnwell-training + cross-house rejections are pgTAP-only.
 
-| testid                                                   | Meaning                                                                                            |
-| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `override-section`                                       | The override section in the shift detail panel (replaces the read-only notice; sm/hm/bm of house). |
-| `override-worker-select`                                 | The worker-picker (block-house roster; `<select>` with worker names as option labels).             |
-| `override-scope-week` / `override-scope-permanent`       | The This-week / Permanent scope toggle (checkable controls).                                       |
-| `override-submit`                                        | Assign / reassign the chosen worker.                                                               |
-| `override-remove`                                        | Remove the worker from an occupied seat.                                                           |
-| `override-advisory-confirm` / `override-advisory-accept` | The advisory-confirm modal (cannot / opted-out / over-soft-cap / over-target) + its accept.        |
-| `override-success`                                       | Post-write confirmation.                                                                           |
+| testid                                                    | Meaning                                                                                            |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `override-section`                                        | The override section in the shift detail panel (replaces the read-only notice; sm/hm/bm of house). |
+| `override-worker-select`                                  | The worker-picker (block-house roster; `<select>` with worker names as option labels).             |
+| `override-scope-week` / `override-scope-permanent`        | The This-week / Permanent scope toggle (checkable controls).                                       |
+| `override-pinned-rsm` / `override-pinned-allied`          | The pinned split chip above the roster: the house's RSM and the Allied contractor.                 |
+| `override-worker-search` / `override-worker-search-clear` | The roster name filter. Never filters the pinned chip.                                             |
+| `override-worker-empty`                                   | Empty state: no roster at all, or no name matching the filter.                                     |
+| `detail-escalation` / `detail-escalation-toggle`          | The escalation disclosure (collapsed by default) and its summary-row toggle.                       |
+| `override-submit`                                         | Assign / reassign the chosen worker.                                                               |
+| `override-remove`                                         | Remove the worker from an occupied seat.                                                           |
+| `override-advisory-confirm` / `override-advisory-accept`  | The advisory-confirm modal (cannot / opted-out / over-soft-cap / over-target) + its accept.        |
+| `override-success`                                        | Post-write confirmation.                                                                           |
 
 A card's detail panel is opened by clicking the card (`role=dialog` named "Shift
 detail"); cards are selected by their visible text — a worker's name for an occupied

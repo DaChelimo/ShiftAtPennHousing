@@ -1,3 +1,7 @@
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = { title: 'Swaps' };
+
 import { Swaps } from '../../../../components/worker/Swaps';
 import { getSessionUser } from '../../../../lib/auth';
 import { getSwapsBoard } from '../../../../lib/data/worker/swaps';

@@ -145,10 +145,7 @@ async function loadHouseRoster(
   houseId: string,
   roles: ('sw' | 'sm')[],
 ): Promise<string[]> {
-  const { data: roleRows } = await service
-    .from('user_roles')
-    .select('user_id')
-    .in('role', roles);
+  const { data: roleRows } = await service.from('user_roles').select('user_id').in('role', roles);
   const eligible = new Set((roleRows ?? []).map((r) => r.user_id));
 
   const { data: userRows } = await service
@@ -224,7 +221,9 @@ export async function simulateWorkerPreferences(
       seed: DEV_SEED,
       capHours: ctx.capHours,
     });
-    for (const w of generated) {
+    // Non-submitters must be OMITTED entirely, not written: a row would turn "never
+    // submitted" (which the builder surfaces separately) into "opted out".
+    for (const w of generated.filter((x) => x.submitted)) {
       workerCount += 1;
       allRows.push({
         user_id: w.userId,
@@ -300,7 +299,10 @@ export async function autoBuildBalancedSchedule(
       const { weekday, minuteOfDay } = blockWeekSlot(new Date(b.startAtIso));
       const key = `${String(weekday)}:${String(minuteOfDay)}`;
       const prev = slotMin.get(key);
-      slotMin.set(key, prev === undefined ? b.requiredHeadcount : Math.min(prev, b.requiredHeadcount));
+      slotMin.set(
+        key,
+        prev === undefined ? b.requiredHeadcount : Math.min(prev, b.requiredHeadcount),
+      );
     }
 
     // Anchor the house's template week on its earliest live block (the same anchor the

@@ -65,6 +65,24 @@ point and one compiled `operating_profiles` row per phase, named `s_<slug>_<YYYY
 **Temporal and calendar-collision guards live in the RPC, not the compiler.** Do not move them
 here; the compiler must stay a function of its arguments alone.
 
+## Preference generation (`src/preference-generation/`)
+
+Its contract lives in **`docs/preference-generation/PERSONA_SPEC.md`**. Read that before
+changing anything here: a worker is one draw from each of five axes, the amount painted is
+derived from their target hours, and target hours are a share of the season's cap. The axes,
+weights, overpaint factors, and appetite fractions are spec, not tuning knobs, and every board
+ever generated moves when they change.
+
+Two properties are load-bearing and easy to break:
+
+- **Draw order.** Every random value comes from one per-worker stream keyed
+  `(seed, periodId, userId)`. Inserting or reordering a draw silently changes every board.
+- **Block identity is positional, never by id.** That is what lets a package be reviewed
+  before its season exists and then bound to real `block_id`s unchanged. A test pins it.
+
+Callers must omit `submitted: false` workers from the write. Writing a row for them converts
+"never submitted" into "opted out", which the builder renders differently.
+
 ## Tests
 
 Vitest. `pnpm test:quick` for the fast core loop, `pnpm test:file` for a single file.

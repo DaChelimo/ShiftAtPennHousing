@@ -36,10 +36,11 @@ const GROUP_ORDER = ['Operate', 'Manage', 'System', 'Admin'];
 const ROLE_LABEL: Record<string, string> = {
   bm: 'Building Manager',
   hm: 'Housing Manager',
+  rsm: 'Residential Services Manager',
   sm: 'Student Manager',
   sw: 'Student Worker',
 };
-const ROLE_RANK = ['bm', 'hm', 'sm', 'sw'];
+const ROLE_RANK = ['bm', 'hm', 'rsm', 'sm', 'sw'];
 
 function prettifyHouse(id: string): string {
   if (!id) return 'House';

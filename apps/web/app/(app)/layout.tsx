@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { AppShell, type NavItem } from '../../components/AppShell';
 import {
   canBuildSchedule,
+  canManageHmodRotor,
   getSessionUser,
   hasAdminSurface,
   isAdmin,
@@ -137,13 +138,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       group: 'Manage',
     });
     nav.push({
-      href: '/admin/rotor',
-      label: 'HMOD rotor',
-      testId: 'nav-admin-rotor',
-      icon: 'swap',
-      group: 'Manage',
-    });
-    nav.push({
       href: '/admin/cap',
       label: 'Weekly cap',
       testId: 'nav-admin-cap',
@@ -163,6 +157,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       testId: 'nav-admin-health',
       icon: 'shield',
       group: 'System',
+    });
+  }
+  if (canManageHmodRotor(user)) {
+    nav.push({
+      href: '/admin/rotor',
+      label: 'HMOD rotor',
+      testId: 'nav-admin-rotor',
+      icon: 'swap',
+      group: 'Manage',
     });
   }
   // Project-admin-exclusive surfaces (role = 'admin', or the system_config-designated

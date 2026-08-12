@@ -50,7 +50,7 @@ function rosterColumns(cap: number, houses: House[]): Column<PersonRow>[] {
       key: 'person',
       header: 'Person',
       render: (p) => (
-        <span className="cell-name row gap-3 center">
+        <span className="cell-name row gap-3">
           <Avatar name={p.name} size={32} />
           <span className="col">
             <b>{p.name}</b>

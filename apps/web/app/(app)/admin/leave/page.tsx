@@ -19,8 +19,8 @@ export default async function LeavePage() {
     <div className="page" style={{ maxWidth: 720 }}>
       <PageHead
         eyebrow="Manage"
-        title="Housing Manager leave"
-        sub="Record your leave dates and pick a replacement. We'll prep the email to your student workers (§2.6)."
+        title="I'll be away from the desk"
+        sub="Tell us when, and who's covering. We'll prep the email to your student workers (§2.6)."
       />
       {isHouseAdmin(user) ? (
         await renderForm(user)

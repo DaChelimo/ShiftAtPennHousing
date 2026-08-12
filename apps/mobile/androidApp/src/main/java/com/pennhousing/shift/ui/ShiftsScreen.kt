@@ -553,6 +553,7 @@ internal fun ShiftsApp(
                                 }
                             },
                             onSelectOutcome = coverageVm::selectOutcome,
+                            onCoverPersonally = coverageVm::coverPersonally,
                             onNoteChange = coverageVm::updateNote,
                             onSubmit = {
                                 val intent = coverageVm.submitClose()

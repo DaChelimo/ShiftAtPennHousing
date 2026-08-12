@@ -3,9 +3,10 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { CreateSeasonForm } from '../../../../components/operations/CreateSeasonForm';
+import { OrphanedProfilesPanel } from '../../../../components/operations/OrphanedProfilesPanel';
 import { Card, EmptyState, Icon, Notification, PageHead, Tag } from '../../../../components/ui';
 import { getSessionUser, isAdmin } from '../../../../lib/auth';
-import { listSeasons } from '../../../../lib/data/operatingSeasons';
+import { listOrphanedSeasonProfiles, listSeasons } from '../../../../lib/data/operatingSeasons';
 
 export const metadata: Metadata = { title: 'Admin - Operations' };
 
@@ -31,7 +32,10 @@ export default async function OperationsPage() {
     );
   }
 
-  const seasons = await listSeasons();
+  const [seasons, orphanedProfiles] = await Promise.all([
+    listSeasons(),
+    listOrphanedSeasonProfiles(user.userId),
+  ]);
 
   return (
     <div className="page" style={{ maxWidth: 820 }}>
@@ -42,6 +46,8 @@ export default async function OperationsPage() {
       />
 
       <div className="col gap-5">
+        <OrphanedProfilesPanel profiles={orphanedProfiles} />
+
         <section className="col gap-3">
           <h2 className="t-h2">Seasons</h2>
           {seasons.length === 0 ? (

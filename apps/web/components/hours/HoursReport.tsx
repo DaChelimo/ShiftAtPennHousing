@@ -1,8 +1,58 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+
 import type { HoursReport as HoursReportData, HoursRow, ShiftEntry } from '../../lib/data/hours';
-import { Avatar, PageHead } from '../ui';
+import { Avatar, PageHead, Select, TextInput } from '../ui';
 
 const FLOAT_COLOR = 'var(--st-out-fg)';
 const PICKUP_COLOR = 'var(--st-pickup)';
+const SEARCH_DEBOUNCE_MS = 250;
+
+type SortOption = 'nameAsc' | 'nameDesc' | 'hoursDesc' | 'hoursAsc';
+
+const SORT_LABELS: Record<SortOption, string> = {
+  nameAsc: 'Name (A-Z)',
+  nameDesc: 'Name (Z-A)',
+  hoursDesc: 'Total hours (high to low)',
+  hoursAsc: 'Total hours (low to high)',
+};
+
+// "Britney Njiri" -> first "Britney", last "Njiri". A name with no space (or
+// extra middle names) still gets a usable first/last split for sort + search.
+function splitName(name: string): { first: string; last: string } {
+  const trimmed = name.trim();
+  const spaceAt = trimmed.indexOf(' ');
+  if (spaceAt === -1) return { first: trimmed, last: '' };
+  return { first: trimmed.slice(0, spaceAt), last: trimmed.slice(spaceAt + 1) };
+}
+
+function sortRows(rows: HoursRow[], sort: SortOption): HoursRow[] {
+  const byFirstName = (a: HoursRow, b: HoursRow) =>
+    splitName(a.name).first.localeCompare(splitName(b.name).first) || a.name.localeCompare(b.name);
+  const sorted = [...rows];
+  switch (sort) {
+    case 'nameAsc':
+      return sorted.sort(byFirstName);
+    case 'nameDesc':
+      return sorted.sort((a, b) => byFirstName(b, a));
+    case 'hoursDesc':
+      return sorted.sort((a, b) => b.totalHours - a.totalHours || byFirstName(a, b));
+    case 'hoursAsc':
+      return sorted.sort((a, b) => a.totalHours - b.totalHours || byFirstName(a, b));
+  }
+}
+
+function matchesQuery(row: HoursRow, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (q === '') return true;
+  const { first, last } = splitName(row.name);
+  return (
+    first.toLowerCase().includes(q) ||
+    last.toLowerCase().includes(q) ||
+    row.email.toLowerCase().includes(q)
+  );
+}
 
 function LegendItem({ color, label }: { color: string; label: string }) {
   return (
@@ -138,6 +188,20 @@ export function HoursReport({ data }: { data: HoursReportData }) {
   const totalPickup = sum((r) => r.pickupHours);
   const grand = totalHome + totalFloat + totalPickup;
 
+  const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [sort, setSort] = useState<SortOption>('nameAsc');
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(query), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  const visibleRows = useMemo(() => {
+    const filtered = data.rows.filter((r) => matchesQuery(r, debouncedQuery));
+    return sortRows(filtered, sort);
+  }, [data.rows, debouncedQuery, sort]);
+
   return (
     <div className="page page-wide">
       <PageHead
@@ -183,11 +247,42 @@ export function HoursReport({ data }: { data: HoursReportData }) {
       {data.rows.length === 0 ? (
         <p className="t-helper">No workers are home-housed here yet.</p>
       ) : (
-        <div className="hcards">
-          {data.rows.map((row) => (
-            <WorkerCard row={row} houseName={data.houseName} key={row.userId} />
-          ))}
-        </div>
+        <>
+          <div className="row gap-3 wrap" style={{ marginBottom: 16 }}>
+            <div style={{ minWidth: 240, flex: '1 1 240px' }}>
+              <TextInput
+                icon="search"
+                placeholder="Search by name or email"
+                aria-label="Search workers"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </div>
+            <div style={{ minWidth: 200 }}>
+              <Select
+                aria-label="Sort workers"
+                value={sort}
+                onChange={(e) => setSort(e.target.value as SortOption)}
+              >
+                {(Object.keys(SORT_LABELS) as SortOption[]).map((opt) => (
+                  <option key={opt} value={opt}>
+                    {SORT_LABELS[opt]}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </div>
+
+          {visibleRows.length === 0 ? (
+            <p className="t-helper">No workers match &ldquo;{query}&rdquo;.</p>
+          ) : (
+            <div className="hcards">
+              {visibleRows.map((row) => (
+                <WorkerCard row={row} houseName={data.houseName} key={row.userId} />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

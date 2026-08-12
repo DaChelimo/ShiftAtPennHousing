@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { HmodRotor } from '../../../../components/rotor/HmodRotor';
 import { Notification } from '../../../../components/ui/Notification';
 import { PageHead } from '../../../../components/ui/PageHead';
-import { getSessionUser, isHouseAdmin } from '../../../../lib/auth';
+import { canManageHmodRotor, getSessionUser } from '../../../../lib/auth';
 import { getRotorData } from '../../../../lib/data/rotor';
 
 export const metadata: Metadata = { title: 'Admin - Rotor' };
@@ -21,7 +21,7 @@ export default async function RotorPage() {
         title="HMOD rotor"
         sub="One Housing Manager On Duty per week, planned by HMs/BMs (§2.5)."
       />
-      {isHouseAdmin(user) ? (
+      {canManageHmodRotor(user) ? (
         await renderRotor()
       ) : (
         <Notification kind="warning" title="Managers only" testId="rotor-unauthorized">

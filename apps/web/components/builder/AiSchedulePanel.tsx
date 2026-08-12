@@ -19,7 +19,6 @@ type PanelProps = {
   houseId: string;
   periodId: string | null;
   published: boolean;
-  deadlineOpen: boolean;
   // Live proposal painted into the builder grid (blockId -> userIds). {} clears
   // the grid to build from scratch; null removes the preview entirely. Optional
   // so the panel is usable without the grid-fill wiring.
@@ -58,13 +57,7 @@ function dayName(weekday: number): string {
   return AI_WEEKDAY_LABELS[weekday] ?? `Day ${String(weekday + 1)}`;
 }
 
-export function AiSchedulePanel({
-  houseId,
-  periodId,
-  published,
-  deadlineOpen,
-  onPreviewChange,
-}: PanelProps) {
+export function AiSchedulePanel({ houseId, periodId, published, onPreviewChange }: PanelProps) {
   const router = useRouter();
   const [running, setRunning] = useState(false);
   const [phaseText, setPhaseText] = useState('');
@@ -117,12 +110,7 @@ export function AiSchedulePanel({
 
   if (published) return null;
 
-  const blockedHint =
-    periodId === null
-      ? 'No scheduling period covers this week yet.'
-      : deadlineOpen
-        ? 'The preference deadline is still open. Generate after it closes.'
-        : null;
+  const blockedHint = periodId === null ? 'No scheduling period covers this week yet.' : null;
 
   const clearPreview = () => onPreview.current(null);
 

@@ -135,7 +135,7 @@ Throughout this document, "HM" used in administrative contexts (notifications, o
 
 Every house has a Residential Services Manager. The RSM is a university employee who sits **below the Housing Manager and above the Student Manager** in the house hierarchy.
 
-- **The RSM holds every power an HM holds, with one exception: an RSM can never serve as HMOD.** They build and override the schedule, force-trigger float lookups, administer their house's people, modify the weekly hours cap, and go on leave — all the HM administrative powers — but they are never placed on the HMOD rotor and are never a valid HMOD-transfer target (see §2.5/§2.6).
+- **The RSM holds every power an HM holds, with two exceptions: an RSM can never serve as HMOD, and an RSM cannot plan the HMOD rotor (amended 2026-08-11).** They build and override the schedule, force-trigger float lookups, administer their house's people, modify the weekly hours cap, and go on leave — all the HM administrative powers — but they are never placed on the HMOD rotor and are never a valid HMOD-transfer target (see §2.5/§2.6). The HMOD rotor page (viewing and planning who covers each week) is restricted to HMs and BMs only, matching §2.5's "planned by the HMs and BMs themselves"; an RSM sees no rotor entry in navigation and is rejected server-side if they call the underlying action directly.
 - **The RSM holds shift assignments like an HM.** An RSM may work scheduled shifts at their home desk and pick up open shifts (per the standard eligibility matrix). Like an HM, an RSM is never automatically floated by the system and never receives broadcast notifications.
 - **The RSM can be assigned to their own desk from the schedule builder (added 2026-07-29).** In both builder phases (Section 4.3) and in post-publish manual override, the house's RSM appears in the roster as an assignable worker alongside student workers, so the schedule-building SM/HM/BM/RSM can put them on the desk directly when the house needs it (Gregory and Harnwell were the driving cases, but this applies to any house). The RSM is exempt from every hours check when assigned this way: no hard cap, no soft-cap advisory, and no over-target warning, since they are salaried admin rather than a capped student worker. This assignment is scoped to the RSM's own house only; an RSM cannot be builder-assigned to a desk at another house.
 - **The RSM sees every house, and may modify any house's SCHEDULE (amended 2026-06-27).** An RSM may view the live schedule and coverage of any of the 13 houses (e.g., the DuBois RSM may view the Rodin schedule). Since the 2026-06-27 cross-house schedule decision, the elevated tier (HM, BM, RSM) may also **build, publish, and override the schedule of any house**, not only their own (Section 4.3, Section 13). This reverses the original RSM rule that cross-house access was view-only; the reversal is scoped to the schedule alone.
@@ -274,6 +274,17 @@ submit the shifts they want and SMs build from those preferences. The Administra
 the preference-submission deadline on the season, where a single value covers all houses;
 it must fall on or before the season's start date.
 
+**Orphaned season data.** If a season is ever removed without also removing the calendar
+dates and staffing configuration it compiled, that leftover configuration keeps existing on
+its own and can block a later season from being applied if their date ranges overlap. On
+`/admin/operations`, the Administrator sees a list of any such orphaned configuration
+(labelled by its underlying profile, with its date range and row counts) and may delete it.
+Deleting an orphan only ever removes calendar and staffing configuration, never live
+schedule data: if the orphan still has real schedule data attached (preferences, drafts, or
+a published period), the system refuses the deletion and tells the Administrator to resolve
+it by hand instead. Every deletion requires an explicit confirmation naming what will be
+removed, since it cannot be undone.
+
 ### 3.2 Operating-Rules Profiles
 
 The system recognizes three profiles. Each profile defines a complete set of rules that govern every date assigned to it.
@@ -375,6 +386,8 @@ Preferences cannot be changed after the deadline. The SM begins building the sch
 Workers who neither submitted preferences nor clicked "no hours" before the deadline are treated as **none / unspecified** (status: no-preference-on-record). The SM sees them in the Phase-2 full roster only — not in the preference-grouped Phase-1 side card. They are assignable during Phase 2 at the SM's discretion. The system does not assign them automatically during Phase 1, and they are not flagged for mandatory manual review; the SM may choose to assign them or leave them unscheduled.
 
 ### 4.3 Schedule Building — Three Phases
+
+**Which season the builder builds.** The builder always opens on the season the house is next responsible for publishing: the latest-starting season that has not already ended and that this house has not yet published. It shows that season's **first week at this house**, and the desk hours, staffing levels, and submitted preferences it displays are that season's. A house with no operating window in that season has nothing to build and is shown as such rather than being silently pointed at an earlier season. Once a house publishes a season, the builder moves on to the next one; when there is no unpublished season left, it keeps showing the most recent one so the screen is never blank. **(Corrected 2026-08-12:** the builder previously opened on the earliest week of blocks the house had ever had, so once a second season existed it stayed pinned to the oldest one — an admin preparing the fall season was shown the previous summer's week, on summer's desk hours, with summer's preferences, and the Publish button wired to the summer period.**)**
 
 Schedule building proceeds through three distinct phases.
 
@@ -659,6 +672,13 @@ A rung holds the request for `allied_ladder_rung_timeout_minutes` (Section 14). 
 
 - **Acknowledging** means "I have seen this and I am handling it." It stops the ladder and stops the reminders. Any manager who can build for that house may acknowledge, not only the current rung holder: if an RSM picks up a request that has already passed to their HM, that is a good outcome.
 - **Closing out** means "here is what actually happened," and requires one of four outcomes: **Allied secured**, **Covered internally**, **Desk went unstaffed**, or **No longer needed**. Closing as _Desk went unstaffed_ additionally requires a written note.
+
+**Closing as Allied secured, or as Covered internally by the acting manager themselves, writes the schedule.** _(Added 2026-08-07.)_ Two of the four outcomes staff the request's currently-vacant blocks, not just record what happened:
+
+- **Allied secured** assigns the Allied contractor to every block in the request's window that is still vacant at the moment of closing. A block a float, a claim, or another manager already covered since the request opened is left untouched.
+- **Covered internally**, when closed through the dedicated **"I can cover it"** action (mobile Coverage sheet), assigns the ACTING manager themselves to every still-vacant block in the window, the same way. **Covered internally** closed any other way — the generic outcome row, used when someone other than the acting manager covered it, or on a surface with no dedicated self-cover control — records the outcome only and leaves the schedule exactly as it was, identically to **Desk went unstaffed** and **No longer needed**.
+
+An RSM may self-cover only their OWN house's request, never another house's, even though the elevated schedule-admin tier (Section 13) may otherwise build any house's schedule. Attempting to self-cover a request for a house that is not the acting manager's is refused outright, and the WHOLE close aborts: no outcome is recorded on a request nobody actually covered, rather than leaving a closed request with a schedule that does not reflect it.
 
 **An open request never clears itself.** Once its coverage window passes without a close-out, the request becomes **overdue** and stays visible until a human closes it. A request that was acknowledged but never closed also goes overdue. The system closes a request on its own in exactly one case: the coverage is no longer needed because the block was voided by a configuration change or the desk regained a worker, recorded as _No longer needed_.
 

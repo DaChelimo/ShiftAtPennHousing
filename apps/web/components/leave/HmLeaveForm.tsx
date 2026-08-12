@@ -7,6 +7,12 @@ import type { ActiveLeave, ReplacementOption } from '../../lib/data/leave';
 import { availabilityLabel, overlappingLeaves } from '../../lib/leaveAvailability';
 import { Button, Card, ComboBox, DateInput, Field, Notification } from '../ui';
 
+function toIsoDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
+    date.getDate(),
+  ).padStart(2, '0')}`;
+}
+
 export function HmLeaveForm({
   candidates,
   defaultReplacementUserId,
@@ -29,6 +35,19 @@ export function HmLeaveForm({
   // different house when both of a house's managers are out, so the wider pool is one
   // click away rather than removed.
   const [includeOtherHouses, setIncludeOtherHouses] = useState(false);
+
+  // A leave is almost always today, this week, or this month — the presets cover the
+  // common case, and the min bounds below stop anyone from picking a past date.
+  const todayIso = useMemo(() => toIsoDate(new Date()), []);
+
+  function applyPreset(preset: 'today' | 'week' | 'month') {
+    const today = new Date();
+    const end = new Date(today);
+    if (preset === 'week') end.setDate(end.getDate() + 6);
+    if (preset === 'month') end.setMonth(end.getMonth() + 1, 0);
+    setStartDate(todayIso);
+    setEndDate(toIsoDate(end));
+  }
 
   const otherHouseCount = candidates.filter((c) => c.group === 'other').length;
 
@@ -67,12 +86,25 @@ export function HmLeaveForm({
     <div className="col gap-6">
       <Card pad>
         <form data-testid="hm-leave-form" onSubmit={onSubmit} className="col gap-5">
+          <div className="row gap-2 wrap">
+            <Button kind="tertiary" size="sm" type="button" onClick={() => applyPreset('today')}>
+              Today
+            </Button>
+            <Button kind="tertiary" size="sm" type="button" onClick={() => applyPreset('week')}>
+              This week
+            </Button>
+            <Button kind="tertiary" size="sm" type="button" onClick={() => applyPreset('month')}>
+              This month
+            </Button>
+          </div>
+
           <div className="row gap-4 wrap">
             <div className="grow" style={{ minWidth: 200 }}>
               <Field label="Start date">
                 <DateInput
                   data-testid="leave-start-date"
                   required
+                  min={todayIso}
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
                 />
@@ -83,6 +115,7 @@ export function HmLeaveForm({
                 <DateInput
                   data-testid="leave-end-date"
                   required
+                  min={startDate || todayIso}
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
                 />
@@ -136,7 +169,7 @@ export function HmLeaveForm({
           )}
 
           <div>
-            <Button type="submit" data-testid="leave-submit" disabled={submitting} icon="power">
+            <Button type="submit" data-testid="leave-submit" disabled={submitting}>
               {submitting ? 'Submitting…' : 'Submit leave'}
             </Button>
           </div>

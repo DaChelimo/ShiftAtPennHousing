@@ -669,7 +669,6 @@ export function ScheduleBuilder({ data }: { data: BuilderData }) {
               houseId={data.houseId}
               periodId={data.periodId}
               published={published}
-              deadlineOpen={data.deadlineOpen}
               onPreviewChange={setAiPreview}
             />
           </div>

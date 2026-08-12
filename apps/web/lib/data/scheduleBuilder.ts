@@ -1,8 +1,10 @@
 import type { PreferenceRecord, PreferenceStatus } from '@shift/core';
 
 import { createServiceClient } from '../supabase/server';
+import { simNow } from '../time/simClock';
 
 import { selectByBlockIdChunks } from './blockChunks';
+import { resolveBuildTarget } from './buildTarget';
 
 const NY = 'America/New_York';
 
@@ -37,23 +39,6 @@ function nyTimeLabel(iso: string): string {
   }).format(new Date(iso));
 }
 
-// The Monday (NY) of the week containing `date` ('YYYY-MM-DD'), returned 'YYYY-MM-DD'.
-function weekStart(date: string): string {
-  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
-  const at = new Date(Date.UTC(y, m - 1, d));
-  const dow = at.getUTCDay(); // 0=Sun..6=Sat
-  const offset = (dow + 6) % 7; // days since Monday
-  at.setUTCDate(at.getUTCDate() - offset);
-  return at.toISOString().slice(0, 10);
-}
-
-function addDays(date: string, days: number): string {
-  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
-  const at = new Date(Date.UTC(y, m - 1, d));
-  at.setUTCDate(at.getUTCDate() + days);
-  return at.toISOString().slice(0, 10);
-}
-
 export type BuilderBlock = {
   blockId: string;
   startAtIso: string;
@@ -72,7 +57,6 @@ export type BuilderData = {
   periodId: string | null;
   houseId: string;
   published: boolean;
-  deadlineOpen: boolean; // preference submission still open (AI panel gate)
   weekStartDate: string | null;
   blocks: BuilderBlock[];
   workers: BuilderWorker[]; // full house roster (Phase-2 pool)
@@ -99,38 +83,26 @@ type BlockRow = { block_id: string; block_start_at: string; required_headcount: 
 export async function getBuilderData(houseId: string): Promise<BuilderData> {
   const supabase = createServiceClient();
 
-  // 1. Blocks for the house; choose the week of the earliest block as the build week.
-  //
-  // Only the FIRST week is ever used (everything below filters to `wkStart`..`wkEnd`),
-  // so this reads the earliest block first and then fetches just that week's rows
-  // instead of pulling the house's entire block history to look at its head. On a house
-  // with a full season seeded that was thousands of rows crossing the wire per render,
-  // and it sat right up against PostgREST's 1000-row cap.
-  const { data: firstBlockRows } = await supabase
-    .from('shift_blocks')
-    .select('block_start_at')
-    .eq('house_id', houseId)
-    .order('block_start_at')
-    .limit(1);
-
-  const firstBlockStart = firstBlockRows?.[0]?.block_start_at ?? null;
+  // 1. The season being built, and its first week at this house (buildTarget.ts).
+  //    The week is derived from the PERIOD, not from the house's all-time earliest
+  //    block: a house with two seasons materialized would otherwise stay pinned to
+  //    the oldest one forever, showing last summer's hours and last summer's
+  //    preferences while the admin prepares the upcoming season.
+  const target = await resolveBuildTarget(supabase, houseId);
+  const periodId = target?.periodId ?? null;
 
   // 2. Roster: active student workers whose house membership covers the build
   //    week (as-of its first day). A worker with a scheduled transfer shows in
   //    their destination house for weeks on/after their effective date and drops
   //    from the old house for those weeks; without a transfer this is just their
-  //    home house. Falls back to today when the house has no blocks yet.
+  //    home house. Falls back to the period start, then today, when the house has
+  //    no blocks in the season (it is closed).
   //    See house_roster_as_of / membership_house_for_date (20260719000001).
-  //
-  //    Fetched alongside the build week's blocks and its scheduling period: all three
-  //    key off the first block's DATE, which we already have, so they no longer run one
-  //    after another.
-  const rosterAsOf =
-    firstBlockStart !== null ? nyDate(firstBlockStart) : nyDate(new Date().toISOString());
-  const weekLo = firstBlockStart === null ? null : weekStart(nyDate(firstBlockStart));
-  const weekHi = weekLo === null ? null : addDays(weekLo, 7);
+  const weekLo = target?.weekStartDate ?? null;
+  const weekHi = target?.weekEndDate ?? null;
+  const rosterAsOf = weekLo ?? target?.periodStartDate ?? nyDate((await simNow()).toISOString());
 
-  const [rosterResult, weekBlockResult, periodResult] = await Promise.all([
+  const [rosterResult, weekBlockResult] = await Promise.all([
     supabase.rpc('house_roster_as_of', { p_house_id: houseId, p_as_of: rosterAsOf }),
     weekLo === null
       ? Promise.resolve({ data: [] as BlockRow[] })
@@ -140,17 +112,10 @@ export async function getBuilderData(houseId: string): Promise<BuilderData> {
           .from('shift_blocks')
           .select('block_id, block_start_at, required_headcount')
           .eq('house_id', houseId)
+          .is('voided_at', null)
           .gte('block_start_at', `${weekLo}T00:00:00.000Z`)
           .lt('block_start_at', `${weekHi!}T12:00:00.000Z`)
           .order('block_start_at'),
-    // The scheduling period covering the build week's first day. `rosterAsOf` IS that
-    // day (it falls back to today only when the house has no blocks, in which case the
-    // empty-blocks return below fires before the period is ever read).
-    supabase
-      .from('scheduling_periods')
-      .select('period_id, start_date, end_date')
-      .lte('start_date', rosterAsOf)
-      .gte('end_date', rosterAsOf),
   ]);
 
   const allBlocks = ((weekBlockResult.data ?? []) as BlockRow[]).map((b) => ({
@@ -173,7 +138,6 @@ export async function getBuilderData(houseId: string): Promise<BuilderData> {
     periodId: null,
     houseId,
     published: false,
-    deadlineOpen: false,
     weekStartDate: null,
     blocks: [],
     workers,
@@ -182,11 +146,10 @@ export async function getBuilderData(houseId: string): Promise<BuilderData> {
     preferences: [],
     drafts: {},
   };
-  if (allBlocks.length === 0) return empty;
+  if (allBlocks.length === 0 || weekLo === null) return empty;
 
-  const firstDay = nyDate(allBlocks[0]!.startAtIso);
-  const wkStart = weekStart(firstDay);
-  const wkEnd = addDays(wkStart, 7);
+  const wkStart = weekLo;
+  const wkEnd = weekHi!;
 
   const blocks: BuilderBlock[] = allBlocks
     .filter((b) => {
@@ -208,18 +171,15 @@ export async function getBuilderData(houseId: string): Promise<BuilderData> {
     });
   const weekBlockIds = blocks.map((b) => b.blockId);
 
-  // 3. The scheduling period covering this build week (fetched in the wave above).
-  const periodId = periodResult.data?.[0]?.period_id ?? null;
-
   if (periodId === null) {
     return { ...empty, blocks, weekStartDate: wkStart };
   }
 
-  // 4-7. Everything keyed off the period. None of these five reads depends on another,
-  // but they used to run strictly in sequence — preferences, then targets, then drafts,
-  // then the publication row, then the deadline RPC — with the two chunked reads each
-  // paying five serial round trips of their own on top. One wave now.
-  const [prefRows, targetResult, draftRows, pubResult, deadlineResult] = await Promise.all([
+  // 3-5. Everything keyed off the period. None of these three reads depends on another,
+  // but they used to run strictly in sequence — preferences, then targets, then drafts —
+  // with the two chunked reads each paying five serial round trips of their own on top.
+  // One wave now. (The publication check is already answered by resolveBuildTarget.)
+  const [prefRows, targetResult, draftRows] = await Promise.all([
     // Preferences for the week's blocks (the Phase-1 pool = workers with any pref row).
     selectByBlockIdChunks(weekBlockIds, (chunk) =>
       supabase
@@ -242,16 +202,6 @@ export async function getBuilderData(houseId: string): Promise<BuilderData> {
         .eq('period_id', periodId)
         .in('block_id', chunk),
     ),
-    // Published?
-    supabase
-      .from('period_house_publications')
-      .select('house_id')
-      .eq('period_id', periodId)
-      .eq('house_id', houseId)
-      .maybeSingle(),
-    // Is preference submission still open? (The AI panel may only generate after the
-    // deadline closes; the RPC honors app_now().)
-    supabase.rpc('preference_deadline_is_open', { check_period_id: periodId }),
   ]);
 
   const preferences: PreferenceRecord[] = prefRows.map((p) => ({
@@ -288,14 +238,10 @@ export async function getBuilderData(houseId: string): Promise<BuilderData> {
     (drafts[d.block_id] ??= []).push(d.user_id);
   }
 
-  const pub = pubResult.data;
-  const deadlineOpenData = deadlineResult.data;
-
   return {
     periodId,
     houseId,
-    published: pub !== null && pub !== undefined,
-    deadlineOpen: deadlineOpenData === true,
+    published: target?.publishedForHouse === true,
     weekStartDate: wkStart,
     blocks,
     workers,

@@ -97,11 +97,11 @@ export function canBuildSchedule(user: SessionUser | null): boolean {
   );
 }
 
-// §2.3 / §2.3a / §2.6 / §2.7: HM/RSM/BM administrative powers (people, leave, rotor —
-// the RSM cannot serve as HMOD, but the rotor page is still theirs to view/manage
-// for their house). BM is admin-only (Building Administrator); the RSM holds all
-// HM admin powers. The campus-wide Project Admin superuser sees everything an
-// HM/RSM/BM can, so it's included here rather than re-OR'd at every call site.
+// §2.3 / §2.3a / §2.6 / §2.7: HM/RSM/BM administrative powers (people, leave, cap).
+// BM is admin-only (Building Administrator); the RSM holds all HM admin powers
+// EXCEPT the HMOD rotor (see canManageHmodRotor below). The campus-wide Project
+// Admin superuser sees everything an HM/RSM/BM can, so it's included here rather
+// than re-OR'd at every call site.
 export function isHouseAdmin(user: SessionUser | null): boolean {
   return (
     !!user &&
@@ -109,6 +109,13 @@ export function isHouseAdmin(user: SessionUser | null): boolean {
       (r) => r.role === 'hm' || r.role === 'rsm' || r.role === 'bm' || r.role === 'admin',
     )
   );
+}
+
+// §2.5: the HMOD rotor is planned by the HMs and BMs themselves — the RSM is never
+// HMOD-eligible (ARCH §21.2) and, unlike the rest of isHouseAdmin's surface, does not
+// get to plan the rotor either. Deliberately narrower than isHouseAdmin.
+export function canManageHmodRotor(user: SessionUser | null): boolean {
+  return !!user && user.roles.some((r) => r.role === 'hm' || r.role === 'bm' || r.role === 'admin');
 }
 
 // §2.3a: an RSM has read-only visibility into every house's schedule.

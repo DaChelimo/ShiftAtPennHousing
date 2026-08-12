@@ -181,6 +181,7 @@ struct CoverageView: View {
                 RespondSheetView(
                     sheet: sheet,
                     onSelectOutcome: { model.vm.selectOutcome(outcome: $0) },
+                    onCoverPersonally: { model.vm.coverPersonally() },
                     onNoteChange: { model.vm.updateNote(note: $0) },
                     onSubmit: { model.submitClose(repo: repo) },
                     onDismiss: { model.vm.dismissSheet() },
@@ -255,6 +256,7 @@ private struct CoverageRequestCard: View {
 private struct RespondSheetView: View {
     let sheet: RespondSheetState
     let onSelectOutcome: (CoverageOutcome) -> Void
+    let onCoverPersonally: () -> Void
     let onNoteChange: (String) -> Void
     let onSubmit: () -> Void
     let onDismiss: () -> Void
@@ -262,9 +264,12 @@ private struct RespondSheetView: View {
     @Environment(\.colorScheme) private var scheme
     private var c: ShiftColors { .resolve(scheme) }
 
-    /// The three outcomes left once "I can cover it" is out of the way. `.coveredInternally`
-    /// is deliberately NOT here: it is recorded directly by the "I can cover it" action above.
-    private static let otherOutcomes: [CoverageOutcome] = [.alliedSecured, .deskUnstaffed, .noLongerNeeded]
+    /// The four outcomes, in the order a manager is likely to need them. `.coveredInternally`
+    /// here is "covered another way" — recorded, but with no self-assignment, unlike the
+    /// dedicated "I can cover it" action above (`CoverageViewModel.coverPersonally`), which
+    /// sets the SAME wire outcome but also puts the acting manager on the schedule.
+    private static let otherOutcomes: [CoverageOutcome] =
+        [.alliedSecured, .coveredInternally, .deskUnstaffed, .noLongerNeeded]
 
     var body: some View {
         ShiftSheet(onClose: onDismiss) {
@@ -282,7 +287,7 @@ private struct RespondSheetView: View {
                 HStack(spacing: 10) {
                     ShiftButton(
                         title: "I can cover it",
-                        action: { onSelectOutcome(.coveredInternally); onSubmit() },
+                        action: { onCoverPersonally(); onSubmit() },
                         variant: .success, size: .lg, systemIcon: ShiftIcons.person, fullWidth: true
                     )
                     .accessibilityIdentifier("coverage_cover_it")

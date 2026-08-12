@@ -35,6 +35,44 @@ export type AuditRow = {
   impact: Record<string, number>;
 };
 
+export type OrphanedSeasonProfile = {
+  profileName: string;
+  minDate: string;
+  maxDate: string;
+  calendarRows: number;
+  profileRows: number;
+  patternRows: number;
+  periodRows: number;
+  floatRoutingRows: number;
+  breakPeriodsRows: number;
+};
+
+// Compiled `s_<slug>_...` runtime config left behind by an operating_seasons row that
+// was deleted without reconciling what it had compiled (operating_calendar has no FK
+// to operating_seasons by design). `periodRows > 0` means the profile still has a
+// scheduling_periods row with real attached data (preferences/drafts/publish state)
+// that delete_orphaned_season_profile refuses to touch.
+export async function listOrphanedSeasonProfiles(
+  callingUserId: string,
+): Promise<OrphanedSeasonProfile[]> {
+  const service = createServiceClient();
+  const { data, error } = await service.rpc('list_orphaned_season_profiles', {
+    p_calling_user_id: callingUserId,
+  });
+  if (error !== null) throw error;
+  return (data ?? []).map((r) => ({
+    profileName: r.profile_name,
+    minDate: r.min_date,
+    maxDate: r.max_date,
+    calendarRows: r.calendar_rows,
+    profileRows: r.profile_rows,
+    patternRows: r.pattern_rows,
+    periodRows: r.period_rows,
+    floatRoutingRows: r.float_routing_rows,
+    breakPeriodsRows: r.break_periods_rows,
+  }));
+}
+
 export async function listSeasons(): Promise<SeasonListRow[]> {
   const service = createServiceClient();
   const { data, error } = await service

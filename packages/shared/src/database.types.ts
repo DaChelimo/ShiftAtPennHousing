@@ -1,30 +1,10 @@
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
 export type Database = {
-  graphql_public: {
-    Tables: {
-      [_ in never]: never;
-    };
-    Views: {
-      [_ in never]: never;
-    };
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json;
-          operationName?: string;
-          query?: string;
-          variables?: Json;
-        };
-        Returns: Json;
-      };
-    };
-    Enums: {
-      [_ in never]: never;
-    };
-    CompositeTypes: {
-      [_ in never]: never;
-    };
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: '14.5';
   };
   public: {
     Tables: {
@@ -3860,6 +3840,16 @@ export type Database = {
         Args: { p_block_ids: string[] };
         Returns: number;
       };
+      delete_orphaned_season_profile: {
+        Args: { p_calling_user_id: string; p_profile_name: string };
+        Returns: {
+          break_periods_rows_deleted: number;
+          calendar_rows_deleted: number;
+          float_routing_rows_deleted: number;
+          pattern_rows_deleted: number;
+          profile_rows_deleted: number;
+        }[];
+      };
       deliver_notification: {
         Args: { p_notification_id: string; p_now: string };
         Returns: boolean;
@@ -4022,6 +4012,20 @@ export type Database = {
         Args: { p_resolution_date: string; p_user_id: string };
         Returns: Record<string, unknown>;
       };
+      list_orphaned_season_profiles: {
+        Args: { p_calling_user_id: string };
+        Returns: {
+          break_periods_rows: number;
+          calendar_rows: number;
+          float_routing_rows: number;
+          max_date: string;
+          min_date: string;
+          pattern_rows: number;
+          period_rows: number;
+          profile_name: string;
+          profile_rows: number;
+        }[];
+      };
       lock_block_coverage: {
         Args: { p_as_of: string; p_block_id: string };
         Returns: boolean;
@@ -4108,32 +4112,18 @@ export type Database = {
         Args: { p_attempts: number };
         Returns: string;
       };
-      notify_shift_opened:
-        | {
-            Args: {
-              p_actor_user_id: string;
-              p_block_id: string;
-              p_end_at: string;
-              p_house_id: string;
-              p_now: string;
-              p_recurring?: boolean;
-              p_start_at: string;
-            };
-            Returns: number;
-          }
-        | {
-            Args: {
-              p_actor_user_id: string;
-              p_block_id: string;
-              p_end_at: string;
-              p_exclude_user_ids: string[];
-              p_house_id: string;
-              p_now: string;
-              p_recurring: boolean;
-              p_start_at: string;
-            };
-            Returns: number;
-          };
+      notify_shift_opened: {
+        Args: {
+          p_actor_user_id: string;
+          p_block_id: string;
+          p_end_at: string;
+          p_house_id: string;
+          p_now: string;
+          p_recurring?: boolean;
+          p_start_at: string;
+        };
+        Returns: number;
+      };
       offhours_ladder_timeout_minutes: { Args: never; Returns: number };
       open_allied_coverage_request: {
         Args: {
@@ -4821,9 +4811,6 @@ export type CompositeTypes<
     : never;
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       allied_coverage_outcome: [

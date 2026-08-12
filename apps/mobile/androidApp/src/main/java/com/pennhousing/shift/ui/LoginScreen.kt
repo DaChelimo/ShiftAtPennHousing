@@ -231,7 +231,7 @@ fun LoginScreen(
 
                 LoginField(
                     label = "Your email",
-                    placeholder = "andrew@upenn.edu",
+                    placeholder = "andrew@shiftatpenn.com",
                     value = state.email,
                     onValueChange = { onEvent(LoginEvent.EmailChanged(it)) },
                     icon = ShiftIcons.Person,

@@ -8,14 +8,15 @@
 // row OR a period_targets row; opted-out workers dropped), missing rows and
 // status 'none' collapse to available, voided blocks filtered, effective
 // cap resolved via the effective_weekly_cap RPC, and the safe-to-build gate
-// (not published AND preference deadline closed via the RPC, which honors
-// the dev sim clock; never Date.now()).
+// (not published; the preference deadline does NOT gate generation, so a
+// manager can build a draft before or after preferences close).
 
 import { blockWeekSlot, type AiScheduleInput } from '@shift/core';
 
 import { createServiceClient } from '../supabase/server';
 
 import { selectByBlockIdChunks } from './blockChunks';
+import { resolveBuildTarget } from './buildTarget';
 
 const NY = 'America/New_York';
 const HARNWELL_HOUSE_ID = 'harnwell';
@@ -29,27 +30,10 @@ function nyDate(iso: string): string {
   }).format(new Date(iso));
 }
 
-// The Monday (NY) of the week containing `date` ('YYYY-MM-DD').
-function weekStart(date: string): string {
-  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
-  const at = new Date(Date.UTC(y, m - 1, d));
-  const offset = (at.getUTCDay() + 6) % 7;
-  at.setUTCDate(at.getUTCDate() - offset);
-  return at.toISOString().slice(0, 10);
-}
-
-function addDays(date: string, days: number): string {
-  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
-  const at = new Date(Date.UTC(y, m - 1, d));
-  at.setUTCDate(at.getUTCDate() + days);
-  return at.toISOString().slice(0, 10);
-}
-
 export type AiScheduleGate = {
   canGenerate: boolean;
   reason: string | null; // user-facing copy when canGenerate is false
   published: boolean;
-  deadlineOpen: boolean;
 };
 
 export type AiScheduleContext = {
@@ -60,9 +44,9 @@ export type AiScheduleContext = {
   workerNamesById: Record<string, string>;
 };
 
-function blocked(reason: string, published = false, deadlineOpen = false): AiScheduleContext {
+function blocked(reason: string, published = false): AiScheduleContext {
   return {
-    gate: { canGenerate: false, reason, published, deadlineOpen },
+    gate: { canGenerate: false, reason, published },
     periodId: null,
     input: null,
     existingDraftCount: 0,
@@ -73,67 +57,52 @@ function blocked(reason: string, published = false, deadlineOpen = false): AiSch
 export async function getAiScheduleContext(houseId: string): Promise<AiScheduleContext> {
   const supabase = createServiceClient();
 
-  // 1. Live blocks; the template week is the NY week of the earliest block
-  // (same derivation publish_schedule uses for its pattern window).
+  // 1. The season being built and its first week at this house — the SAME resolver
+  // the manual builder uses (buildTarget.ts), so the generator can never propose
+  // against a different week or period than the grid the SM is looking at.
+  const target = await resolveBuildTarget(supabase, houseId);
+  if (target === null) {
+    return blocked('No scheduling period covers this schedule week.');
+  }
+  const periodId = target.periodId;
+  const wkStart = target.weekStartDate;
+  const wkEnd = target.weekEndDate;
+  if (wkStart === null || wkEnd === null) {
+    return {
+      ...blocked('This house has no schedule blocks in the season being built.'),
+      periodId,
+    };
+  }
+
+  // 2. Live blocks for that week only. Reading the house's whole block history here
+  // used to cross the PostgREST 1000-row cap on a fully seeded season.
   const { data: blockRows } = await supabase
     .from('shift_blocks')
     .select('block_id, block_start_at, required_headcount')
     .eq('house_id', houseId)
     .is('voided_at', null)
+    .gte('block_start_at', `${wkStart}T00:00:00.000Z`)
+    .lt('block_start_at', `${wkEnd}T12:00:00.000Z`)
     .order('block_start_at');
-  const allBlocks = blockRows ?? [];
-  const firstBlock = allBlocks[0];
-  if (firstBlock === undefined) {
-    return blocked('This house has no schedule blocks yet.');
-  }
-
-  const firstDay = nyDate(firstBlock.block_start_at);
-  const wkStart = weekStart(firstDay);
-  const wkEnd = addDays(wkStart, 7);
-  const weekBlocks = allBlocks.filter((b) => {
+  const weekBlocks = (blockRows ?? []).filter((b) => {
     const day = nyDate(b.block_start_at);
     return day >= wkStart && day < wkEnd;
   });
+  const firstBlock = weekBlocks[0];
+  if (firstBlock === undefined) {
+    return { ...blocked('This house has no schedule blocks yet.'), periodId };
+  }
   const weekBlockIds = weekBlocks.map((b) => b.block_id);
 
-  // 2. The scheduling period covering the template week.
-  const { data: periodRows } = await supabase
-    .from('scheduling_periods')
-    .select('period_id')
-    .lte('start_date', firstDay)
-    .gte('end_date', firstDay);
-  const periodId = periodRows?.[0]?.period_id ?? null;
-  if (periodId === null) {
-    return blocked('No scheduling period covers this schedule week.');
-  }
-
   // 3. Safe-to-build gate.
-  const { data: pub } = await supabase
-    .from('period_house_publications')
-    .select('house_id')
-    .eq('period_id', periodId)
-    .eq('house_id', houseId)
-    .maybeSingle();
-  const published = pub !== null && pub !== undefined;
-
-  const { data: deadlineOpenData } = await supabase.rpc('preference_deadline_is_open', {
-    check_period_id: periodId,
-  });
-  const deadlineOpen = deadlineOpenData === true;
+  const published = target.publishedForHouse;
 
   if (published) {
     return {
-      ...blocked('This schedule is already published for the period.', true, deadlineOpen),
+      ...blocked('This schedule is already published for the period.', true),
       periodId,
     };
   }
-  if (deadlineOpen) {
-    return {
-      ...blocked('The preference deadline is still open. Generate after it closes.', false, true),
-      periodId,
-    };
-  }
-
   // 4. House roster (active student workers), then narrow to submitters. Roster
   //    is membership-aware as-of the build week (house_roster_as_of), so a worker
   //    with a scheduled transfer is built into their DESTINATION house for the
@@ -142,7 +111,7 @@ export async function getAiScheduleContext(houseId: string): Promise<AiScheduleC
   //    constraint when pre-building a transfer-in). See 20260719000001.
   const { data: rosterRows } = await supabase.rpc('house_roster_as_of', {
     p_house_id: houseId,
-    p_as_of: firstDay,
+    p_as_of: wkStart,
   });
   // house_roster_as_of also returns the house's RSM (2026-07-29 desk-assignment
   // decision, is_rsm=true) for the manual builder. The AI agent generates a
@@ -255,7 +224,7 @@ export async function getAiScheduleContext(houseId: string): Promise<AiScheduleC
   };
 
   return {
-    gate: { canGenerate: true, reason: null, published: false, deadlineOpen: false },
+    gate: { canGenerate: true, reason: null, published: false },
     periodId,
     input,
     existingDraftCount: draftRows.length,

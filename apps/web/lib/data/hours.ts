@@ -40,6 +40,7 @@ export type ShiftEntry = {
 export type HoursRow = {
   userId: string;
   name: string;
+  email: string;
   homeHours: number;
   floatedOutHours: number;
   pickupHours: number;
@@ -195,7 +196,7 @@ export async function getHoursReport(
   const [{ data: house }, { data: userRows }, { data: latestBlock }] = await Promise.all([
     svc.from('houses').select('id, name').eq('id', houseId).maybeSingle(),
     // Roster = home-housed people who work shifts (sw/sm/hm, not bm).
-    svc.from('users').select('user_id, name').eq('home_house_id', houseId).order('name'),
+    svc.from('users').select('user_id, name, email').eq('home_house_id', houseId).order('name'),
     // Relevant week: week of the house's most recent block, else the current week.
     svc
       .from('shift_blocks')
@@ -307,6 +308,7 @@ export async function getHoursReport(
     return {
       userId: w.user_id,
       name: w.name,
+      email: w.email,
       homeHours,
       floatedOutHours,
       pickupHours,

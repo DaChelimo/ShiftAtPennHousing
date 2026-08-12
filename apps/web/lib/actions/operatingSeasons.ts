@@ -160,10 +160,7 @@ export async function saveHouseWindow(input: {
   const { error } =
     input.windowId === undefined
       ? await service.from('season_house_windows').insert(row)
-      : await service
-          .from('season_house_windows')
-          .update(row)
-          .eq('window_id', input.windowId);
+      : await service.from('season_house_windows').update(row).eq('window_id', input.windowId);
   if (error !== null) return { ok: false, error: error.message };
   revalidatePath(`/admin/operations/${input.seasonId}`);
   return { ok: true, data: null };
@@ -248,6 +245,21 @@ export async function previewOrApplySeason(
   });
   if (error !== null) return { ok: false, error: error.message };
 
+  // apply_compiled_season's serialized front (20260726000007) can return a normal
+  // (not thrown) {ok: false, error, message} JSON body when the advisory lock is held
+  // by a concurrent apply/preview -- nothing was attempted, so it isn't a Postgres
+  // exception. Discriminate on `dry_run`, a field only the genuine impact payload
+  // carries (mirrors the res.ok trap in AGENTS.md "Known traps"); otherwise this casts
+  // straight to SeasonImpact and crashes the UI on the missing `affected_workers`.
+  const raw = data as unknown;
+  if (raw === null || typeof raw !== 'object' || !('dry_run' in raw)) {
+    const message =
+      raw !== null && typeof raw === 'object' && 'message' in raw
+        ? String((raw as { message: unknown }).message)
+        : 'Season apply returned an unexpected response.';
+    return { ok: false, error: message };
+  }
+
   // On apply, stamp the freshly (re)created period's preference deadline from the
   // season's authored value. apply's period upsert leaves preference_deadline
   // untouched on conflict, so this is the single writer of that value on apply.
@@ -266,5 +278,71 @@ export async function previewOrApplySeason(
   }
 
   if (!dryRun) revalidatePath(`/admin/operations/${seasonId}`);
-  return { ok: true, data: data as unknown as SeasonImpact };
+
+  const o = raw as Record<string, unknown>;
+  const num = (key: string): number => (typeof o[key] === 'number' ? (o[key] as number) : 0);
+  const affectedRaw = Array.isArray(o.affected_workers) ? o.affected_workers : [];
+  const affected_workers: AffectedWorker[] = affectedRaw.map((a) => {
+    const r = (a ?? {}) as Record<string, unknown>;
+    return {
+      house: String(r.house ?? ''),
+      worker: String(r.worker ?? ''),
+      when: String(r.when ?? ''),
+      kind: r.kind === 'float' ? 'float' : 'shift',
+    };
+  });
+  return {
+    ok: true,
+    data: {
+      dry_run: dryRun,
+      profiles: num('profiles'),
+      blocks_generated: num('blocks_generated'),
+      blocks_voided: num('blocks_voided'),
+      seats_added: num('seats_added'),
+      seats_removed: num('seats_removed'),
+      assignments_cancelled: num('assignments_cancelled'),
+      floats_voided: num('floats_voided'),
+      affected_workers,
+    },
+  };
+}
+
+export type OrphanDeleteImpact = {
+  calendarRowsDeleted: number;
+  patternRowsDeleted: number;
+  floatRoutingRowsDeleted: number;
+  breakPeriodsRowsDeleted: number;
+  profileRowsDeleted: number;
+};
+
+// Removes a compiled-season profile's runtime config rows once no operating_seasons
+// row owns them. The RPC re-verifies orphan status and refuses (no partial delete) if
+// the profile still has a scheduling_periods row with real attached data.
+export async function deleteOrphanedSeasonProfile(
+  profileName: string,
+): Promise<ActionResult<OrphanDeleteImpact>> {
+  const gate = await requireAdmin();
+  if ('error' in gate) return { ok: false, error: gate.error };
+
+  const service = createServiceClient();
+  const { data, error } = await service.rpc('delete_orphaned_season_profile', {
+    p_calling_user_id: gate.userId,
+    p_profile_name: profileName,
+  });
+  if (error !== null) return { ok: false, error: error.message };
+
+  const row = (data ?? [])[0];
+  if (row === undefined) return { ok: false, error: 'No response from delete.' };
+
+  revalidatePath('/admin/operations');
+  return {
+    ok: true,
+    data: {
+      calendarRowsDeleted: row.calendar_rows_deleted,
+      patternRowsDeleted: row.pattern_rows_deleted,
+      floatRoutingRowsDeleted: row.float_routing_rows_deleted,
+      breakPeriodsRowsDeleted: row.break_periods_rows_deleted,
+      profileRowsDeleted: row.profile_rows_deleted,
+    },
+  };
 }

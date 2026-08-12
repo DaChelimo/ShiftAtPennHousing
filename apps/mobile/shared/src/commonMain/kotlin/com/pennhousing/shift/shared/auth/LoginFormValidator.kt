@@ -36,7 +36,7 @@ object LoginFormValidator {
     }
 
     /**
-     * A non-blocking domain hint: most workers sign in with `@upenn.edu` or
+     * A non-blocking domain hint: most workers sign in with `@shiftatpenn.com` or
      * `@gmail.com`. Anything else is very likely a typo, but is never treated as
      * a validation [FormErrors.email] error — the account may legitimately use a
      * different domain, so the worker can still submit.
@@ -51,10 +51,10 @@ object LoginFormValidator {
         val domain = trimmed.substring(at + 1)
         if (!domain.contains('.')) return null
         val lower = trimmed.lowercase()
-        return if (lower.endsWith("@upenn.edu") || lower.endsWith("@gmail.com")) {
+        return if (lower.endsWith("@shiftatpenn.com") || lower.endsWith("@gmail.com")) {
             null
         } else {
-            "Your email should most likely end with @upenn.edu or @gmail.com, but mostly @upenn.edu."
+            "Your email should most likely end with @shiftatpenn.com or @gmail.com, but mostly @shiftatpenn.com."
         }
     }
 }

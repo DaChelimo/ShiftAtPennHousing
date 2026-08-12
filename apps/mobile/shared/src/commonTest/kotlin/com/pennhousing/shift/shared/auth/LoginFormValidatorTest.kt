@@ -38,15 +38,16 @@ class LoginFormValidatorTest {
     }
 
     @Test
-    fun domainWarningIsNullForUpennAndGmail() {
-        assertNull(LoginFormValidator.domainWarning("andrew@upenn.edu"))
-        assertNull(LoginFormValidator.domainWarning("Andrew@UPenn.Edu"))
+    fun domainWarningIsNullForShiftAtPennAndGmail() {
+        assertNull(LoginFormValidator.domainWarning("andrew@shiftatpenn.com"))
+        assertNull(LoginFormValidator.domainWarning("Andrew@ShiftAtPenn.Com"))
         assertNull(LoginFormValidator.domainWarning("andrew@gmail.com"))
     }
 
     @Test
     fun domainWarningFiresForOtherCompleteDomains() {
         assertNotNull(LoginFormValidator.domainWarning("andrew@outlook.com"))
+        assertNotNull(LoginFormValidator.domainWarning("andrew@upenn.edu"))
         assertNotNull(LoginFormValidator.domainWarning("andrew@seas.upenn.edu"))
     }
 

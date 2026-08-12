@@ -128,7 +128,7 @@ export function HireWorkerControl({ houseName }: { houseName: string }) {
               type="email"
               data-testid="hire-email"
               value={email}
-              placeholder="jordan.lee@upenn.edu"
+              placeholder="jordan.lee@shiftatpenn.com"
               onChange={(e) => setEmail(e.target.value)}
             />
           </Field>

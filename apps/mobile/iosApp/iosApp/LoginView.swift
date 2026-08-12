@@ -20,7 +20,7 @@ final class LoginObservable: ObservableObject {
     @Published var password = ""
     @Published var submitting = false
     @Published var emailError: String?
-    /// Non-blocking domain hint (e.g. neither `@upenn.edu` nor `@gmail.com`) — never blocks sign-in.
+    /// Non-blocking domain hint (e.g. neither `@shiftatpenn.com` nor `@gmail.com`) — never blocks sign-in.
     @Published var emailWarning: String?
     @Published var passwordError: String?
     @Published var formError: String?
@@ -168,7 +168,7 @@ struct LoginScreen: View {
 
                 VStack(spacing: 16) {
                     field(
-                        label: "Your email", placeholder: "andrew@upenn.edu",
+                        label: "Your email", placeholder: "andrew@shiftatpenn.com",
                         icon: ShiftIcons.person,
                         text: Binding(get: { model.email }, set: { model.setEmail($0) }),
                         // `.username` is what makes Face ID / Touch ID credential fill deliver
